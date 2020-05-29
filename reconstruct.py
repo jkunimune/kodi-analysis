@@ -59,14 +59,17 @@ def paste(wall, block, loc):
 	wall_slices, block_slices = zip(*map(paste_slices, loc_zip))
 	wall[wall_slices] = block[block_slices]
 
-def simple_penumbra(x0, y0, M, δ, minimum, maximum):
+def simple_penumbra(x0, y0, δ, M, minimum, maximum):
 	return (minimum + maximum)/2 + (maximum-minimum)/2*special.erf(((M+1)*rA - np.hypot(XI - x0, YI - y0))/δ)
 
-def simple_fit(args, minimum, maximum, exp):
-	x0, y0, M, δ = args
-	teo = simple_penumbra(x0, y0, M, δ, minimum, maximum)
+def simple_fit(*args):
+	if len(args[0]) == 3:
+		(x0, y0, δ), M, minimum, maximum, exp = args
+	else:
+		(x0, y0, δ, M), minimum, maximum, exp = args
+	teo = simple_penumbra(x0, y0, δ, M, minimum, maximum)
 	error = np.sum(teo - exp*np.log(teo))
-	penalty = 6*(M/M0 - np.log(M))
+	penalty = 10*(M/M0 - np.log(M))
 	return error + penalty
 
 
@@ -106,7 +109,6 @@ for i, scan in shot_list.iterrows():
 
 	track_list['y(cm)'] *= -1 # cpsa files invert y
 	if str(scan[SHOT]) == '95520': # this shot was tilted for some reason
-		print("tilt")
 		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy() # rotate the flipped penumbral image 45 degrees clockwise
 		track_list['x(cm)'] =  np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
 		track_list['y(cm)'] = -np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
@@ -130,7 +132,7 @@ for i, scan in shot_list.iterrows():
 	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(minimum, maximum, exp),
 		method='Nelder-Mead', options=dict(
 			initial_simplex=[[.5, 0, M0, .06], [-.5, .5, M0, .06], [-.5, -.5, M0, .06], [0, 0, M0+1, .06], [0, 0, M0, .1]]))
-	x0, y0, M, _ = opt.x
+	x0, y0, _, M = opt.x
 	r0 = (M + 1)*rA
 
 	print(opt)
@@ -247,10 +249,10 @@ for i, scan in shot_list.iterrows():
 			B = np.flip(B.T, 0) # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS)
 
 		elif METHOD == 'gelfgat':
-			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(background, umbra, N),
+			opt = optimize.minimize(simple_fit, x0=[None]*3, args=(M, background, umbra, N),
 				method='Nelder-Mead', options=dict(
-					initial_simplex=[[.5, 0, M0, .06], [-.5, .5, M0, .06], [-.5, -.5, M0, .06], [0, 0, M0+1, .06], [0, 0, M0, .1]]))
-			D = simple_penumbra(*opt.x, background, umbra) # make D equal to a fit to N
+					initial_simplex=[[.5, 0, .06], [-.5, .5, .06], [-.5, -.5, .06], [0, 0, .1]]))
+			D = simple_penumbra(*opt.x, M, background, umbra) # make D equal to a fit to N
 
 			reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
 			data_bins = (reach > 0) & (reach < reach.max()) # exclude bins that are touched by all or none of the source pixels
