@@ -87,7 +87,6 @@ for i, scan in shot_list.iterrows():
 	r_flo, θ_flo, ɸ_flo = float(scan[R_FLOW])*1e-4, np.radians(float(scan[Θ_FLOW])), np.radians(float(scan[Φ_FLOW])) # cm/ns
 	flow = [r_flo*np.sin(θ_flo)*np.cos(ɸ_flo), r_flo*np.sin(θ_flo)*np.sin(ɸ_flo), r_flo*np.cos(θ_flo)]
 	x_flo, y_flo, z_flo = np.dot(u_TIM, flow), np.dot(v_TIM, flow), np.dot(w_TIM, flow)
-	print(x_flo, y_flo)
 
 	track_list['y(cm)'] *= -1 # cpsa files invert y
 	if str(scan[SHOT]) == '95520': # this shot was tilted for some reason
@@ -154,6 +153,7 @@ for i, scan in shot_list.iterrows():
 	for color, (cmap, d_bounds) in enumerate([(REDS, [3.0, 15]), (GREENS, [2.0, 3.0]), (BLUES, [0, 2.0]), (GREYS, [0, 15])]):
 	# for color, (cmap, d_bounds) in enumerate([(GREYS, [3.0, 15]), (GREYS, [2.0, 3.0]), (GREYS, [0, 2.0]), (GREYS, [0, 15])]):
 	# for color, (cmap, d_bounds) in enumerate([('plasma', [0, 40])]):
+		print(d_bounds)
 
 		track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 		track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
@@ -244,7 +244,7 @@ for i, scan in shot_list.iterrows():
 			for i in range(n_bins):
 				for j in range(n_bins): # do a little bit of extra work to make sure there are no problematic outliers here
 					reach = 0
-					while reach < n_bins/2 and D[i,j] < 1: # we want each variance based on at least this many dateese
+					while reach < n_bins/2 and D[i,j] < 36: # we want each variance based on at least this many dateese
 						reach += 1
 						D[i,j] = np.sum(N[max(0,i-reach) : min(i+reach+1,n_bins), max(0,j-reach) : min(j+reach+1,n_bins)])
 					D[i,j] = max(D[i,j]/(min(i+reach+1,n_bins) - max(0,i-reach))/(min(j+reach+1,n_bins) - max(0,j-reach)), background)
@@ -257,8 +257,7 @@ for i, scan in shot_list.iterrows():
 			B = np.full((n_pixs, n_pixs), 1/n_pixs**2) # note that B is currently normalized
 			F = N - background
 
-			χ2_95 = stats.chi2.ppf(.95, n_data_bins)
-			print(χ2_95/n_data_bins)
+			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
 			χ2, χ2_prev, iterations = np.inf, np.inf, 0
 			# while iterations < 50 and χ2 > χ2_95:
 			while iterations < 1 or ((χ2_prev - χ2)/χ2 > 1e-4 and iterations < 50):
@@ -280,7 +279,7 @@ for i, scan in shot_list.iterrows():
 				B += h/2*δB
 				χ2_prev, χ2 = χ2, np.sum((N - N_teo)**2/D, where=data_bins)
 				iterations += 1
-				print("[{}],".format(χ2/n_data_bins))
+				# print("[{}],".format(χ2/n_data_bins))
 				# fig, axes = plt.subplots(2, 2)
 				# plot = axes[0,0].pcolormesh(xI_bins, yI_bins, N, vmin=0, vmax=N.max(where=data_bins, initial=0))
 				# axes[0,0].axis('square')
@@ -298,8 +297,6 @@ for i, scan in shot_list.iterrows():
 
 			B = G*B # you can unnormalize now
 			B = np.flip(B.T, 0) # go from i~xI,j~yI to i~yS,j~xS (i~-yI, j~xi)
-
-		print("σ = {:.1f} μm".format(np.sqrt(np.average(XS**2 + YS**2, weights=B))/1e-4))
 
 		if color < 3:
 			img[:,:,color] = B/B.max()
@@ -350,7 +347,7 @@ for i, scan in shot_list.iterrows():
 	plt.contourf(xS/1e-4, yS/1e-4, img[:,:,1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
 	plt.contourf(xS/1e-4, yS/1e-4, img[:,:,2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 	if xray is not None:
-		plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .5, 1], colors=['#00000000', '#000000BB', '#000000FF'])
+		plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#000000BB', '#000000FF'])
 	# plt.contourf(np.argmax(np.dstack((np.ones(img.shape[:2])/2, img)), axis=2), levels=3, cmap='Spectral')
 	plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 	plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
