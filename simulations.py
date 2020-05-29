@@ -124,7 +124,7 @@ def make_image(t, R, ρ, Ti, e_bounds):
 	weights = n_expect*pX_expect/(n_simul*pX_simul) # finally compute the weights
 
 	valid = (E >= e_bounds[0]) & (E <= e_bounds[1])
-	x, y = np.linspace(-200, 200, 40), np.linspace(-200, 200, 40)
+	x, y = np.linspace(-200, 200, 401), np.linspace(-200, 200, 401)
 	return np.histogram2d(xX[valid]/1e-6, yX[valid]/1e-6, bins=(x, y), weights=weights[valid])
 
 
@@ -159,22 +159,22 @@ if __name__ == '__main__':
 		# for i in range(N):
 		# 	ax.plot([xS[i]/1e-6, xX[i]/1e-6], [yS[i]/1e-6, yX[i]/1e-6], [zS[i]/1e-6, zX[i]/1e-6], '--k')
 
-		for cmap, e_bounds in [(REDS, [2.2, 7]), (GREENS, [7, 10]), (BLUES, [10, 15]), (GREYS, [0, 15])]:
-			img, x, y = make_image(t, R, ρ, Ti, e_bounds)
-			for i in range(10):
-				img += make_image(t, R, ρ, Ti, e_bounds)[0]
-			img /= 11
+		# for cmap, e_bounds in [(REDS, [2.2, 7]), (GREENS, [7, 10]), (BLUES, [10, 15]), (GREYS, [0, 15])]:
+		# 	img, x, y = make_image(t, R, ρ, Ti, e_bounds)
+		# 	for i in range(10):
+		# 		img += make_image(t, R, ρ, Ti, e_bounds)[0]
+		# 	img /= 11
 
-			plt.figure()
-			plt.pcolormesh(x, y, img, cmap=cmap)
-			plt.colorbar()
-			plt.axis('square')
-			plt.title("Simulated B(x, y) of shot {} with E_D ∈ [{}MeV,{}MeV)".format(SHOT, *e_bounds))
-			plt.xlabel("x (μm)")
-			plt.ylabel("y (μm)")
-			plt.axis([-200, 200, -200, 200])
-			plt.tight_layout()
-			plt.savefig("results/{}_LILAC_{}-{}_sourceimage.png".format(SHOT, *e_bounds))
-			plt.close()
+		# 	plt.figure()
+		# 	plt.pcolormesh(x, y, img, cmap=cmap)
+		# 	plt.colorbar()
+		# 	plt.axis('square')
+		# 	plt.title("Simulated B(x, y) of shot {} with E_D ∈ [{}MeV,{}MeV)".format(SHOT, *e_bounds))
+		# 	plt.xlabel("x (μm)")
+		# 	plt.ylabel("y (μm)")
+		# 	plt.axis([-200, 200, -200, 200])
+		# 	plt.tight_layout()
+		# 	plt.savefig("results/{}_LILAC_{}-{}_sourceimage.png".format(SHOT, *e_bounds))
+		# 	plt.close()
 
-		plt.show()
+		# plt.show()

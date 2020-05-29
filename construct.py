@@ -44,8 +44,8 @@ L = 4.21 # cm
 rs = 60e-4 # cm
 rA = 1000e-4 # cm
 
-# for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
-for shot, N, SNR in [('square', 1000000, 4)]:
+for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+# for shot, N, SNR in [('square', 1000000, 4)]:
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [10, 15])
@@ -105,7 +105,7 @@ for shot, N, SNR in [('square', 1000000, 4)]:
 			f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], -y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
 
 	plt.figure()
-	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-200, 200, 101), np.linspace(-200, 200, 101)), cmap='plasma')
+	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-300, 300, 51), np.linspace(-300, 300, 51)), cmap='plasma')
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.colorbar()

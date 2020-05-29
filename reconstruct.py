@@ -40,6 +40,10 @@ CR_39_RADIUS = 2.1 # cm
 n_MC = 1000000
 n_bins = 250
 
+M0 = 14
+L = 4.21 # cm
+fill_centers = False
+
 def paste_slices(tup):
 	pos, w, max_w = tup
 	wall_min = max(pos, 0)
@@ -55,9 +59,21 @@ def paste(wall, block, loc):
 	wall_slices, block_slices = zip(*map(paste_slices, loc_zip))
 	wall[wall_slices] = block[block_slices]
 
-M0 = 14
-L = 4.21 # cm
-fill_centers = False
+def simple_penumbra(x0, y0, M, δ, minimum, maximum):
+	return (minimum + maximum)/2 + (maximum-minimum)/2*special.erf(((M+1)*rA - np.hypot(XI - x0, YI - y0))/δ)
+
+def simple_fit(args, minimum, maximum, exp):
+	x0, y0, M, δ = args
+	teo = simple_penumbra(x0, y0, M, δ, minimum, maximum)
+	error = np.sum(teo - exp*np.log(teo))
+	penalty = 6*(M/M0 - np.log(M))
+	return error + penalty
+
+
+xI_bins, yI_bins = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1)
+dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
+xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2 # change these to bin centers
+XI, YI = np.meshgrid(xI, yI)
 
 shot_list = pd.read_csv('shot_list.csv')
 
@@ -104,10 +120,6 @@ for i, scan in shot_list.iterrows():
 
 	# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)))
 	# plt.show()
-	xI_bins, yI_bins = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1)
-	dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
-	xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2 # change these to bin centers
-	XI, YI = np.meshgrid(xI, yI)
 
 	track_x, track_y = track_list['x(cm)'][hicontrast], track_list['y(cm)'][hicontrast]
 	maximum = np.sum(np.hypot(track_x, track_y) < CR_39_RADIUS*.25)/\
@@ -115,18 +127,11 @@ for i, scan in shot_list.iterrows():
 	minimum = np.sum((np.hypot(track_x, track_y) < CR_39_RADIUS) & (np.hypot(track_x, track_y) > CR_39_RADIUS*0.95))/\
 			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
 	exp = np.histogram2d(track_x, track_y, bins=(xI_bins, yI_bins))[0]
-	def circle_fit(args): # TODO get derivatives for this
-		x0, y0, M, δ = args
-		if abs(M - M0) > 2:
-			return float('inf')
-		teo = (minimum + maximum)/2 + (maximum-minimum)/2*special.erf(((M+1)*rA - np.hypot(XI - x0, YI - y0))/δ)
-		error = np.sum(teo - exp*np.log(teo))
-		penalty = (M - M0)**2/2
-		return error
-	opt = optimize.minimize(circle_fit, x0=[None]*4,
+	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(minimum, maximum, exp),
 		method='Nelder-Mead', options=dict(
 			initial_simplex=[[.5, 0, M0, .06], [-.5, .5, M0, .06], [-.5, -.5, M0, .06], [0, 0, M0+1, .06], [0, 0, M0, .1]]))
 	x0, y0, M, _ = opt.x
+	r0 = (M + 1)*rA
 
 	print(opt)
 	plt.figure()
@@ -159,10 +164,12 @@ for i, scan in shot_list.iterrows():
 		track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 		background = np.sum(
 			(np.hypot(track_x, track_y) < CR_39_RADIUS) &\
-			(np.hypot(track_x, track_y) > CR_39_RADIUS*0.95))/\
-			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
+			(np.hypot(track_x, track_y) > CR_39_RADIUS*0.9))/\
+			(np.pi*CR_39_RADIUS**2*(1 - 0.9**2))*dxI*dyI
+		umbra = np.sum(
+			(np.hypot(track_x, track_y) < CR_39_RADIUS*0.5))/\
+			(np.pi*CR_39_RADIUS**2*(0.5**2))*dxI*dyI
 
-		r0 = (M + 1)*rA
 		statistics = np.sum(np.hypot(track_x, track_y) > r0) - background/(dxI*dyI)*(np.pi*(CR_39_RADIUS**2 - r0**2))
 		if statistics == 0:
 			print("No tracks found in this cut")
@@ -240,19 +247,14 @@ for i, scan in shot_list.iterrows():
 			B = np.flip(B.T, 0) # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS)
 
 		elif METHOD == 'gelfgat':
-			D = np.copy(N) # noise variance (assuming Poisson-ish)
-			for i in range(n_bins):
-				for j in range(n_bins): # do a little bit of extra work to make sure there are no problematic outliers here
-					reach = 0
-					while reach < n_bins/2 and D[i,j] < 36: # we want each variance based on at least this many dateese
-						reach += 1
-						D[i,j] = np.sum(N[max(0,i-reach) : min(i+reach+1,n_bins), max(0,j-reach) : min(j+reach+1,n_bins)])
-					D[i,j] = max(D[i,j]/(min(i+reach+1,n_bins) - max(0,i-reach))/(min(j+reach+1,n_bins) - max(0,j-reach)), background)
+			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(background, umbra, N),
+				method='Nelder-Mead', options=dict(
+					initial_simplex=[[.5, 0, M0, .06], [-.5, .5, M0, .06], [-.5, -.5, M0, .06], [0, 0, M0+1, .06], [0, 0, M0, .1]]))
+			D = simple_penumbra(*opt.x, background, umbra) # make D equal to a fit to N
 
 			reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
 			data_bins = (reach > 0) & (reach < reach.max()) # exclude bins that are touched by all or none of the source pixels
 			n_data_bins = np.sum(data_bins)
-			N[np.logical_not(data_bins)] = np.nan
 
 			B = np.full((n_pixs, n_pixs), 1/n_pixs**2) # note that B is currently normalized
 			F = N - background
@@ -279,7 +281,7 @@ for i, scan in shot_list.iterrows():
 				B += h/2*δB
 				χ2_prev, χ2 = χ2, np.sum((N - N_teo)**2/D, where=data_bins)
 				iterations += 1
-				# print("[{}],".format(χ2/n_data_bins))
+				print("[{}],".format(χ2/n_data_bins))
 				# fig, axes = plt.subplots(2, 2)
 				# plot = axes[0,0].pcolormesh(xI_bins, yI_bins, N, vmin=0, vmax=N.max(where=data_bins, initial=0))
 				# axes[0,0].axis('square')
@@ -300,7 +302,6 @@ for i, scan in shot_list.iterrows():
 
 		if color < 3:
 			img[:,:,color] = B/B.max()
-
 
 		# viridis = cm.get_cmap('viridis', 100)
 		# plasma = cm.get_cmap('plasma', 100)
@@ -347,7 +348,7 @@ for i, scan in shot_list.iterrows():
 	plt.contourf(xS/1e-4, yS/1e-4, img[:,:,1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
 	plt.contourf(xS/1e-4, yS/1e-4, img[:,:,2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 	if xray is not None:
-		plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#000000BB', '#000000FF'])
+		plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#550055BB', '#000000FF'])
 	# plt.contourf(np.argmax(np.dstack((np.ones(img.shape[:2])/2, img)), axis=2), levels=3, cmap='Spectral')
 	plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 	plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
