@@ -67,6 +67,7 @@ def simple_fit(*args):
 		(x0, y0, δ), M, minimum, maximum, exp = args
 	else:
 		(x0, y0, δ, M), minimum, maximum, exp = args
+	if M >= (1 - 4/n_bins)*CR_39_RADIUS/rA - 1: return float('inf')
 	teo = simple_penumbra(x0, y0, δ, M, minimum, maximum)
 	error = np.sum(teo - exp*np.log(teo))
 	penalty = 10*(M/M0 - np.log(M))
@@ -350,8 +351,8 @@ for i, scan in shot_list.iterrows():
 	plt.contourf(xS/1e-4, yS/1e-4, img[:,:,1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
 	plt.contourf(xS/1e-4, yS/1e-4, img[:,:,2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 	if xray is not None:
-		plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#550055BB', '#000000FF'])
-	# plt.contourf(np.argmax(np.dstack((np.ones(img.shape[:2])/2, img)), axis=2), levels=3, cmap='Spectral')
+		# plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#550055BB', '#000000FF'])
+		plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
 	plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 	plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
 	plt.arrow(0, 0, 2*x_flo/1e-4, 2*y_flo/1e-4, color='k', head_width=15, head_length=15, length_includes_head=True)
