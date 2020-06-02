@@ -60,7 +60,12 @@ def paste(wall, block, loc):
 	wall[wall_slices] = block[block_slices]
 
 def simple_penumbra(x0, y0, δ, M, minimum, maximum):
-	return (minimum + maximum)/2 + (maximum-minimum)/2*special.erf(((M+1)*rA - np.hypot(XI - x0, YI - y0))/δ)
+	r = np.linspace(0, CR_39_RADIUS, n_bins)
+	Pp = np.exp(-(r - (M+1)*rA)**2/(2*δ**2))
+	l = np.clip(r/((M+1)*rA) - 1, 0.1, 1.9)
+	dN = Pp/((1 - .22*l)*(np.pi/3*np.sqrt(1 - l**2)/np.arccos((l+1)/2))**1.4) # apply Frederick's circular correction factor
+	N = 1 - np.cumsum(dN)/np.sum(dN)
+	return minimum + (maximum-minimum)*np.interp(np.hypot(XI - x0, YI - y0), r, N, right=0)
 
 def simple_fit(*args):
 	if len(args[0]) == 3:
@@ -132,7 +137,7 @@ for i, scan in shot_list.iterrows():
 	exp = np.histogram2d(track_x, track_y, bins=(xI_bins, yI_bins))[0]
 	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(minimum, maximum, exp),
 		method='Nelder-Mead', options=dict(
-			initial_simplex=[[.5, 0, M0, .06], [-.5, .5, M0, .06], [-.5, -.5, M0, .06], [0, 0, M0+1, .06], [0, 0, M0, .1]]))
+			initial_simplex=[[.5, 0, .06, M0], [-.5, .5, .06, M0], [-.5, -.5, .06, M0], [0, 0, .1, M0], [0, 0, .06, M0+1]]))
 	x0, y0, _, M = opt.x
 	r0 = (M + 1)*rA
 
