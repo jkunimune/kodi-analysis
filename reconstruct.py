@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
+import matplotlib.gridspec as gridspec
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import pandas as pd
 import os
@@ -114,7 +115,7 @@ for i, scan in shot_list.iterrows():
 	x_flo, y_flo, z_flo = np.dot(u_TIM, flow), np.dot(v_TIM, flow), np.dot(w_TIM, flow)
 
 	track_list['y(cm)'] *= -1 # cpsa files invert y
-	if str(scan[SHOT]) == '95520': # this shot was tilted for some reason
+	if str(scan[SHOT]) == '95519' or str(scan[SHOT]) == '95520': # these shots were tilted for some reason
 		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy() # rotate the flipped penumbral image 45 degrees clockwise
 		track_list['x(cm)'] =  np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
 		track_list['y(cm)'] = -np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
@@ -178,7 +179,9 @@ for i, scan in shot_list.iterrows():
 			(np.hypot(track_x, track_y) < CR_39_RADIUS*0.5))/\
 			(np.pi*CR_39_RADIUS**2*(0.5**2))*dxI*dyI
 
-		statistics = np.sum(np.hypot(track_x, track_y) > r0) - background/(dxI*dyI)*(np.pi*(CR_39_RADIUS**2 - r0**2))
+		statistics = np.sum(
+				(np.hypot(track_x - x0, track_y - y0) > r0) & (np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS)
+		) - background/(dxI*dyI)*np.pi*(CR_39_RADIUS**2 - r0**2)
 		if statistics == 0:
 			print("No tracks found in this cut")
 			continue
@@ -290,19 +293,31 @@ for i, scan in shot_list.iterrows():
 				χ2_prev, χ2 = χ2, np.sum((N - N_teo)**2/D, where=data_bins)
 				iterations += 1
 				print("[{}],".format(χ2/n_data_bins))
-				# fig, axes = plt.subplots(2, 2)
-				# plot = axes[0,0].pcolormesh(xI_bins, yI_bins, N, vmin=0, vmax=N.max(where=data_bins, initial=0))
-				# axes[0,0].axis('square')
-				# fig.colorbar(plot, ax=axes[0,0])
-				# plot = axes[0,1].pcolormesh(xI_bins, yI_bins, N_teo, vmin=0, vmax=N.max(where=data_bins, initial=0))
+				# fig, axes = plt.subplots(3, 2)
+				# gs1 = gridspec.GridSpec(4, 4)
+				# gs1.update(wspace=0, hspace=0) # set the spacing between axes. 
+				# axes[0,0].axis('off')
+				# axes[0,1].set_title("Fit source image")
+				# plot = axes[0,1].pcolormesh(xS_bins, yS_bins, G*np.flip(B.T, 0), vmin=0, vmax=G*B.max(), cmap='plasma')
 				# axes[0,1].axis('square')
 				# fig.colorbar(plot, ax=axes[0,1])
-				# plot = axes[1,0].pcolormesh(xI_bins, yI_bins, D, vmin=0, vmax=N.max(where=data_bins, initial=0))
+				# axes[1,0].set_title("Penumbral image")
+				# plot = axes[1,0].pcolormesh(xI_bins, yI_bins, N, vmin=0, vmax=N.max(where=data_bins, initial=0))
 				# axes[1,0].axis('square')
 				# fig.colorbar(plot, ax=axes[1,0])
-				# plot = axes[1,1].pcolormesh(xI_bins, yI_bins, (N - N_teo)**2/D, vmin=0, vmax=6)
+				# axes[1,1].set_title("Fit penumbral image")
+				# plot = axes[1,1].pcolormesh(xI_bins, yI_bins, N_teo, vmin=0, vmax=N.max(where=data_bins, initial=0))
 				# axes[1,1].axis('square')
 				# fig.colorbar(plot, ax=axes[1,1])
+				# axes[2,0].set_title("Expected variance")
+				# plot = axes[2,0].pcolormesh(xI_bins, yI_bins, D, vmin=0, vmax=N.max(where=data_bins, initial=0))
+				# axes[2,0].axis('square')
+				# fig.colorbar(plot, ax=axes[2,0])
+				# axes[2,1].set_title("Chi squared")
+				# plot = axes[2,1].pcolormesh(xI_bins, yI_bins, (N - N_teo)**2/D, vmin=0, vmax=10)
+				# axes[2,1].axis('square')
+				# fig.colorbar(plot, ax=axes[2,1])
+				# plt.tight_layout()
 				# plt.show()
 
 			B = G*B # you can unnormalize now
@@ -336,6 +351,7 @@ for i, scan in shot_list.iterrows():
 		xray = None
 	if xray is not None:
 		plt.figure()
+		plt.pcolormesh(xS_bins/1e-4, yS_bins/1e-4, np.zeros(XS.shape), cmap=VIOLETS, vmin=0, vmax=1)
 		plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)
 		plt.colorbar()
 		plt.axis('square')
