@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from simulations import load_shot, make_image
+from perlin import perlin_generator
 
 
 FOLDER = 'scans/'
@@ -44,8 +45,9 @@ L = 4.21 # cm
 rs = 60e-4 # cm
 rA = 1000e-4 # cm
 
-# for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
-for shot, N, SNR in [('eclipse', 100000, 1)]:
+
+for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+# for shot, N, SNR in [('square', 100000, 1), ('eclipse', 100000, 1), ('gaussian', 100000, 1)]:
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [10, 15])
@@ -71,6 +73,9 @@ for shot, N, SNR in [('eclipse', 100000, 1)]:
 		elif shot == 'ellipse':
 			img_hi = np.exp(-(X**2*2 + Y**2/2)/(2*100e-4**2))
 
+	δx, δy = perlin_generator(-3.5, 3.5, -3.5, 3.5, 1.2, 0), perlin_generator(-3.5, 3.5, -3.5, 3.5, 1.2, 0)
+	δε = perlin_generator(-3.5, 3.5, -3.5, 3.5, 1.2, .15)
+
 	x_list = []
 	y_list = []
 	d_list = []
@@ -91,6 +96,8 @@ for shot, N, SNR in [('eclipse', 100000, 1)]:
 			yD =   yA + (yA - yS)*M
 			rD = np.hypot(xD, yD)
 
+			xD, yD = xD + δx(xD, yD), yD + δy(xD, yD)
+
 			N_background = int(N*(np.sum(img)/np.sum(img_hi + img_md + img_lo))/SNR*7.8**2/(np.pi*rA**2*(M + 1)**2)) #  compute the desired background
 
 			# x_list += list(xD[(np.hypot(xS, yS) <= 60e-4*np.sqrt(2)) & ((rD <= (M+1)*rA/12) | (rD >= (M+1)*rA*.90))])
@@ -99,10 +106,14 @@ for shot, N, SNR in [('eclipse', 100000, 1)]:
 			y_list += list(yD) + list(np.random.uniform(-3.4, 3.4, N_background))
 			d_list += list(np.full(len(xS) + N_background, diameter)) # and add it in with the signal
 
+	ε_list = list(.8 + δε(np.array(x_list), np.array(y_list)))
+	# ε_list = np.where(np.array(x_list) > 0, .5, 1)
+
 	with open(FOLDER+'simulated shot {} TIM{}.txt'.format(shot, 2), 'w') as f:
 		f.write(short_header)
 		for i in range(len(x_list)):
-			f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], -y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
+			if np.random.random() < ε_list[i]:
+				f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], -y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
 
 	plt.figure()
 	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-300, 300, 51), np.linspace(-300, 300, 51)), cmap='plasma')
