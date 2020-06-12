@@ -146,7 +146,7 @@ for i, scan in shot_list.iterrows():
 	plt.figure()
 	plt.pcolormesh(xI_bins, yI_bins, exp)
 	T = np.linspace(0, 2*np.pi, 361)
-	plt.plot(rA*(M+1)*np.cos(T) + x0, rA*(M+1)*np.sin(T) + y0, 'w-')
+	plt.plot(rA*(M+1)*np.cos(T) + x0, rA*(M+1)*np.sin(T) + y0, 'w--')
 	plt.colorbar()
 	plt.axis('square')
 	plt.tight_layout()

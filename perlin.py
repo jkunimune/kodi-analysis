@@ -13,7 +13,9 @@ def perlin_generator(x_min, x_max, y_min, y_max, wavelength, amplitude):
 
 	def aplai(x, y):
 		i_part = np.interp(x, node_x, np.arange(len(node_x)))
+		i_part = np.clip(i_part, 0, grad_x.shape[0]-1.001)
 		j_part = np.interp(y, node_y, np.arange(len(node_y)))
+		j_part = np.clip(j_part, 0, grad_y.shape[1]-1.001)
 		i, j = np.floor(i_part).astype(int), np.floor(j_part).astype(int)
 		a, b = weight(i_part - i), weight(j_part - j)
 		unnormed = (grad_x[i,j]*(x - node_x[i]) + grad_y[i,j]*(y - node_y[j])) * (1 - a)*(1 - b) +\
@@ -33,7 +35,7 @@ def perlin(x, y, wavelength, amplitude):
 
 if __name__ == '__main__':
 	X, Y = np.meshgrid(np.linspace(-5, 5, 216), np.linspace(-5, 5, 216))
-	Z = perlin(X, Y, np.pi/2)
+	Z = perlin(X, Y, np.pi/2, 1)
 	plt.contourf(X, Y, Z)
 	plt.colorbar()
 	plt.show()

@@ -122,7 +122,7 @@ for i, scan in shot_list.iterrows():
 	plt.figure()
 	plt.pcolormesh(xI_bins, yI_bins, exp, vmin=0, vmax=np.max(exp[np.hypot(XI-x0, YI-y0) < rA*(M+1)]))
 	# T = np.linspace(0, 2*np.pi, 361)
-	# plt.plot(rA*(M+1)*np.cos(T) + x0, rA*(M+1)*np.sin(T) + y0, 'w-')
+	# plt.plot(rA*(M+1)*np.cos(T) + x0, rA*(M+1)*np.sin(T) + y0, 'w--')
 	plt.colorbar()
 	plt.title("Penumbral image of TIM {} of shot {}".format(scan[TIM], scan[SHOT]))
 	plt.xlabel("x (cm)")

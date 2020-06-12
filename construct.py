@@ -7,6 +7,18 @@ from simulations import load_shot, make_image
 from perlin import perlin_generator
 
 
+NOISE_SCALE = 1 # [cm]
+EFFICIENCY_NOISE = 0#.2 # []
+DISPLACEMENT_NOISE = .05 # [cm]
+DISPLACEMENT_CHARGE = .02 # [cm]
+
+SYNTH_RESOLUTION = 1600
+
+M = 14
+L = 4.21 # cm
+rs = 60e-4 # cm
+rA = 1000e-4 # cm
+
 FOLDER = 'scans/'
 
 short_header = """\
@@ -38,15 +50,8 @@ Limits imposed on tracks listed below:
 
 """
 
-SYNTH_RESOLUTION = 1600
 
-M = 14
-L = 4.21 # cm
-rs = 60e-4 # cm
-rA = 1000e-4 # cm
-
-
-for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+for shot, N, SNR in [(95520, 1000000, 8)]:#, (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
 # for shot, N, SNR in [('square', 100000, 1), ('eclipse', 100000, 1), ('gaussian', 100000, 1)]:
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
@@ -73,14 +78,14 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 		elif shot == 'ellipse':
 			img_hi = np.exp(-(X**2*2 + Y**2/2)/(2*100e-4**2))
 
-	δx, δy = perlin_generator(-3.5, 3.5, -3.5, 3.5, 1.2, 0), perlin_generator(-3.5, 3.5, -3.5, 3.5, 1.2, 0)
-	δε = perlin_generator(-3.5, 3.5, -3.5, 3.5, 1.2, .15)
+	δx_noise, δy_noise = perlin_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE), perlin_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE)
+	δε_noise = perlin_generator(-4, 4, -4, 4, NOISE_SCALE, EFFICIENCY_NOISE)
 
 	x_list = []
 	y_list = []
 	d_list = []
 	for i in range(1):
-		for img, diameter in [(img_hi, 1), (img_md, 2.5), (img_lo, 5)]: # do each diameter bin separately
+		for img, diameter, energy in [(img_hi, 1, 12), (img_md, 2.5, 8), (img_lo, 5, 4)]: # do each diameter bin separately
 			if img.sum() == 0: # but skip synthetically empty bins
 				continue
 
@@ -92,11 +97,14 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 			xA = r*np.cos(θ)
 			yA = r*np.sin(θ)
 
-			xD = -(xA + (xA - xS)*M) # make the image (this minus is from flipping from the TIM's perspective to looking at the CR_39)
-			yD =   yA + (yA - yS)*M
-			rD = np.hypot(xD, yD)
+			δr = DISPLACEMENT_CHARGE*np.log((rA + r)/(rA - r))
+			δx = δx_noise(xA, yA) + δr*np.cos(θ)
+			δy = δy_noise(xA, yA) + δr*np.sin(θ)
 
-			xD, yD = xD + δx(xD, yD), yD + δy(xD, yD)
+			xD = -(xA + (xA - xS)*M + δx) # make the image (this minus is from flipping from the TIM's perspective to looking at the CR_39)
+			yD =   yA + (yA - yS)*M + δy
+
+			rD = np.hypot(xD, yD)
 
 			N_background = int(N*(np.sum(img)/np.sum(img_hi + img_md + img_lo))/SNR*7.8**2/(np.pi*rA**2*(M + 1)**2)) #  compute the desired background
 
@@ -106,7 +114,7 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 			y_list += list(yD) + list(np.random.uniform(-3.4, 3.4, N_background))
 			d_list += list(np.full(len(xS) + N_background, diameter)) # and add it in with the signal
 
-	ε_list = list(.8 + δε(np.array(x_list), np.array(y_list)))
+	ε_list = list(.8 + δε_noise(np.array(x_list), np.array(y_list)))
 	# ε_list = np.where(np.array(x_list) > 0, .5, 1)
 
 	with open(FOLDER+'simulated shot {} TIM{}.txt'.format(shot, 2), 'w') as f:
