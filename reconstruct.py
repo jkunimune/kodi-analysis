@@ -37,11 +37,11 @@ TIM_LOCATIONS = [
 	[100.81, 270.00],
 	[np.nan,np.nan]]
 
-CR_39_RADIUS = 2.1 # cm
+CR_39_RADIUS = 2.2 # cm
 n_MC = 1000000
 n_bins = 250
 
-M0 = 14
+M = 14
 L = 4.21 # cm
 fill_centers = False
 
@@ -60,24 +60,32 @@ def paste(wall, block, loc):
 	wall_slices, block_slices = zip(*map(paste_slices, loc_zip))
 	wall[wall_slices] = block[block_slices]
 
-def simple_penumbra(x0, y0, δ, M, minimum, maximum):
-	r = np.linspace(0, CR_39_RADIUS, n_bins)
-	Pp = np.exp(-(r - (M+1)*rA)**2/(2*δ**2))
-	l = np.clip(r/((M+1)*rA) - 1, 0.1, 1.9)
-	dN = Pp/((1 - .22*l)*(np.pi/3*np.sqrt(1 - l**2)/np.arccos((l+1)/2))**1.4) # apply Frederick's circular correction factor
-	N = 1 - np.cumsum(dN)/np.sum(dN)
-	return minimum + (maximum-minimum)*np.interp(np.hypot(XI - x0, YI - y0), r, N, right=0)
+def simple_penumbra(x, y, δ, Q, r0, minimum, maximum):
+	rN = np.concatenate([np.linspace(0, r0 - Q*1e1, 36)[:-1], r0 - Q*np.geomspace(1e1, 1e-4, 36)])
+	rB = rN + Q*np.log((1 + 1/(1 - rN/r0)**2)/(1 + 1/(1 + rN/r0)**2))
+	nB = 1/(np.gradient(rN*rB, rN)/rN) # I have the closed form for this derivative, but it takes too long to write
+	nB[0] = 1/(2 + 4*Q/r0) # deal with this singularity
+
+	if 4*δ/CR_39_RADIUS*n_bins >= 1:
+		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/CR_39_RADIUS*n_bins)*2+1)
+		n_kernel = np.exp(-r_kernel**2/δ**2)
+		r_point = np.arange(-4*δ, CR_39_RADIUS, r_kernel[1] - r_kernel[0])
+		n_point = np.interp(r_point, rB, nB, right=0)
+		penumbra = np.convolve(n_point, n_kernel, mode='same')
+	else:
+		r_point = np.linspace(0, CR_39_RADIUS, n_bins)
+		penumbra = np.interp(r_point, rB, nB, right=0)
+	return minimum + (maximum-minimum)*np.interp(np.hypot(x, y), r_point, penumbra/np.max(penumbra), right=0)
 
 def simple_fit(*args):
 	if len(args[0]) == 3:
-		(x0, y0, δ), M, minimum, maximum, exp = args
+		(x0, y0, δ), Q, r0, minimum, maximum, exp = args
 	else:
-		(x0, y0, δ, M), minimum, maximum, exp = args
-	if M >= (1 - 4/n_bins)*CR_39_RADIUS/rA - 1: return float('inf')
-	teo = simple_penumbra(x0, y0, δ, M, minimum, maximum)
+		(x0, y0, δ, Q), r0, minimum, maximum, exp = args
+	if 10*Q >= r0: return float('inf')
+	teo = simple_penumbra(XI - x0, YI - y0, δ, Q, r0, minimum, maximum)
 	error = np.sum(teo - exp*np.log(teo))
-	penalty = 10*(M/M0 - np.log(M))
-	return error + penalty
+	return error
 
 
 xI_bins, yI_bins = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1)
@@ -99,6 +107,7 @@ for i, scan in shot_list.iterrows():
 		continue
 
 	rA = scan[APERTURE]/1.e4 # cm
+	r0 = (M + 1)*rA
 	track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
 
 	θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(scan[TIM])-1])
@@ -130,31 +139,11 @@ for i, scan in shot_list.iterrows():
 	# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)))
 	# plt.show()
 
-	track_x, track_y = track_list['x(cm)'][hicontrast], track_list['y(cm)'][hicontrast]
-	maximum = np.sum(np.hypot(track_x, track_y) < CR_39_RADIUS*.25)/\
-			(np.pi*CR_39_RADIUS**2*.25**2)*dxI*dyI
-	minimum = np.sum((np.hypot(track_x, track_y) < CR_39_RADIUS) & (np.hypot(track_x, track_y) > CR_39_RADIUS*0.95))/\
-			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
-	exp = np.histogram2d(track_x, track_y, bins=(xI_bins, yI_bins))[0]
-	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(minimum, maximum, exp),
-		method='Nelder-Mead', options=dict(
-			initial_simplex=[[.5, 0, .06, M0], [-.5, .5, .06, M0], [-.5, -.5, .06, M0], [0, 0, .1, M0], [0, 0, .06, M0+1]]))
-	x0, y0, _, M = opt.x
-	r0 = (M + 1)*rA
-
-	print(opt)
-	plt.figure()
-	plt.pcolormesh(xI_bins, yI_bins, exp)
-	T = np.linspace(0, 2*np.pi, 361)
-	plt.plot(rA*(M+1)*np.cos(T) + x0, rA*(M+1)*np.sin(T) + y0, 'w--')
-	plt.colorbar()
-	plt.axis('square')
-	plt.tight_layout()
-	plt.show()
-
-	kernel_size = int(2*rA*(M+1)/dxI) + 4 if int(2*rA*(M+1)/dxI)%2 == 1 else int(2*rA*(M+1)/dxI) + 5
+	kernel_size = int(2*(r0+.3)/dxI) + 4 if int(2*(r0+.3)/dxI)%2 == 1 else int(2*(r0+.3)/dxI) + 5
 	xK_bins, yK_bins = np.linspace(-dxI*kernel_size/2, dxI*kernel_size/2, kernel_size+1), np.linspace(-dyI*kernel_size/2, dyI*kernel_size/2, kernel_size+1)
+	dxK, dyK = xK_bins[1] - xK_bins[0], yK_bins[1] - yK_bins[0]
 	XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2)
+
 	xS_bins, yS_bins = xI_bins[kernel_size//2:-(kernel_size//2)]/M, yI_bins[kernel_size//2:-(kernel_size//2)]/M
 	dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
 	xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
@@ -173,19 +162,14 @@ for i, scan in shot_list.iterrows():
 		track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 		background = np.sum(
 			(np.hypot(track_x, track_y) < CR_39_RADIUS) &\
-			(np.hypot(track_x, track_y) > CR_39_RADIUS*0.9))/\
-			(np.pi*CR_39_RADIUS**2*(1 - 0.9**2))*dxI*dyI
+			(np.hypot(track_x, track_y) > CR_39_RADIUS*0.95))/\
+			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
 		umbra = np.sum(
-			(np.hypot(track_x, track_y) < CR_39_RADIUS*0.5))/\
-			(np.pi*CR_39_RADIUS**2*(0.5**2))*dxI*dyI
-
-		statistics = np.sum(
-				(np.hypot(track_x - x0, track_y - y0) > r0) & (np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS)
-		) - background/(dxI*dyI)*np.pi*(CR_39_RADIUS**2 - r0**2)
-		if statistics == 0:
-			print("No tracks found in this cut")
+			(np.hypot(track_x, track_y) < CR_39_RADIUS*0.25))/\
+			(np.pi*CR_39_RADIUS**2*(0.25**2))*dxI*dyI
+		if len(track_x) <= 0:
+			print("No tracks found in this cut.")
 			continue
-		print("Penumbra statistics: {:.1e}".format(statistics))
 
 		N, xI_bins, yI_bins = np.histogram2d( # make a histogram
 			track_x, track_y, bins=(xI_bins, yI_bins))
@@ -194,15 +178,24 @@ for i, scan in shot_list.iterrows():
 		del(track_y)
 		gc.collect()
 
-		xS_MC, yS_MC = np.random.uniform(-dxS/2, dxS/2, n_MC), np.random.uniform(-dyS/2, dyS/2, n_MC) # compute the transfer matrix using Monte-Carlo
-		rA_MC, θA_MC = L*np.arccos(np.random.uniform(np.cos(rA/L), np.cos(.95*rA/L), n_MC)), np.random.uniform(0, 2*np.pi, n_MC)
-		xA_MC, yA_MC = rA_MC*np.cos(θA_MC), rA_MC*np.sin(θA_MC)
-		xI_MC = xA_MC + (xA_MC + xS_MC)*M
-		yI_MC = yA_MC + (yA_MC - yS_MC)*M
-		j, i = np.digitize(xI_MC, xK_bins) - 1, np.digitize(yI_MC, yK_bins) - 1 # subtract 1 to correct the bizzare behavior of digitize
-		penumbral_kernel = np.histogram2d(i, j, bins=(np.arange(kernel_size+1), np.arange(kernel_size+1)))[0]
-		penumbral_kernel[np.hypot(XK, YK) < rA*(M+1)-dxI] = n_MC*dxI*dyI/(np.pi*(rA*(M+1))**2)/(1 - .95**2)
-		penumbral_kernel = np.minimum(penumbral_kernel, penumbral_kernel[kernel_size//2, kernel_size//2])
+		opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, background, umbra, N),
+			method='Nelder-Mead', options=dict(
+				initial_simplex=[[.5, 0, .06, .01], [-.5, .5, .06, .01], [-.5, -.5, .06, .01], [0, 0, .1, .01], [0, 0, .06, .019]]))
+		x0, y0, δ, Q = opt.x
+		print(opt)
+
+		plt.figure()
+		plt.pcolormesh(xI_bins, yI_bins, N)
+		T = np.linspace(0, 2*np.pi)
+		plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+		plt.axis('square')
+		plt.colorbar()
+		plt.show()
+
+		penumbral_kernel = np.zeros(XK.shape)
+		for dx in [-dxK/3, 0, dxK/3]:
+			for dy in [-dyK/3, 0, dyK/3]:
+				penumbral_kernel += simple_penumbra(XK+dxK, YK+dyK, 0, Q, r0, 0, 1)
 		penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
 
 		if METHOD == 'quasinewton':
@@ -258,14 +251,12 @@ for i, scan in shot_list.iterrows():
 			B = np.flip(B.T, 0) # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS)
 
 		elif METHOD == 'gelfgat':
-			opt = optimize.minimize(simple_fit, x0=[None]*3, args=(M, background, umbra, N),
-				method='Nelder-Mead', options=dict(
-					initial_simplex=[[.5, 0, .06], [-.5, .5, .06], [-.5, -.5, .06], [0, 0, .1]]))
-			D = simple_penumbra(*opt.x, M, background, umbra) # make D equal to a fit to N
+			D = simple_penumbra(XI - x0, YI - y0, δ, Q, r0, background, umbra) # make D equal to the fit to N
 
 			reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
-			data_bins = (reach > 0) & (reach < reach.max()) # exclude bins that are touched by all or none of the source pixels
+			data_bins = (reach > .001) & (reach < .999*reach.max()) # exclude bins that are touched by all or none of the source pixels
 			n_data_bins = np.sum(data_bins)
+			N[np.logical_not(data_bins)] = np.nan
 
 			B = np.full((n_pixs, n_pixs), 1/n_pixs**2) # note that B is currently normalized
 			F = N - background
@@ -273,7 +264,7 @@ for i, scan in shot_list.iterrows():
 			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
 			χ2, χ2_prev, iterations = np.inf, np.inf, 0
 			# while iterations < 50 and χ2 > χ2_95:
-			while iterations < 1 or ((χ2_prev - χ2)/χ2 > 1e-4 and iterations < 50):
+			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 5e-5 and iterations < 50):
 				B /= B.sum() # correct for roundoff
 				s = signal.convolve2d(B, penumbral_kernel, mode='full')
 				G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
@@ -363,8 +354,8 @@ for i, scan in shot_list.iterrows():
 		plt.savefig("results/{}_TIM{}_xray_sourceimage.png".format(scan[SHOT], scan[TIM]))
 		plt.close()
 
-	xS -= np.average(XS, weights=img[:,:,2])
-	yS -= np.average(YS, weights=img[:,:,2])
+	xS -= np.average(XS, weights=np.sum(img, axis=2))
+	yS -= np.average(YS, weights=np.sum(img, axis=2))
 
 	# xC, yC = X.ravel()[np.argmax(img.sum(axis=2).ravel())], Y.ravel()[np.argmax(img.sum(axis=2).ravel())]
 	plt.figure()

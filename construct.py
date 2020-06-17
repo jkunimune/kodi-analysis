@@ -8,9 +8,8 @@ from perlin import perlin_generator
 
 
 NOISE_SCALE = 1 # [cm]
-EFFICIENCY_NOISE = 0#.2 # []
-DISPLACEMENT_NOISE = .2 # [cm*MeV]
-DISPLACEMENT_CHARGE = .05 # [cm*MeV]
+DISPLACEMENT_NOISE = 0.2 # [cm*MeV]
+DISPLACEMENT_CHARGE = 0.1 # [cm*MeV]
 
 SYNTH_RESOLUTION = 1600
 
@@ -51,8 +50,8 @@ Limits imposed on tracks listed below:
 """
 
 
-for shot, N, SNR in [(95520, 1000000, 8)]:#, (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
-# for shot, N, SNR in [('square', 100000, 1), ('eclipse', 100000, 1), ('gaussian', 100000, 1)]:
+# for shot, N, SNR in [(95520, 1000000, 8)]:#, (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+for shot, N, SNR in [('square', 1000000, 8)]:#, ('eclipse', 100000, 1), ('gaussian', 100000, 1)]:
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [10, 15])
@@ -79,7 +78,6 @@ for shot, N, SNR in [(95520, 1000000, 8)]:#, (95521, 1000000, 8), (95522, 300000
 			img_hi = np.exp(-(X**2*2 + Y**2/2)/(2*100e-4**2))
 
 	δx_noise, δy_noise = perlin_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE), perlin_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE)
-	δε_noise = perlin_generator(-4, 4, -4, 4, NOISE_SCALE, EFFICIENCY_NOISE)
 
 	x_list = []
 	y_list = []
@@ -114,14 +112,10 @@ for shot, N, SNR in [(95520, 1000000, 8)]:#, (95521, 1000000, 8), (95522, 300000
 			y_list += list(yD) + list(np.random.uniform(-3.4, 3.4, N_background))
 			d_list += list(np.full(len(xS) + N_background, diameter)) # and add it in with the signal
 
-	ε_list = list(.8 + δε_noise(np.array(x_list), np.array(y_list)))
-	# ε_list = np.where(np.array(x_list) > 0, .5, 1)
-
 	with open(FOLDER+'simulated shot {} TIM{}.txt'.format(shot, 2), 'w') as f:
 		f.write(short_header)
 		for i in range(len(x_list)):
-			if np.random.random() < ε_list[i]:
-				f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], -y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
+			f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], -y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
 
 	plt.figure()
 	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-300, 300, 51), np.linspace(-300, 300, 51)), cmap='plasma')
