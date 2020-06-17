@@ -9,8 +9,8 @@ from perlin import perlin_generator
 
 NOISE_SCALE = 1 # [cm]
 EFFICIENCY_NOISE = 0#.2 # []
-DISPLACEMENT_NOISE = .05 # [cm]
-DISPLACEMENT_CHARGE = .02 # [cm]
+DISPLACEMENT_NOISE = .2 # [cm*MeV]
+DISPLACEMENT_CHARGE = .05 # [cm*MeV]
 
 SYNTH_RESOLUTION = 1600
 
@@ -97,9 +97,9 @@ for shot, N, SNR in [(95520, 1000000, 8)]:#, (95521, 1000000, 8), (95522, 300000
 			xA = r*np.cos(θ)
 			yA = r*np.sin(θ)
 
-			δr = DISPLACEMENT_CHARGE*np.log((rA + r)/(rA - r))
-			δx = δx_noise(xA, yA) + δr*np.cos(θ)
-			δy = δy_noise(xA, yA) + δr*np.sin(θ)
+			δr = DISPLACEMENT_CHARGE/energy*np.log((1 + 1/(1 - r/rA)**2)/(1 + 1/(1 + r/rA)**2))
+			δx = δx_noise(xA, yA)/energy + δr*np.cos(θ)
+			δy = δy_noise(xA, yA)/energy + δr*np.sin(θ)
 
 			xD = -(xA + (xA - xS)*M + δx) # make the image (this minus is from flipping from the TIM's perspective to looking at the CR_39)
 			yD =   yA + (yA - yS)*M + δy
