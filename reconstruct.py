@@ -63,8 +63,8 @@ def paste(wall, block, loc):
 def simple_penumbra(x, y, δ, Q, r0, minimum, maximum):
 	rN = np.concatenate([np.linspace(0, r0 - Q*1e1, 36)[:-1], r0 - Q*np.geomspace(1e1, 1e-4, 36)])
 	rB = rN + Q*np.log((1 + 1/(1 - rN/r0)**2)/(1 + 1/(1 + rN/r0)**2))
-	nB = 1/(np.gradient(rN*rB, rN)/rN) # I have the closed form for this derivative, but it takes too long to write
-	nB[0] = 1/(2 + 4*Q/r0) # deal with this singularity
+	nB = 1/(np.gradient(rB, rN)*rB/rN) # I have the closed form for this derivative, but it takes too long to write
+	nB[0] = nB[1] # deal with this singularity
 
 	if 4*δ/CR_39_RADIUS*n_bins >= 1:
 		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/CR_39_RADIUS*n_bins)*2+1)
@@ -128,7 +128,7 @@ for i, scan in shot_list.iterrows():
 		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy() # rotate the flipped penumbral image 45 degrees clockwise
 		track_list['x(cm)'] =  np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
 		track_list['y(cm)'] = -np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
-	if re.fullmatch(r'[0-9]+', str(scan[SHOT])):
+	if re.fullmatch(r'[0-9]+', str(scan[SHOT])): # adjustments for real data:
 		track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
 		track_list['cn(%)'] -= np.min(track_list['cn(%)'])
 		track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
@@ -153,9 +153,12 @@ for i, scan in shot_list.iterrows():
 	assert xS.shape[0] == n_pixs
 	img = np.empty((n_pixs, n_pixs, 3))
 
-	for color, (cmap, d_bounds) in enumerate([(REDS, [3.0, 15]), (GREENS, [2.0, 3.0]), (BLUES, [0, 2.0]), (GREYS, [0, 15])]):
-	# for color, (cmap, d_bounds) in enumerate([(GREYS, [3.0, 15]), (GREYS, [2.0, 3.0]), (GREYS, [0, 2.0]), (GREYS, [0, 15])]):
-	# for color, (cmap, d_bounds) in enumerate([('plasma', [0, 40])]):
+	if np.std(track_list['d(µm)']) == 0:
+		cuts = [('plasma', [0, 40])]
+	else:
+		cuts = [(REDS, [3.0, 15]), (GREENS, [2.0, 3.0]), (BLUES, [0, 2.0]), (GREYS, [0, 15])] # [(GREYS, [3.0, 15]), (GREYS, [2.0, 3.0]), (GREYS, [0, 2.0]), (GREYS, [0, 15])]
+
+	for color, (cmap, d_bounds) in enumerate(cuts):
 		print(d_bounds)
 
 		track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
@@ -357,24 +360,25 @@ for i, scan in shot_list.iterrows():
 	xS -= np.average(XS, weights=np.sum(img, axis=2))
 	yS -= np.average(YS, weights=np.sum(img, axis=2))
 
-	# xC, yC = X.ravel()[np.argmax(img.sum(axis=2).ravel())], Y.ravel()[np.argmax(img.sum(axis=2).ravel())]
-	plt.figure()
-	plt.contourf(xS/1e-4, yS/1e-4, img[:,:,0], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
-	plt.contourf(xS/1e-4, yS/1e-4, img[:,:,1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
-	plt.contourf(xS/1e-4, yS/1e-4, img[:,:,2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
-	if xray is not None:
-		# plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#550055BB', '#000000FF'])
-		plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
-	plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
-	plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
-	plt.arrow(0, 0, 2*x_flo/1e-4, 2*y_flo/1e-4, color='k', head_width=15, head_length=15, length_includes_head=True)
-	plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(z_off/r_off, z_flo/r_flo),
-		verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
-	plt.axis('square')
-	plt.axis([-300, 300, -300, 300])
-	plt.xlabel("x (μm)")
-	plt.ylabel("y (μm)")
-	plt.title("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
-	plt.tight_layout()
-	plt.savefig("results/{}_TIM{}_nestplot.png".format(scan[SHOT], scan[TIM]))
-	plt.close()
+	if np.sum(img[:,:,2]) >= .01*np.sum(img[:,:,0]):
+		# xC, yC = X.ravel()[np.argmax(img.sum(axis=2).ravel())], Y.ravel()[np.argmax(img.sum(axis=2).ravel())]
+		plt.figure()
+		plt.contourf(xS/1e-4, yS/1e-4, img[:,:,0], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
+		plt.contourf(xS/1e-4, yS/1e-4, img[:,:,1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
+		plt.contourf(xS/1e-4, yS/1e-4, img[:,:,2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
+		if xray is not None:
+			# plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#550055BB', '#000000FF'])
+			plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
+		plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
+		plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
+		plt.arrow(0, 0, 2*x_flo/1e-4, 2*y_flo/1e-4, color='k', head_width=15, head_length=15, length_includes_head=True)
+		plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(z_off/r_off, z_flo/r_flo),
+			verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
+		plt.axis('square')
+		plt.axis([-300, 300, -300, 300])
+		plt.xlabel("x (μm)")
+		plt.ylabel("y (μm)")
+		plt.title("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+		plt.tight_layout()
+		plt.savefig("results/{}_TIM{}_nestplot.png".format(scan[SHOT], scan[TIM]))
+		plt.close()
