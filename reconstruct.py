@@ -79,19 +79,19 @@ def simple_penumbra(x, y, δ, Q, r0, minimum, maximum):
 
 def simple_fit(*args):
 	if len(args[0]) == 3:
-		(x0, y0, δ), Q, r0, minimum, maximum, exp = args
+		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp = args
 	else:
-		(x0, y0, δ, Q), r0, minimum, maximum, exp = args
-	if 10*Q >= r0: return float('inf')
-	teo = simple_penumbra(XI - x0, YI - y0, δ, Q, r0, minimum, maximum)
+		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp = args
+	if Q < 0 or 10*Q >= r0: return float('inf')
+	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum)
 	error = np.sum(teo - exp*np.log(teo))
 	return error
 
 
-xI_bins, yI_bins = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1)
-dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
-xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2 # change these to bin centers
-XI, YI = np.meshgrid(xI, yI)
+xI_bins_0, yI_bins_0 = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1)
+dxI, dyI = xI_bins_0[1] - xI_bins_0[0], yI_bins_0[1] - yI_bins_0[0]
+xI_0, yI_0 = (xI_bins_0[:-1] + xI_bins_0[1:])/2, (yI_bins_0[:-1] + yI_bins_0[1:])/2 # change these to bin centers
+XI_0, YI_0 = np.meshgrid(xI_0, yI_0, indexing='ij')
 
 shot_list = pd.read_csv('shot_list.csv')
 
@@ -107,7 +107,6 @@ for i, scan in shot_list.iterrows():
 		continue
 
 	rA = scan[APERTURE]/1.e4 # cm
-	r0 = (M + 1)*rA
 	track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
 
 	θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(scan[TIM])-1])
@@ -133,30 +132,27 @@ for i, scan in shot_list.iterrows():
 		track_list['cn(%)'] -= np.min(track_list['cn(%)'])
 		track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
 	hicontrast = track_list['cn(%)'] < 35
-	track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do you best to center
-	track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
+	# track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do you best to center
+	# track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
 
 	# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)))
 	# plt.show()
 
-	kernel_size = int(2*(r0+.3)/dxI) + 4 if int(2*(r0+.3)/dxI)%2 == 1 else int(2*(r0+.3)/dxI) + 5
+	r0 = (M + 1)*rA
+	kernel_size = int(2*(r0+.2)/dxI) + 4 if int(2*(r0+.2)/dxI)%2 == 1 else int(2*(r0+.2)/dxI) + 5
+	n_pixs = n_bins - kernel_size + 1 # the source image will be smaller than the penumbral image
+	
 	xK_bins, yK_bins = np.linspace(-dxI*kernel_size/2, dxI*kernel_size/2, kernel_size+1), np.linspace(-dyI*kernel_size/2, dyI*kernel_size/2, kernel_size+1)
 	dxK, dyK = xK_bins[1] - xK_bins[0], yK_bins[1] - yK_bins[0]
-	XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2)
+	XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2, indexing='ij')
 
-	xS_bins, yS_bins = xI_bins[kernel_size//2:-(kernel_size//2)]/M, yI_bins[kernel_size//2:-(kernel_size//2)]/M
-	dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
-	xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
-	XS, YS = np.meshgrid(xS, yS)
-
-	n_pixs = n_bins - kernel_size + 1 # the source image will be smaller than the penumbral image
-	assert xS.shape[0] == n_pixs
 	img = np.empty((n_pixs, n_pixs, 3))
 
-	if np.std(track_list['d(µm)']) == 0:
-		cuts = [('plasma', [0, 40])]
-	else:
-		cuts = [(REDS, [3.0, 15]), (GREENS, [2.0, 3.0]), (BLUES, [0, 2.0]), (GREYS, [0, 15])] # [(GREYS, [3.0, 15]), (GREYS, [2.0, 3.0]), (GREYS, [0, 2.0]), (GREYS, [0, 15])]
+	cuts = [('plasma', [0, 40])]
+	# if np.std(track_list['d(µm)']) == 0:
+	# 	cuts = [('plasma', [0, 40])]
+	# else:
+	# 	cuts = [(REDS, [3.0, 15]), (GREENS, [2.0, 3.0]), (BLUES, [0, 2.0]), (GREYS, [0, 15])] # [(GREYS, [3.0, 15]), (GREYS, [2.0, 3.0]), (GREYS, [0, 2.0]), (GREYS, [0, 15])]
 
 	for color, (cmap, d_bounds) in enumerate(cuts):
 		print(d_bounds)
@@ -174,6 +170,25 @@ for i, scan in shot_list.iterrows():
 			print("No tracks found in this cut.")
 			continue
 
+		N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
+			track_x, track_y, bins=(xI_bins_0, yI_bins_0))
+		assert N.shape == XI_0.shape
+
+		opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, background, umbra, XI_0, YI_0, N),
+			method='Nelder-Mead', options=dict(
+				initial_simplex=[[.5, 0, .06, .01], [-.5, .5, .06, .01], [-.5, -.5, .06, .01], [0, 0, .1, .01], [0, 0, .06, .019]]))
+		x0, y0, δ, Q = opt.x
+		print(opt)
+
+		xI_bins, yI_bins = xI_bins_0 + x0, yI_bins_0 + y0
+		xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
+		XI, YI = np.meshgrid(xI, yI, indexing='ij')
+
+		xS_bins, yS_bins = xI_bins[kernel_size//2:-(kernel_size//2)]/M, yI_bins[kernel_size//2:-(kernel_size//2)]/M
+		dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
+		xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
+		XS, YS = np.meshgrid(xS, yS, indexing='ij')
+
 		N, xI_bins, yI_bins = np.histogram2d( # make a histogram
 			track_x, track_y, bins=(xI_bins, yI_bins))
 
@@ -181,14 +196,8 @@ for i, scan in shot_list.iterrows():
 		del(track_y)
 		gc.collect()
 
-		opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, background, umbra, N),
-			method='Nelder-Mead', options=dict(
-				initial_simplex=[[.5, 0, .06, .01], [-.5, .5, .06, .01], [-.5, -.5, .06, .01], [0, 0, .1, .01], [0, 0, .06, .019]]))
-		x0, y0, δ, Q = opt.x
-		print(opt)
-
 		plt.figure()
-		plt.pcolormesh(xI_bins, yI_bins, N)
+		plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .95))
 		T = np.linspace(0, 2*np.pi)
 		plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 		plt.axis('square')
@@ -200,6 +209,8 @@ for i, scan in shot_list.iterrows():
 			for dy in [-dyK/3, 0, dyK/3]:
 				penumbral_kernel += simple_penumbra(XK+dxK, YK+dyK, 0, Q, r0, 0, 1)
 		penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
+		# plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
+		# plt.show()
 
 		if METHOD == 'quasinewton':
 			N[np.hypot(XI, YI) > CR_39_RADIUS] = background
@@ -267,7 +278,7 @@ for i, scan in shot_list.iterrows():
 			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
 			χ2, χ2_prev, iterations = np.inf, np.inf, 0
 			# while iterations < 50 and χ2 > χ2_95:
-			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 5e-5 and iterations < 50):
+			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 5e-4 and iterations < 50):
 				B /= B.sum() # correct for roundoff
 				s = signal.convolve2d(B, penumbral_kernel, mode='full')
 				G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
@@ -292,23 +303,23 @@ for i, scan in shot_list.iterrows():
 				# gs1.update(wspace=0, hspace=0) # set the spacing between axes. 
 				# axes[0,0].axis('off')
 				# axes[0,1].set_title("Fit source image")
-				# plot = axes[0,1].pcolormesh(xS_bins, yS_bins, G*np.flip(B.T, 0), vmin=0, vmax=G*B.max(), cmap='plasma')
+				# plot = axes[0,1].pcolormesh(xS_bins, yS_bins, G*np.flip(B.T, 0).T, vmin=0, vmax=G*B.max(), cmap='plasma')
 				# axes[0,1].axis('square')
 				# fig.colorbar(plot, ax=axes[0,1])
 				# axes[1,0].set_title("Penumbral image")
-				# plot = axes[1,0].pcolormesh(xI_bins, yI_bins, N, vmin=0, vmax=N.max(where=data_bins, initial=0))
+				# plot = axes[1,0].pcolormesh(xI_bins, yI_bins, N.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
 				# axes[1,0].axis('square')
 				# fig.colorbar(plot, ax=axes[1,0])
 				# axes[1,1].set_title("Fit penumbral image")
-				# plot = axes[1,1].pcolormesh(xI_bins, yI_bins, N_teo, vmin=0, vmax=N.max(where=data_bins, initial=0))
+				# plot = axes[1,1].pcolormesh(xI_bins, yI_bins, N_teo.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
 				# axes[1,1].axis('square')
 				# fig.colorbar(plot, ax=axes[1,1])
 				# axes[2,0].set_title("Expected variance")
-				# plot = axes[2,0].pcolormesh(xI_bins, yI_bins, D, vmin=0, vmax=N.max(where=data_bins, initial=0))
+				# plot = axes[2,0].pcolormesh(xI_bins, yI_bins, D.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
 				# axes[2,0].axis('square')
 				# fig.colorbar(plot, ax=axes[2,0])
 				# axes[2,1].set_title("Chi squared")
-				# plot = axes[2,1].pcolormesh(xI_bins, yI_bins, (N - N_teo)**2/D, vmin=0, vmax=10)
+				# plot = axes[2,1].pcolormesh(xI_bins, yI_bins, ((N - N_teo)**2/D).T, vmin=0, vmax=10)
 				# axes[2,1].axis('square')
 				# fig.colorbar(plot, ax=axes[2,1])
 				# plt.tight_layout()
@@ -332,7 +343,7 @@ for i, scan in shot_list.iterrows():
 		plt.title("B(x, y) of TIM {} on shot {} with d ∈ [{}μm,{}μm)".format(scan[TIM], scan[SHOT], *d_bounds))
 		plt.xlabel("x (μm)")
 		plt.ylabel("y (μm)")
-		plt.axis([-300, 300, -300, 300])
+		# plt.axis([-300, 300, -300, 300])
 		plt.tight_layout()
 		plt.savefig("results/{}_TIM{}_{}-{}_sourceimage.png".format(scan[SHOT], scan[TIM], *d_bounds))
 		plt.close()
@@ -345,7 +356,7 @@ for i, scan in shot_list.iterrows():
 		xray = None
 	if xray is not None:
 		plt.figure()
-		plt.pcolormesh(xS_bins/1e-4, yS_bins/1e-4, np.zeros(XS.shape), cmap=VIOLETS, vmin=0, vmax=1)
+		plt.pcolormesh(xS_bins/1e-4, yS_bins/1e-4, np.zeros(XS.shape).T, cmap=VIOLETS, vmin=0, vmax=1)
 		plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)
 		plt.colorbar()
 		plt.axis('square')
