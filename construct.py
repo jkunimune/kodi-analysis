@@ -9,7 +9,6 @@ from perlin import perlin_generator
 
 NOISE_SCALE = 1 # [cm]
 DISPLACEMENT_NOISE = 0.2 # [cm*MeV]
-DISPLACEMENT_CHARGE = 0.1 # [cm*MeV]
 
 SYNTH_RESOLUTION = 1600
 
@@ -17,6 +16,13 @@ M = 14
 L = 4.21 # cm
 rs = 60e-4 # cm
 rA = 1000e-4 # cm
+
+RADIAL_COORDINATE = np.linspace(0, .999*rA*1e-2)
+RADIAL_DISPLACEMENT = 0.1e-2*np.log((1 + 1/(1 - RADIAL_COORDINATE/(rA*1e-2))**2)/(1 + 1/(1 + RADIAL_COORDINATE/(rA*1e-2))**2))
+# from laplace import RADIAL_COORDINATE, RADIAL_DISPLACEMENT
+# RADIAL_DISPLACEMENT *= 10e3 # 10 kV
+plt.plot(RADIAL_COORDINATE, RADIAL_DISPLACEMENT)
+plt.show()
 
 FOLDER = 'scans/'
 
@@ -50,8 +56,8 @@ Limits imposed on tracks listed below:
 """
 
 
-# for shot, N, SNR in [(95520, 1000000, 8)]:#, (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
-for shot, N, SNR in [('square', 1000000, 8)]:#, ('eclipse', 100000, 1), ('gaussian', 100000, 1)]:
+# for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+for shot, N, SNR in [('square', 1000000, 8)]:
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [10, 15])
@@ -83,7 +89,7 @@ for shot, N, SNR in [('square', 1000000, 8)]:#, ('eclipse', 100000, 1), ('gaussi
 	y_list = []
 	d_list = []
 	for i in range(1):
-		for img, diameter, energy in [(img_hi, 1, 12), (img_md, 2.5, 8), (img_lo, 5, 4)]: # do each diameter bin separately
+		for img, diameter, energy in [(img_hi, 1, (10, 12)), (img_md, 2.5, (7, 10)), (img_lo, 5, (2, 7))]: # do each diameter bin separately
 			if img.sum() == 0: # but skip synthetically empty bins
 				continue
 
@@ -95,9 +101,11 @@ for shot, N, SNR in [('square', 1000000, 8)]:#, ('eclipse', 100000, 1), ('gaussi
 			xA = r*np.cos(θ)
 			yA = r*np.sin(θ)
 
-			δr = DISPLACEMENT_CHARGE/energy*np.log((1 + 1/(1 - r/rA)**2)/(1 + 1/(1 + r/rA)**2))
-			δx = δx_noise(xA, yA)/energy + δr*np.cos(θ)
-			δy = δy_noise(xA, yA)/energy + δr*np.sin(θ)
+			E = np.random.uniform(*energy, len(xS))
+
+			δr = np.interp(r, RADIAL_COORDINATE/1e-2, RADIAL_DISPLACEMENT/1e-2)/E
+			δx = δx_noise(xA, yA)/E + δr*np.cos(θ)
+			δy = δy_noise(xA, yA)/E + δr*np.sin(θ)
 
 			xD = -(xA + (xA - xS)*M + δx) # make the image (this minus is from flipping from the TIM's perspective to looking at the CR_39)
 			yD =   yA + (yA - yS)*M + δy

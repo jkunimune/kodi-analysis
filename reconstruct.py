@@ -21,6 +21,7 @@ METHOD = 'gelfgat'
 FOLDER = 'scans/'
 SHOT = 'Shot number'
 TIM = 'TIM'
+MAGNIFICATION = 'Magnification'
 APERTURE = 'Aperture Radius'
 R_OFFSET = 'Offset (um)'
 Θ_OFFSET = 'Offset theta (deg)'
@@ -41,7 +42,6 @@ CR_39_RADIUS = 2.2 # cm
 n_MC = 1000000
 n_bins = 250
 
-M = 14
 L = 4.21 # cm
 fill_centers = False
 
@@ -61,9 +61,10 @@ def paste(wall, block, loc):
 	wall[wall_slices] = block[block_slices]
 
 def simple_penumbra(x, y, δ, Q, r0, minimum, maximum):
-	rN = np.concatenate([np.linspace(0, r0 - Q*1e1, 36)[:-1], r0 - Q*np.geomspace(1e1, 1e-4, 36)])
-	rB = rN + Q*np.log((1 + 1/(1 - rN/r0)**2)/(1 + 1/(1 + rN/r0)**2))
-	nB = 1/(np.gradient(rB, rN)*rB/rN) # I have the closed form for this derivative, but it takes too long to write
+	rN = RADIAL_COORDINATE*(M+1)/1e-2
+	rB = (RADIAL_COORDINATE*(M+1) + Q*RADIAL_DISPLACEMENT)/1e-2
+	nB = 1/(np.gradient(rB, rN)*rB/rN)
+	nB[rN > r0] = 0
 	nB[0] = nB[1] # deal with this singularity
 
 	if 4*δ/CR_39_RADIUS*n_bins >= 1:
@@ -82,7 +83,7 @@ def simple_fit(*args):
 		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp = args
 	else:
 		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp = args
-	if Q < 0 or 10*Q >= r0: return float('inf')
+	if Q < 0: return float('inf')
 	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum)
 	error = np.sum(teo - exp*np.log(teo))
 	return error
@@ -106,6 +107,7 @@ for i, scan in shot_list.iterrows():
 		print("WARN: Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 		continue
 
+	M = scan[MAGNIFICATION]
 	rA = scan[APERTURE]/1.e4 # cm
 	track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
 
@@ -138,6 +140,11 @@ for i, scan in shot_list.iterrows():
 	# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)))
 	# plt.show()
 
+	RADIAL_COORDINATE = np.concatenate([np.linspace(0, rA*.9e-2, 36)[:-1], rA*1e-2*(1 - np.geomspace(.1, 1e-6, 36))])
+	RADIAL_DISPLACEMENT = 1e-7*np.log((1 + 1/(1 - RADIAL_COORDINATE/(rA*1e-2))**2)/(1 + 1/(1 + RADIAL_COORDINATE/(rA*1e-2))**2))
+	plt.plot(RADIAL_COORDINATE, RADIAL_DISPLACEMENT)
+	plt.show()
+
 	r0 = (M + 1)*rA
 	kernel_size = int(2*(r0+.2)/dxI) + 4 if int(2*(r0+.2)/dxI)%2 == 1 else int(2*(r0+.2)/dxI) + 5
 	n_pixs = n_bins - kernel_size + 1 # the source image will be smaller than the penumbral image
@@ -148,11 +155,10 @@ for i, scan in shot_list.iterrows():
 
 	img = np.empty((n_pixs, n_pixs, 3))
 
-	cuts = [('plasma', [0, 40])]
-	# if np.std(track_list['d(µm)']) == 0:
-	# 	cuts = [('plasma', [0, 40])]
-	# else:
-	# 	cuts = [(REDS, [3.0, 15]), (GREENS, [2.0, 3.0]), (BLUES, [0, 2.0]), (GREYS, [0, 15])] # [(GREYS, [3.0, 15]), (GREYS, [2.0, 3.0]), (GREYS, [0, 2.0]), (GREYS, [0, 15])]
+	if np.std(track_list['d(µm)']) == 0:
+		cuts = [('plasma', [0, 40])]
+	else:
+		cuts = [(REDS, [3.0, 15]), (GREENS, [2.0, 3.0]), (BLUES, [0, 2.0]), (GREYS, [0, 15])] # [(GREYS, [3.0, 15]), (GREYS, [2.0, 3.0]), (GREYS, [0, 2.0]), (GREYS, [0, 15])]
 
 	for color, (cmap, d_bounds) in enumerate(cuts):
 		print(d_bounds)
@@ -176,9 +182,9 @@ for i, scan in shot_list.iterrows():
 
 		opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, background, umbra, XI_0, YI_0, N),
 			method='Nelder-Mead', options=dict(
-				initial_simplex=[[.5, 0, .06, .01], [-.5, .5, .06, .01], [-.5, -.5, .06, .01], [0, 0, .1, .01], [0, 0, .06, .019]]))
+				initial_simplex=[[.5, 0, .06, 1e3], [-.5, .5, .06, 1e3], [-.5, -.5, .06, 1e3], [0, 0, .1, 1e3], [0, 0, .06, 1.9e3]]))
 		x0, y0, δ, Q = opt.x
-		print(opt)
+		print(opt) # Q is effective voltage in V divided by mean evergy in MeV
 
 		xI_bins, yI_bins = xI_bins_0 + x0, yI_bins_0 + y0
 		xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
@@ -278,7 +284,7 @@ for i, scan in shot_list.iterrows():
 			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
 			χ2, χ2_prev, iterations = np.inf, np.inf, 0
 			# while iterations < 50 and χ2 > χ2_95:
-			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 5e-4 and iterations < 50):
+			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 2e-5 and iterations < 50):
 				B /= B.sum() # correct for roundoff
 				s = signal.convolve2d(B, penumbral_kernel, mode='full')
 				G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
