@@ -20,6 +20,7 @@ FOLDER = 'scans/'
 SHOT = 'Shot number'
 TIM = 'TIM'
 APERTURE = 'Aperture Radius'
+MAGNIFICATION = 'Magnification'
 R_OFFSET = 'Offset (um)'
 Θ_OFFSET = 'Offset theta (deg)'
 Φ_OFFSET = 'Offset phi (deg)'
@@ -38,27 +39,38 @@ TIM_LOCATIONS = [
 CR_39_RADIUS = 2.5 # cm
 n_bins = 250
 
-M0 = 14
 L = 4.21 # cm
 
-def simple_penumbra(x0, y0, δ, M, minimum, maximum):
-	r = np.linspace(0, CR_39_RADIUS, n_bins)
-	Pp = np.exp(-(r - (M+1)*rA)**2/(2*δ**2))
-	l = np.clip(r/((M+1)*rA) - 1, 0.1, 1.9)
-	dN = Pp/((1 - .22*l)*(np.pi/3*np.sqrt(1 - l**2)/np.arccos((l+1)/2))**1.4) # apply Frederick's circular correction factor
-	N = 1 - np.cumsum(dN)/np.sum(dN)
-	return minimum + (maximum-minimum)*np.interp(np.hypot(XI - x0, YI - y0), r, N, right=0)
+def simple_penumbra(x, y, δ, Q, r0, minimum, maximum):
+	rS = np.concatenate([np.linspace(0, r0*.9, 36)[:-1], r0*(1 - np.geomspace(.1, 1e-6, 36))])
+	# rB = rS + Q*np.log((1 + rS/r0)**2/(1 - rS/r0)**2)
+	rB = rS + Q*np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2))
+	# rB = rS + Q*np.log((1 + 1/(1 - rS/(2*r0))**2)/(1 + 1/(1 + rS/(2*r0))**2))
+	nB = 1/(np.gradient(rB, rS)*rB/rS)
+	nB[rS > r0] = 0
+	nB[0] = nB[1] # deal with this singularity
+	if 4*δ/CR_39_RADIUS >= 1:
+		return np.full(x.shape, np.nan)
+	elif 4*δ/CR_39_RADIUS*n_bins >= 1:
+		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/CR_39_RADIUS*n_bins)*2+1)
+		n_kernel = np.exp(-r_kernel**2/δ**2)
+		r_point = np.arange(-4*δ, CR_39_RADIUS, r_kernel[1] - r_kernel[0])
+		n_point = np.interp(r_point, rB, nB, right=0)
+		penumbra = np.convolve(n_point, n_kernel, mode='same')
+	else:
+		r_point = np.linspace(0, CR_39_RADIUS, n_bins)
+		penumbra = np.interp(r_point, rB, nB, right=0)
+	return minimum + (maximum-minimum)*np.interp(np.hypot(x, y), r_point, penumbra/np.max(penumbra), right=0)
 
 def simple_fit(*args):
 	if len(args[0]) == 3:
-		(x0, y0, δ), M, minimum, maximum, exp = args
+		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp = args
 	else:
-		(x0, y0, δ, M), minimum, maximum, exp = args
-	if M >= (1 - 4/n_bins)*CR_39_RADIUS/rA - 1: return float('inf')
-	teo = simple_penumbra(x0, y0, δ, M, minimum, maximum)
+		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp = args
+	if Q < 0: return float('inf')
+	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum)
 	error = np.sum(teo - exp*np.log(teo))
-	penalty = 10*(M/M0 - np.log(M))
-	return error + penalty
+	return error
 
 shot_list = pd.read_csv('shot_list.csv')
 
@@ -78,7 +90,9 @@ for i, scan in shot_list.iterrows():
 		continue
 
 	rA = scan[APERTURE]/1.e4 # cm
+	M = scan[MAGNIFICATION] # cm
 	track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
+	r0 = (M + 1)*rA
 
 	θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(scan[TIM])-1])
 	w_TIM = [np.sin(θ_TIM)*np.cos(ɸ_TIM), np.sin(θ_TIM)*np.sin(ɸ_TIM), np.cos(θ_TIM)]
@@ -102,9 +116,12 @@ for i, scan in shot_list.iterrows():
 		track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
 		track_list['cn(%)'] -= np.min(track_list['cn(%)'])
 		track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
-	hicontrast = track_list['cn(%)'] < 35
-	track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do you best to center
+	hicontrast = (track_list['cn(%)'] < 35) & (track_list['d(µm)'] >= 4.5) & (track_list['d(µm)'] < 5)
+	track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do your best to center
 	track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
+
+	# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)), cmap='magma_r')
+	# plt.show()
 
 	track_x, track_y = track_list['x(cm)'][hicontrast], track_list['y(cm)'][hicontrast]
 	maximum = np.sum(np.hypot(track_x, track_y) < CR_39_RADIUS*.25)/\
@@ -112,15 +129,33 @@ for i, scan in shot_list.iterrows():
 	minimum = np.sum((np.hypot(track_x, track_y) < CR_39_RADIUS) & (np.hypot(track_x, track_y) > CR_39_RADIUS*0.95))/\
 			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
 	exp = np.histogram2d(track_x, track_y, bins=(xI_bins, yI_bins))[0]
-	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(minimum, maximum, exp),
+	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, minimum, maximum, XI, YI, exp),
 		method='Nelder-Mead', options=dict(
-			initial_simplex=[[.5, 0, .06, M0], [-.5, .5, .06, M0], [-.5, -.5, .06, M0], [0, 0, .1, M0], [0, 0, .06, M0+1]]))
-	x0, y0, _, M = opt.x
-	r0 = (M + 1)*rA
+			initial_simplex=[[.5, 0, .06, 1e-2], [-.5, .5, .06, 1e-2], [-.5, -.5, .06, 1e-2], [0, 0, .1, 1e-2], [0, 0, .06, 1.9e-2]]))
+	x0, y0, δ, Q = opt.x
 
-	# print(opt)
+	print(opt)
+
+	rS = np.linspace(0, r0*(1-1e-6), 216)
+	displacement = Q*np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2))
+	# displacement = Q*np.log((1 + 1/(1 - rS/r0/2)**2)/(1 + 1/(1 + rS/r0/2)**2))
 	plt.figure()
-	plt.pcolormesh(xI_bins, yI_bins, exp, vmin=0, vmax=np.max(exp[np.hypot(XI-x0, YI-y0) < rA*(M+1)]))
+	plt.plot(rS, displacement)
+
+	displacement = np.sum(rS*displacement**2)/np.sum(rS*displacement) # mean displacement [cm]
+	integrated_field = 2*3e6*displacement/(L*M)
+	print("{:.1f} kV".format(integrated_field/1e3))
+
+	plt.figure()
+	plt.hist(np.hypot(track_x - x0, track_y - y0), weights=1/np.hypot(track_x - x0, track_y - y0), bins=np.linspace(0, CR_39_RADIUS, 36), density=True)
+	r = np.linspace(0, CR_39_RADIUS, 216)
+	n = simple_penumbra(r, 0, δ, Q, r0, minimum, maximum)
+	n /= np.sum(n*np.gradient(r))
+	plt.plot(r, n)
+	plt.xlabel("Radius (cm)")
+	
+	plt.figure()
+	plt.pcolormesh(xI_bins, yI_bins, exp, vmin=0, vmax=np.quantile(exp[np.hypot(XI-x0, YI-y0) < rA*(M+1)], .999))
 	# T = np.linspace(0, 2*np.pi, 361)
 	# plt.plot(rA*(M+1)*np.cos(T) + x0, rA*(M+1)*np.sin(T) + y0, 'w--')
 	plt.colorbar()
