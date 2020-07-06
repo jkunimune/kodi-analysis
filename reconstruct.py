@@ -83,6 +83,9 @@ def simple_fit(*args):
 	else:
 		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp = args
 	if Q < 0 or 10*Q >= r0: return float('inf')
+	if minimum is None or maximum is None:
+		minimum = np.average(exp, weights=np.hypot(X - x0, Y - y0) > .95*CR_39_RADIUS)
+		maximum = np.average(exp, weights=np.hypot(X - x0, Y - y0) < .25*CR_39_RADIUS)
 	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum)
 	error = np.sum(teo - exp*np.log(teo))
 	return error
@@ -158,13 +161,6 @@ for i, scan in shot_list.iterrows():
 
 		track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 		track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
-		background = np.sum(
-			(np.hypot(track_x, track_y) < CR_39_RADIUS) &\
-			(np.hypot(track_x, track_y) > CR_39_RADIUS*0.95))/\
-			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
-		umbra = np.sum(
-			(np.hypot(track_x, track_y) < CR_39_RADIUS*0.25))/\
-			(np.pi*CR_39_RADIUS**2*(0.25**2))*dxI*dyI
 		if len(track_x) <= 0:
 			print("No tracks found in this cut.")
 			continue
@@ -173,11 +169,19 @@ for i, scan in shot_list.iterrows():
 			track_x, track_y, bins=(xI_bins_0, yI_bins_0))
 		assert N.shape == XI_0.shape
 
-		opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, background, umbra, XI_0, YI_0, N),
+		opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N),
 			method='Nelder-Mead', options=dict(
 				initial_simplex=[[.5, 0, .06, .01], [-.5, .5, .06, .01], [-.5, -.5, .06, .01], [0, 0, .1, .01], [0, 0, .06, .019]]))
 		x0, y0, δ, Q = opt.x
 		print(opt)
+
+		background = np.sum( # recompute these, but with better centering
+			(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) &\
+			(np.hypot(track_x - x0, track_y - y0) > CR_39_RADIUS*0.95))/\
+			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
+		umbra = np.sum(
+			(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS*0.25))/\
+			(np.pi*CR_39_RADIUS**2*(0.25**2))*dxI*dyI
 
 		xI_bins, yI_bins = xI_bins_0 + x0, yI_bins_0 + y0
 		xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
@@ -277,7 +281,7 @@ for i, scan in shot_list.iterrows():
 			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
 			χ2, χ2_prev, iterations = np.inf, np.inf, 0
 			# while iterations < 50 and χ2 > χ2_95:
-			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 5e-4 and iterations < 50):
+			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 2e-5 and iterations < 50):
 				B /= B.sum() # correct for roundoff
 				s = signal.convolve2d(B, penumbral_kernel, mode='full')
 				G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
