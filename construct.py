@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from simulations import load_shot, make_image
-from perlin import perlin_generator
+from perlin import perlin_generator, wave_generator
 
 
-NOISE_SCALE = 1 # [cm]
+NOISE_SCALE = 2. # [cm]
 EFFICIENCY_NOISE = 0#.25
-DISPLACEMENT_NOISE = 0.25 # [cm*MeV]
+DISPLACEMENT_NOISE = 0.2 # [cm*MeV]
 DISPLACEMENT_CHARGE = 0.1 # [cm*MeV]
 
 SYNTH_RESOLUTION = 1600
@@ -51,8 +51,8 @@ Limits imposed on tracks listed below:
 """
 
 
-# for shot, N, SNR in [(95520, 1000000, 8)]:#, (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
-for shot, N, SNR in [('square', 1000000, 8)]:#, ('eclipse', 100000, 1), ('gaussian', 100000, 1)]:
+for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+# for shot, N, SNR in [('square', 1000000, 8), ('eclipse', 100000, 1), ('gaussian', 100000, 1)]:
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [10, 15])
@@ -70,7 +70,7 @@ for shot, N, SNR in [('square', 1000000, 8)]:#, ('eclipse', 100000, 1), ('gaussi
 		if shot == 'square':
 			img_hi = np.where((np.absolute(X) < 100e-4) & (np.absolute(Y) < 100e-4), 1, 0)
 		elif shot == 'eclipse':
-			img_hi = np.where((np.hypot(X, Y) < 160e-4) & (np.hypot(X-30e-4, Y-15e-4) > 80e-4), 1, 0)
+			img_hi = np.where((np.hypot(X-100e-4, Y+50e-4) < 100e-4) & (np.hypot(X-120e-4, Y+40e-4) > 50e-4), 1, 0)
 		elif shot == 'gaussian':
 			img_hi = np.exp(-(X**2 + Y**2)/(2*100e-4**2))
 		elif shot == 'hypergaussian':
@@ -78,15 +78,20 @@ for shot, N, SNR in [('square', 1000000, 8)]:#, ('eclipse', 100000, 1), ('gaussi
 		elif shot == 'ellipse':
 			img_hi = np.exp(-(X**2*2 + Y**2/2)/(2*100e-4**2))
 
-	δx_noise, δy_noise = perlin_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE), perlin_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE)
-	δε_noise = perlin_generator(-4, 4, -4, 4, NOISE_SCALE, EFFICIENCY_NOISE)
+	δx_noise, δy_noise = wave_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE, dimensions=2)
+	δε_noise = wave_generator(-4, 4, -4, 4, NOISE_SCALE, EFFICIENCY_NOISE)
 
 	xq, yq = np.meshgrid(np.linspace(-rA, rA, 12), np.linspace(-rA, rA, 12))
-	xq, yq = xq[np.hypot(xq, yq) < rA], yq[np.hypot(xq, yq) < rA]
-	plt.quiver(xq, yq, δx_noise(xq, yq)/6, δy_noise(xq, yq)/6)
-	plt.axis('square')
-	# plt.axis([-rA, rA, -rA, rA])
-	plt.show()
+	rq, θq = np.hypot(xq, yq), np.arctan2(yq, xq)
+	xq, yq, rq, θq = xq[rq < rA], yq[rq < rA], rq[rq < rA], θq[rq < rA]
+	δr = DISPLACEMENT_CHARGE*np.log((1 + 1/(1 - rq/rA)**2)/(1 + 1/(1 + rq/rA)**2))
+
+	# plt.quiver(10*xq, 10*yq, (δx_noise(xq, yq) + δr*np.cos(θq))/6, (δy_noise(xq, yq) + δr*np.sin(θq))/6, scale=1)
+	# plt.axis('square')
+	# plt.axis([-10*rA, 10*rA, -10*rA, 10*rA])
+	# plt.xlabel("x (mm)")
+	# plt.ylabel("y (mm)")
+	# plt.show()
 
 	x_list = []
 	y_list = []

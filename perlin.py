@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 
 def perlin_generator(x_min, x_max, y_min, y_max, wavelength, amplitude):
 	""" return random values with the same shapes as x and y """
-	node_x = np.arange(x_min, x_max + wavelength, wavelength)
-	node_y = np.arange(y_min, y_max + wavelength, wavelength)
+	node_x = np.arange(x_min - wavelength/2, x_max + wavelength, wavelength)
+	node_y = np.arange(y_min - wavelength/2, y_max + wavelength, wavelength)
 	grad_θ = np.random.uniform(0, 2*np.pi, (len(node_x), len(node_y)))
 	grad_x, grad_y = np.cos(grad_θ), np.sin(grad_θ)
 	def weight(z):
@@ -31,6 +31,21 @@ def perlin(x, y, wavelength, amplitude):
 	""" return random values with the same shapes as x and y """
 	pg = perlin_generator(x.min(), x.max()+1e-15, y.min(), y.max()+1e-15, wavelength, amplitude)
 	return pg(x, y)
+
+
+def wave_generator(x_min, x_max, y_min, y_max, wavelength, amplitude, dimensions=1):
+	θ_0 = np.random.uniform(0, 2*np.pi)
+	ɸ_0 = np.random.uniform(0, 2*np.pi)
+	z_0 = np.random.normal((x_min + x_max)/2*np.cos(θ_0) + (y_min + y_max)/2*np.sin(θ_0), wavelength/(2*np.pi))
+
+	def aplai(x, y):
+		z = x*np.cos(θ_0) + y*np.sin(θ_0)
+		return amplitude*np.sin(2*np.pi*z/wavelength + ɸ_0)/(1 + (np.pi*(z - z_0)/wavelength)**2)
+
+	if dimensions == 1:
+		return aplai
+	elif dimensions == 2:
+		return lambda x,y: aplai(x,y)*np.cos(θ_0), lambda x,y: aplai(x,y)*np.sin(θ_0)
 
 
 if __name__ == '__main__':
