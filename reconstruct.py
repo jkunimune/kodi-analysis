@@ -132,8 +132,8 @@ for i, scan in shot_list.iterrows():
 		track_list['cn(%)'] -= np.min(track_list['cn(%)'])
 		track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
 	hicontrast = track_list['cn(%)'] < 35
-	# track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do you best to center
-	# track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
+	track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
+	track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
 	# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)))
 	# plt.show()
@@ -148,11 +148,10 @@ for i, scan in shot_list.iterrows():
 
 	img = np.empty((n_pixs, n_pixs, 3))
 
-	cuts = [('plasma', [0, 40])]
-	# if np.std(track_list['d(µm)']) == 0:
-	# 	cuts = [('plasma', [0, 40])]
-	# else:
-	# 	cuts = [(REDS, [3.0, 15]), (GREENS, [2.0, 3.0]), (BLUES, [0, 2.0]), (GREYS, [0, 15])] # [(GREYS, [3.0, 15]), (GREYS, [2.0, 3.0]), (GREYS, [0, 2.0]), (GREYS, [0, 15])]
+	if np.std(track_list['d(µm)']) == 0:
+		cuts = [('plasma', [0, 40])]
+	else:
+		cuts = [(REDS, [3.0, 15]), (GREENS, [2.0, 3.0]), (BLUES, [0, 2.0]), (GREYS, [0, 15])] # [(GREYS, [3.0, 15]), (GREYS, [2.0, 3.0]), (GREYS, [0, 2.0]), (GREYS, [0, 15])]
 
 	for color, (cmap, d_bounds) in enumerate(cuts):
 		print(d_bounds)
@@ -184,7 +183,7 @@ for i, scan in shot_list.iterrows():
 		xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 		XI, YI = np.meshgrid(xI, yI, indexing='ij')
 
-		xS_bins, yS_bins = xI_bins[kernel_size//2:-(kernel_size//2)]/M, yI_bins[kernel_size//2:-(kernel_size//2)]/M
+		xS_bins, yS_bins = xI_bins[kernel_size//2:-(kernel_size//2)]/M, -yI_bins[kernel_size//2:-(kernel_size//2)]/M
 		dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
 		xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
 		XS, YS = np.meshgrid(xS, yS, indexing='ij')
@@ -197,7 +196,7 @@ for i, scan in shot_list.iterrows():
 		gc.collect()
 
 		plt.figure()
-		plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .95))
+		plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .99))
 		T = np.linspace(0, 2*np.pi)
 		plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 		plt.axis('square')
@@ -262,7 +261,7 @@ for i, scan in shot_list.iterrows():
 			)
 			print(opt)
 			B = opt.x.reshape((n_pixs, n_pixs))
-			B = np.flip(B.T, 0) # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS)
+			B = B.T # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS) (but also yS is already negated)
 
 		elif METHOD == 'gelfgat':
 			D = simple_penumbra(XI - x0, YI - y0, δ, Q, r0, background, umbra) # make D equal to the fit to N
@@ -326,7 +325,7 @@ for i, scan in shot_list.iterrows():
 				# plt.show()
 
 			B = G*B # you can unnormalize now
-			B = np.flip(B.T, 0) # go from i~xI,j~yI to i~yS,j~xS (i~-yI, j~xi)
+			B = B.T # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS) (but also yS is already negated)
 
 		if color < 3:
 			img[:,:,color] = B/B.max()
@@ -337,13 +336,13 @@ for i, scan in shot_list.iterrows():
 		# cmap = ListedColormap(newcolors)
 
 		plt.figure()
-		plt.pcolormesh(xS_bins/1e-4, yS_bins/1e-4, B, cmap=cmap, vmin=0)
+		plt.pcolormesh((xS_bins - x0/M)/1e-4, (yS_bins + y0/M)/1e-4, B, cmap=cmap, vmin=0)
 		plt.colorbar()
 		plt.axis('square')
 		plt.title("B(x, y) of TIM {} on shot {} with d ∈ [{}μm,{}μm)".format(scan[TIM], scan[SHOT], *d_bounds))
 		plt.xlabel("x (μm)")
 		plt.ylabel("y (μm)")
-		# plt.axis([-300, 300, -300, 300])
+		plt.axis([-300, 300, -300, 300])
 		plt.tight_layout()
 		plt.savefig("results/{}_TIM{}_{}-{}_sourceimage.png".format(scan[SHOT], scan[TIM], *d_bounds))
 		plt.close()
@@ -356,7 +355,7 @@ for i, scan in shot_list.iterrows():
 		xray = None
 	if xray is not None:
 		plt.figure()
-		plt.pcolormesh(xS_bins/1e-4, yS_bins/1e-4, np.zeros(XS.shape).T, cmap=VIOLETS, vmin=0, vmax=1)
+		plt.pcolormesh((xS_bins - x0/M)/1e-4, (yS_bins + y0/M)/1e-4, np.zeros(XS.shape).T, cmap=VIOLETS, vmin=0, vmax=1)
 		plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)
 		plt.colorbar()
 		plt.axis('square')

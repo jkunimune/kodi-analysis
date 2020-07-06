@@ -116,7 +116,7 @@ for i, scan in shot_list.iterrows():
 		track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
 		track_list['cn(%)'] -= np.min(track_list['cn(%)'])
 		track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
-	hicontrast = (track_list['cn(%)'] < 35) & (track_list['d(µm)'] >= 4.5) & (track_list['d(µm)'] < 5)
+	hicontrast = (track_list['cn(%)'] < 35)
 	track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do your best to center
 	track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
 
@@ -139,8 +139,6 @@ for i, scan in shot_list.iterrows():
 	rS = np.linspace(0, r0*(1-1e-6), 216)
 	displacement = Q*np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2))
 	# displacement = Q*np.log((1 + 1/(1 - rS/r0/2)**2)/(1 + 1/(1 + rS/r0/2)**2))
-	plt.figure()
-	plt.plot(rS, displacement)
 
 	displacement = np.sum(rS*displacement**2)/np.sum(rS*displacement) # mean displacement [cm]
 	integrated_field = 2*3e6*displacement/(L*M)
