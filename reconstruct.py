@@ -16,6 +16,7 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
 
 np.seterr('ignore')
 
+SHOW_PLOTS = False
 METHOD = 'gelfgat'
 
 FOLDER = 'scans/'
@@ -149,7 +150,7 @@ for i, scan in shot_list.iterrows():
 	dxK, dyK = xK_bins[1] - xK_bins[0], yK_bins[1] - yK_bins[0]
 	XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2, indexing='ij')
 
-	img = np.empty((n_pixs, n_pixs, 3))
+	image_layers, x_layers, y_layers = [], [], []
 
 	if np.std(track_list['d(µm)']) == 0:
 		cuts = [('plasma', [0, 40])]
@@ -199,13 +200,14 @@ for i, scan in shot_list.iterrows():
 		del(track_y)
 		gc.collect()
 
-		plt.figure()
-		plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .99))
-		T = np.linspace(0, 2*np.pi)
-		plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
-		plt.axis('square')
-		plt.colorbar()
-		plt.show()
+		if SHOW_PLOTS:
+			plt.figure()
+			plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .99))
+			T = np.linspace(0, 2*np.pi)
+			plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+			plt.axis('square')
+			plt.colorbar()
+			plt.show()
 
 		penumbral_kernel = np.zeros(XK.shape)
 		for dx in [-dxK/3, 0, dxK/3]:
@@ -281,7 +283,7 @@ for i, scan in shot_list.iterrows():
 			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
 			χ2, χ2_prev, iterations = np.inf, np.inf, 0
 			# while iterations < 50 and χ2 > χ2_95:
-			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 2e-5 and iterations < 50):
+			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 1e-4 and iterations < 50):
 				B /= B.sum() # correct for roundoff
 				s = signal.convolve2d(B, penumbral_kernel, mode='full')
 				G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
@@ -331,14 +333,6 @@ for i, scan in shot_list.iterrows():
 			B = G*B # you can unnormalize now
 			B = B.T # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS) (but also yS is already negated)
 
-		if color < 3:
-			img[:,:,color] = B/B.max()
-
-		# viridis = cm.get_cmap('viridis', 100)
-		# plasma = cm.get_cmap('plasma', 100)
-		# newcolors = np.concatenate([plasma(np.linspace(0, .5, 50)), viridis(np.linspace(.5, 1, 50))])
-		# cmap = ListedColormap(newcolors)
-
 		plt.figure()
 		plt.pcolormesh((xS_bins - x0/M)/1e-4, (yS_bins + y0/M)/1e-4, B, cmap=cmap, vmin=0)
 		plt.colorbar()
@@ -351,7 +345,11 @@ for i, scan in shot_list.iterrows():
 		plt.savefig("results/{}_TIM{}_{}-{}_sourceimage.png".format(scan[SHOT], scan[TIM], *d_bounds))
 		plt.close()
 
-		plt.show()
+		# plt.show()
+
+		image_layers.append(B/B.max())
+		x_layers.append(XS)
+		y_layers.append(YS)
 
 	try:
 		xray = np.loadtxt('scans/KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(scan[SHOT]), int(scan[TIM]), [2,4,5].index(int(scan[TIM]))+1), delimiter=',')
@@ -371,15 +369,14 @@ for i, scan in shot_list.iterrows():
 		plt.savefig("results/{}_TIM{}_xray_sourceimage.png".format(scan[SHOT], scan[TIM]))
 		plt.close()
 
-	xS -= np.average(XS, weights=np.sum(img, axis=2))
-	yS -= np.average(YS, weights=np.sum(img, axis=2))
+	x0 = np.average(x_layers[-1], weights=image_layers[-1])
+	y0 = np.average(y_layers[-1], weights=image_layers[-1])
 
-	if np.sum(img[:,:,2]) >= .01*np.sum(img[:,:,0]):
-		# xC, yC = X.ravel()[np.argmax(img.sum(axis=2).ravel())], Y.ravel()[np.argmax(img.sum(axis=2).ravel())]
+	if len(image_layers) > 1:
 		plt.figure()
-		plt.contourf(xS/1e-4, yS/1e-4, img[:,:,0], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
-		plt.contourf(xS/1e-4, yS/1e-4, img[:,:,1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
-		plt.contourf(xS/1e-4, yS/1e-4, img[:,:,2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
+		plt.contourf((x_layers[0] - x0)/1e-4, (y_layers[0] - y0)/1e-4, image_layers[0], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
+		plt.contourf((x_layers[0] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
+		plt.contourf((x_layers[0] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 		if xray is not None:
 			# plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#550055BB', '#000000FF'])
 			plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
