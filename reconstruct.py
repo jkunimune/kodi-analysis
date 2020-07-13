@@ -17,6 +17,7 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
 np.seterr('ignore')
 
 SHOW_PLOTS = False
+VERBOSE = True
 METHOD = 'gelfgat'
 
 FOLDER = 'scans/'
@@ -104,10 +105,10 @@ for i, scan in shot_list.iterrows():
 	for fname in os.listdir(FOLDER):
 		if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname:
 			filename = fname
-			print("INFO: Beginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+			print("Beginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 			break
 	if filename is None:
-		print("WARN: Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+		print("Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 		continue
 
 	rA = scan[APERTURE]/1.e4 # cm
@@ -174,7 +175,8 @@ for i, scan in shot_list.iterrows():
 			method='Nelder-Mead', options=dict(
 				initial_simplex=[[.5, 0, .06, .01], [-.5, .5, .06, .01], [-.5, -.5, .06, .01], [0, 0, .1, .01], [0, 0, .06, .019]]))
 		x0, y0, δ, Q = opt.x
-		print(opt)
+		if VERBOSE: print(opt)
+		else:       print("(x0, y0) = ({0:.3f}, {1:.3f}), Q = {3:.3f} V/MeV".format(*opt.x))
 
 		background = np.sum( # recompute these, but with better centering
 			(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) &\
@@ -262,10 +264,10 @@ for i, scan in shot_list.iterrows():
 				bounds=np.stack([np.full(n_pixs**2, 0), np.full(n_pixs**2, np.inf)], axis=1),
 				method='L-BFGS-B', options=dict(
 					ftol=1e-9,
-					# iprint=1,
+					iprint= 1 if VERBOSE else 0,
 				)
 			)
-			print(opt)
+			if VERBOSE: print(opt)
 			B = opt.x.reshape((n_pixs, n_pixs))
 			B = B.T # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS) (but also yS is already negated)
 
@@ -283,7 +285,7 @@ for i, scan in shot_list.iterrows():
 			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
 			χ2, χ2_prev, iterations = np.inf, np.inf, 0
 			# while iterations < 50 and χ2 > χ2_95:
-			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 1e-4 and iterations < 50):
+			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 2e-5 and iterations < 50):
 				B /= B.sum() # correct for roundoff
 				s = signal.convolve2d(B, penumbral_kernel, mode='full')
 				G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
@@ -302,7 +304,7 @@ for i, scan in shot_list.iterrows():
 				B += h/2*δB
 				χ2_prev, χ2 = χ2, np.sum((N - N_teo)**2/D, where=data_bins)
 				iterations += 1
-				print("[{}],".format(χ2/n_data_bins))
+				if VERBOSE: print("[{}],".format(χ2/n_data_bins))
 				# fig, axes = plt.subplots(3, 2)
 				# gs1 = gridspec.GridSpec(4, 4)
 				# gs1.update(wspace=0, hspace=0) # set the spacing between axes. 
@@ -330,8 +332,12 @@ for i, scan in shot_list.iterrows():
 				# plt.tight_layout()
 				# plt.show()
 
-			B = G*B # you can unnormalize now
-			B = B.T # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS) (but also yS is already negated)
+			if χ2/n_data_bins >= 2:
+				print("Could not find adequate fit.")
+				B = np.zeros(B.shape)
+			else:
+				B = G*B # you can unnormalize now
+				B = B.T # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS) (but also yS is already negated)
 
 		plt.figure()
 		plt.pcolormesh((xS_bins - x0/M)/1e-4, (yS_bins + y0/M)/1e-4, B, cmap=cmap, vmin=0)
