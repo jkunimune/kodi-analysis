@@ -68,16 +68,21 @@ def simple_fit(*args):
 	else:
 		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp = args
 	if Q < 0: return float('inf')
+	if minimum is None or maximum is None:
+		minimum = np.average(exp, weights=np.hypot(X - x0, Y - y0) > .95*CR_39_RADIUS)
+		maximum = np.average(exp, weights=np.hypot(X - x0, Y - y0) < .25*CR_39_RADIUS)
+	if minimum > maximum:
+		minimum, maximum = maximum, minimum
 	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum)
-	error = np.sum(teo - exp*np.log(teo))
-	return error
+	error = np.sum(teo - exp*np.log(teo), where=np.hypot(X, Y) < CR_39_RADIUS)
+	return error + (x0**2 + y0**2)/8
 
 shot_list = pd.read_csv('shot_list.csv')
 
 xI_bins, yI_bins = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1)
 dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2 # change these to bin centers
-XI, YI = np.meshgrid(xI, yI)
+XI, YI = np.meshgrid(xI, yI, indexing='ij')
 
 for i, scan in shot_list.iterrows():
 	filename = None
@@ -124,21 +129,21 @@ for i, scan in shot_list.iterrows():
 	# plt.show()
 
 	track_x, track_y = track_list['x(cm)'][hicontrast], track_list['y(cm)'][hicontrast]
-	maximum = np.sum(np.hypot(track_x, track_y) < CR_39_RADIUS*.25)/\
-			(np.pi*CR_39_RADIUS**2*.25**2)*dxI*dyI
-	minimum = np.sum((np.hypot(track_x, track_y) < CR_39_RADIUS) & (np.hypot(track_x, track_y) > CR_39_RADIUS*0.95))/\
-			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
 	exp = np.histogram2d(track_x, track_y, bins=(xI_bins, yI_bins))[0]
-	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, minimum, maximum, XI, YI, exp),
+	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI, YI, exp),
 		method='Nelder-Mead', options=dict(
 			initial_simplex=[[.5, 0, .06, 1e-2], [-.5, .5, .06, 1e-2], [-.5, -.5, .06, 1e-2], [0, 0, .1, 1e-2], [0, 0, .06, 1.9e-2]]))
 	x0, y0, δ, Q = opt.x
 
 	print(opt)
 
+	maximum = np.sum(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS*.25)/\
+			(np.pi*CR_39_RADIUS**2*.25**2)*dxI*dyI
+	minimum = np.sum((np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) & (np.hypot(track_x - x0, track_y - y0) > CR_39_RADIUS*0.95))/\
+			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
+
 	rS = np.linspace(0, r0*(1-1e-6), 216)
 	displacement = Q*np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2))
-	# displacement = Q*np.log((1 + 1/(1 - rS/r0/2)**2)/(1 + 1/(1 + rS/r0/2)**2))
 
 	displacement = np.sum(rS*displacement**2)/np.sum(rS*displacement) # mean displacement [cm]
 	integrated_field = 2*3e6*displacement/(L*M)
@@ -153,9 +158,10 @@ for i, scan in shot_list.iterrows():
 	plt.xlabel("Radius (cm)")
 	
 	plt.figure()
-	plt.pcolormesh(xI_bins, yI_bins, exp, vmin=0, vmax=np.quantile(exp[np.hypot(XI-x0, YI-y0) < rA*(M+1)], .999))
-	# T = np.linspace(0, 2*np.pi, 361)
-	# plt.plot(rA*(M+1)*np.cos(T) + x0, rA*(M+1)*np.sin(T) + y0, 'w--')
+	plt.pcolormesh(xI_bins, yI_bins, exp.T, vmin=0, vmax=np.quantile(exp[np.hypot(XI-x0, YI-y0) < rA*(M+1)], .999))
+	T = np.linspace(0, 2*np.pi, 361)
+	plt.plot(rA*(M+1)*np.cos(T) + x0, rA*(M+1)*np.sin(T) + y0, 'w--')
+	plt.plot(CR_39_RADIUS*np.cos(T) + x0, CR_39_RADIUS*np.sin(T) + y0, 'w-')
 	plt.colorbar()
 	plt.title("Penumbral image of TIM {} of shot {}".format(scan[TIM], scan[SHOT]))
 	plt.xlabel("x (cm)")
