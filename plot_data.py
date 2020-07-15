@@ -36,16 +36,20 @@ TIM_LOCATIONS = [
 	[100.81, 270.00],
 	[np.nan,np.nan]]
 
-CR_39_RADIUS = 2.5 # cm
-n_bins = 250
+VIEW_RADIUS = 3.0 # cm
+CR_39_RADIUS = 2.2 # cm
+n_bins = 350
+VERBOSE = False
 
 L = 4.21 # cm
 
-def simple_penumbra(x, y, δ, Q, r0, minimum, maximum):
+EXPECTED_POINTING_ACCURACY = 2 # cm
+EXPECTED_MAGNIFICATION_ACCURACY = .1
+
+
+def simple_penumbra(x, y, δ, Q, r0, minimum, maximum, a=1, b=0, c=1):
 	rS = np.concatenate([np.linspace(0, r0*.9, 36)[:-1], r0*(1 - np.geomspace(.1, 1e-6, 36))])
-	# rB = rS + Q*np.log((1 + rS/r0)**2/(1 - rS/r0)**2)
 	rB = rS + Q*np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2))
-	# rB = rS + Q*np.log((1 + 1/(1 - rS/(2*r0))**2)/(1 + 1/(1 + rS/(2*r0))**2))
 	nB = 1/(np.gradient(rB, rS)*rB/rS)
 	nB[rS > r0] = 0
 	nB[0] = nB[1] # deal with this singularity
@@ -60,26 +64,28 @@ def simple_penumbra(x, y, δ, Q, r0, minimum, maximum):
 	else:
 		r_point = np.linspace(0, CR_39_RADIUS, n_bins)
 		penumbra = np.interp(r_point, rB, nB, right=0)
-	return minimum + (maximum-minimum)*np.interp(np.hypot(x, y), r_point, penumbra/np.max(penumbra), right=0)
+	return minimum + (maximum-minimum)*np.interp(np.hypot(a*x + b*y, b*x + c*y), r_point, penumbra/np.max(penumbra), right=0)
 
-def simple_fit(*args):
+def simple_fit(*args, a=1, b=0, c=1):
 	if len(args[0]) == 3:
 		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp = args
-	else:
+	elif len(args[0]) == 4:
 		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp = args
+	else:
+		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp = args
 	if Q < 0: return float('inf')
 	if minimum is None or maximum is None:
-		minimum = np.average(exp, weights=np.hypot(X - x0, Y - y0) > .95*CR_39_RADIUS)
+		minimum = np.average(exp, weights=(np.hypot(X - x0, Y - y0) > .95*CR_39_RADIUS) & (np.hypot(X - x0, Y - y0) > 1.0*CR_39_RADIUS))
 		maximum = np.average(exp, weights=np.hypot(X - x0, Y - y0) < .25*CR_39_RADIUS)
 	if minimum > maximum:
 		minimum, maximum = maximum, minimum
-	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum)
+	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum, a, b, c)
 	error = np.sum(teo - exp*np.log(teo), where=np.hypot(X, Y) < CR_39_RADIUS)
-	return error + (x0**2 + y0**2)/8
+	return error + (x0**2 + y0**2)/(2*EXPECTED_POINTING_ACCURACY**2) + (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
 
 shot_list = pd.read_csv('shot_list.csv')
 
-xI_bins, yI_bins = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1)
+xI_bins, yI_bins = np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1), np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1)
 dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2 # change these to bin centers
 XI, YI = np.meshgrid(xI, yI, indexing='ij')
@@ -89,6 +95,7 @@ for i, scan in shot_list.iterrows():
 	for fname in os.listdir(FOLDER):
 		if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname:
 			filename = fname
+			print("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 			break
 	if filename is None:
 		print("WARN: Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
@@ -130,12 +137,15 @@ for i, scan in shot_list.iterrows():
 
 	track_x, track_y = track_list['x(cm)'][hicontrast], track_list['y(cm)'][hicontrast]
 	exp = np.histogram2d(track_x, track_y, bins=(xI_bins, yI_bins))[0]
-	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI, YI, exp),
+	opt = optimize.minimize(simple_fit, x0=[None]*7, args=(r0, None, None, XI, YI, exp),
 		method='Nelder-Mead', options=dict(
-			initial_simplex=[[.5, 0, .06, 1e-2], [-.5, .5, .06, 1e-2], [-.5, -.5, .06, 1e-2], [0, 0, .1, 1e-2], [0, 0, .06, 1.9e-2]]))
-	x0, y0, δ, Q = opt.x
-
-	print(opt)
+			initial_simplex=[
+				[.5, 0, .06, 1e-2, 1, 0, 1], [-.5, .5, .06, 1e-2, 1, 0, 1], [-.5, -.5, .06, 1e-2, 1, 0, 1],
+				[0, 0, .1, 1e-2, 1, 0, 1], [0, 0, .06, 1.9e-2, 1, 0, 1],
+				[0, 0, .06, 1e-2, 1.04, 0, 1], [0, 0, .06, 1e-2, 1.01, .01*np.sqrt(3), 1.03], [0, 0, .06, 1e-2, 1.01, -.01*np.sqrt(3), 1.03]]))
+	x0, y0, δ, Q, a, b, c = opt.x
+	if VERBOSE: print(opt)
+	else:       print(f"(x0, y0) = ({x0:.3f}, {y0:.3f}), Q = {Q:.3f} V/MeV, M = {M/np.sqrt(a*c):.3f}, e = {np.sqrt(1 - ((a+c-np.sqrt((a-c)**2+4*b**2))/(a+c+np.sqrt((a-c)**2+4*b**2)))**2):.3g}")
 
 	maximum = np.sum(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS*.25)/\
 			(np.pi*CR_39_RADIUS**2*.25**2)*dxI*dyI
@@ -150,7 +160,8 @@ for i, scan in shot_list.iterrows():
 	print("{:.1f} kV".format(integrated_field/1e3))
 
 	plt.figure()
-	plt.hist(np.hypot(track_x - x0, track_y - y0), weights=1/np.hypot(track_x - x0, track_y - y0), bins=np.linspace(0, CR_39_RADIUS, 36), density=True)
+	r_eff = np.hypot(a*(track_x - x0) + b*(track_y - y0), b*(track_x - x0) + c*(track_y - y0))
+	plt.hist(r_eff, weights=1/r_eff, bins=np.linspace(0, CR_39_RADIUS, 36), density=True)
 	r = np.linspace(0, CR_39_RADIUS, 216)
 	n = simple_penumbra(r, 0, δ, Q, r0, minimum, maximum)
 	n /= np.sum(n*np.gradient(r))
@@ -160,8 +171,9 @@ for i, scan in shot_list.iterrows():
 	plt.figure()
 	plt.pcolormesh(xI_bins, yI_bins, exp.T, vmin=0, vmax=np.quantile(exp[np.hypot(XI-x0, YI-y0) < rA*(M+1)], .999))
 	T = np.linspace(0, 2*np.pi, 361)
-	plt.plot(rA*(M+1)*np.cos(T) + x0, rA*(M+1)*np.sin(T) + y0, 'w--')
-	plt.plot(CR_39_RADIUS*np.cos(T) + x0, CR_39_RADIUS*np.sin(T) + y0, 'w-')
+	x_ell, y_ell = np.matmul(np.linalg.inv([[a, b], [b, c]]), [np.cos(T), np.sin(T)])
+	plt.plot(rA*(M+1)*x_ell + x0, rA*(M+1)*y_ell + y0, 'w--')
+	# plt.plot(CR_39_RADIUS*x_ell + x0, CR_39_RADIUS*y_ell + y0, 'w-')
 	plt.colorbar()
 	plt.title("Penumbral image of TIM {} of shot {}".format(scan[TIM], scan[SHOT]))
 	plt.xlabel("x (cm)")
