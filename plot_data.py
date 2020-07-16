@@ -11,6 +11,7 @@ import scipy.special as special
 import gc
 import re
 
+from electric_field_model import get_analytic_brightness
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
 
 np.seterr('ignore')
@@ -48,11 +49,7 @@ EXPECTED_MAGNIFICATION_ACCURACY = .1
 
 
 def simple_penumbra(x, y, δ, Q, r0, minimum, maximum, a=1, b=0, c=1):
-	rS = np.concatenate([np.linspace(0, r0*.9, 36)[:-1], r0*(1 - np.geomspace(.1, 1e-6, 36))])
-	rB = rS + Q*np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2))
-	nB = 1/(np.gradient(rB, rS)*rB/rS)
-	nB[rS > r0] = 0
-	nB[0] = nB[1] # deal with this singularity
+	rB, nB = get_analytic_brightness(r0, Q)
 	if 4*δ/CR_39_RADIUS >= 1:
 		return np.full(x.shape, np.nan)
 	elif 4*δ/CR_39_RADIUS*n_bins >= 1:
@@ -140,9 +137,9 @@ for i, scan in shot_list.iterrows():
 	opt = optimize.minimize(simple_fit, x0=[None]*7, args=(r0, None, None, XI, YI, exp),
 		method='Nelder-Mead', options=dict(
 			initial_simplex=[
-				[.5, 0, .06, 1e-2, 1, 0, 1], [-.5, .5, .06, 1e-2, 1, 0, 1], [-.5, -.5, .06, 1e-2, 1, 0, 1],
-				[0, 0, .1, 1e-2, 1, 0, 1], [0, 0, .06, 1.9e-2, 1, 0, 1],
-				[0, 0, .06, 1e-2, 1.04, 0, 1], [0, 0, .06, 1e-2, 1.01, .01*np.sqrt(3), 1.03], [0, 0, .06, 1e-2, 1.01, -.01*np.sqrt(3), 1.03]]))
+				[.5, 0, .06, 1e-3, 1, 0, 1], [-.5, .5, .06, 1e-3, 1, 0, 1], [-.5, -.5, .06, 1e-3, 1, 0, 1],
+				[0, 0, .1, 1e-3, 1, 0, 1], [0, 0, .06, 1.9e-3, 1, 0, 1],
+				[0, 0, .06, 1e-3, 1.04, 0, 1], [0, 0, .06, 1e-3, 1.01, .01*np.sqrt(3), 1.03], [0, 0, .06, 1e-3, 1.01, -.01*np.sqrt(3), 1.03]]))
 	x0, y0, δ, Q, a, b, c = opt.x
 	if VERBOSE: print(opt)
 	else:       print(f"(x0, y0) = ({x0:.3f}, {y0:.3f}), Q = {Q:.3f} V/MeV, M = {M/np.sqrt(a*c):.3f}, e = {np.sqrt(1 - ((a+c-np.sqrt((a-c)**2+4*b**2))/(a+c+np.sqrt((a-c)**2+4*b**2)))**2):.3g}")

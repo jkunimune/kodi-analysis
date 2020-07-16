@@ -62,13 +62,15 @@ def paste(wall, block, loc):
 	wall_slices, block_slices = zip(*map(paste_slices, loc_zip))
 	wall[wall_slices] = block[block_slices]
 
-def simple_penumbra(x, y, δ, Q, r0, minimum, maximum):
-	rN = np.concatenate([np.linspace(0, r0 - Q*1e1, 36)[:-1], r0 - Q*np.geomspace(1e1, 1e-4, 36)])
-	rB = rN + Q*np.log((1 + 1/(1 - rN/r0)**2)/(1 + 1/(1 + rN/r0)**2))
-	nB = 1/(np.gradient(rB, rN)*rB/rN) # I have the closed form for this derivative, but it takes too long to write
+def simple_penumbra(x, y, δ, Q, r0, minimum, maximum, a=1, b=0, c=1):
+	rS = np.concatenate([np.linspace(0, r0*.9, 36)[:-1], r0*(1 - np.geomspace(.1, 1e-6, 36))])
+	rB = rS + Q*np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2))
+	nB = 1/(np.gradient(rB, rS)*rB/rS)
+	nB[rS > r0] = 0
 	nB[0] = nB[1] # deal with this singularity
-
-	if 4*δ/CR_39_RADIUS*n_bins >= 1:
+	if 4*δ/CR_39_RADIUS >= 1:
+		return np.full(x.shape, np.nan)
+	elif 4*δ/CR_39_RADIUS*n_bins >= 1:
 		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/CR_39_RADIUS*n_bins)*2+1)
 		n_kernel = np.exp(-r_kernel**2/δ**2)
 		r_point = np.arange(-4*δ, CR_39_RADIUS, r_kernel[1] - r_kernel[0])
@@ -77,21 +79,24 @@ def simple_penumbra(x, y, δ, Q, r0, minimum, maximum):
 	else:
 		r_point = np.linspace(0, CR_39_RADIUS, n_bins)
 		penumbra = np.interp(r_point, rB, nB, right=0)
-	return minimum + (maximum-minimum)*np.interp(np.hypot(x, y), r_point, penumbra/np.max(penumbra), right=0)
+	return minimum + (maximum-minimum)*np.interp(np.hypot(a*x + b*y, b*x + c*y), r_point, penumbra/np.max(penumbra), right=0)
 
-def simple_fit(*args):
+def simple_fit(*args, a=1, b=0, c=1):
 	if len(args[0]) == 3:
 		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp = args
-	else:
+	elif len(args[0]) == 4:
 		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp = args
-	if Q < 0 or 10*Q >= r0: return float('inf')
+	else:
+		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp = args
+	if Q < 0: return float('inf')
 	if minimum is None or maximum is None:
-		minimum = np.average(exp, weights=np.hypot(X - x0, Y - y0) > .95*CR_39_RADIUS)
+		minimum = np.average(exp, weights=(np.hypot(X - x0, Y - y0) > .95*CR_39_RADIUS) & (np.hypot(X - x0, Y - y0) > 1.0*CR_39_RADIUS))
 		maximum = np.average(exp, weights=np.hypot(X - x0, Y - y0) < .25*CR_39_RADIUS)
-	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum)
-	error = np.sum(teo - exp*np.log(teo))
-	return error
-
+	if minimum > maximum:
+		minimum, maximum = maximum, minimum
+	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum, a, b, c)
+	error = np.sum(teo - exp*np.log(teo), where=np.hypot(X, Y) < CR_39_RADIUS)
+	return error + (x0**2 + y0**2)/(2*EXPECTED_POINTING_ACCURACY**2) + (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
 
 xI_bins_0, yI_bins_0 = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1)
 dxI, dyI = xI_bins_0[1] - xI_bins_0[0], yI_bins_0[1] - yI_bins_0[0]
