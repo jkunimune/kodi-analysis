@@ -45,11 +45,11 @@ VERBOSE = False
 L = 4.21 # cm
 
 EXPECTED_POINTING_ACCURACY = 2 # cm
-EXPECTED_MAGNIFICATION_ACCURACY = .1
+EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 
 
-def simple_penumbra(x, y, δ, Q, r0, minimum, maximum, a=1, b=0, c=1):
-	rB, nB = get_analytic_brightness(r0, Q)
+def simple_penumbra(x, y, δ, Q, r0, minimum, maximum, a=1, b=0, c=1, e_min=0, e_max=1):
+	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max)
 	if 4*δ/CR_39_RADIUS >= 1:
 		return np.full(x.shape, np.nan)
 	elif 4*δ/CR_39_RADIUS*n_bins >= 1:
@@ -63,11 +63,11 @@ def simple_penumbra(x, y, δ, Q, r0, minimum, maximum, a=1, b=0, c=1):
 		penumbra = np.interp(r_point, rB, nB, right=0)
 	return minimum + (maximum-minimum)*np.interp(np.hypot(a*x + b*y, b*x + c*y), r_point, penumbra/np.max(penumbra), right=0)
 
-def simple_fit(*args, a=1, b=0, c=1):
+def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 	if len(args[0]) == 3:
 		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp = args
 	elif len(args[0]) == 4:
-		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp = args
+		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
 	else:
 		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp = args
 	if Q < 0: return float('inf')
@@ -76,9 +76,9 @@ def simple_fit(*args, a=1, b=0, c=1):
 		maximum = np.average(exp, weights=np.hypot(X - x0, Y - y0) < .25*CR_39_RADIUS)
 	if minimum > maximum:
 		minimum, maximum = maximum, minimum
-	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum, a, b, c)
+	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum, a, b, c, e_min, e_max)
 	error = np.sum(teo - exp*np.log(teo), where=np.hypot(X, Y) < CR_39_RADIUS)
-	return error + (x0**2 + y0**2)/(2*EXPECTED_POINTING_ACCURACY**2) + (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
+	return error + (x0**2 + y0**2)/(4*EXPECTED_POINTING_ACCURACY**2) + (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
 
 shot_list = pd.read_csv('shot_list.csv')
 
@@ -125,7 +125,7 @@ for i, scan in shot_list.iterrows():
 		track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
 		track_list['cn(%)'] -= np.min(track_list['cn(%)'])
 		track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
-	hicontrast = (track_list['cn(%)'] < 35)
+	hicontrast = (track_list['cn(%)'] < 35)# & (track_list['d(µm)'] > 4) & (track_list['d(µm)'] > 4.5)
 	track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do your best to center
 	track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
 
@@ -153,7 +153,7 @@ for i, scan in shot_list.iterrows():
 	displacement = Q*np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2))
 
 	displacement = np.sum(rS*displacement**2)/np.sum(rS*displacement) # mean displacement [cm]
-	integrated_field = 2*3e6*displacement/(L*M)
+	integrated_field = 2*6e6*displacement/(L*M)
 	print("{:.1f} kV".format(integrated_field/1e3))
 
 	plt.figure()
@@ -170,7 +170,7 @@ for i, scan in shot_list.iterrows():
 	T = np.linspace(0, 2*np.pi, 361)
 	x_ell, y_ell = np.matmul(np.linalg.inv([[a, b], [b, c]]), [np.cos(T), np.sin(T)])
 	plt.plot(rA*(M+1)*x_ell + x0, rA*(M+1)*y_ell + y0, 'w--')
-	# plt.plot(CR_39_RADIUS*x_ell + x0, CR_39_RADIUS*y_ell + y0, 'w-')
+	plt.plot(CR_39_RADIUS*x_ell + x0, CR_39_RADIUS*y_ell + y0, 'w-')
 	plt.colorbar()
 	plt.title("Penumbral image of TIM {} of shot {}".format(scan[TIM], scan[SHOT]))
 	plt.xlabel("x (cm)")
