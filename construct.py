@@ -5,6 +5,7 @@ import pandas as pd
 
 from simulations import load_shot, make_image
 from perlin import perlin_generator, wave_generator
+from electric_field_model import e_field
 
 
 NOISE_SCALE = 2. # [cm]
@@ -84,7 +85,7 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 	xq, yq = np.meshgrid(np.linspace(-rA, rA, 12), np.linspace(-rA, rA, 12))
 	rq, θq = np.hypot(xq, yq), np.arctan2(yq, xq)
 	xq, yq, rq, θq = xq[rq < rA], yq[rq < rA], rq[rq < rA], θq[rq < rA]
-	δr = DISPLACEMENT_CHARGE*np.log((1 + 1/(1 - rq/rA)**2)/(1 + 1/(1 + rq/rA)**2))
+	δr = DISPLACEMENT_CHARGE*e_field(rq/rA)
 
 	# plt.quiver(10*xq, 10*yq, (δx_noise(xq, yq) + δr*np.cos(θq))/6, (δy_noise(xq, yq) + δr*np.sin(θq))/6, scale=1)
 	# plt.axis('square')

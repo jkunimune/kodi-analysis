@@ -12,7 +12,7 @@ import gc
 import re
 
 import diameter
-from electric_field_model import get_analytic_brightness
+from electric_field_model import e_field, get_analytic_brightness
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
 
 np.seterr('ignore')
@@ -161,7 +161,7 @@ if __name__ == '__main__':
 					(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
 
 			rS = np.linspace(0, r0*(1-1e-6), 216)
-			displacement = Q/((e_min+e_max)/2+2)*(np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2)) - 2*rS/r0)
+			displacement = Q/((e_min+e_max)/2+2)*e_field(rS/r0)
 
 			mean_displacement = np.sum(rS*displacement**2)/np.sum(rS*displacement) # mean displacement [cm]
 			integrated_field = 2*((e_min+e_max)/2)*1e6*mean_displacement/(L*M)

@@ -371,7 +371,7 @@ if __name__ == '__main__':
 			xray = None
 		if xray is not None:
 			plt.figure()
-			plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), np.zeros((100, 100)), cmap=VIOLETS, vmin=0, vmax=1)
+			plt.pcolormesh(np.linspace(-300, 300, 3), np.linspace(-300, 300, 3), np.zeros((2, 2)), cmap=VIOLETS, vmin=0, vmax=1)
 			plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)
 			plt.colorbar()
 			plt.axis('square')
