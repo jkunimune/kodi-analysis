@@ -53,7 +53,7 @@ EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max)
 	if 4*δ/CR_39_RADIUS >= 1:
-		return np.full(x.shape, np.nan)
+		return np.full(r.shape, np.nan)
 	elif 4*δ/CR_39_RADIUS*n_bins >= 1:
 		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/CR_39_RADIUS*n_bins)*2+1)
 		n_kernel = np.exp(-r_kernel**2/δ**2)
@@ -67,7 +67,7 @@ def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 
 def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 	if len(args[0]) == 3:
-		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp = args
+		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp, e_min, e_max = args
 	elif len(args[0]) == 4:
 		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
 	else:
@@ -83,120 +83,121 @@ def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 	error = np.sum(teo - exp*np.log(teo), where=r_eff < CR_39_RADIUS)
 	return error + (x0**2 + y0**2)/(4*EXPECTED_POINTING_ACCURACY**2) + (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
 
-shot_list = pd.read_csv('shot_list.csv')
 
-xI_bins, yI_bins = np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1), np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1)
-dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
-xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2 # change these to bin centers
-XI, YI = np.meshgrid(xI, yI, indexing='ij')
+if __name__ == '__main__':
+	shot_list = pd.read_csv('shot_list.csv')
 
-for i, scan in shot_list.iterrows():
-	filename = None
-	for fname in os.listdir(FOLDER):
-		if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname:
-			filename = fname
-			print("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
-			break
-	if filename is None:
-		print("WARN: Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
-		continue
+	xI_bins, yI_bins = np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1), np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1)
+	dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
+	xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2 # change these to bin centers
+	XI, YI = np.meshgrid(xI, yI, indexing='ij')
 
-	rA = scan[APERTURE]/1.e4 # cm
-	M = scan[MAGNIFICATION] # cm
-	time = float(scan[ETCH_TIME].strip(' h'))
-	track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
-	r0 = (M + 1)*rA
+	for i, scan in shot_list.iterrows():
+		filename = None
+		for fname in os.listdir(FOLDER):
+			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname:
+				filename = fname
+				print("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+				break
+		if filename is None:
+			print("WARN: Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+			continue
 
-	θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(scan[TIM])-1])
-	w_TIM = [np.sin(θ_TIM)*np.cos(ɸ_TIM), np.sin(θ_TIM)*np.sin(ɸ_TIM), np.cos(θ_TIM)]
-	v_TIM = [np.sin(θ_TIM-np.pi/2)*np.cos(ɸ_TIM), np.sin(θ_TIM-np.pi/2)*np.sin(ɸ_TIM), np.cos(θ_TIM-np.pi/2)]
-	u_TIM = np.cross(v_TIM, w_TIM)
+		rA = scan[APERTURE]/1.e4 # cm
+		M = scan[MAGNIFICATION] # cm
+		time = float(scan[ETCH_TIME].strip(' h'))
+		track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
+		r0 = (M + 1)*rA
 
-	track_list['y(cm)'] *= -1 # cpsa files invert y
-	if str(scan[SHOT]) == '95519' or str(scan[SHOT]) == '95520': # these shots were tilted for some reason
-		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy() # rotate the flipped penumbral image 45 degrees clockwise
-		track_list['x(cm)'] =  np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
-		track_list['y(cm)'] = -np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
-	if re.fullmatch(r'[0-9]+', str(scan[SHOT])):
-		track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
-		track_list['cn(%)'] -= np.min(track_list['cn(%)'])
-		track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
-	track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do your best to center
-	track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
+		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(scan[TIM])-1])
+		w_TIM = [np.sin(θ_TIM)*np.cos(ɸ_TIM), np.sin(θ_TIM)*np.sin(ɸ_TIM), np.cos(θ_TIM)]
+		v_TIM = [np.sin(θ_TIM-np.pi/2)*np.cos(ɸ_TIM), np.sin(θ_TIM-np.pi/2)*np.sin(ɸ_TIM), np.cos(θ_TIM-np.pi/2)]
+		u_TIM = np.cross(v_TIM, w_TIM)
 
-	# for e_min, e_max in [(e, e+.2) for e in np.arange(1, 14, .2)]:
-	# for e_min, e_max in [(0, 20)]:
-	e_min, e_max = (0, 20)
-	print(f"E = [{e_min+2:.1f}, {e_max+2:.1f}) MeV")
-	hicontrast = (track_list['cn(%)'] < 35) & (track_list['d(µm)'] > diameter.D(e_max, τ=time)) & (track_list['d(µm)'] < diameter.D(e_min, τ=time))
-	if np.sum(hicontrast) == 0:
-		print("no tracks in this cut")
-		continue
+		track_list['y(cm)'] *= -1 # cpsa files invert y
+		if str(scan[SHOT]) == '95519' or str(scan[SHOT]) == '95520': # these shots were tilted for some reason
+			x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy() # rotate the flipped penumbral image 45 degrees clockwise
+			track_list['x(cm)'] =  np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
+			track_list['y(cm)'] = -np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
+		if re.fullmatch(r'[0-9]+', str(scan[SHOT])):
+			track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
+			track_list['cn(%)'] -= np.min(track_list['cn(%)'])
+			track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
+		track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do your best to center
+		track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
 
-	e_min, e_max = e_min + 2, min(e_max + 2, 12) # convert from e-out (for diameter cut purposes) to e-in (for physics purposes)
+		# for e_min, e_max in [(e, e+.2) for e in np.arange(1, 14, .2)]:
+		for e_min, e_max in [(0, 20)]:
+			print(f"E = [{e_min:.1f}, {e_max:.1f}) MeV")
+			hicontrast = (track_list['cn(%)'] < 35) & (track_list['d(µm)'] > diameter.D(e_max, τ=time)) & (track_list['d(µm)'] < diameter.D(e_min, τ=time))
+			if np.sum(hicontrast) == 0:
+				print("no tracks in this cut")
+				continue
 
-	# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)), cmap='magma_r')
-	# plt.show()
+			e_min, e_max = e_min + 2, min(e_max + 2, 12) # convert from e-out (for diameter cut purposes) to e-in (for physics purposes)
 
-	track_x, track_y = track_list['x(cm)'][hicontrast], track_list['y(cm)'][hicontrast]
-	exp = np.histogram2d(track_x, track_y, bins=(xI_bins, yI_bins))[0]
-	opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI, YI, exp, e_min, e_max),
-		method='Nelder-Mead', options=dict(
-			initial_simplex=[
-				[.5, 0, .06, 1e-1], [-.5, .5, .06, 1e-1], [-.5, -.5, .06, 1e-1],
-				[0, 0, .1, 1e-1], [0, 0, .06, 1.9e-1]]))
-				# [.5, 0, .06, 1e-3, 1, 0, 1], [-.5, .5, .06, 1e-3, 1, 0, 1], [-.5, -.5, .06, 1e-3, 1, 0, 1],
-				# [0, 0, .1, 1e-3, 1, 0, 1], [0, 0, .06, 1.9e-3, 1, 0, 1],
-				# [0, 0, .06, 1e-3, 1.04, 0, 1], [0, 0, .06, 1e-3, 1.01, .01*np.sqrt(3), 1.03], [0, 0, .06, 1e-3, 1.01, -.01*np.sqrt(3), 1.03]]))
-	x0, y0, δ, Q = opt.x#, a, b, c = opt.x
-	a, b, c = 1, 0, 1
-	if VERBOSE: print(opt)
-	else:       print(f"(x0, y0) = ({x0:.3f}, {y0:.3f}), Q = {Q:.3f} cm, M = {M/np.sqrt(a*c):.3f}, e = {np.sqrt(1 - ((a+c-np.sqrt((a-c)**2+4*b**2))/(a+c+np.sqrt((a-c)**2+4*b**2)))**2):.3g}")
+			# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)), cmap='magma_r')
+			# plt.show()
+
+			track_x, track_y = track_list['x(cm)'][hicontrast], track_list['y(cm)'][hicontrast]
+			exp = np.histogram2d(track_x, track_y, bins=(xI_bins, yI_bins))[0]
+			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI, YI, exp, e_min, e_max),
+				method='Nelder-Mead', options=dict(
+					initial_simplex=[
+						[.5, 0, .06, 1e-1], [-.5, .5, .06, 1e-1], [-.5, -.5, .06, 1e-1],
+						[0, 0, .1, 1e-1], [0, 0, .06, 1.9e-1]]))
+						# [.5, 0, .06, 1e-3, 1, 0, 1], [-.5, .5, .06, 1e-3, 1, 0, 1], [-.5, -.5, .06, 1e-3, 1, 0, 1],
+						# [0, 0, .1, 1e-3, 1, 0, 1], [0, 0, .06, 1.9e-3, 1, 0, 1],
+						# [0, 0, .06, 1e-3, 1.04, 0, 1], [0, 0, .06, 1e-3, 1.01, .01*np.sqrt(3), 1.03], [0, 0, .06, 1e-3, 1.01, -.01*np.sqrt(3), 1.03]]))
+			x0, y0, δ, Q = opt.x#, a, b, c = opt.x
+			a, b, c = 1, 0, 1
+			if VERBOSE: print(opt)
+			else:       print(f"(x0, y0) = ({x0:.3f}, {y0:.3f}), Q = {Q:.3f} cm, M = {M/np.sqrt(a*c):.3f}, e = {np.sqrt(1 - ((a+c-np.sqrt((a-c)**2+4*b**2))/(a+c+np.sqrt((a-c)**2+4*b**2)))**2):.3g}")
 
 
-	maximum = np.sum(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS*.25)/\
-			(np.pi*CR_39_RADIUS**2*.25**2)*dxI*dyI
-	minimum = np.sum((np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) & (np.hypot(track_x - x0, track_y - y0) > CR_39_RADIUS*0.95))/\
-			(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
+			maximum = np.sum(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS*.25)/\
+					(np.pi*CR_39_RADIUS**2*.25**2)*dxI*dyI
+			minimum = np.sum((np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) & (np.hypot(track_x - x0, track_y - y0) > CR_39_RADIUS*0.95))/\
+					(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
 
-	rS = np.linspace(0, r0*(1-1e-6), 216)
-	displacement = Q/((e_min+e_max)/2+2)*(np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2)) - 2*rS/r0)
+			rS = np.linspace(0, r0*(1-1e-6), 216)
+			displacement = Q/((e_min+e_max)/2+2)*(np.log((1 + 1/(1 - rS/r0)**2)/(1 + 1/(1 + rS/r0)**2)) - 2*rS/r0)
 
-	mean_displacement = np.sum(rS*displacement**2)/np.sum(rS*displacement) # mean displacement [cm]
-	integrated_field = 2*((e_min+e_max)/2)*1e6*mean_displacement/(L*M)
-	print("N = {:.3g}".format(np.sum(hicontrast)))
-	print("int{{Edr}} = {:.1f} kV".format(integrated_field/1e3))
+			mean_displacement = np.sum(rS*displacement**2)/np.sum(rS*displacement) # mean displacement [cm]
+			integrated_field = 2*((e_min+e_max)/2)*1e6*mean_displacement/(L*M)
+			print("N = {:.3g}".format(np.sum(hicontrast)))
+			print("int{{Edr}} = {:.1f} kV".format(integrated_field/1e3))
 
-	# print(f"[{e_min:.1f}, {e_max:.1f}, {np.sum(hicontrast):.3g}, {mean_displacement:.3f}, {integrated_field:.3f}],")
+			# print(f"[{e_min:.1f}, {e_max:.1f}, {np.sum(hicontrast):.3g}, {mean_displacement:.3f}, {integrated_field:.3f}],")
 
-	plt.figure()
-	r_eff = np.hypot(a*(track_x - x0) + b*(track_y - y0), b*(track_x - x0) + c*(track_y - y0))
-	plt.hist(r_eff, weights=1/r_eff, bins=np.linspace(0, CR_39_RADIUS, 36), density=True)
-	r = np.linspace(0, CR_39_RADIUS, 216)
-	n = simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=e_min, e_max=e_max)
-	n /= np.sum(n*np.gradient(r))
-	plt.plot(r, n)
-	plt.xlabel("Radius (cm)")
+			plt.figure()
+			r_eff = np.hypot(a*(track_x - x0) + b*(track_y - y0), b*(track_x - x0) + c*(track_y - y0))
+			plt.hist(r_eff, weights=1/r_eff, bins=np.linspace(0, CR_39_RADIUS, 36), density=True)
+			r = np.linspace(0, CR_39_RADIUS, 216)
+			n = simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=e_min, e_max=e_max)
+			n /= np.sum(n*np.gradient(r))
+			plt.plot(r, n)
+			plt.xlabel("Radius (cm)")
 
-	# plt.figure()
-	# plt.plot(rS, displacement, '--')
-	# n, rB = np.histogram(r_eff, bins=np.linspace(0, CR_39_RADIUS, 36))
-	# back_density = minimum/(dxI*dyI)
-	# fore_density = maximum/(dxI*dyI) - back_density
-	# rS = np.sqrt((np.concatenate([[0], np.cumsum(n)]) - back_density*np.pi*rB**2)/(fore_density*np.pi))
-	# plt.plot(rS, rB - rS, '-')
+			# plt.figure()
+			# plt.plot(rS, displacement, '--')
+			# n, rB = np.histogram(r_eff, bins=np.linspace(0, CR_39_RADIUS, 36))
+			# back_density = minimum/(dxI*dyI)
+			# fore_density = maximum/(dxI*dyI) - back_density
+			# rS = np.sqrt((np.concatenate([[0], np.cumsum(n)]) - back_density*np.pi*rB**2)/(fore_density*np.pi))
+			# plt.plot(rS, rB - rS, '-')
 
-	plt.figure()
-	plt.pcolormesh(xI_bins, yI_bins, exp.T, vmin=0, vmax=np.quantile(exp[np.hypot(XI-x0, YI-y0) < rA*(M+1)], .999))
-	T = np.linspace(0, 2*np.pi, 361)
-	x_ell, y_ell = np.matmul(np.linalg.inv([[a, b], [b, c]]), [np.cos(T), np.sin(T)])
-	plt.plot(rA*(M+1)*x_ell + x0, rA*(M+1)*y_ell + y0, 'w--')
-	plt.plot(CR_39_RADIUS*x_ell + x0, CR_39_RADIUS*y_ell + y0, 'w-')
-	plt.colorbar()
-	plt.title("Penumbral image of TIM {} of shot {}".format(scan[TIM], scan[SHOT]))
-	plt.xlabel("x (cm)")
-	plt.ylabel("y (cm)")
-	plt.axis('square')
-	plt.tight_layout()
+			plt.figure()
+			plt.pcolormesh(xI_bins, yI_bins, exp.T, vmin=0, vmax=np.quantile(exp[np.hypot(XI-x0, YI-y0) < rA*(M+1)], .999))
+			T = np.linspace(0, 2*np.pi, 361)
+			x_ell, y_ell = np.matmul(np.linalg.inv([[a, b], [b, c]]), [np.cos(T), np.sin(T)])
+			plt.plot(rA*(M+1)*x_ell + x0, rA*(M+1)*y_ell + y0, 'w--')
+			plt.plot(CR_39_RADIUS*x_ell + x0, CR_39_RADIUS*y_ell + y0, 'w-')
+			plt.colorbar()
+			plt.title("Penumbral image of TIM {} of shot {}".format(scan[TIM], scan[SHOT]))
+			plt.xlabel("x (cm)")
+			plt.ylabel("y (cm)")
+			plt.axis('square')
+			plt.tight_layout()
 
-	plt.show()
+			plt.show()
