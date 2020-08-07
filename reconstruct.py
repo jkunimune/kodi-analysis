@@ -18,7 +18,7 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
 
 np.seterr('ignore')
 
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 VERBOSE = True
 METHOD = 'gelfgat'
 
@@ -67,44 +67,45 @@ def paste(wall, block, loc):
 	wall_slices, block_slices = zip(*map(paste_slices, loc_zip))
 	wall[wall_slices] = block[block_slices]
 
-def simple_penumbra(x, y, δ, Q, r0, minimum, maximum, a=1, b=0, c=1, e_min=.9, e_max=1):
+def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max)
 	if 4*δ/CR_39_RADIUS >= 1:
-		return np.full(x.shape, np.nan)
+		return np.full(r.shape, np.nan)
 	elif 4*δ/CR_39_RADIUS*n_bins >= 1:
 		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/CR_39_RADIUS*n_bins)*2+1)
 		n_kernel = np.exp(-r_kernel**2/δ**2)
-		r_point = np.arange(-4*δ, CR_39_RADIUS, r_kernel[1] - r_kernel[0])
+		r_point = np.arange(-4*δ, 2*r0, r_kernel[1] - r_kernel[0])
 		n_point = np.interp(r_point, rB, nB, right=0)
 		penumbra = np.convolve(n_point, n_kernel, mode='same')
 	else:
 		r_point = np.linspace(0, CR_39_RADIUS, n_bins)
 		penumbra = np.interp(r_point, rB, nB, right=0)
-	return minimum + (maximum-minimum)*np.interp(np.hypot(a*x + b*y, b*x + c*y), r_point, penumbra/np.max(penumbra), right=0)
+	return minimum + (maximum-minimum)*np.interp(r, r_point, penumbra/np.max(penumbra), right=0)
 
-def simple_fit(*args, a=1, b=0, c=1, e_min=.9, e_max=1):
+def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 	if len(args[0]) == 3:
-		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp = args
+		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp, e_min, e_max = args
 	elif len(args[0]) == 4:
-		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp = args
+		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
 	else:
-		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp = args
-	if Q < 0: return float('inf')
+		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
+	if Q < 0 or abs(x0) > CR_39_RADIUS or abs(y0) > CR_39_RADIUS: return float('inf')
+	r_eff = np.hypot(a*(X - x0) + b*(Y - y0), b*(X - x0) + c*(Y - y0))
 	if minimum is None or maximum is None:
-		minimum = np.average(exp, weights=(np.hypot(X - x0, Y - y0) > .95*CR_39_RADIUS) & (np.hypot(X - x0, Y - y0) > 1.0*CR_39_RADIUS))
-		maximum = np.average(exp, weights=np.hypot(X - x0, Y - y0) < .25*CR_39_RADIUS)
+		minimum = np.average(exp, weights=(r_eff > .95*CR_39_RADIUS) & (r_eff <= 1.0*CR_39_RADIUS))
+		maximum = np.average(exp, weights=(r_eff < .25*CR_39_RADIUS))
 	if minimum > maximum:
 		minimum, maximum = maximum, minimum
-	teo = simple_penumbra(X - x0, Y - y0, δ, Q, r0, minimum, maximum, a, b, c, e_min, e_max)
-	error = np.sum(teo - exp*np.log(teo), where=np.hypot(X, Y) < CR_39_RADIUS)
+	teo = simple_penumbra(r_eff, δ, Q, r0, minimum, maximum, e_min, e_max)
+	error = np.sum(teo - exp*np.log(teo), where=r_eff < CR_39_RADIUS)
 	return error + (x0**2 + y0**2)/(4*EXPECTED_POINTING_ACCURACY**2) + (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
 
 
 if __name__ == '__main__':
-	xI_bins_0, yI_bins_0 = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1)
-	dxI, dyI = xI_bins_0[1] - xI_bins_0[0], yI_bins_0[1] - yI_bins_0[0]
+	xI_bins_0, yI_bins_0 = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1) # this is the CR39 coordinate system, centered at 0,0
+	dxI, dyI = xI_bins_0[1] - xI_bins_0[0], yI_bins_0[1] - yI_bins_0[0] # get the bid widths
 	xI_0, yI_0 = (xI_bins_0[:-1] + xI_bins_0[1:])/2, (yI_bins_0[:-1] + yI_bins_0[1:])/2 # change these to bin centers
-	XI_0, YI_0 = np.meshgrid(xI_0, yI_0, indexing='ij')
+	XI_0, YI_0 = np.meshgrid(xI_0, yI_0, indexing='ij') # change these to matrices
 
 	shot_list = pd.read_csv('shot_list.csv')
 
@@ -158,17 +159,18 @@ if __name__ == '__main__':
 		
 		xK_bins, yK_bins = np.linspace(-dxI*kernel_size/2, dxI*kernel_size/2, kernel_size+1), np.linspace(-dyI*kernel_size/2, dyI*kernel_size/2, kernel_size+1)
 		dxK, dyK = xK_bins[1] - xK_bins[0], yK_bins[1] - yK_bins[0]
-		XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2, indexing='ij')
+		XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2, indexing='ij') # this is the kernel coordinate system, measured from the center of the umbra
 
 		image_layers, x_layers, y_layers = [], [], []
 
 		if np.std(track_list['d(µm)']) == 0:
-			cuts = [('plasma', [2.2, 15])]
+			cuts = [('plasma', [0, 20])]
 		else:
-			cuts = [('plasma', [e, e+.5]) for e in range(0, 14, .5)] # [(REDS, [0, 6]), (GREENS, [6, 9]), (BLUES, [9, 15]), (GREYS, [0, 15])]
+			cuts = [(REDS, [0, 7]), (GREENS, [7, 9]), (BLUES, [9, 20]), (GREYS, [0, 20])]
 
-		for color, (cmap, e_bounds) in enumerate(cuts):
-			d_bounds = diameter.D(np.array(e_bounds), τ=time)[::-1]
+		for color, (cmap, e_out_bounds) in enumerate(cuts):
+			d_bounds = diameter.D(np.array(e_out_bounds), τ=time)[::-1]
+			e_in_bounds = np.clip(np.array(e_out_bounds) + 2, 0, 12)
 			print(d_bounds)
 
 			track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
@@ -181,9 +183,9 @@ if __name__ == '__main__':
 				track_x, track_y, bins=(xI_bins_0, yI_bins_0))
 			assert N.shape == XI_0.shape
 
-			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N),
+			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N, *e_in_bounds),
 				method='Nelder-Mead', options=dict(
-					initial_simplex=[[.5, 0, .06, .01], [-.5, .5, .06, .01], [-.5, -.5, .06, .01], [0, 0, .1, .01], [0, 0, .06, .019]]))
+					initial_simplex=[[.5, 0, .06, 1e-1], [-.5, .5, .06, 1e-1], [-.5, -.5, .06, 1e-1], [0, 0, .1, 1e-1], [0, 0, .06, 1.9e-1]]))
 			x0, y0, δ, Q = opt.x
 			if VERBOSE: print(opt)
 			else:       print("(x0, y0) = ({0:.3f}, {1:.3f}), Q = {3:.3f} cm".format(*opt.x))
@@ -196,11 +198,11 @@ if __name__ == '__main__':
 				(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS*0.25))/\
 				(np.pi*CR_39_RADIUS**2*(0.25**2))*dxI*dyI
 
-			xI_bins, yI_bins = xI_bins_0 + x0, yI_bins_0 + y0
+			xI_bins, yI_bins = xI_bins_0 + x0, yI_bins_0 + y0 # this is the CR39 coordinate system, but encompassing a more useful area
 			xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 			XI, YI = np.meshgrid(xI, yI, indexing='ij')
 
-			xS_bins, yS_bins = xI_bins[kernel_size//2:-(kernel_size//2)]/M, -yI_bins[kernel_size//2:-(kernel_size//2)]/M
+			xS_bins, yS_bins = xI_bins[kernel_size//2:-(kernel_size//2)]/M, -yI_bins[kernel_size//2:-(kernel_size//2)]/M # this is the source system. note that it is reversed so that indices measured from the center match between I and S
 			dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
 			xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
 			XS, YS = np.meshgrid(xS, yS, indexing='ij')
@@ -214,7 +216,7 @@ if __name__ == '__main__':
 
 			if SHOW_PLOTS:
 				plt.figure()
-				plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .99))
+				plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .999))
 				T = np.linspace(0, 2*np.pi)
 				plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 				plt.axis('square')
@@ -224,10 +226,8 @@ if __name__ == '__main__':
 			penumbral_kernel = np.zeros(XK.shape)
 			for dx in [-dxK/3, 0, dxK/3]:
 				for dy in [-dyK/3, 0, dyK/3]:
-					penumbral_kernel += simple_penumbra(XK+dxK, YK+dyK, 0, Q, r0, 0, 1)
+					penumbral_kernel += simple_penumbra(np.hypot(XK+dxK, YK+dyK), 0, Q, r0, 0, 1, *e_in_bounds)
 			penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
-			# plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
-			# plt.show()
 
 			if METHOD == 'quasinewton':
 				N[np.hypot(XI, YI) > CR_39_RADIUS] = background
@@ -279,10 +279,9 @@ if __name__ == '__main__':
 				)
 				if VERBOSE: print(opt)
 				B = opt.x.reshape((n_pixs, n_pixs))
-				B = B.T # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS) (but also yS is already negated)
 
 			elif METHOD == 'gelfgat':
-				D = simple_penumbra(XI - x0, YI - y0, δ, Q, r0, background, umbra) # make D equal to the fit to N
+				D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, background, umbra, *e_in_bounds) # make D equal to the fit to N
 
 				reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
 				data_bins = (reach > .001) & (reach < .999*reach.max()) # exclude bins that are touched by all or none of the source pixels
@@ -295,7 +294,7 @@ if __name__ == '__main__':
 				# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
 				χ2, χ2_prev, iterations = np.inf, np.inf, 0
 				# while iterations < 50 and χ2 > χ2_95:
-				while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 2e-5 and iterations < 50):
+				while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 2e-6 and iterations < 50):
 					B /= B.sum() # correct for roundoff
 					s = signal.convolve2d(B, penumbral_kernel, mode='full')
 					G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
@@ -342,15 +341,14 @@ if __name__ == '__main__':
 					# plt.tight_layout()
 					# plt.show()
 
-				if χ2/n_data_bins >= 2:
+				if χ2/n_data_bins >= 1.5:
 					print("Could not find adequate fit.")
 					B = np.zeros(B.shape)
 				else:
 					B = G*B # you can unnormalize now
-					B = B.T # go from i~xI,j~yI to i~yS,j~xS (xI~xS, yI~-yS) (but also yS is already negated)
 
 			plt.figure()
-			plt.pcolormesh((xS_bins - x0/M)/1e-4, (yS_bins + y0/M)/1e-4, B, cmap=cmap, vmin=0)
+			plt.pcolormesh((xS_bins - x0/M)/1e-4, (yS_bins + y0/M)/1e-4, B.T, cmap=cmap, vmin=0)
 			plt.colorbar()
 			plt.axis('square')
 			plt.title("B(x, y) of TIM {} on shot {} with d ∈ [{:.1f}μm,{:.1f}μm)".format(scan[TIM], scan[SHOT], *d_bounds))
@@ -373,7 +371,7 @@ if __name__ == '__main__':
 			xray = None
 		if xray is not None:
 			plt.figure()
-			plt.pcolormesh((xS_bins - x0/M)/1e-4, (yS_bins + y0/M)/1e-4, np.zeros(XS.shape).T, cmap=VIOLETS, vmin=0, vmax=1)
+			plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), np.zeros((100, 100)), cmap=VIOLETS, vmin=0, vmax=1)
 			plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)
 			plt.colorbar()
 			plt.axis('square')
@@ -391,8 +389,8 @@ if __name__ == '__main__':
 		if len(image_layers) > 1:
 			plt.figure()
 			plt.contourf((x_layers[0] - x0)/1e-4, (y_layers[0] - y0)/1e-4, image_layers[0], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
-			plt.contourf((x_layers[0] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
-			plt.contourf((x_layers[0] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
+			plt.contourf((x_layers[1] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
+			plt.contourf((x_layers[2] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 			if xray is not None:
 				# plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#550055BB', '#000000FF'])
 				plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])

@@ -16,7 +16,7 @@ for i, k in enumerate(K):
 	nB = 1/(np.gradient(rB, rS)*rB/rS)
 	nB[rS > 1] = 0
 	nB[0] = nB[1] # deal with this singularity
-	N[i,:] = np.interp(R, rB, nB)
+	N[i,:] = np.interp(R, rB, nB, right=0)
 N *= np.gradient(E)[:,np.newaxis] # weigh for uniform energy distribution
 
 def get_analytic_brightness(r0, Q, e_min=1e-15, e_max=1):
@@ -31,5 +31,6 @@ def normalize(x):
 
 if __name__ == '__main__':
 	import matplotlib.pyplot as plt
-	plt.plot(*get_analytic_brightness(1.5, .1, 6, 6.2))
+	plt.plot(*get_analytic_brightness(1.5, 1e-3, 2, 6))
+	plt.ylim(0, 1.1)
 	plt.show()

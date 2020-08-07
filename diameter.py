@@ -2,9 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 """ E is in MeV, D in μm, vB in μm/h, τ in h, and k in (MeV)^-1 """
-def E(D, τ=2, vB=2.66, k=.69, n=.83):
+def E(D, τ=2, vB=2.66, k=.8, n=.8):
 	return 2*((2*τ*vB/D - 1)/k)**(1/n)
-def D(E, τ=2, vB=2.66, k=.69, n=.83):
+def D(E, τ=2, vB=2.66, k=.8, n=.8):
 	return 2*τ*vB/(1 + k*(E/2)**(1/n))
 
 
