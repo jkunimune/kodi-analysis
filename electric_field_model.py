@@ -40,22 +40,22 @@ if __name__ == '__main__':
 	import matplotlib.pyplot as plt
 	import seaborn as sns
 
-	# plt.figure()
-	# x = np.linspace(0, 1, 1000)
-	# plt.plot(x, e_field(x)/6, label="Electric field")
-	# plt.plot(*get_analytic_brightness(1, 1e-2, 1, 1), label="Brightness")
-	# plt.xlim(-.1, 1.5)
-	# plt.ylim(-.1, 1.5)
-	# plt.xlabel("r/r0")
-	# plt.ylabel("arbitrary")
-	# plt.legend()
-
 	plt.figure()
-	energies = range(2, 13, 2)
-	sns.set_palette("cividis_r", n_colors=len(energies))
-	for e in energies:
-		plt.plot(*get_analytic_brightness(1, 1e-1, e, e), label=f"{e:.1f} MeV")
+	x = np.linspace(0, 1, 1000)
+	plt.plot(x, e_field(x)/6, label="Electric field")
+	plt.plot(*get_analytic_brightness(1, 1e-2, 1, 1), label="Brightness")
+	plt.xlim(-.1, 1.5)
+	plt.ylim(-.1, 1.5)
 	plt.xlabel("r/r0")
+	plt.ylabel("arbitrary")
 	plt.legend()
+
+	# plt.figure()
+	# energies = range(2, 13, 2)
+	# sns.set_palette("cividis_r", n_colors=len(energies))
+	# for e in energies:
+	# 	plt.plot(*get_analytic_brightness(1, 1e-1, e, e), label=f"{e:.1f} MeV")
+	# plt.xlabel("r/r0")
+	# plt.legend()
 
 	plt.show()

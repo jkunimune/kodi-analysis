@@ -11,6 +11,7 @@ import scipy.stats as stats
 import scipy.special as special
 import gc
 import re
+import time
 
 import diameter
 from electric_field_model import get_analytic_brightness
@@ -21,6 +22,7 @@ np.seterr('ignore')
 SHOW_PLOTS = True
 VERBOSE = True
 METHOD = 'gelfgat'
+THRESHOLD = 1e-4
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
@@ -48,7 +50,6 @@ n_bins = 250
 
 M = 14
 L = 4.21 # cm
-EXPECTED_POINTING_ACCURACY = 2 # cm
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 
 
@@ -82,13 +83,13 @@ def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 		penumbra = np.interp(r_point, rB, nB, right=0)
 	return minimum + (maximum-minimum)*np.interp(r, r_point, penumbra/np.max(penumbra), right=0)
 
-def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
+def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1, x_guess=0, y_guess=0):
 	if len(args[0]) == 3:
-		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp, e_min, e_max = args
+		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp, e_min, e_max, x_guess, y_guess = args
 	elif len(args[0]) == 4:
-		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
+		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp, e_min, e_max, x_guess, y_guess = args
 	else:
-		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
+		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp, e_min, e_max, x_guess, y_guess = args
 	if Q < 0 or abs(x0) > CR_39_RADIUS or abs(y0) > CR_39_RADIUS: return float('inf')
 	r_eff = np.hypot(a*(X - x0) + b*(Y - y0), b*(X - x0) + c*(Y - y0))
 	if minimum is None or maximum is None:
@@ -98,7 +99,10 @@ def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 		minimum, maximum = maximum, minimum
 	teo = simple_penumbra(r_eff, δ, Q, r0, minimum, maximum, e_min, e_max)
 	error = np.sum(teo - exp*np.log(teo), where=r_eff < CR_39_RADIUS)
-	return error + (x0**2 + y0**2)/(4*EXPECTED_POINTING_ACCURACY**2) + (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
+
+	penalty = np.sum(r_eff >= CR_39_RADIUS) \
+		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) 
+	return error + penalty
 
 
 if __name__ == '__main__':
@@ -121,7 +125,7 @@ if __name__ == '__main__':
 			continue
 
 		rA = scan[APERTURE]/1.e4 # cm
-		time = float(scan[ETCH_TIME].strip(' h'))
+		etime = float(scan[ETCH_TIME].strip(' h'))
 		track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
 
 		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(scan[TIM])-1])
@@ -166,10 +170,10 @@ if __name__ == '__main__':
 		if np.std(track_list['d(µm)']) == 0:
 			cuts = [('plasma', [0, 20])]
 		else:
-			cuts = [(REDS, [0, 7]), (GREENS, [7, 9]), (BLUES, [9, 20]), (GREYS, [0, 20])]
+			cuts = [(REDS, [0, 6]), (GREENS, [6, 9]), (BLUES, [9, 20]), (GREYS, [0, 20])]
 
 		for color, (cmap, e_out_bounds) in enumerate(cuts):
-			d_bounds = diameter.D(np.array(e_out_bounds), τ=time)[::-1]
+			d_bounds = diameter.D(np.array(e_out_bounds), τ=etime)[::-1]
 			e_in_bounds = np.clip(np.array(e_out_bounds) + 2, 0, 12)
 			print(d_bounds)
 
@@ -179,13 +183,31 @@ if __name__ == '__main__':
 				print("No tracks found in this cut.")
 				continue
 
+			center_guess = [None, None] # ask the user for help finding the center
+			# fig = plt.figure()
+			# N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
+			# 	track_x, track_y, bins=(xI_bins_0, yI_bins_0))
+			# plt.pcolormesh(xI_bins_0, yI_bins_0, N.T, vmax=np.quantile(N, .999))
+			# plt.axis('square')
+			# plt.colorbar()
+			# plt.title("Please click on the center of the penumbra.")
+			# def onclick(event):
+			# 	center_guess[0] = event.xdata
+			# 	center_guess[1] = event.ydata
+			# fig.canvas.mpl_connect('button_press_event', onclick)
+			# start = time.time()
+			# while center_guess[0] is None and time.time() - start < 8.64:
+			# 	plt.pause(.01)
+			# plt.close()
+			x0, y0 = center_guess if center_guess[0] is not None else (0, 0)
+
 			N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
 				track_x, track_y, bins=(xI_bins_0, yI_bins_0))
 			assert N.shape == XI_0.shape
 
-			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N, *e_in_bounds),
+			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N, *e_in_bounds, x0, y0),
 				method='Nelder-Mead', options=dict(
-					initial_simplex=[[.5, 0, .06, 1e-1], [-.5, .5, .06, 1e-1], [-.5, -.5, .06, 1e-1], [0, 0, .1, 1e-1], [0, 0, .06, 1.9e-1]]))
+					initial_simplex=[[x0+.5, y0+0, .06, 1e-1], [x0-.5, y0+.5, .06, 1e-1], [x0-.5, y0-.5, .06, 1e-1], [x0, y0, .1, 1e-1], [x0, y0, .06, 1.9e-1]]))
 			x0, y0, δ, Q = opt.x
 			if VERBOSE: print(opt)
 			else:       print("(x0, y0) = ({0:.3f}, {1:.3f}), Q = {3:.3f} cm".format(*opt.x))
@@ -294,7 +316,7 @@ if __name__ == '__main__':
 				# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
 				χ2, χ2_prev, iterations = np.inf, np.inf, 0
 				# while iterations < 50 and χ2 > χ2_95:
-				while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > 2e-6 and iterations < 50):
+				while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > THRESHOLD and iterations < 50):
 					B /= B.sum() # correct for roundoff
 					s = signal.convolve2d(B, penumbral_kernel, mode='full')
 					G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
@@ -356,7 +378,7 @@ if __name__ == '__main__':
 			plt.ylabel("y (μm)")
 			plt.axis([-300, 300, -300, 300])
 			plt.tight_layout()
-			plt.savefig("results/{} TIM{} {:.1f}-{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, time))
+			plt.savefig("results/{} TIM{} {:.1f}-{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, etime))
 			plt.close()
 
 			# plt.show()
