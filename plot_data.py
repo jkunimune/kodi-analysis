@@ -46,7 +46,6 @@ VERBOSE = False
 
 L = 4.21 # cm
 
-EXPECTED_POINTING_ACCURACY = 2 # cm
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 
 
@@ -81,7 +80,9 @@ def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 		minimum, maximum = maximum, minimum
 	teo = simple_penumbra(r_eff, δ, Q, r0, minimum, maximum, e_min, e_max)
 	error = np.sum(teo - exp*np.log(teo), where=r_eff < CR_39_RADIUS)
-	return error + (x0**2 + y0**2)/(4*EXPECTED_POINTING_ACCURACY**2) + (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
+	penalty = np.sum(r_eff >= CR_39_RADIUS) \
+		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) 
+	return error + penalty
 
 
 if __name__ == '__main__':

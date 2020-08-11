@@ -83,13 +83,13 @@ def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 		penumbra = np.interp(r_point, rB, nB, right=0)
 	return minimum + (maximum-minimum)*np.interp(r, r_point, penumbra/np.max(penumbra), right=0)
 
-def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1, x_guess=0, y_guess=0):
+def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 	if len(args[0]) == 3:
-		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp, e_min, e_max, x_guess, y_guess = args
+		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp, e_min, e_max = args
 	elif len(args[0]) == 4:
-		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp, e_min, e_max, x_guess, y_guess = args
+		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
 	else:
-		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp, e_min, e_max, x_guess, y_guess = args
+		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
 	if Q < 0 or abs(x0) > CR_39_RADIUS or abs(y0) > CR_39_RADIUS: return float('inf')
 	r_eff = np.hypot(a*(X - x0) + b*(Y - y0), b*(X - x0) + c*(Y - y0))
 	if minimum is None or maximum is None:
@@ -99,7 +99,6 @@ def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1, x_guess=0, y_guess=0):
 		minimum, maximum = maximum, minimum
 	teo = simple_penumbra(r_eff, δ, Q, r0, minimum, maximum, e_min, e_max)
 	error = np.sum(teo - exp*np.log(teo), where=r_eff < CR_39_RADIUS)
-
 	penalty = np.sum(r_eff >= CR_39_RADIUS) \
 		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) 
 	return error + penalty
