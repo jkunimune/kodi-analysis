@@ -8,10 +8,10 @@ from perlin import perlin_generator, wave_generator
 from electric_field_model import e_field
 
 
-NOISE_SCALE = 2. # [cm]
-EFFICIENCY_NOISE = 0#.25
-DISPLACEMENT_NOISE = 0.2 # [cm*MeV]
-DISPLACEMENT_CHARGE = 0.1 # [cm*MeV]
+NOISE_SCALE = 2.5 # [cm]
+EFFICIENCY_NOISE = 0.#25
+DISPLACEMENT_NOISE = 0.1 # [cm*MeV]
+DISPLACEMENT_CHARGE = 0.07 # [cm*MeV]
 
 SYNTH_RESOLUTION = 1600
 
@@ -66,18 +66,17 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 		x = np.linspace(-200e-4, 200e-4, SYNTH_RESOLUTION)
 		y = np.linspace(-200e-4, 200e-4, SYNTH_RESOLUTION)
 		X, Y = np.meshgrid(x, y)
-		img_lo = np.zeros(X.shape)
-		img_md = np.zeros(X.shape)
 		if shot == 'square':
-			img_hi = np.where((np.absolute(X) < 100e-4) & (np.absolute(Y) < 100e-4), 1, 0)
+			img_lo = np.where((np.absolute(X) < 60e-4) & (np.absolute(Y) < 60e-4), 1, 0)
 		elif shot == 'eclipse':
-			img_hi = np.where((np.hypot(X-100e-4, Y+50e-4) < 100e-4) & (np.hypot(X-120e-4, Y+40e-4) > 50e-4), 1, 0)
+			img_lo = np.where((np.hypot(X-80e-4, Y+40e-4) < 80e-4) & (np.hypot(X-96e-4, Y+32e-4) > 40e-4), 1, 0)
 		elif shot == 'gaussian':
-			img_hi = np.exp(-(X**2 + Y**2)/(2*100e-4**2))
+			img_lo = np.exp(-(X**2 + Y**2)/(2*50e-4**2))
 		elif shot == 'hypergaussian':
-			img_hi = np.exp(-(X**3 + Y**3)/(2*100e-4**3))
+			img_lo = np.exp(-(X**3 + Y**3)/(2*50e-4**3))
 		elif shot == 'ellipse':
-			img_hi = np.exp(-(X**2*2 + Y**2/2)/(2*100e-4**2))
+			img_lo = np.exp(-(X**2*2 + Y**2/2)/(2*50e-4**2))
+		img_md, img_hi = np.zeros(img_lo.shape), np.zeros(img_lo.shape)
 
 	δx_noise, δy_noise = wave_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE, dimensions=2)
 	δε_noise = wave_generator(-4, 4, -4, 4, NOISE_SCALE, EFFICIENCY_NOISE)
@@ -98,19 +97,20 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 	y_list = []
 	d_list = []
 	for i in range(1):
-		for img, diameter, energy in [(img_hi, 1, 12), (img_md, 2.5, 8), (img_lo, 5, 4)]: # do each diameter bin separately
+		for img, diameter, energy_bin in [(img_hi, 1, (9, 13)), (img_md, 2.5, (6, 9)), (img_lo, 5, (2, 6))]: # do each diameter bin separately
 			if img.sum() == 0: # but skip synthetically empty bins
 				continue
 
 			random_index = np.random.choice(np.arange(len(X.ravel())), int(N*(np.sum(img)/np.sum(img_hi + img_md + img_lo))), p=img.ravel()/img.sum()) # sample from the distribution
 			xS, yS = np.stack([X.ravel(), Y.ravel()], axis=1)[random_index].T
+			energy = np.random.uniform(*energy_bin, len(xS))
 
 			r = L*np.arccos(1 - np.random.random(len(xS))*(1 - np.cos(rA/L))) # sample over the aperture
 			θ = 2*np.pi*np.random.random(len(xS))
 			xA = r*np.cos(θ)
 			yA = r*np.sin(θ)
 
-			δr = DISPLACEMENT_CHARGE/energy*np.log((1 + 1/(1 - r/rA)**2)/(1 + 1/(1 + r/rA)**2))
+			δr = DISPLACEMENT_CHARGE/energy*e_field(r/rA)
 			δx = δx_noise(xA, yA)/energy + δr*np.cos(θ)
 			δy = δy_noise(xA, yA)/energy + δr*np.sin(θ)
 
@@ -119,12 +119,12 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 
 			rD = np.hypot(xD, yD)
 
-			N_background = int(N*(np.sum(img)/np.sum(img_hi + img_md + img_lo))/SNR*7.8**2/(np.pi*rA**2*(M + 1)**2)) #  compute the desired background
+			N_background = int(N*(np.sum(img)/np.sum(img_hi + img_md + img_lo))/SNR*8**2/(np.pi*rA**2*(M + 1)**2)) #  compute the desired background
 
 			# x_list += list(xD[(np.hypot(xS, yS) <= 60e-4*np.sqrt(2)) & ((rD <= (M+1)*rA/12) | (rD >= (M+1)*rA*.90))])
 			# y_list += list(yD[(np.hypot(xS, yS) <= 60e-4*np.sqrt(2)) & ((rD <= (M+1)*rA/12) | (rD >= (M+1)*rA*.90))])
-			x_list += list(xD) + list(np.random.uniform(-3.4, 3.4, N_background))
-			y_list += list(yD) + list(np.random.uniform(-3.4, 3.4, N_background))
+			x_list += list(xD) + list(np.random.uniform(-4, 4, N_background))
+			y_list += list(yD) + list(np.random.uniform(-4, 4, N_background))
 			d_list += list(np.full(len(xS) + N_background, diameter)) # and add it in with the signal
 
 	with open(FOLDER+'simulated shot {} TIM{}.txt'.format(shot, 2), 'w') as f:
@@ -134,7 +134,7 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 				f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], -y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
 
 	plt.figure()
-	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-300, 300, 51), np.linspace(-300, 300, 51)), cmap='plasma')
+	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-300, 300, 101), np.linspace(-300, 300, 101)), cmap='plasma')
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.colorbar()

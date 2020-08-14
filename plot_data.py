@@ -42,6 +42,7 @@ TIM_LOCATIONS = [
 VIEW_RADIUS = 3.0 # cm
 CR_39_RADIUS = 2.2 # cm
 n_bins = 350
+PLOT_LINES = False
 VERBOSE = False
 
 L = 4.21 # cm
@@ -192,8 +193,9 @@ if __name__ == '__main__':
 			plt.pcolormesh(xI_bins, yI_bins, exp.T, vmin=0, vmax=np.quantile(exp[np.hypot(XI-x0, YI-y0) < rA*(M+1)], .999))
 			T = np.linspace(0, 2*np.pi, 361)
 			x_ell, y_ell = np.matmul(np.linalg.inv([[a, b], [b, c]]), [np.cos(T), np.sin(T)])
-			plt.plot(rA*(M+1)*x_ell + x0, rA*(M+1)*y_ell + y0, 'w--')
-			plt.plot(CR_39_RADIUS*x_ell + x0, CR_39_RADIUS*y_ell + y0, 'w-')
+			if PLOT_LINES:
+				plt.plot(rA*(M+1)*x_ell + x0, rA*(M+1)*y_ell + y0, 'w--')
+				plt.plot(CR_39_RADIUS*x_ell + x0, CR_39_RADIUS*y_ell + y0, 'w-')
 			plt.colorbar()
 			plt.title("Penumbral image of TIM {} of shot {}".format(scan[TIM], scan[SHOT]))
 			plt.xlabel("x (cm)")
