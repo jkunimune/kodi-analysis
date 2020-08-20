@@ -14,6 +14,8 @@ mD = 2.014*1.66053904e-27
 mT = 3.016*1.66053904e-27
 mC = 12.00*1.66053904e-27
 kB = 8.617333262145e-8 # keV/K
+ɛ0 = 8.854e-12 # F/m
+qe = 1.6e-19 # C
 
 σD = np.loadtxt('endf-6[58591].txt', skiprows=4)
 σD[:,0] = 14.1*4/9*(1 - σD[:,0]) # MeV
@@ -133,15 +135,42 @@ if __name__ == '__main__':
 		print(SHOT)
 		t, (R, ρ, P, V, Te, Ti) = load_shot(SHOT)
 
-		# plt.figure()
-		# for i in list(range(R.shape[1]//2, R.shape[1]))+[iBT]:
-		# 	plt.clf()
-		# 	plt.plot(R[i,:]/1e-6, Yn[i,:])
-		# 	plt.plot(R[i,:]/1e-6, ρ[i,:]/ρ.max()*Yn.max())
-		# 	plt.xlim(0, 400)
-		# 	plt.ylim(0, Yn.max())
-		# 	plt.pause(.01)
+		R = R*1e-2 # convert to meters
+		ρ = ρ*1e-3/(1e-2)**3 # convert to kg/m^3
+		Ti = kB*Ti # convert to keV
+		Te = kB*Te
+		ne = ρ/((mD + mT)/2) # m^-3
+		nD, nT = ne/2, ne/2
+		dt = np.gradient(t)
+		dR = np.gradient(R, axis=1)
+
+		C = [0, 1.17302e-15, 1.51361e-2, 7.51886e-2, 4.60643e-3, 1.35000e-2, -1.06750e-4, 1.36600e-5]
+		θ = Ti/(1 - (Ti*(C[2] + Ti*(C[4] + Ti*C[6]))/(1 + Ti*(C[3] + Ti*(C[5] + Ti*C[7])))))
+		ξ = (34.3827**2/(4*θ))**(1/3)
+		σv = C[1]*θ*np.sqrt(ξ/(1124656*Ti**3))*np.exp(-3*ξ) # m^3/s
+		σv[np.isnan(σv)] = 0
+		# plt.loglog(Ti[Ti > 1], σv[Ti > 1], '.')
 		# plt.show()
+		Yn = nD*nT*σv # [1/(m^3 s)]
+
+		Ti = qe*1e3*Ti # convert to J
+		Te = qe*1e3*Te # convert to J
+
+		Γ = qe**2/(4*np.pi*ɛ0*Te)*(4/3*np.pi*ne)**(1/3)
+
+		plt.figure()
+		iBT = np.argmax(np.sum(Yn*R**2, axis=1)*np.sum(ρ, axis=1))
+		for i in list(range(0, R.shape[1], 2)) + [iBT]:
+			plt.clf()
+			plt.plot(R[i,:-1]/1e-6, Γ[i,:-1])
+			# plt.plot(R[i,:]/1e-6, ρ[i,:])
+			# plt.plot(R[i,:]/1e-6, Yn[i,:])
+			plt.yscale('log')
+			plt.xlim(0, 400)
+			# plt.ylim(Γ[:,:-1].min(), Γ[:,:-1].max())
+			plt.ylim(1e-3, 1e2)
+			plt.pause(.01)
+		plt.show()
 
 		# plt.figure()
 		# plt.pcolormesh(np.tile(t, (R.shape[1], 1)).T/1e-9, R/1e-6, ρ*1e-3/(1e-2)**3, cmap='magma')

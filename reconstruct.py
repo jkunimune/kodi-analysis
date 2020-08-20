@@ -438,11 +438,11 @@ if __name__ == '__main__':
 			plt.contourf((x_layers[2] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 			# if xray is not None:
 			# 	plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
-			# plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
-			# plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
-			# plt.arrow(0, 0, 2*x_flo/1e-4, 2*y_flo/1e-4, color='k', head_width=15, head_length=15, length_includes_head=True)
-			# plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(z_off/r_off, z_flo/r_flo),
-			# 	verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
+			plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
+			plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
+			plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k', head_width=5, head_length=5, length_includes_head=True)
+			plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(z_off/r_off, z_flo/r_flo),
+				verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
 			plt.axis('square')
 			plt.axis([-100, 100, -100, 100])
 			plt.xlabel("x (μm)")
