@@ -19,10 +19,10 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
 
 np.seterr('ignore')
 
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 VERBOSE = True
 METHOD = 'gelfgat'
-THRESHOLD = 1e-4
+THRESHOLD = 3e-5
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
@@ -46,12 +46,16 @@ TIM_LOCATIONS = [
 
 CR_39_RADIUS = 2.2 # cm
 n_MC = 1000000
-n_bins = 250
+n_bins = 400
 
 M = 14
 L = 4.21 # cm
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 
+
+def sl(a, b, c):
+	if b == -1 and c < 0: b = None
+	return slice(a, b, c)
 
 def paste_slices(tup):
 	pos, w, max_w = tup
@@ -67,6 +71,19 @@ def paste(wall, block, loc):
 	loc_zip = zip(loc, block.shape, wall.shape)
 	wall_slices, block_slices = zip(*map(paste_slices, loc_zip))
 	wall[wall_slices] = block[block_slices]
+
+def convolve2d(a, b, where):
+	""" more efficient when where is mostly False, less efficient otherwise.
+		I don't know which way b is supposed to face, so make it symmetric. """
+	c = np.zeros(where.shape)
+	for i, j in zip(*np.nonzero(where)):
+		if where[i,j]:
+			mt = max(0, i - b.shape[0] + 1) # omitted rows on top
+			mb = max(0, a.shape[0] - i - 1) # omitted rows on bottom
+			mr = max(0, j - b.shape[1] + 1) # omitted columns on right
+			ml = max(0, a.shape[1] - j - 1) # omitted rows on left
+			c[i,j] += np.sum(a[mt:a.shape[0]-mb, mr:a.shape[1]-ml]*b[sl(i-mt, i-a.shape[0]+mb, -1), sl(j-mr, j-a.shape[1]+ml, -1)])
+	return c
 
 def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max)
@@ -169,7 +186,7 @@ if __name__ == '__main__':
 		if np.std(track_list['d(µm)']) == 0:
 			cuts = [('plasma', [0, 20])]
 		else:
-			cuts = [(REDS, [0, 6]), (GREENS, [6, 9]), (BLUES, [9, 20]), (GREYS, [0, 20])]
+			cuts = [(REDS, [0, 6]), (GREENS, [6, 10]), (BLUES, [10, 20]), (GREYS, [0, 20])] # [MeV] (post-filtering)
 
 		for color, (cmap, e_out_bounds) in enumerate(cuts):
 			d_bounds = diameter.D(np.array(e_out_bounds), τ=etime)[::-1]
@@ -204,7 +221,7 @@ if __name__ == '__main__':
 				track_x, track_y, bins=(xI_bins_0, yI_bins_0))
 			assert N.shape == XI_0.shape
 
-			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N, *e_in_bounds, x0, y0),
+			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N, *e_in_bounds),
 				method='Nelder-Mead', options=dict(
 					initial_simplex=[[x0+.5, y0+0, .06, 1e-1], [x0-.5, y0+.5, .06, 1e-1], [x0-.5, y0-.5, .06, 1e-1], [x0, y0, .1, 1e-1], [x0, y0, .06, 1.9e-1]]))
 			x0, y0, δ, Q = opt.x
@@ -304,8 +321,10 @@ if __name__ == '__main__':
 			elif METHOD == 'gelfgat':
 				D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, background, umbra, *e_in_bounds) # make D equal to the fit to N
 
+				penumbra_low = np.quantile(penumbral_kernel/penumbral_kernel.max(), .30)
+				penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .40)
 				reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
-				data_bins = (reach > .001) & (reach < .999*reach.max()) # exclude bins that are touched by all or none of the source pixels
+				data_bins = (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are touched by all or none of the source pixels
 				n_data_bins = np.sum(data_bins)
 				N[np.logical_not(data_bins)] = np.nan
 
@@ -317,16 +336,18 @@ if __name__ == '__main__':
 				# while iterations < 50 and χ2 > χ2_95:
 				while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > THRESHOLD and iterations < 50):
 					B /= B.sum() # correct for roundoff
-					s = signal.convolve2d(B, penumbral_kernel, mode='full')
+					s = convolve2d(B, penumbral_kernel, where=data_bins)
 					G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
 					N_teo = G*s + background
-					δB = np.empty(B.shape) # step direction
-					for i in range(n_pixs):
-						for j in range(n_pixs): # we need a for loop for this part because of memory constraints
-							dsdB = np.zeros((n_bins, n_bins)) # derivative of teo image by this particular source pixel
-							paste(dsdB, penumbral_kernel, (i, j))
-							δB[i,j] = B[i,j]*np.sum(dsdB*(N - N_teo)/D, where=data_bins) # derivative of L with respect to Bij
-					δs = signal.convolve2d(δB, penumbral_kernel, mode='full') # step projected into measurement space
+					δB = np.zeros(B.shape) # step direction
+					dLdN = (N - N_teo)/D
+					for i, j in zip(*np.nonzero(data_bins)): # we need a for loop for this part because of memory constraints
+						mt = max(0, i - penumbral_kernel.shape[0] + 1)
+						mb = max(0, n_pixs - i - 1)
+						ml = max(0, j - penumbral_kernel.shape[1] + 1)
+						mr = max(0, n_pixs - j - 1)
+						δB[mt:n_pixs-mb, ml:n_pixs-mr] += B[mt:n_pixs-mb, ml:n_pixs-mr]*dLdN[i,j]*penumbral_kernel[sl(i-mt, i-n_pixs+mb, -1), sl(j-ml, j-n_pixs+mr, -1)]
+					δs = convolve2d(δB, penumbral_kernel, where=data_bins) # step projected into measurement space
 					Fs, Fδ = np.sum(F*s/D, where=data_bins), np.sum(F*δs/D, where=data_bins)
 					Ss, Sδ = np.sum(s**2/D, where=data_bins), np.sum(s*δs/D, where=data_bins)
 					Dδ = np.sum(δs**2/D, where=data_bins)
@@ -338,9 +359,12 @@ if __name__ == '__main__':
 					# fig, axes = plt.subplots(3, 2)
 					# gs1 = gridspec.GridSpec(4, 4)
 					# gs1.update(wspace=0, hspace=0) # set the spacing between axes. 
-					# axes[0,0].axis('off')
+					# axes[0,0].set_title("Previous step")
+					# plot = axes[0,0].pcolormesh(xS_bins, yS_bins, G*h/2*δB, cmap='plasma')
+					# axes[0,0].axis('square')
+					# fig.colorbar(plot, ax=axes[0,0])
 					# axes[0,1].set_title("Fit source image")
-					# plot = axes[0,1].pcolormesh(xS_bins, yS_bins, G*np.flip(B.T, 0).T, vmin=0, vmax=G*B.max(), cmap='plasma')
+					# plot = axes[0,1].pcolormesh(xS_bins, yS_bins, G*B, vmin=0, vmax=G*B.max(), cmap='plasma')
 					# axes[0,1].axis('square')
 					# fig.colorbar(plot, ax=axes[0,1])
 					# axes[1,0].set_title("Penumbral image")
@@ -375,7 +399,7 @@ if __name__ == '__main__':
 			plt.title("B(x, y) of TIM {} on shot {} with d ∈ [{:.1f}μm,{:.1f}μm)".format(scan[TIM], scan[SHOT], *d_bounds))
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
-			plt.axis([-300, 300, -300, 300])
+			plt.axis([-100, 100, -100, 100])
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} {:.1f}-{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, etime))
 			plt.close()
@@ -392,14 +416,14 @@ if __name__ == '__main__':
 			xray = None
 		if xray is not None:
 			plt.figure()
-			plt.pcolormesh(np.linspace(-300, 300, 3), np.linspace(-300, 300, 3), np.zeros((2, 2)), cmap=VIOLETS, vmin=0, vmax=1)
+			# plt.pcolormesh(np.linspace(-300, 300, 3), np.linspace(-300, 300, 3), np.zeros((2, 2)), cmap=VIOLETS, vmin=0, vmax=1)
 			plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)
 			plt.colorbar()
 			plt.axis('square')
 			plt.title("X-ray image of TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
-			plt.axis([-300, 300, -300, 300])
+			plt.axis([-100, 100, -100, 100])
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} xray sourceimage.png".format(scan[SHOT], scan[TIM]))
 			plt.close()
@@ -412,16 +436,15 @@ if __name__ == '__main__':
 			plt.contourf((x_layers[0] - x0)/1e-4, (y_layers[0] - y0)/1e-4, image_layers[0], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
 			plt.contourf((x_layers[1] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
 			plt.contourf((x_layers[2] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
-			if xray is not None:
-				# plt.contourf(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[0, .25, 1], colors=['#00000000', '#550055BB', '#000000FF'])
-				plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
-			plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
-			plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
-			plt.arrow(0, 0, 2*x_flo/1e-4, 2*y_flo/1e-4, color='k', head_width=15, head_length=15, length_includes_head=True)
-			plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(z_off/r_off, z_flo/r_flo),
-				verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
+			# if xray is not None:
+			# 	plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
+			# plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
+			# plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
+			# plt.arrow(0, 0, 2*x_flo/1e-4, 2*y_flo/1e-4, color='k', head_width=15, head_length=15, length_includes_head=True)
+			# plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(z_off/r_off, z_flo/r_flo),
+			# 	verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
 			plt.axis('square')
-			plt.axis([-300, 300, -300, 300])
+			plt.axis([-100, 100, -100, 100])
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
 			plt.title("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
