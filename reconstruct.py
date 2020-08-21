@@ -132,7 +132,7 @@ if __name__ == '__main__':
 	for i, scan in shot_list.iterrows():
 		filename = None
 		for fname in os.listdir(FOLDER):
-			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname:
+			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname and scan[ETCH_TIME].replace(' ','') in fname:
 				filename = fname
 				print("Beginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 				break
@@ -200,21 +200,21 @@ if __name__ == '__main__':
 				continue
 
 			center_guess = [None, None] # ask the user for help finding the center
-			# fig = plt.figure()
-			# N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
-			# 	track_x, track_y, bins=(xI_bins_0, yI_bins_0))
-			# plt.pcolormesh(xI_bins_0, yI_bins_0, N.T, vmax=np.quantile(N, .999))
-			# plt.axis('square')
-			# plt.colorbar()
-			# plt.title("Please click on the center of the penumbra.")
-			# def onclick(event):
-			# 	center_guess[0] = event.xdata
-			# 	center_guess[1] = event.ydata
-			# fig.canvas.mpl_connect('button_press_event', onclick)
-			# start = time.time()
-			# while center_guess[0] is None and time.time() - start < 8.64:
-			# 	plt.pause(.01)
-			# plt.close()
+			fig = plt.figure()
+			N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
+				track_x, track_y, bins=(xI_bins_0, yI_bins_0))
+			plt.pcolormesh(xI_bins_0, yI_bins_0, N.T, vmax=np.quantile(N, .999))
+			plt.axis('square')
+			plt.colorbar()
+			plt.title("Please click on the center of the penumbrus.")
+			def onclick(event):
+				center_guess[0] = event.xdata
+				center_guess[1] = event.ydata
+			fig.canvas.mpl_connect('button_press_event', onclick)
+			start = time.time()
+			while center_guess[0] is None and time.time() - start < 8.64:
+				plt.pause(.01)
+			plt.close()
 			x0, y0 = center_guess if center_guess[0] is not None else (0, 0)
 
 			N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
