@@ -20,6 +20,8 @@ L = 4.21 # cm
 rs = 60e-4 # cm
 rA = 1000e-4 # cm
 
+EIN_CUTS = [2.2, 7, 10, 15]
+
 FOLDER = 'scans/'
 
 short_header = """\
@@ -52,13 +54,13 @@ Limits imposed on tracks listed below:
 """
 
 
-for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
-# for shot, N, SNR in [('square', 1000000, 8), ('eclipse', 100000, 1), ('gaussian', 100000, 1)]:
+# for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+for shot, N, SNR in [('gaussian', 1000000, 8)]:
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
-		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [10, 15])
-		img_md, x_bins, y_bins = make_image(t, R, ρ, Ti, [ 7, 10])
-		img_lo, x_bins, y_bins = make_image(t, R, ρ, Ti, [2.2, 7])
+		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[2], EIN_CUTS[3]])
+		img_md, x_bins, y_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[1], EIN_CUTS[2]])
+		img_lo, x_bins, y_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[0], EIN_CUTS[1]])
 		x_bins, y_bins = x_bins*1e-4, y_bins*1e-4 # convert to cm
 		x, y = (x_bins[1:] + x_bins[:-1])/2, (y_bins[1:] + y_bins[:-1])/2
 		X, Y = np.meshgrid(x, y)
@@ -97,13 +99,13 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 	y_list = []
 	d_list = []
 	for i in range(1):
-		for img, diameter, energy_bin in [(img_hi, 1, (9, 13)), (img_md, 2.5, (6, 9)), (img_lo, 5, (2, 6))]: # do each diameter bin separately
+		for img, diameter, energy_in_bin in [(img_hi, 1, (EIN_CUTS[2], EIN_CUTS[3])), (img_md, 2.5, (EIN_CUTS[1], EIN_CUTS[2])), (img_lo, 5, (EIN_CUTS[0], EIN_CUTS[1]))]: # do each diameter bin separately
 			if img.sum() == 0: # but skip synthetically empty bins
 				continue
 
 			random_index = np.random.choice(np.arange(len(X.ravel())), int(N*(np.sum(img)/np.sum(img_hi + img_md + img_lo))), p=img.ravel()/img.sum()) # sample from the distribution
 			xS, yS = np.stack([X.ravel(), Y.ravel()], axis=1)[random_index].T
-			energy = np.random.uniform(*energy_bin, len(xS))
+			energy = np.random.uniform(*energy_in_bin, len(xS))
 
 			r = L*np.arccos(1 - np.random.random(len(xS))*(1 - np.cos(rA/L))) # sample over the aperture
 			θ = 2*np.pi*np.random.random(len(xS))
@@ -127,7 +129,7 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 			y_list += list(yD) + list(np.random.uniform(-4, 4, N_background))
 			d_list += list(np.full(len(xS) + N_background, diameter)) # and add it in with the signal
 
-	with open(FOLDER+'simulated shot {} TIM{}.txt'.format(shot, 2), 'w') as f:
+	with open(FOLDER+'simulated shot {} TIM{} {}h.txt'.format(shot, 2, 2), 'w') as f:
 		f.write(short_header)
 		for i in range(len(x_list)):
 			if np.random.random() < .8 + δε_noise(x_list[i], y_list[i]):

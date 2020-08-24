@@ -23,6 +23,7 @@ SHOW_PLOTS = False
 VERBOSE = True
 METHOD = 'gelfgat'
 THRESHOLD = 3e-5
+ASK_FOR_HELP = False
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
@@ -184,9 +185,9 @@ if __name__ == '__main__':
 		image_layers, x_layers, y_layers = [], [], []
 
 		if np.std(track_list['d(µm)']) == 0:
-			cuts = [('plasma', [0, 20])]
+			cuts = [('plasma', [0, 6])]
 		else:
-			cuts = [(REDS, [0, 6]), (GREENS, [6, 10]), (BLUES, [10, 20]), (GREYS, [0, 20])] # [MeV] (post-filtering)
+			cuts = [(REDS, [0, 6]), (GREENS, [6, 9]), (BLUES, [9, 20]), (GREYS, [0, 20])] # [MeV] (post-filtering)
 
 		for color, (cmap, e_out_bounds) in enumerate(cuts):
 			d_bounds = diameter.D(np.array(e_out_bounds), τ=etime)[::-1]
@@ -200,21 +201,22 @@ if __name__ == '__main__':
 				continue
 
 			center_guess = [None, None] # ask the user for help finding the center
-			fig = plt.figure()
-			N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
-				track_x, track_y, bins=(xI_bins_0, yI_bins_0))
-			plt.pcolormesh(xI_bins_0, yI_bins_0, N.T, vmax=np.quantile(N, .999))
-			plt.axis('square')
-			plt.colorbar()
-			plt.title("Please click on the center of the penumbrus.")
-			def onclick(event):
-				center_guess[0] = event.xdata
-				center_guess[1] = event.ydata
-			fig.canvas.mpl_connect('button_press_event', onclick)
-			start = time.time()
-			while center_guess[0] is None and time.time() - start < 8.64:
-				plt.pause(.01)
-			plt.close()
+			if ASK_FOR_HELP:
+				fig = plt.figure()
+				N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
+					track_x, track_y, bins=(xI_bins_0, yI_bins_0))
+				plt.pcolormesh(xI_bins_0, yI_bins_0, N.T, vmax=np.quantile(N, .999))
+				plt.axis('square')
+				plt.colorbar()
+				plt.title("Please click on the center of the penumbrus.")
+				def onclick(event):
+					center_guess[0] = event.xdata
+					center_guess[1] = event.ydata
+				fig.canvas.mpl_connect('button_press_event', onclick)
+				start = time.time()
+				while center_guess[0] is None and time.time() - start < 8.64:
+					plt.pause(.01)
+				plt.close()
 			x0, y0 = center_guess if center_guess[0] is not None else (0, 0)
 
 			N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
@@ -226,7 +228,7 @@ if __name__ == '__main__':
 					initial_simplex=[[x0+.5, y0+0, .06, 1e-1], [x0-.5, y0+.5, .06, 1e-1], [x0-.5, y0-.5, .06, 1e-1], [x0, y0, .1, 1e-1], [x0, y0, .06, 1.9e-1]]))
 			x0, y0, δ, Q = opt.x
 			if VERBOSE: print(opt)
-			else:       print("(x0, y0) = ({0:.3f}, {1:.3f}), Q = {3:.3f} cm".format(*opt.x))
+			else:       print("(x0, y0) = ({0:.3f}, {1:.3f}), Q = {3:.3f} cm/MeV".format(*opt.x))
 
 			background = np.sum( # recompute these, but with better centering
 				(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) &\
