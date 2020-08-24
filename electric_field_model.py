@@ -1,7 +1,5 @@
 import numpy as np
-
-
-p = [-1.057, 1.059, .01207, -2.294, 2.115, -1.661, .842]
+from scipy import integrate
 
 
 def normalize(x):
@@ -9,10 +7,9 @@ def normalize(x):
 
 def e_field(x):
 	""" dimensionless electric field as a function of normalized radius """
-	# return (np.log((1 + x)/(1 - x)) - 2*x - 2/3*x**3
-	return np.log((1 + 1/(1 - x)**2)/(1 + 1/(1 + x)**2))# - 2*x
-	# return .4892*np.log((1 + (1 - x**.6917)**-2)/(1 + (1 + x**.6917)**-2))
-	# return np.zeros(x.shape)
+	return np.where(x > x_ref[-1],
+		(np.log(1 - x) - np.log(1 - x_ref[-1]))/(np.log(1 - x_ref[-2]) - np.log(1 - x_ref[-1]))*(E_ref[-2] - E_ref[-1]) + E_ref[-1],
+		np.interp(x, x_ref, E_ref))
 
 def get_analytic_brightness(r0, Q, e_min=1e-15, e_max=1):
 	""" get the effective brightness as a function of radius, accounting for a roughly boxcar energy spectrum """
@@ -21,6 +18,12 @@ def get_analytic_brightness(r0, Q, e_min=1e-15, e_max=1):
 		present_blurs[np.argmin(np.absolute(K - Q/((e_min+e_max)/2)/r0))] = True
 	return r0*R, normalize(np.sum(N[present_blurs, :], axis=0))
 
+
+x_ref = np.linspace(0, 1, 1001)[:-1]
+E_ref = np.empty(1000)
+for i, a in enumerate(x_ref):
+	E_ref[i] = integrate.quad(lambda b: np.sqrt(1 - b**2)/((a - b)*np.sqrt(1 - b**2 + (a - b)**2)), -1, 2*a-1)[0] + integrate.quad(lambda b: (np.sqrt(1 - b**2)/np.sqrt((a - b)**2 + 1 - b**2) - np.sqrt(1 - (2*a - b)**2)/np.sqrt((a - b)**2 + 1 - (2*a - b)**2))/(a - b), 2*a-1, a)[0]
+E_ref -= x_ref/x_ref[1]*E_ref[1]
 
 R = np.linspace(0, 3, 3000) # normalized position
 E = np.geomspace(1e-1, 1e6, 700)
