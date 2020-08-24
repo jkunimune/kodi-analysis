@@ -20,7 +20,7 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
 np.seterr('ignore')
 
 SHOW_PLOTS = False
-VERBOSE = True
+VERBOSE = False
 METHOD = 'gelfgat'
 THRESHOLD = 3e-5
 ASK_FOR_HELP = False
@@ -324,7 +324,7 @@ if __name__ == '__main__':
 				D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, background, umbra, *e_in_bounds) # make D equal to the fit to N
 
 				penumbra_low = np.quantile(penumbral_kernel/penumbral_kernel.max(), .30)
-				penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .40)
+				penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .50)
 				reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
 				data_bins = (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are touched by all or none of the source pixels
 				n_data_bins = np.sum(data_bins)
@@ -453,3 +453,5 @@ if __name__ == '__main__':
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} nestplot.png".format(scan[SHOT], scan[TIM]))
 			plt.close()
+		else:
+			print(f"σ = {np.sqrt(np.average(np.square(np.hypot(x_layers[0] - x0, y_layers[0] - y0)), weights=image_layers[0])/2)/1e-4:.3f} μm")

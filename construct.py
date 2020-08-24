@@ -10,7 +10,7 @@ from electric_field_model import e_field
 
 NOISE_SCALE = 2.5 # [cm]
 EFFICIENCY_NOISE = 0.#25
-DISPLACEMENT_NOISE = 0.1 # [cm*MeV]
+DISPLACEMENT_NOISE = 0.#1 # [cm*MeV]
 DISPLACEMENT_CHARGE = 0.07 # [cm*MeV]
 
 SYNTH_RESOLUTION = 1600
