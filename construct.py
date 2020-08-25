@@ -9,9 +9,9 @@ from electric_field_model import e_field
 
 
 NOISE_SCALE = 2.5 # [cm]
-EFFICIENCY_NOISE = 0.#25
-DISPLACEMENT_NOISE = 0.#1 # [cm*MeV]
-DISPLACEMENT_CHARGE = 0.07 # [cm*MeV]
+EFFICIENCY_NOISE = 0.#10
+DISPLACEMENT_NOISE = 0.20 # [cm*MeV]
+DISPLACEMENT_CHARGE = 0.15 # [cm*MeV]
 
 SYNTH_RESOLUTION = 1600
 
@@ -54,8 +54,8 @@ Limits imposed on tracks listed below:
 """
 
 
-# for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
-for shot, N, SNR in [('gaussian', 1000000, 8)]:
+for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+# for shot, N, SNR in [('gaussian', 1000000, 8)]:
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[2], EIN_CUTS[3]])

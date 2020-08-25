@@ -29,6 +29,7 @@ FOLDER = 'scans/'
 SHOT = 'Shot number'
 TIM = 'TIM'
 APERTURE = 'Aperture Radius'
+MAGNIFICATION = 'Magnification'
 ETCH_TIME = 'Etch time'
 R_OFFSET = 'Offset (um)'
 Θ_OFFSET = 'Offset theta (deg)'
@@ -49,7 +50,6 @@ CR_39_RADIUS = 2.2 # cm
 n_MC = 1000000
 n_bins = 400
 
-M = 14
 L = 4.21 # cm
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 
@@ -104,6 +104,9 @@ def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 	if len(args[0]) == 3:
 		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp, e_min, e_max = args
+	elif len(args[0]) == 4 and len(args) == 8:
+		(x0, y0, δ, r0), minimum, maximum, X, Y, exp, e_min, e_max = args
+		Q = 0
 	elif len(args[0]) == 4:
 		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
 	else:
@@ -142,6 +145,7 @@ if __name__ == '__main__':
 			continue
 
 		rA = scan[APERTURE]/1.e4 # cm
+		M = scan[MAGNIFICATION] # cm
 		etime = float(scan[ETCH_TIME].strip(' h'))
 		track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
 
@@ -227,8 +231,9 @@ if __name__ == '__main__':
 				method='Nelder-Mead', options=dict(
 					initial_simplex=[[x0+.5, y0+0, .06, 1e-1], [x0-.5, y0+.5, .06, 1e-1], [x0-.5, y0-.5, .06, 1e-1], [x0, y0, .1, 1e-1], [x0, y0, .06, 1.9e-1]]))
 			x0, y0, δ, Q = opt.x
+			M = r0/rA - 1
 			if VERBOSE: print(opt)
-			else:       print("(x0, y0) = ({0:.3f}, {1:.3f}), Q = {3:.3f} cm/MeV".format(*opt.x))
+			else:       print("(x0, y0) = ({0:.3f}, {1:.3f}), Q = {2:.3f}, M = {3:.3f} cm/MeV".format(x0, y0, Q, M))
 
 			background = np.sum( # recompute these, but with better centering
 				(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) &\
