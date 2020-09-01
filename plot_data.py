@@ -97,7 +97,7 @@ if __name__ == '__main__':
 	for i, scan in shot_list.iterrows():
 		filename = None
 		for fname in os.listdir(FOLDER):
-			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname:
+			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname and scan[ETCH_TIME].replace(' ','') in fname:
 				filename = fname
 				print("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 				break
@@ -127,6 +127,9 @@ if __name__ == '__main__':
 			track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
 		track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do your best to center
 		track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
+
+		# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 101), np.linspace(0, 50, 51)))
+		# plt.show()
 
 		# for e_min, e_max in [(e, e+.2) for e in np.arange(1, 14, .2)]:
 		for e_min, e_max in [(0, 20)]:

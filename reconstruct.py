@@ -46,9 +46,9 @@ TIM_LOCATIONS = [
 	[100.81, 270.00],
 	[np.nan,np.nan]]
 
-CR_39_RADIUS = 2.2 # cm
+CR_39_RADIUS = 3.0 # cm
 n_MC = 1000000
-n_bins = 400
+n_bins = 500
 
 L = 4.21 # cm
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -96,9 +96,11 @@ def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 		r_point = np.arange(-4*δ, 2*r0, r_kernel[1] - r_kernel[0])
 		n_point = np.interp(r_point, rB, nB, right=0)
 		penumbra = np.convolve(n_point, n_kernel, mode='same')
-	else:
+	elif δ >= 0:
 		r_point = np.linspace(0, CR_39_RADIUS, n_bins)
 		penumbra = np.interp(r_point, rB, nB, right=0)
+	else:
+		return np.full(r.shape, np.nan)
 	return minimum + (maximum-minimum)*np.interp(r, r_point, penumbra/np.max(penumbra), right=0)
 
 def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
@@ -144,6 +146,7 @@ if __name__ == '__main__':
 			print("Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 			continue
 
+		Q = None
 		rA = scan[APERTURE]/1.e4 # cm
 		M = scan[MAGNIFICATION] # cm
 		etime = float(scan[ETCH_TIME].strip(' h'))
@@ -175,7 +178,7 @@ if __name__ == '__main__':
 		track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 		track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
-		# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)))
+		# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 101), np.linspace(0, 50, 51)))
 		# plt.show()
 
 		r0 = (M + 1)*rA
@@ -189,9 +192,9 @@ if __name__ == '__main__':
 		image_layers, x_layers, y_layers = [], [], []
 
 		if np.std(track_list['d(µm)']) == 0:
-			cuts = [('plasma', [0, 6])]
+			cuts = [('plasma', [0, 5])]
 		else:
-			cuts = [(REDS, [0, 6]), (GREENS, [6, 9]), (BLUES, [9, 20]), (GREYS, [0, 20])] # [MeV] (post-filtering)
+			cuts = [(GREYS, [0, 20]), (REDS, [0, 5]), (GREENS, [5, 9]), (BLUES, [9, 20])] # [MeV] (post-filtering)
 
 		for color, (cmap, e_out_bounds) in enumerate(cuts):
 			d_bounds = diameter.D(np.array(e_out_bounds), τ=etime)[::-1]
@@ -227,13 +230,19 @@ if __name__ == '__main__':
 				track_x, track_y, bins=(xI_bins_0, yI_bins_0))
 			assert N.shape == XI_0.shape
 
-			opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N, *e_in_bounds),
-				method='Nelder-Mead', options=dict(
-					initial_simplex=[[x0+.5, y0+0, .06, 1e-1], [x0-.5, y0+.5, .06, 1e-1], [x0-.5, y0-.5, .06, 1e-1], [x0, y0, .1, 1e-1], [x0, y0, .06, 1.9e-1]]))
-			x0, y0, δ, Q = opt.x
+			if Q is None:
+				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N, *e_in_bounds),
+					method='Nelder-Mead', options=dict(
+						initial_simplex=[[x0+.5, y0+0, .06, 1e-1], [x0-.5, y0+.5, .06, 1e-1], [x0-.5, y0-.5, .06, 1e-1], [x0, y0, .1, 1e-1], [x0, y0, .06, 1.9e-1]]))
+				x0, y0, δ, Q = opt.x
+			else:
+				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, None, None, XI_0, YI_0, N, *e_in_bounds),
+					method='Nelder-Mead', options=dict(
+						initial_simplex=[[x0+.5, y0+0, .06], [x0-.5, y0+.5, .06], [x0-.5, y0-.5, .06], [x0, y0, .1]]))
+				x0, y0, δ = opt.x
 			M = r0/rA - 1
 			if VERBOSE: print(opt)
-			else:       print("(x0, y0) = ({0:.3f}, {1:.3f}), Q = {2:.3f}, M = {3:.3f} cm/MeV".format(x0, y0, Q, M))
+			else:       print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm/MeV, M = {5:.2f}".format(np.sum(N), x0, y0, δ/M/1e-4, Q, M))
 
 			background = np.sum( # recompute these, but with better centering
 				(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) &\
@@ -328,7 +337,7 @@ if __name__ == '__main__':
 			elif METHOD == 'gelfgat':
 				D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, background, umbra, *e_in_bounds) # make D equal to the fit to N
 
-				penumbra_low = np.quantile(penumbral_kernel/penumbral_kernel.max(), .30)
+				penumbra_low = np.quantile(penumbral_kernel/penumbral_kernel.max(), .10)
 				penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .50)
 				reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
 				data_bins = (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are touched by all or none of the source pixels
@@ -346,8 +355,8 @@ if __name__ == '__main__':
 					s = convolve2d(B, penumbral_kernel, where=data_bins)
 					G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
 					N_teo = G*s + background
-					δB = np.zeros(B.shape) # step direction
 					dLdN = (N - N_teo)/D
+					δB = np.zeros(B.shape) # step direction
 					for i, j in zip(*np.nonzero(data_bins)): # we need a for loop for this part because of memory constraints
 						mt = max(0, i - penumbral_kernel.shape[0] + 1)
 						mb = max(0, n_pixs - i - 1)
@@ -364,6 +373,7 @@ if __name__ == '__main__':
 					iterations += 1
 					if VERBOSE: print("[{}],".format(χ2/n_data_bins))
 					# fig, axes = plt.subplots(3, 2)
+					# fig.subplots_adjust(hspace=0, wspace=0)
 					# gs1 = gridspec.GridSpec(4, 4)
 					# gs1.update(wspace=0, hspace=0) # set the spacing between axes. 
 					# axes[0,0].set_title("Previous step")
@@ -397,7 +407,9 @@ if __name__ == '__main__':
 					print("Could not find adequate fit.")
 					B = np.zeros(B.shape)
 				else:
-					B = G*B # you can unnormalize now
+					B = G*np.maximum(0, B) # you can unnormalize now
+					npargmaxB = np.unravel_index(B.argmax(), B.shape)
+					print(f"σ = {np.sqrt(np.average(np.square(np.hypot(XS - XS[npargmaxB], YS - YS[npargmaxB])), weights=B)/2)/1e-4:.3f} μm")
 
 			plt.figure()
 			plt.pcolormesh((xS_bins - x0/M)/1e-4, (yS_bins + y0/M)/1e-4, B.T, cmap=cmap, vmin=0)
@@ -435,14 +447,14 @@ if __name__ == '__main__':
 			plt.savefig("results/{} TIM{} xray sourceimage.png".format(scan[SHOT], scan[TIM]))
 			plt.close()
 
-		x0 = np.average(x_layers[-1], weights=image_layers[-1])
-		y0 = np.average(y_layers[-1], weights=image_layers[-1])
+		x0 = x_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
+		y0 = y_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
 
 		if len(image_layers) > 1:
 			plt.figure()
-			plt.contourf((x_layers[0] - x0)/1e-4, (y_layers[0] - y0)/1e-4, image_layers[0], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
-			plt.contourf((x_layers[1] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
-			plt.contourf((x_layers[2] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
+			plt.contourf((x_layers[1] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
+			plt.contourf((x_layers[2] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
+			plt.contourf((x_layers[3] - x0)/1e-4, (y_layers[3] - y0)/1e-4, image_layers[3], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 			# if xray is not None:
 			# 	plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
 			plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
@@ -458,5 +470,3 @@ if __name__ == '__main__':
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} nestplot.png".format(scan[SHOT], scan[TIM]))
 			plt.close()
-		else:
-			print(f"σ = {np.sqrt(np.average(np.square(np.hypot(x_layers[0] - x0, y_layers[0] - y0)), weights=image_layers[0])/2)/1e-4:.3f} μm")

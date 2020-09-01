@@ -9,8 +9,8 @@ from electric_field_model import e_field
 
 
 NOISE_SCALE = 2.5 # [cm]
-EFFICIENCY_NOISE = 0.#10
-DISPLACEMENT_NOISE = 0.20 # [cm*MeV]
+EFFICIENCY_NOISE = 0.10
+DISPLACEMENT_NOISE = 0.#20 # [cm*MeV]
 DISPLACEMENT_CHARGE = 0.15 # [cm*MeV]
 
 SYNTH_RESOLUTION = 1600
@@ -20,7 +20,7 @@ L = 4.21 # cm
 rs = 60e-4 # cm
 rA = 1000e-4 # cm
 
-EIN_CUTS = [2.2, 7, 10, 15]
+EIN_CUTS = [2.2, 6, 10, 15]
 
 FOLDER = 'scans/'
 

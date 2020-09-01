@@ -7,6 +7,7 @@ def normalize(x):
 
 def e_field(x):
 	""" dimensionless electric field as a function of normalized radius """
+	# return np.log((1 + 1/(1 - x)**2)/(1 + 1/(1 + x)**2)) - 2*x
 	return np.where(x > x_ref[-1],
 		(np.log(1 - x) - np.log(1 - x_ref[-1]))/(np.log(1 - x_ref[-2]) - np.log(1 - x_ref[-1]))*(E_ref[-2] - E_ref[-1]) + E_ref[-1],
 		np.interp(x, x_ref, E_ref))
@@ -19,8 +20,8 @@ def get_analytic_brightness(r0, Q, e_min=1e-15, e_max=1):
 	return r0*R, normalize(np.sum(N[present_blurs, :], axis=0))
 
 
-x_ref = np.linspace(0, 1, 1001)[:-1]
-E_ref = np.empty(1000)
+x_ref = np.linspace(0, 1, 2001)[:-1]
+E_ref = np.empty(x_ref.shape)
 for i, a in enumerate(x_ref):
 	E_ref[i] = integrate.quad(lambda b: np.sqrt(1 - b**2)/((a - b)*np.sqrt(1 - b**2 + (a - b)**2)), -1, 2*a-1)[0] + integrate.quad(lambda b: (np.sqrt(1 - b**2)/np.sqrt((a - b)**2 + 1 - b**2) - np.sqrt(1 - (2*a - b)**2)/np.sqrt((a - b)**2 + 1 - (2*a - b)**2))/(a - b), 2*a-1, a)[0]
 E_ref -= x_ref/x_ref[1]*E_ref[1]
