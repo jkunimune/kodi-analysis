@@ -19,10 +19,10 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
 
 np.seterr('ignore')
 
-SHOW_PLOTS = False
-VERBOSE = False
+SHOW_PLOTS = True
+VERBOSE = True
 METHOD = 'gelfgat'
-THRESHOLD = 3e-5
+THRESHOLD = 1e-4
 ASK_FOR_HELP = False
 
 FOLDER = 'scans/'
@@ -46,9 +46,9 @@ TIM_LOCATIONS = [
 	[100.81, 270.00],
 	[np.nan,np.nan]]
 
-CR_39_RADIUS = 3.0 # cm
+CR_39_RADIUS = 2.2 # cm
 n_MC = 1000000
-n_bins = 500
+n_bins = 350
 
 L = 4.21 # cm
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -273,6 +273,7 @@ if __name__ == '__main__':
 				plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .999))
 				T = np.linspace(0, 2*np.pi)
 				plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+				plt.plot(x0 + CR_39_RADIUS*np.cos(T), y0 + CR_39_RADIUS*np.sin(T), '--w')
 				plt.axis('square')
 				plt.colorbar()
 				plt.show()
@@ -283,133 +284,81 @@ if __name__ == '__main__':
 					penumbral_kernel += simple_penumbra(np.hypot(XK+dxK, YK+dyK), 0, Q, r0, 0, 1, *e_in_bounds)
 			penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
 
-			if METHOD == 'quasinewton':
-				N[np.hypot(XI, YI) > CR_39_RADIUS] = background
-				n_data = np.sum(N - background)
-				exp = N.ravel()
-				lagrange = 0.1*n_pixs**2/n_data
-				lim = np.sum(exp)/n_pixs**2/6 # put a threshold on the entropy to avoid infinite derivatives (not sure why LBFGSB can't use the curvature condition to stay away from those)
-				def posterior(*tru):
-					tru = np.reshape(tru, (n_pixs, n_pixs))
-					teo = signal.convolve2d(tru, penumbral_kernel, mode='full') + background
-					teo = teo.ravel()
-					tru = tru.ravel()
-					entropy = np.where(tru >= lim,
-						lagrange*tru*np.log(tru/n_data),
-						lagrange*lim*np.log(lim/n_data) + (tru - lim)*lagrange*(1 + np.log(lim/n_data))) # log prior, split up by input element
-					error = teo - exp*np.log(teo) # log likelihood, split up by output element
-					error[(teo == 0) & (exp == 0)] = 0
-					error[(teo == 0) & (exp != 0)] = np.inf
-					assert not np.isnan(np.sum(entropy) + np.sum(error))
-					return np.sum(entropy) + np.sum(error)
-				def grad_posterior(*tru):
-					tru = np.reshape(tru, (n_pixs, n_pixs))
-					teo = signal.convolve2d(tru, penumbral_kernel, mode='full') + background
-					teo = teo.ravel()
-					tru = tru.ravel()
-					grad = np.empty(n_pixs**2)
-					for i in range(n_pixs):
-						for j in range(n_pixs): # we need a for loop for this part because of memory constraints
-							k = n_pixs*i + j
-							dteo_dtru = np.zeros((n_bins, n_bins)) # derivative of teo image by this particular source pixel
-							paste(dteo_dtru, penumbral_kernel, (i, j))
-							dteo_dtru = dteo_dtru.ravel()
-							dentropy = max(
-								lagrange*(1 + np.log(tru[k]/n_data)),
-								lagrange*(1 + np.log(lim/n_data))) # derivative of log prior, for just this input element
-							derror = (1 - exp/teo)*dteo_dtru # derivative log likelihood, split up by output element
-							derror[(teo == 0) & (exp == 0)] = 1 - dteo_dtru[(teo == 0) & (exp == 0)]
-							derror[(teo == 0) & (exp != 0)] = np.inf
-							grad[k] = dentropy + np.sum(derror)
-							assert not np.isnan(grad[k])
-					return grad
-				opt = optimize.minimize(posterior, jac=grad_posterior,
-					x0=np.full(n_pixs**2, np.sum(exp)/n_pixs**2),
-					bounds=np.stack([np.full(n_pixs**2, 0), np.full(n_pixs**2, np.inf)], axis=1),
-					method='L-BFGS-B', options=dict(
-						ftol=1e-9,
-						iprint= 1 if VERBOSE else 0,
-					)
-				)
-				if VERBOSE: print(opt)
-				B = opt.x.reshape((n_pixs, n_pixs))
+			D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, background, umbra, *e_in_bounds) # make D equal to the fit to N
 
-			elif METHOD == 'gelfgat':
-				D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, background, umbra, *e_in_bounds) # make D equal to the fit to N
+			penumbra_low = np.quantile(penumbral_kernel/penumbral_kernel.max(), .10)
+			penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .50)
+			reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
+			data_bins = (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are touched by all or none of the source pixels
+			n_data_bins = np.sum(data_bins)
+			N[np.logical_not(data_bins)] = np.nan
 
-				penumbra_low = np.quantile(penumbral_kernel/penumbral_kernel.max(), .10)
-				penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .50)
-				reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
-				data_bins = (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are touched by all or none of the source pixels
-				n_data_bins = np.sum(data_bins)
-				N[np.logical_not(data_bins)] = np.nan
+			B = np.full((n_pixs, n_pixs), 1/n_pixs**2) # note that B is currently normalized
+			F = N - background
 
-				B = np.full((n_pixs, n_pixs), 1/n_pixs**2) # note that B is currently normalized
-				F = N - background
+			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
+			χ2, χ2_prev, iterations = np.inf, np.inf, 0
+			# while iterations < 50 and χ2 > χ2_95:
+			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > THRESHOLD and iterations < 50):
+				B /= B.sum() # correct for roundoff
+				s = convolve2d(B, penumbral_kernel, where=data_bins)
+				G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
+				N_teo = G*s + background
+				dLdN = (N - N_teo)/D
+				δB = np.zeros(B.shape) # step direction
+				for i, j in zip(*np.nonzero(data_bins)): # we need a for loop for this part because of memory constraints
+					mt = max(0, i - penumbral_kernel.shape[0] + 1)
+					mb = max(0, n_pixs - i - 1)
+					ml = max(0, j - penumbral_kernel.shape[1] + 1)
+					mr = max(0, n_pixs - j - 1)
+					δB[mt:n_pixs-mb, ml:n_pixs-mr] += B[mt:n_pixs-mb, ml:n_pixs-mr]*dLdN[i,j]*penumbral_kernel[sl(i-mt, i-n_pixs+mb, -1), sl(j-ml, j-n_pixs+mr, -1)]
+				δs = convolve2d(δB, penumbral_kernel, where=data_bins) # step projected into measurement space
+				Fs, Fδ = np.sum(F*s/D, where=data_bins), np.sum(F*δs/D, where=data_bins)
+				Ss, Sδ = np.sum(s**2/D, where=data_bins), np.sum(s*δs/D, where=data_bins)
+				Dδ = np.sum(δs**2/D, where=data_bins)
+				h = (Fδ - G*Sδ)/(G*Dδ - Fδ*Sδ/Ss)
+				B += h/2*δB
+				χ2_prev, χ2 = χ2, np.sum((N - N_teo)**2/D, where=data_bins)
+				iterations += 1
+				if VERBOSE: print("[{}],".format(χ2/n_data_bins))
+				# fig, axes = plt.subplots(3, 2)
+				# fig.subplots_adjust(hspace=0, wspace=0)
+				# gs1 = gridspec.GridSpec(4, 4)
+				# gs1.update(wspace=0, hspace=0) # set the spacing between axes. 
+				# axes[0,0].set_title("Previous step")
+				# plot = axes[0,0].pcolormesh(xS_bins, yS_bins, G*h/2*δB, cmap=cmap)
+				# axes[0,0].axis('square')
+				# fig.colorbar(plot, ax=axes[0,0])
+				# axes[0,1].set_title("Fit source image")
+				# plot = axes[0,1].pcolormesh(xS_bins, yS_bins, G*B, vmin=0, vmax=G*B.max(), cmap=cmap)
+				# axes[0,1].axis('square')
+				# fig.colorbar(plot, ax=axes[0,1])
+				# axes[1,0].set_title("Penumbral image")
+				# plot = axes[1,0].pcolormesh(xI_bins, yI_bins, N.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
+				# axes[1,0].axis('square')
+				# fig.colorbar(plot, ax=axes[1,0])
+				# axes[1,1].set_title("Fit penumbral image")
+				# plot = axes[1,1].pcolormesh(xI_bins, yI_bins, N_teo.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
+				# axes[1,1].axis('square')
+				# fig.colorbar(plot, ax=axes[1,1])
+				# axes[2,0].set_title("Expected variance")
+				# plot = axes[2,0].pcolormesh(xI_bins, yI_bins, D.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
+				# axes[2,0].axis('square')
+				# fig.colorbar(plot, ax=axes[2,0])
+				# axes[2,1].set_title("Chi squared")
+				# plot = axes[2,1].pcolormesh(xI_bins, yI_bins, ((N - N_teo)**2/D).T, vmin=0, vmax=10)
+				# axes[2,1].axis('square')
+				# fig.colorbar(plot, ax=axes[2,1])
+				# plt.tight_layout()
+				# plt.show()
 
-				# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
-				χ2, χ2_prev, iterations = np.inf, np.inf, 0
-				# while iterations < 50 and χ2 > χ2_95:
-				while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > THRESHOLD and iterations < 50):
-					B /= B.sum() # correct for roundoff
-					s = convolve2d(B, penumbral_kernel, where=data_bins)
-					G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
-					N_teo = G*s + background
-					dLdN = (N - N_teo)/D
-					δB = np.zeros(B.shape) # step direction
-					for i, j in zip(*np.nonzero(data_bins)): # we need a for loop for this part because of memory constraints
-						mt = max(0, i - penumbral_kernel.shape[0] + 1)
-						mb = max(0, n_pixs - i - 1)
-						ml = max(0, j - penumbral_kernel.shape[1] + 1)
-						mr = max(0, n_pixs - j - 1)
-						δB[mt:n_pixs-mb, ml:n_pixs-mr] += B[mt:n_pixs-mb, ml:n_pixs-mr]*dLdN[i,j]*penumbral_kernel[sl(i-mt, i-n_pixs+mb, -1), sl(j-ml, j-n_pixs+mr, -1)]
-					δs = convolve2d(δB, penumbral_kernel, where=data_bins) # step projected into measurement space
-					Fs, Fδ = np.sum(F*s/D, where=data_bins), np.sum(F*δs/D, where=data_bins)
-					Ss, Sδ = np.sum(s**2/D, where=data_bins), np.sum(s*δs/D, where=data_bins)
-					Dδ = np.sum(δs**2/D, where=data_bins)
-					h = (Fδ - G*Sδ)/(G*Dδ - Fδ*Sδ/Ss)
-					B += h/2*δB
-					χ2_prev, χ2 = χ2, np.sum((N - N_teo)**2/D, where=data_bins)
-					iterations += 1
-					if VERBOSE: print("[{}],".format(χ2/n_data_bins))
-					# fig, axes = plt.subplots(3, 2)
-					# fig.subplots_adjust(hspace=0, wspace=0)
-					# gs1 = gridspec.GridSpec(4, 4)
-					# gs1.update(wspace=0, hspace=0) # set the spacing between axes. 
-					# axes[0,0].set_title("Previous step")
-					# plot = axes[0,0].pcolormesh(xS_bins, yS_bins, G*h/2*δB, cmap='plasma')
-					# axes[0,0].axis('square')
-					# fig.colorbar(plot, ax=axes[0,0])
-					# axes[0,1].set_title("Fit source image")
-					# plot = axes[0,1].pcolormesh(xS_bins, yS_bins, G*B, vmin=0, vmax=G*B.max(), cmap='plasma')
-					# axes[0,1].axis('square')
-					# fig.colorbar(plot, ax=axes[0,1])
-					# axes[1,0].set_title("Penumbral image")
-					# plot = axes[1,0].pcolormesh(xI_bins, yI_bins, N.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
-					# axes[1,0].axis('square')
-					# fig.colorbar(plot, ax=axes[1,0])
-					# axes[1,1].set_title("Fit penumbral image")
-					# plot = axes[1,1].pcolormesh(xI_bins, yI_bins, N_teo.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
-					# axes[1,1].axis('square')
-					# fig.colorbar(plot, ax=axes[1,1])
-					# axes[2,0].set_title("Expected variance")
-					# plot = axes[2,0].pcolormesh(xI_bins, yI_bins, D.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
-					# axes[2,0].axis('square')
-					# fig.colorbar(plot, ax=axes[2,0])
-					# axes[2,1].set_title("Chi squared")
-					# plot = axes[2,1].pcolormesh(xI_bins, yI_bins, ((N - N_teo)**2/D).T, vmin=0, vmax=10)
-					# axes[2,1].axis('square')
-					# fig.colorbar(plot, ax=axes[2,1])
-					# plt.tight_layout()
-					# plt.show()
-
-				if χ2/n_data_bins >= 1.5:
-					print("Could not find adequate fit.")
-					B = np.zeros(B.shape)
-				else:
-					B = G*np.maximum(0, B) # you can unnormalize now
-					npargmaxB = np.unravel_index(B.argmax(), B.shape)
-					print(f"σ = {np.sqrt(np.average(np.square(np.hypot(XS - XS[npargmaxB], YS - YS[npargmaxB])), weights=B)/2)/1e-4:.3f} μm")
+			if χ2/n_data_bins >= 3.0:
+				print("Could not find adequate fit.")
+				B = np.zeros(B.shape)
+			else:
+				B = G*np.maximum(0, B) # you can unnormalize now
+				npargmaxB = np.unravel_index(B.argmax(), B.shape)
+				print(f"σ = {np.sqrt(np.average(np.square(np.hypot(XS - XS[npargmaxB], YS - YS[npargmaxB])), weights=B)/2)/1e-4:.3f} μm")
 
 			plt.figure()
 			plt.pcolormesh((xS_bins - x0/M)/1e-4, (yS_bins + y0/M)/1e-4, B.T, cmap=cmap, vmin=0)
