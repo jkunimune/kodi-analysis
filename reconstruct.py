@@ -294,6 +294,7 @@ if __name__ == '__main__':
 			N[np.logical_not(data_bins)] = np.nan
 
 			B = np.full((n_pixs, n_pixs), 1/n_pixs**2) # note that B is currently normalized
+			B[np.hypot(XS - (xS[0] + xS[-1])/2, YS - (yS[0] + yS[-1])/2) >= (xS[-1] - xS[0])/2 + (xS[1] - xS[0])] = 0 # remove the corners
 			F = N - background
 
 			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
@@ -352,7 +353,7 @@ if __name__ == '__main__':
 				# plt.tight_layout()
 				# plt.show()
 
-			if χ2/n_data_bins >= 3.0:
+			if χ2/n_data_bins >= 2.0:
 				print("Could not find adequate fit.")
 				B = np.zeros(B.shape)
 			else:
