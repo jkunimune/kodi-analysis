@@ -41,8 +41,8 @@ TIM_LOCATIONS = [
 
 VIEW_RADIUS = 3.0 # cm
 CR_39_RADIUS = 2.2 # cm
-n_bins = 350
-PLOT_LINES = False
+n_bins = 400
+PLOT_LINES = True
 VERBOSE = False
 
 L = 4.21 # cm
@@ -80,7 +80,7 @@ def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 	if minimum > maximum:
 		minimum, maximum = maximum, minimum
 	teo = simple_penumbra(r_eff, δ, Q, r0, minimum, maximum, e_min, e_max)
-	error = np.sum(teo - exp*np.log(teo), where=r_eff < CR_39_RADIUS)
+	error = np.sum((exp - teo)**2/(2*(teo + (teo/6)**2)), where=r_eff < CR_39_RADIUS)
 	penalty = np.sum(r_eff >= CR_39_RADIUS) \
 		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) 
 	return error + penalty
