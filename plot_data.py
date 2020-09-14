@@ -13,7 +13,7 @@ import re
 
 import diameter
 from electric_field_model import e_field, get_analytic_brightness
-from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
+from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
 np.seterr('ignore')
 
@@ -128,12 +128,10 @@ if __name__ == '__main__':
 		track_list['x(cm)'] -= np.mean(track_list['x(cm)']) # do your best to center
 		track_list['y(cm)'] -= np.mean(track_list['y(cm)'])
 
-		# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 101), np.linspace(0, 50, 51)))
-		# plt.show()
-
 		# for e_min, e_max in [(e, e+.2) for e in np.arange(1, 14, .2)]:
-		for e_min, e_max in [(0, 20)]:
+		for e_min, e_max in [(0, 13)]:
 			print(f"E = [{e_min:.1f}, {e_max:.1f}) MeV")
+			print(f"D = [{diameter.D(e_max, τ=time):.1f}, {diameter.D(e_min, τ=time):.1f}) μm")
 			hicontrast = (track_list['cn(%)'] < 35) & (track_list['d(µm)'] > diameter.D(e_max, τ=time)) & (track_list['d(µm)'] < diameter.D(e_min, τ=time))
 			if np.sum(hicontrast) == 0:
 				print("no tracks in this cut")
@@ -141,7 +139,7 @@ if __name__ == '__main__':
 
 			e_min, e_max = e_min + 2, min(e_max + 2, 12) # convert from e-out (for diameter cut purposes) to e-in (for physics purposes)
 
-			# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 101), np.linspace(0, 50, 51)), cmap='magma_r')
+			# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 101), np.linspace(0, 50, 51)), cmap=COFFEE)
 			# plt.show()
 
 			track_x, track_y = track_list['x(cm)'][hicontrast], track_list['y(cm)'][hicontrast]

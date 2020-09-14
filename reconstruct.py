@@ -15,7 +15,7 @@ import time
 
 import diameter
 from electric_field_model import get_analytic_brightness
-from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
+from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
 np.seterr('ignore')
 
@@ -46,6 +46,7 @@ TIM_LOCATIONS = [
 	[100.81, 270.00],
 	[np.nan,np.nan]]
 
+VIEW_RADIUS = 3.0 # cm
 CR_39_RADIUS = 2.2 # cm
 n_MC = 1000000
 n_bins = 350
@@ -178,7 +179,7 @@ if __name__ == '__main__':
 		track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 		track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
-		# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 101), np.linspace(0, 50, 51)))
+		# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 101), np.linspace(0, 50, 51)), cmap=COFFEE)
 		# plt.show()
 
 		r0 = (M + 1)*rA
@@ -194,7 +195,7 @@ if __name__ == '__main__':
 		if np.std(track_list['d(µm)']) == 0:
 			cuts = [('plasma', [0, 5])]
 		else:
-			cuts = [(GREYS, [0, 20]), (REDS, [0, 5]), (GREENS, [5, 9]), (BLUES, [9, 20])] # [MeV] (post-filtering)
+			cuts = [(GREYS, [0, 13]), (REDS, [0, 5]), (GREENS, [5, 9]), (BLUES, [9, 13])] # [MeV] (post-filtering)
 
 		for color, (cmap, e_out_bounds) in enumerate(cuts):
 			d_bounds = diameter.D(np.array(e_out_bounds), τ=etime)[::-1]
