@@ -8,10 +8,9 @@ from perlin import perlin_generator, wave_generator
 from electric_field_model import e_field
 
 
-NOISE_SCALE = 2.5 # [cm]
-EFFICIENCY_NOISE = 0.10
-DISPLACEMENT_NOISE = 0.#20 # [cm*MeV]
-DISPLACEMENT_CHARGE = 0.15 # [cm*MeV]
+NOISE_SCALE = 1.0 # [cm]
+DISPLACEMENT_NOISE = 0.#25 # [cm*MeV]
+DISPLACEMENT_CHARGE = 0.05 # [cm*MeV]
 
 SYNTH_RESOLUTION = 2000
 
@@ -84,8 +83,8 @@ for shot, N, SNR in [('multigaussian', 800000, 8)]:
 			img_lo = np.exp(-(X**2 + Y**2)/(2*80e-4**2)) * np.exp(-2.0*np.exp(-((X-30e-4)**2 + Y**2)/(2*40e-4**2)))
 		img_md, img_hi = np.zeros(img_lo.shape), np.zeros(img_lo.shape)
 
-	δx_noise, δy_noise = wave_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE, dimensions=2)
-	δε_noise = wave_generator(-4, 4, -4, 4, NOISE_SCALE, EFFICIENCY_NOISE)
+	δx_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, DISPLACEMENT_NOISE)
+	δy_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, DISPLACEMENT_NOISE)
 
 	xq, yq = np.meshgrid(np.linspace(-rA, rA, 12), np.linspace(-rA, rA, 12))
 	rq, θq = np.hypot(xq, yq), np.arctan2(yq, xq)
@@ -136,8 +135,7 @@ for shot, N, SNR in [('multigaussian', 800000, 8)]:
 	with open(FOLDER+'simulated shot {} TIM{} {}h.txt'.format(shot, 2, 2), 'w') as f:
 		f.write(short_header)
 		for i in range(len(x_list)):
-			if np.random.random() < .8 + δε_noise(x_list[i], y_list[i]):
-				f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], -y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
+			f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], -y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
 
 	plt.figure()
 	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-300, 300, 101), np.linspace(-300, 300, 101)), cmap='plasma')
