@@ -40,7 +40,7 @@ TIM_LOCATIONS = [
 	[np.nan,np.nan]]
 
 VIEW_RADIUS = 3.0 # cm
-CR_39_RADIUS = 2.2 # cm
+CR_39_RADIUS = 2.0 # cm
 n_bins = 400
 PLOT_LINES = True
 VERBOSE = False
@@ -80,7 +80,7 @@ def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 	if minimum > maximum:
 		minimum, maximum = maximum, minimum
 	teo = simple_penumbra(r_eff, δ, Q, r0, minimum, maximum, e_min, e_max)
-	error = np.sum((exp - teo)**2/(2*(teo + (teo/6)**2)), where=r_eff < CR_39_RADIUS)
+	error = np.sum((exp - teo)**2/(2*(teo + (teo/6)**2)), where=(exp != 0) & (r_eff < CR_39_RADIUS))
 	penalty = np.sum(r_eff >= CR_39_RADIUS) \
 		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) 
 	return error + penalty
@@ -97,7 +97,7 @@ if __name__ == '__main__':
 	for i, scan in shot_list.iterrows():
 		filename = None
 		for fname in os.listdir(FOLDER):
-			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname and scan[ETCH_TIME].replace(' ','') in fname:
+			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'tim'+str(scan[TIM]) in fname.lower() and scan[ETCH_TIME].replace(' ','') in fname:
 				filename = fname
 				print("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 				break
@@ -132,7 +132,7 @@ if __name__ == '__main__':
 		for e_min, e_max in [(0, 13)]:
 			print(f"E = [{e_min:.1f}, {e_max:.1f}) MeV")
 			print(f"D = [{diameter.D(e_max, τ=time):.1f}, {diameter.D(e_min, τ=time):.1f}) μm")
-			hicontrast = (track_list['cn(%)'] < 35) & (track_list['d(µm)'] > diameter.D(e_max, τ=time)) & (track_list['d(µm)'] < diameter.D(e_min, τ=time))
+			hicontrast = (track_list['cn(%)'] < 35) & (track_list['e(%)'] < 15) & (track_list['d(µm)'] > diameter.D(e_max, τ=time)) & (track_list['d(µm)'] < diameter.D(e_min, τ=time))
 			if np.sum(hicontrast) == 0:
 				print("no tracks in this cut")
 				continue

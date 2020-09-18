@@ -13,7 +13,7 @@ EFFICIENCY_NOISE = 0.10
 DISPLACEMENT_NOISE = 0.#20 # [cm*MeV]
 DISPLACEMENT_CHARGE = 0.15 # [cm*MeV]
 
-SYNTH_RESOLUTION = 1600
+SYNTH_RESOLUTION = 2000
 
 M = 14
 L = 4.21 # cm
@@ -25,12 +25,12 @@ EIN_CUTS = [2.2, 6, 10, 15]
 FOLDER = 'scans/'
 
 short_header = """\
-TABULATION OF TRACKS in SCAN FILE O95520_PCIS_TIM2_3p1415_2hr_s1.cpsa
+TABULATION OF TRACKS in SCAN FILE SUPER_ULTIMATE_CR39_MASTER_SHOWDOWN_FINAL_SMASH.cpsa
 ---------------------------------------------------------------------
 
 SYSTEM: MIT-1   Scan program version: 2019-07-17; 14:00
      Objective = 40x; Pixel = 0.33120 x 0.33120 (µm); pixel aspect ratio = 1.0000;
-SCAN: Filename = O95520_PCIS_TIM2_3p1415_2hr_s1.cpsa
+SCAN: Filename = SUPER_ULTIMATE_CR39_MASTER_SHOWDOWN_FINAL_SMASH.cpsa
      XY Limits:  (-3.4;  3.4)  ( 3.4; -3.4) [elliptical shape];  
      Thresholds = 85 (border); 75 (contrast); 40 (M=2);   
      Scanner = ED
@@ -54,8 +54,8 @@ Limits imposed on tracks listed below:
 """
 
 
-for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
-# for shot, N, SNR in [('gaussian', 1000000, 8)]:
+# for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+for shot, N, SNR in [('multigaussian', 800000, 8)]:
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[2], EIN_CUTS[3]])
@@ -65,11 +65,13 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 		x, y = (x_bins[1:] + x_bins[:-1])/2, (y_bins[1:] + y_bins[:-1])/2
 		X, Y = np.meshgrid(x, y)
 	else:
-		x = np.linspace(-200e-4, 200e-4, SYNTH_RESOLUTION)
-		y = np.linspace(-200e-4, 200e-4, SYNTH_RESOLUTION)
+		x = np.linspace(-250e-4, 250e-4, SYNTH_RESOLUTION)
+		y = np.linspace(-250e-4, 250e-4, SYNTH_RESOLUTION)
 		X, Y = np.meshgrid(x, y)
 		if shot == 'square':
 			img_lo = np.where((np.absolute(X) < 60e-4) & (np.absolute(Y) < 60e-4), 1, 0)
+			img_lo[(X > 0) & (Y > 0)] = 0
+			img_lo[(X < 0) & (Y > 0) & (X > -30e-4)] *= 2
 		elif shot == 'eclipse':
 			img_lo = np.where((np.hypot(X-80e-4, Y+40e-4) < 80e-4) & (np.hypot(X-96e-4, Y+32e-4) > 40e-4), 1, 0)
 		elif shot == 'gaussian':
@@ -78,6 +80,8 @@ for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4
 			img_lo = np.exp(-(X**3 + Y**3)/(2*50e-4**3))
 		elif shot == 'ellipse':
 			img_lo = np.exp(-(X**2*2 + Y**2/2)/(2*50e-4**2))
+		elif shot == 'multigaussian':
+			img_lo = np.exp(-(X**2 + Y**2)/(2*80e-4**2)) * np.exp(-2.0*np.exp(-((X-30e-4)**2 + Y**2)/(2*40e-4**2)))
 		img_md, img_hi = np.zeros(img_lo.shape), np.zeros(img_lo.shape)
 
 	δx_noise, δy_noise = wave_generator(-rA, rA, -rA, rA, NOISE_SCALE/M, DISPLACEMENT_NOISE, dimensions=2)

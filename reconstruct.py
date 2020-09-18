@@ -20,7 +20,7 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 np.seterr('ignore')
 
 SHOW_PLOTS = True
-VERBOSE = True
+VERBOSE = False
 METHOD = 'gelfgat'
 THRESHOLD = 1e-4
 ASK_FOR_HELP = False
@@ -47,9 +47,9 @@ TIM_LOCATIONS = [
 	[np.nan,np.nan]]
 
 VIEW_RADIUS = 3.0 # cm
-CR_39_RADIUS = 2.6 # cm
+CR_39_RADIUS = 2.1 # cm
 n_MC = 1000000
-n_bins = 400
+n_bins = 350
 
 L = 4.21 # cm
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -122,7 +122,7 @@ def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 	if minimum > maximum:
 		minimum, maximum = maximum, minimum
 	teo = simple_penumbra(r_eff, δ, Q, r0, minimum, maximum, e_min, e_max)
-	error = np.sum((exp - teo)**2/(2*(teo + (teo/6)**2)), where=r_eff < CR_39_RADIUS)
+	error = np.sum((exp - teo)**2/(2*(teo + (teo/6)**2)), where=(exp != 0) & (r_eff < CR_39_RADIUS))
 	penalty = np.sum(r_eff >= CR_39_RADIUS) \
 		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) 
 	return error + penalty
@@ -139,7 +139,7 @@ if __name__ == '__main__':
 	for i, scan in shot_list.iterrows():
 		filename = None
 		for fname in os.listdir(FOLDER):
-			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'TIM'+str(scan[TIM]) in fname and scan[ETCH_TIME].replace(' ','') in fname:
+			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'tim'+str(scan[TIM]) in fname.lower() and scan[ETCH_TIME].replace(' ','') in fname:
 				filename = fname
 				print("Beginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 				break
@@ -175,7 +175,7 @@ if __name__ == '__main__':
 			track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
 			track_list['cn(%)'] -= np.min(track_list['cn(%)'])
 			track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
-		hicontrast = track_list['cn(%)'] < 35
+		hicontrast = (track_list['cn(%)'] < 35) & (track_list['e(%)'] < 15)
 		track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 		track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
@@ -243,7 +243,7 @@ if __name__ == '__main__':
 				x0, y0, δ = opt.x
 			M = r0/rA - 1
 			if VERBOSE: print(opt)
-			else:       print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm/MeV, M = {5:.2f}".format(np.sum(N), x0, y0, δ/M/1e-4, Q, M))
+			print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm/MeV, M = {5:.2f}".format(np.sum(N), x0, y0, δ/M/1e-4, Q, M))
 
 			background = np.sum( # recompute these, but with better centering
 				(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) &\
@@ -290,7 +290,7 @@ if __name__ == '__main__':
 			penumbra_low = np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
 			penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .50)
 			reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
-			data_bins = (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are touched by all or none of the source pixels
+			data_bins = (N != 0) & (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are completely empty, and bins that are touched by all or none of the source pixels
 			n_data_bins = np.sum(data_bins)
 			N[np.logical_not(data_bins)] = np.nan
 
