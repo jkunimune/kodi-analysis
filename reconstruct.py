@@ -48,7 +48,6 @@ TIM_LOCATIONS = [
 
 VIEW_RADIUS = 3.0 # cm
 CR_39_RADIUS = 2.1 # cm
-n_MC = 1000000
 n_bins = 350
 
 L = 4.21 # cm
