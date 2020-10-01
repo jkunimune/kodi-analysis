@@ -87,6 +87,8 @@ def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
 
 
 if __name__ == '__main__':
+	print("deprecation warning. I ought to stop keeping this script.")
+	
 	shot_list = pd.read_csv('shot_list.csv')
 
 	xI_bins, yI_bins = np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1), np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1)
