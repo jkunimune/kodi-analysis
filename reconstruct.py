@@ -39,6 +39,7 @@ APERTURE_RADIUS = 'Aperture Radius'
 APERTURE_SPACING = 'Aperture Separation'
 APERTURE_DISTANCE = 'L1'
 MAGNIFICATION = 'Magnification'
+ROTATION = 'Rotation'
 ETCH_TIME = 'Etch time'
 R_OFFSET = 'Offset (um)'
 Θ_OFFSET = 'Offset theta (deg)'
@@ -175,6 +176,7 @@ if __name__ == '__main__':
 		M = scan[MAGNIFICATION] # cm
 		rA = scan[APERTURE_RADIUS]/1.e4 # cm
 		sA = scan[APERTURE_SPACING]/1.e4 # cm
+		rotation = np.radians(scan[ROTATION]) # rad
 		if sA == 0: sA = 6*VIEW_RADIUS/(M + 1)
 		etime = float(scan[ETCH_TIME].strip(' h'))
 		track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
@@ -193,10 +195,9 @@ if __name__ == '__main__':
 		x_flo, y_flo, z_flo = np.dot(u_TIM, flow), np.dot(v_TIM, flow), np.dot(w_TIM, flow)
 
 		track_list['y(cm)'] *= -1 # cpsa files invert y
-		if str(scan[SHOT]) == '95519' or str(scan[SHOT]) == '95520': # these shots were tilted for some reason
-			x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy() # rotate the flipped penumbral image 45 degrees clockwise
-			track_list['x(cm)'] =  np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
-			track_list['y(cm)'] = -np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
+		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy() # rotate the flipped penumbral image 45 degrees clockwise
+		track_list['x(cm)'] =  np.cos(rotation+np.pi/2)*x_temp - np.sin(rotation+np.pi/2)*y_temp
+		track_list['y(cm)'] =  np.sin(rotation+np.pi/2)*x_temp + np.cos(rotation+np.pi/2)*y_temp
 		if re.fullmatch(r'[0-9]+', str(scan[SHOT])): # adjustments for real data:
 			track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
 			track_list['cn(%)'] -= np.min(track_list['cn(%)'])
