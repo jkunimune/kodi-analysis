@@ -90,21 +90,22 @@ def convolve2d(a, b, where):
 
 def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
 	""" compute the shape of a simple analytic single-apeture penumbral image """
-	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max)
-	if 4*δ/r_max >= 1:
-		raise ValueError("δ is too big compared to r_max: 4*{}/{} >= 1".format(δ, r_max))
-	elif 4*δ/r_max*n_bins >= 1:
-		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/r_max*n_bins)*2+1)
+	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
+	if 4*δ >= r_max: # if the source size is over 1/4 of the image radius
+		raise ValueError("δ is too big compared to r_max: 4*{}/{} >= 1".format(δ, r_max)) # give up
+	elif 4*δ >= r_max/n_bins: # if 4*source size is smaller than the image radius but bigger than the pixel size
+		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/r_max*n_bins)*2+1) # make a little kernel
 		n_kernel = np.exp(-r_kernel**2/δ**2)
-		r_point = np.arange(-4*δ, 2*r0, r_kernel[1] - r_kernel[0])
+		r_point = np.arange(-4*δ, r_max + 4*δ, r_kernel[1] - r_kernel[0]) # rebin the existing image to match the kernel spacing
 		n_point = np.interp(r_point, rB, nB, right=0)
-		penumbra = np.convolve(n_point, n_kernel, mode='same')
-	elif δ >= 0:
-		r_point = np.linspace(0, r_max, n_bins)
+		assert len(n_point) >= len(n_kernel)
+		penumbra = np.convolve(n_point, n_kernel, mode='same') # and convolve
+	elif δ >= 0: # if 4*source size is smaller than one pixel and nonnegative
+		r_point = np.linspace(0, r_max, n_bins) # use a dirac kernel instead of a gaussian
 		penumbra = np.interp(r_point, rB, nB, right=0)
 	else:
-		return np.full(r.shape, np.nan)
-	w = np.interp(r, r_point, penumbra/np.max(penumbra), right=0)
+		raise ValueError("δ cannot be negative")
+	w = np.interp(r, r_point, penumbra/np.max(penumbra), right=0) # map to the requested r values
 	return minimum + (maximum-minimum)*w
 
 def simple_fit(*args, a=1, b=0, c=1):
@@ -233,7 +234,7 @@ if __name__ == '__main__':
 			e_in_bounds = np.clip(np.array(e_out_bounds) + 2, 0, 12)
 			print(d_bounds)
 
-			Q = None
+			# Q = None
 
 			track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 			track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
@@ -299,7 +300,7 @@ if __name__ == '__main__':
 					if np.hypot(dx, dy) + r_img <= VIEW_RADIUS:
 						N += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
 
-			kernel_size = int(2.05*r0/dxI) + 4 if int(2.05*r0/dxI)%2 == 1 else int(2*(r0+.2)/dxI) + 5
+			kernel_size = int(2.05*r0/dxI) + 4 if int(2.05*r0/dxI)%2 == 1 else int(2.05*(r0+.2)/dxI) + 5
 			n_pixs = n_bins - kernel_size + 1 # the source image will be smaller than the penumbral image
 			xK_bins, yK_bins = np.linspace(-dxI*kernel_size/2, dxI*kernel_size/2, kernel_size+1), np.linspace(-dyI*kernel_size/2, dyI*kernel_size/2, kernel_size+1)
 			dxK, dyK = xK_bins[1] - xK_bins[0], yK_bins[1] - yK_bins[0]
@@ -339,7 +340,7 @@ if __name__ == '__main__':
 			penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
 
 			background = np.average(N,
-				weights=(np.hypot(XI - x0, YI - y0) < r_img) & (np.hypot(XI - x0, YI - y0) > (r_img + r0)/2)) # compute these with the better centering
+				weights=(np.hypot(XI - x0, YI - y0) > (r_img + r0)/2)) # compute these with the better centering
 			umbra = np.average(N,
 				weights=(np.hypot(XI - x0, YI - y0) < r0/2))
 			D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, r_img, background, umbra, *e_in_bounds) # make D equal to the rough fit to N
