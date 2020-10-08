@@ -480,3 +480,18 @@ if __name__ == '__main__':
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} nestplot.png".format(scan[SHOT], scan[TIM]))
 			plt.close()
+
+		μ0 = np.sum(image_layers[0]) # image sum
+		μx = np.sum(XS*image_layers[0])/μ0 # image centroid
+		μy = np.sum(YS*image_layers[0])/μ0
+		μxx = np.sum(XS**2*image_layers[0])/μ0 - μx**2 # image rotational inertia
+		μxy = np.sum(XS*YS*image_layers[0])/μ0 - μx*μy
+		μyy = np.sum(YS**2*image_layers[0])/μ0 - μy**2
+		eigval, eigvec = np.linalg.eig([[μxx, μxy], [μxy, μyy]])
+		i1, i2 = np.argmax(eigval), np.argmin(eigval)
+		p0 = np.sqrt(μxx + μyy)
+		p1, θ1 = np.hypot(μx, μy), np.arctan2(μy, μx)
+		p2, θ2 = np.sqrt(eigval[i1]) - np.sqrt(eigval[i2]), np.arctan2(eigvec[1,i1], eigvec[0,i1])
+		print(f"P0 = {p0/1e-4:.2f}μm")
+		print(f"P1 = {p1/1e-4:.2f}μm = {p1/p0*100:.1f}%, θ = {np.degrees(θ1)}°")
+		print(f"P2 = {p2/1e-4:.2f}μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2)}°")
