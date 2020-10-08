@@ -9,6 +9,7 @@ import scipy.optimize as optimize
 import scipy.signal as signal
 import scipy.stats as stats
 import scipy.special as special
+from scipy.spatial import Delaunay
 import gc
 import re
 import time
@@ -20,16 +21,25 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 np.seterr('ignore')
 
 SHOW_PLOTS = True
-VERBOSE = False
-METHOD = 'gelfgat'
-THRESHOLD = 1e-4
+DEBUG_PLOTS = True
+VERBOSE = True
+OBJECT_SIZE = 400e-4 # cm
+THRESHOLD = 3e-5
 ASK_FOR_HELP = False
+
+VIEW_RADIUS = 3.0 # cm
+NON_STATISTICAL_NOISE = 0.05
+EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
+n_bins = 400
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
 TIM = 'TIM'
-APERTURE = 'Aperture Radius'
+APERTURE_RADIUS = 'Aperture Radius'
+APERTURE_SPACING = 'Aperture Separation'
+APERTURE_DISTANCE = 'L1'
 MAGNIFICATION = 'Magnification'
+ROTATION = 'Rotation'
 ETCH_TIME = 'Etch time'
 R_OFFSET = 'Offset (um)'
 Θ_OFFSET = 'Offset theta (deg)'
@@ -45,13 +55,6 @@ TIM_LOCATIONS = [
 	[ 63.44, 342.00],
 	[100.81, 270.00],
 	[np.nan,np.nan]]
-
-VIEW_RADIUS = 3.0 # cm
-CR_39_RADIUS = 2.1 # cm
-n_bins = 350
-
-L = 4.21 # cm
-EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 
 
 def sl(a, b, c):
@@ -78,60 +81,83 @@ def convolve2d(a, b, where):
 		I don't know which way b is supposed to face, so make it symmetric. """
 	c = np.zeros(where.shape)
 	for i, j in zip(*np.nonzero(where)):
-		if where[i,j]:
-			mt = max(0, i - b.shape[0] + 1) # omitted rows on top
-			mb = max(0, a.shape[0] - i - 1) # omitted rows on bottom
-			mr = max(0, j - b.shape[1] + 1) # omitted columns on right
-			ml = max(0, a.shape[1] - j - 1) # omitted rows on left
-			c[i,j] += np.sum(a[mt:a.shape[0]-mb, mr:a.shape[1]-ml]*b[sl(i-mt, i-a.shape[0]+mb, -1), sl(j-mr, j-a.shape[1]+ml, -1)])
+		mt = max(0, i - b.shape[0] + 1) # omitted rows on top
+		mb = max(0, a.shape[0] - i - 1) # omitted rows on bottom
+		mr = max(0, j - b.shape[1] + 1) # omitted columns on right
+		ml = max(0, a.shape[1] - j - 1) # omitted rows on left
+		c[i,j] += np.sum(a[mt:a.shape[0]-mb, mr:a.shape[1]-ml]*b[sl(i-mt, i-a.shape[0]+mb, -1), sl(j-mr, j-a.shape[1]+ml, -1)])
 	return c
 
-def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
-	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max)
-	if 4*δ/CR_39_RADIUS >= 1:
-		return np.full(r.shape, np.nan)
-	elif 4*δ/CR_39_RADIUS*n_bins >= 1:
-		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/CR_39_RADIUS*n_bins)*2+1)
+def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
+	""" compute the shape of a simple analytic single-apeture penumbral image """
+	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
+	if 4*δ >= r_max: # if the source size is over 1/4 of the image radius
+		raise ValueError("δ is too big compared to r_max: 4*{}/{} >= 1".format(δ, r_max)) # give up
+	elif 4*δ >= r_max/n_bins: # if 4*source size is smaller than the image radius but bigger than the pixel size
+		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/r_max*n_bins)*2+1) # make a little kernel
 		n_kernel = np.exp(-r_kernel**2/δ**2)
-		r_point = np.arange(-4*δ, 2*r0, r_kernel[1] - r_kernel[0])
+		r_point = np.arange(-4*δ, r_max + 4*δ, r_kernel[1] - r_kernel[0]) # rebin the existing image to match the kernel spacing
 		n_point = np.interp(r_point, rB, nB, right=0)
-		penumbra = np.convolve(n_point, n_kernel, mode='same')
-	elif δ >= 0:
-		r_point = np.linspace(0, CR_39_RADIUS, n_bins)
+		assert len(n_point) >= len(n_kernel)
+		penumbra = np.convolve(n_point, n_kernel, mode='same') # and convolve
+	elif δ >= 0: # if 4*source size is smaller than one pixel and nonnegative
+		r_point = np.linspace(0, r_max, n_bins) # use a dirac kernel instead of a gaussian
 		penumbra = np.interp(r_point, rB, nB, right=0)
 	else:
-		return np.full(r.shape, np.nan)
-	return minimum + (maximum-minimum)*np.interp(r, r_point, penumbra/np.max(penumbra), right=0)
+		raise ValueError("δ cannot be negative")
+	w = np.interp(r, r_point, penumbra/np.max(penumbra), right=0) # map to the requested r values
+	return minimum + (maximum-minimum)*w
 
-def simple_fit(*args, a=1, b=0, c=1, e_min=0, e_max=1):
-	if len(args[0]) == 3:
-		(x0, y0, δ), Q, r0, minimum, maximum, X, Y, exp, e_min, e_max = args
-	elif len(args[0]) == 4 and len(args) == 8:
-		(x0, y0, δ, r0), minimum, maximum, X, Y, exp, e_min, e_max = args
+def simple_fit(*args, a=1, b=0, c=1):
+	""" compute how close these data are to this penumbral image """
+	if len(args[0]) == 3 and len(args) == 12: # first, parse the parameters
+		(x0, y0, δ), Q, r0, s0, r_img, minimum, maximum, X, Y, exp, e_min, e_max = args
+	elif len(args[0]) == 4 and len(args) == 10:
+		(x0, y0, δ, r0), s0, r_img, minimum, maximum, X, Y, exp, e_min, e_max = args
 		Q = 0
-	elif len(args[0]) == 4:
-		(x0, y0, δ, Q), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
+	elif len(args[0]) == 4 and len(args) == 11:
+		(x0, y0, δ, Q), r0, s0, r_img, minimum, maximum, X, Y, exp, e_min, e_max = args
+	elif len(args[0]) == 7 and len(args) == 11:
+		(x0, y0, δ, Q, a, b, c), r0, s0, r_img, minimum, maximum, X, Y, exp, e_min, e_max = args
 	else:
-		(x0, y0, δ, Q, a, b, c), r0, minimum, maximum, X, Y, exp, e_min, e_max = args
-	if Q < 0 or abs(x0) > CR_39_RADIUS or abs(y0) > CR_39_RADIUS: return float('inf')
-	r_eff = np.hypot(a*(X - x0) + b*(Y - y0), b*(X - x0) + c*(Y - y0))
+		raise ValueError("unsupported set of arguments")
+	if Q < 0 or abs(x0) > VIEW_RADIUS or abs(y0) > VIEW_RADIUS: return float('inf') # and reject impossible ones
+
+	x_eff = a*(X - x0) + b*(Y - y0)
+	y_eff = b*(X - x0) + c*(Y - y0)
+	teo = np.zeros(X.shape) # build up the theoretical image
+	include = np.full(X.shape, False) # and decide at which pixels to even look
+	for i in range(-6, 6):
+		dy = i*np.sqrt(3)/2*s0
+		for j in range(-6, 6):
+			dx = (2*j + i%2)*s0/2
+			if dx-s0 < VIEW_RADIUS and dy-s0 < VIEW_RADIUS and dx+s0 > -VIEW_RADIUS and dy+s0 > -VIEW_RADIUS:
+				r_rel = np.hypot(x_eff - dx, y_eff - dy)
+				try:
+					teo[r_rel <= r_img] += simple_penumbra(r_rel[r_rel <= r_img], δ, Q, r0, r_img, 0, 1, e_min, e_max) # as an array of penumbrums
+				except ValueError:
+					return np.inf
+				include[r_rel <= r_img] = True
+				if np.any(np.isnan(teo)):
+					return np.inf
 	if minimum is None or maximum is None:
-		minimum = np.average(exp, weights=(r_eff > .95*CR_39_RADIUS) & (r_eff <= 1.0*CR_39_RADIUS))
-		maximum = np.average(exp, weights=(r_eff < .25*CR_39_RADIUS))
+		minimum = np.average(exp, weights=teo < 1/6) # then compute the best scaling for it
+		maximum = np.average(exp, weights=teo > 5/6)
 	if minimum > maximum:
 		minimum, maximum = maximum, minimum
-	teo = simple_penumbra(r_eff, δ, Q, r0, minimum, maximum, e_min, e_max)
-	error = np.sum((exp - teo)**2/(2*(teo + (teo/6)**2)), where=(exp != 0) & (r_eff < CR_39_RADIUS))
-	penalty = np.sum(r_eff >= CR_39_RADIUS) \
-		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) 
+	teo = minimum + (teo - teo.min())/(teo.max() - teo.min())*(maximum - minimum)
+	error = np.sum((exp - teo)**2/(2*(teo + (NON_STATISTICAL_NOISE*teo)**2)),
+			where=include) # use a gaussian error model
+	penalty = -np.sum(include) \
+		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
 	return error + penalty
 
 
 if __name__ == '__main__':
-	xI_bins_0, yI_bins_0 = np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1), np.linspace(-CR_39_RADIUS, CR_39_RADIUS, n_bins+1) # this is the CR39 coordinate system, centered at 0,0
-	dxI, dyI = xI_bins_0[1] - xI_bins_0[0], yI_bins_0[1] - yI_bins_0[0] # get the bid widths
-	xI_0, yI_0 = (xI_bins_0[:-1] + xI_bins_0[1:])/2, (yI_bins_0[:-1] + yI_bins_0[1:])/2 # change these to bin centers
-	XI_0, YI_0 = np.meshgrid(xI_0, yI_0, indexing='ij') # change these to matrices
+	xC_bins, yC_bins = np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1), np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1) # this is the CR39 coordinate system, centered at 0,0
+	dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
+	xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2 # change these to bin centers
+	XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
 
 	shot_list = pd.read_csv('shot_list.csv')
 
@@ -147,8 +173,12 @@ if __name__ == '__main__':
 			continue
 
 		Q = None
-		rA = scan[APERTURE]/1.e4 # cm
+		L = scan[APERTURE_DISTANCE] # cm
 		M = scan[MAGNIFICATION] # cm
+		rA = scan[APERTURE_RADIUS]/1.e4 # cm
+		sA = scan[APERTURE_SPACING]/1.e4 # cm
+		rotation = np.radians(scan[ROTATION]) # rad
+		if sA == 0: sA = 6*VIEW_RADIUS/(M + 1)
 		etime = float(scan[ETCH_TIME].strip(' h'))
 		track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
 
@@ -166,10 +196,9 @@ if __name__ == '__main__':
 		x_flo, y_flo, z_flo = np.dot(u_TIM, flow), np.dot(v_TIM, flow), np.dot(w_TIM, flow)
 
 		track_list['y(cm)'] *= -1 # cpsa files invert y
-		if str(scan[SHOT]) == '95519' or str(scan[SHOT]) == '95520': # these shots were tilted for some reason
-			x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy() # rotate the flipped penumbral image 45 degrees clockwise
-			track_list['x(cm)'] =  np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
-			track_list['y(cm)'] = -np.sqrt(2)/2*x_temp + np.sqrt(2)/2*y_temp
+		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy() # rotate the flipped penumbral image 45 degrees clockwise
+		track_list['x(cm)'] =  np.cos(rotation+np.pi/2)*x_temp - np.sin(rotation+np.pi/2)*y_temp
+		track_list['y(cm)'] =  np.sin(rotation+np.pi/2)*x_temp + np.cos(rotation+np.pi/2)*y_temp
 		if re.fullmatch(r'[0-9]+', str(scan[SHOT])): # adjustments for real data:
 			track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
 			track_list['cn(%)'] -= np.min(track_list['cn(%)'])
@@ -178,17 +207,21 @@ if __name__ == '__main__':
 		track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 		track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
-		# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 101), np.linspace(0, 50, 51)), cmap=COFFEE)
+		# plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 51), np.linspace(0, 40, 41)), cmap=COFFEE, vmin=0, vmax=13000)
+		# plt.plot([2, 2], [0, 40], 'k--')
+		# plt.plot([3, 3], [0, 40], 'k--')
+		# plt.xlabel("Diameter (μm)", fontsize=16) # plot N(d,c)
+		# plt.ylabel("Contrast (%)", fontsize=16)
+		# plt.title(" ", fontsize=16)
+		# plt.gca().xaxis.set_tick_params(labelsize=16)
+		# plt.gca().yaxis.set_tick_params(labelsize=16)
+		# plt.tight_layout()
 		# plt.show()
 
 		r0 = (M + 1)*rA
-		kernel_size = int(2*(r0+.2)/dxI) + 4 if int(2*(r0+.2)/dxI)%2 == 1 else int(2*(r0+.2)/dxI) + 5
-		n_pixs = n_bins - kernel_size + 1 # the source image will be smaller than the penumbral image
+		s0 = (M + 1)*sA
+		r_img = r0 + M*OBJECT_SIZE
 		
-		xK_bins, yK_bins = np.linspace(-dxI*kernel_size/2, dxI*kernel_size/2, kernel_size+1), np.linspace(-dyI*kernel_size/2, dyI*kernel_size/2, kernel_size+1)
-		dxK, dyK = xK_bins[1] - xK_bins[0], yK_bins[1] - yK_bins[0]
-		XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2, indexing='ij') # this is the kernel coordinate system, measured from the center of the umbra
-
 		image_layers, x_layers, y_layers = [], [], []
 
 		if np.std(track_list['d(µm)']) == 0:
@@ -201,6 +234,8 @@ if __name__ == '__main__':
 			e_in_bounds = np.clip(np.array(e_out_bounds) + 2, 0, 12)
 			print(d_bounds)
 
+			# Q = None
+
 			track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 			track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 			if len(track_x) <= 0:
@@ -210,12 +245,12 @@ if __name__ == '__main__':
 			center_guess = [None, None] # ask the user for help finding the center
 			if ASK_FOR_HELP:
 				fig = plt.figure()
-				N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
-					track_x, track_y, bins=(xI_bins_0, yI_bins_0))
-				plt.pcolormesh(xI_bins_0, yI_bins_0, N.T, vmax=np.quantile(N, .999))
+				N, xC_bins, yC_bins = np.histogram2d( # make a histogram
+					track_x, track_y, bins=(xC_bins, yC_bins))
+				plt.pcolormesh(xC_bins, yC_bins, N.T, vmax=np.quantile(N, .999))
 				plt.axis('square')
 				plt.colorbar()
-				plt.title("Please click on the center of the penumbrus.")
+				plt.title("Please click on the center of a penumbrum.")
 				def onclick(event):
 					center_guess[0] = event.xdata
 					center_guess[1] = event.ydata
@@ -226,70 +261,95 @@ if __name__ == '__main__':
 				plt.close()
 			x0, y0 = center_guess if center_guess[0] is not None else (0, 0)
 
-			N, xI_bins_0, yI_bins_0 = np.histogram2d( # make a histogram
-				track_x, track_y, bins=(xI_bins_0, yI_bins_0))
-			assert N.shape == XI_0.shape
+			N, xC_bins, yC_bins = np.histogram2d( # make a histogram
+				track_x, track_y, bins=(xC_bins, yC_bins))
+			assert N.shape == XC.shape
 
 			if Q is None:
-				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, None, None, XI_0, YI_0, N, *e_in_bounds),
+				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, s0, r_img, None, None, XC, YC, N, *e_in_bounds),
 					method='Nelder-Mead', options=dict(
-						initial_simplex=[[x0+.5, y0+0, .06, 1e-1], [x0-.5, y0+.5, .06, 1e-1], [x0-.5, y0-.5, .06, 1e-1], [x0, y0, .1, 1e-1], [x0, y0, .06, 1.9e-1]]))
+						initial_simplex=[
+							[x0+r_img/2, y0, .06, 1e-1],
+							[x0-r_img/2, y0+r_img/2, .06, 1e-1],
+							[x0-r_img/2, y0-r_img/2, .06, 1e-1],
+							[x0, y0, .1, 1e-1],
+							[x0, y0, .06, 1.9e-1]]))
 				x0, y0, δ, Q = opt.x
 			else:
-				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, None, None, XI_0, YI_0, N, *e_in_bounds),
+				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, s0, r_img, None, None, XC, YC, N, *e_in_bounds),
 					method='Nelder-Mead', options=dict(
-						initial_simplex=[[x0+.5, y0+0, .06], [x0-.5, y0+.5, .06], [x0-.5, y0-.5, .06], [x0, y0, .1]]))
+						initial_simplex=[
+							[x0+r_img/2, y0, .06],
+							[x0-r_img/2, y0+r_img/2, .06],
+							[x0-r_img/2, y0-r_img/2, .06],
+							[x0, y0, .1]]))
 				x0, y0, δ = opt.x
 			M = r0/rA - 1
 			if VERBOSE: print(opt)
 			print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm/MeV, M = {5:.2f}".format(np.sum(N), x0, y0, δ/M/1e-4, Q, M))
 
-			background = np.sum( # recompute these, but with better centering
-				(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS) &\
-				(np.hypot(track_x - x0, track_y - y0) > CR_39_RADIUS*0.95))/\
-				(np.pi*CR_39_RADIUS**2*(1 - 0.95**2))*dxI*dyI
-			umbra = np.sum(
-				(np.hypot(track_x - x0, track_y - y0) < CR_39_RADIUS*0.25))/\
-				(np.pi*CR_39_RADIUS**2*(0.25**2))*dxI*dyI
-
-			xI_bins, yI_bins = xI_bins_0 + x0, yI_bins_0 + y0 # this is the CR39 coordinate system, but encompassing a more useful area
+			xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, n_bins+1), np.linspace(y0 - r_img, y0 + r_img, n_bins+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
+			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 			xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 			XI, YI = np.meshgrid(xI, yI, indexing='ij')
+			N = np.zeros(XI.shape) # and N combines all penumbra on that square
+			for i in range(-6, 6):
+				dy = i*np.sqrt(3)/2*s0
+				for j in range(-6, 6):
+					dx = (2*j + i%2)*s0/2
+					if np.hypot(dx, dy) + r_img <= VIEW_RADIUS:
+						N += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
+
+			kernel_size = int(2.05*r0/dxI) + 4 if int(2.05*r0/dxI)%2 == 1 else int(2.05*(r0+.2)/dxI) + 5
+			n_pixs = n_bins - kernel_size + 1 # the source image will be smaller than the penumbral image
+			xK_bins, yK_bins = np.linspace(-dxI*kernel_size/2, dxI*kernel_size/2, kernel_size+1), np.linspace(-dyI*kernel_size/2, dyI*kernel_size/2, kernel_size+1)
+			dxK, dyK = xK_bins[1] - xK_bins[0], yK_bins[1] - yK_bins[0]
+			XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2, indexing='ij') # this is the kernel coordinate system, measured from the center of the umbra
 
 			xS_bins, yS_bins = xI_bins[kernel_size//2:-(kernel_size//2)]/M, -yI_bins[kernel_size//2:-(kernel_size//2)]/M # this is the source system. note that it is reversed so that indices measured from the center match between I and S
 			dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
 			xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
 			XS, YS = np.meshgrid(xS, yS, indexing='ij')
 
-			N, xI_bins, yI_bins = np.histogram2d( # make a histogram
-				track_x, track_y, bins=(xI_bins, yI_bins))
+			if SHOW_PLOTS:
+				plt.figure()
+				plt.hist2d(track_x, track_y, bins=(xC_bins, yC_bins))
+				T = np.linspace(0, 2*np.pi)
+				plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+				# plt.plot(x0 - s0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+				# plt.plot(x0 + s0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+				plt.plot(x0 + r_img*np.cos(T), y0 + r_img*np.sin(T), '--w')
+				plt.plot(x0 + VIEW_RADIUS*np.cos(T), y0 + VIEW_RADIUS*np.sin(T), '--w')
+				plt.axis('square')
+				plt.colorbar()
+				plt.show()
+				plt.figure()
+				plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .999))
+				plt.axis('square')
+				plt.colorbar()
+				plt.show()
 
 			del(track_x)
 			del(track_y)
 			gc.collect()
 
-			if SHOW_PLOTS:
-				plt.figure()
-				plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .999))
-				T = np.linspace(0, 2*np.pi)
-				plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
-				plt.plot(x0 + CR_39_RADIUS*np.cos(T), y0 + CR_39_RADIUS*np.sin(T), '--w')
-				plt.axis('square')
-				plt.colorbar()
-				plt.show()
-
-			penumbral_kernel = np.zeros(XK.shape)
-			for dx in [-dxK/3, 0, dxK/3]:
+			penumbral_kernel = np.zeros(XK.shape) # build the penumbral kernel
+			for dx in [-dxK/3, 0, dxK/3]: # sampling over a few pixels
 				for dy in [-dyK/3, 0, dyK/3]:
-					penumbral_kernel += simple_penumbra(np.hypot(XK+dxK, YK+dyK), 0, Q, r0, 0, 1, *e_in_bounds)
+					penumbral_kernel += simple_penumbra(np.hypot(XK+dxK, YK+dyK), 0, Q, r0, r_img, 0, 1, *e_in_bounds)
 			penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
 
-			D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, background, umbra, *e_in_bounds) # make D equal to the fit to N
+			background = np.average(N,
+				weights=(np.hypot(XI - x0, YI - y0) > (r_img + r0)/2)) # compute these with the better centering
+			umbra = np.average(N,
+				weights=(np.hypot(XI - x0, YI - y0) < r0/2))
+			D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, r_img, background, umbra, *e_in_bounds) # make D equal to the rough fit to N
 
 			penumbra_low = np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-			penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .50)
+			penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
 			reach = signal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
-			data_bins = (N != 0) & (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are completely empty, and bins that are touched by all or none of the source pixels
+			data_bins = np.isfinite(N) & (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
+			data_bins &= ~((N == 0) & (Delaunay(np.transpose([XI[N > 0], YI[N > 0]])).find_simplex(np.transpose([XI.ravel(), YI.ravel()])) == -1).reshape(N.shape)) # crop it at the convex hull where counts go to zero
 			n_data_bins = np.sum(data_bins)
 			N[np.logical_not(data_bins)] = np.nan
 
@@ -322,36 +382,37 @@ if __name__ == '__main__':
 				χ2_prev, χ2 = χ2, np.sum((N - N_teo)**2/D, where=data_bins)
 				iterations += 1
 				if VERBOSE: print("[{}],".format(χ2/n_data_bins))
-				# fig, axes = plt.subplots(3, 2)
-				# fig.subplots_adjust(hspace=0, wspace=0)
-				# gs1 = gridspec.GridSpec(4, 4)
-				# gs1.update(wspace=0, hspace=0) # set the spacing between axes. 
-				# axes[0,0].set_title("Previous step")
-				# plot = axes[0,0].pcolormesh(xS_bins, yS_bins, G*h/2*δB, cmap=cmap)
-				# axes[0,0].axis('square')
-				# fig.colorbar(plot, ax=axes[0,0])
-				# axes[0,1].set_title("Fit source image")
-				# plot = axes[0,1].pcolormesh(xS_bins, yS_bins, G*B, vmin=0, vmax=G*B.max(), cmap=cmap)
-				# axes[0,1].axis('square')
-				# fig.colorbar(plot, ax=axes[0,1])
-				# axes[1,0].set_title("Penumbral image")
-				# plot = axes[1,0].pcolormesh(xI_bins, yI_bins, N.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
-				# axes[1,0].axis('square')
-				# fig.colorbar(plot, ax=axes[1,0])
-				# axes[1,1].set_title("Fit penumbral image")
-				# plot = axes[1,1].pcolormesh(xI_bins, yI_bins, N_teo.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
-				# axes[1,1].axis('square')
-				# fig.colorbar(plot, ax=axes[1,1])
-				# axes[2,0].set_title("Expected variance")
-				# plot = axes[2,0].pcolormesh(xI_bins, yI_bins, D.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
-				# axes[2,0].axis('square')
-				# fig.colorbar(plot, ax=axes[2,0])
-				# axes[2,1].set_title("Chi squared")
-				# plot = axes[2,1].pcolormesh(xI_bins, yI_bins, ((N - N_teo)**2/D).T, vmin=0, vmax=10)
-				# axes[2,1].axis('square')
-				# fig.colorbar(plot, ax=axes[2,1])
-				# plt.tight_layout()
-				# plt.show()
+				if DEBUG_PLOTS:
+					fig, axes = plt.subplots(3, 2)
+					fig.subplots_adjust(hspace=0, wspace=0)
+					gs1 = gridspec.GridSpec(4, 4)
+					gs1.update(wspace=0, hspace=0) # set the spacing between axes.
+					axes[0,0].set_title("Previous step")
+					plot = axes[0,0].pcolormesh(xS_bins, yS_bins, G*h/2*δB, cmap=cmap)
+					axes[0,0].axis('square')
+					fig.colorbar(plot, ax=axes[0,0])
+					axes[0,1].set_title("Fit source image")
+					plot = axes[0,1].pcolormesh(xS_bins, yS_bins, G*B, vmin=0, vmax=G*B.max(), cmap=cmap)
+					axes[0,1].axis('square')
+					fig.colorbar(plot, ax=axes[0,1])
+					axes[1,0].set_title("Penumbral image")
+					plot = axes[1,0].pcolormesh(xI_bins, yI_bins, N.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
+					axes[1,0].axis('square')
+					fig.colorbar(plot, ax=axes[1,0])
+					axes[1,1].set_title("Fit penumbral image")
+					plot = axes[1,1].pcolormesh(xI_bins, yI_bins, N_teo.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
+					axes[1,1].axis('square')
+					fig.colorbar(plot, ax=axes[1,1])
+					axes[2,0].set_title("Expected variance")
+					plot = axes[2,0].pcolormesh(xI_bins, yI_bins, D.T, vmin=0, vmax=N.max(where=data_bins, initial=0))
+					axes[2,0].axis('square')
+					fig.colorbar(plot, ax=axes[2,0])
+					axes[2,1].set_title("Chi squared")
+					plot = axes[2,1].pcolormesh(xI_bins, yI_bins, ((N - N_teo)**2/D).T, vmin=0, vmax=10)
+					axes[2,1].axis('square')
+					fig.colorbar(plot, ax=axes[2,1])
+					plt.tight_layout()
+					plt.show()
 
 			if χ2/n_data_bins >= 2.0:
 				print("Could not find adequate fit.")
@@ -420,3 +481,18 @@ if __name__ == '__main__':
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} nestplot.png".format(scan[SHOT], scan[TIM]))
 			plt.close()
+
+		μ0 = np.sum(image_layers[0]) # image sum
+		μx = np.sum(XS*image_layers[0])/μ0 # image centroid
+		μy = np.sum(YS*image_layers[0])/μ0
+		μxx = np.sum(XS**2*image_layers[0])/μ0 - μx**2 # image rotational inertia
+		μxy = np.sum(XS*YS*image_layers[0])/μ0 - μx*μy
+		μyy = np.sum(YS**2*image_layers[0])/μ0 - μy**2
+		eigval, eigvec = np.linalg.eig([[μxx, μxy], [μxy, μyy]])
+		i1, i2 = np.argmax(eigval), np.argmin(eigval)
+		p0 = np.sqrt(μxx + μyy)
+		p1, θ1 = np.hypot(μx, μy), np.arctan2(μy, μx)
+		p2, θ2 = np.sqrt(eigval[i1]) - np.sqrt(eigval[i2]), np.arctan2(eigvec[1,i1], eigvec[0,i1])
+		print(f"P0 = {p0/1e-4:.2f}μm")
+		print(f"P1 = {p1/1e-4:.2f}μm = {p1/p0*100:.1f}%, θ = {np.degrees(θ1)}°")
+		print(f"P2 = {p2/1e-4:.2f}μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2)}°")
