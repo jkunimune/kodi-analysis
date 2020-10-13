@@ -361,12 +361,10 @@ if __name__ == '__main__':
 			B[np.hypot(XS - (xS[0] + xS[-1])/2, YS - (yS[0] + yS[-1])/2) >= (xS[-1] - xS[0])/2 + (xS[1] - xS[0])] = 0 # remove the corners
 			F = N - background
 
-			χ2_95 = stats.chi2.ppf(.95, n_data_bins)
-			χ2 = []
-			iterations, remaining_decrease = 0, -np.inf
-			print(np.sqrt(1/n_data_bins))
-			while iterations < 50 and (remaining_decrease < 0 or remaining_decrease > np.sqrt(.01/n_data_bins)):
-			# while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > THRESHOLD and iterations < 50):
+			# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
+			χ2, χ2_prev, iterations = np.inf, np.inf, 0
+			# while iterations < 50 and χ2 > χ2_95:
+			while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > THRESHOLD and iterations < 50):
 				B /= B.sum() # correct for roundoff
 				s = convolve2d(B, penumbral_kernel, where=data_bins)
 				G = np.sum(F*s/D, where=data_bins)/np.sum(s**2/D, where=data_bins)
@@ -385,12 +383,10 @@ if __name__ == '__main__':
 				Dδ = np.sum(δs**2/D, where=data_bins)
 				h = (Fδ - G*Sδ)/(G*Dδ - Fδ*Sδ/Ss)
 				B += h/2*δB
-				χ2.append(np.sum((N - N_teo)**2/D, where=data_bins)) # compute reduced chi-squared
-				if len(χ2) >= 3: # estimate how much more it will decrease before bottoming out
-					remaining_decrease = -(χ2[-2] - χ2[-1])**2/(2*χ2[-2] - χ2[-3] - χ2[-1])/n_data_bins
+				χ2_prev, χ2 = χ2, np.sum((N - N_teo)**2/D, where=data_bins)
 				iterations += 1
-				if VERBOSE: print(f"[{χ2[-1]/n_data_bins}, {remaining_decrease}, {χ2[-1]/n_data_bins - remaining_decrease}],")
-				if SHOW_DEBUG_PLOTS:
+				if VERBOSE: print("[{}],".format(χ2/n_data_bins))
+				if DEBUG_PLOTS:
 					fig, axes = plt.subplots(3, 2)
 					fig.subplots_adjust(hspace=0, wspace=0)
 					gs1 = gridspec.GridSpec(4, 4)
@@ -422,7 +418,7 @@ if __name__ == '__main__':
 					plt.tight_layout()
 					plt.show()
 
-			if χ2[-1]/n_data_bins >= 2.0:
+			if χ2/n_data_bins >= 2.0:
 				print("Could not find adequate fit.")
 				B = np.zeros(B.shape)
 			else:
