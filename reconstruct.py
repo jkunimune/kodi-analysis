@@ -20,15 +20,15 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
 np.seterr('ignore')
 
-SHOW_PLOTS = True
-DEBUG_PLOTS = True
+SHOW_PLOTS = False
+SHOW_DEBUG_PLOTS = False
 VERBOSE = True
 OBJECT_SIZE = 400e-4 # cm
 THRESHOLD = 3e-5
 ASK_FOR_HELP = False
 
 VIEW_RADIUS = 3.0 # cm
-NON_STATISTICAL_NOISE = 0.05
+NON_STATISTICAL_NOISE = 0.0
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 n_bins = 400
 
@@ -146,7 +146,7 @@ def simple_fit(*args, a=1, b=0, c=1):
 	if minimum > maximum:
 		minimum, maximum = maximum, minimum
 	teo = minimum + (teo - teo.min())/(teo.max() - teo.min())*(maximum - minimum)
-	error = np.sum((exp - teo)**2/(2*(teo + (NON_STATISTICAL_NOISE*teo)**2)),
+	error = np.sum((exp - teo)**2/(teo + (NON_STATISTICAL_NOISE*teo)**2),
 			where=include) # use a gaussian error model
 	penalty = -np.sum(include) \
 		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
@@ -273,7 +273,9 @@ if __name__ == '__main__':
 							[x0-r_img/2, y0+r_img/2, .06, 1e-1],
 							[x0-r_img/2, y0-r_img/2, .06, 1e-1],
 							[x0, y0, .1, 1e-1],
-							[x0, y0, .06, 1.9e-1]]))
+							[x0, y0, .06, 1.9e-1]]),
+					# tol=1e-9,
+					)
 				x0, y0, δ, Q = opt.x
 			else:
 				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, s0, r_img, None, None, XC, YC, N, *e_in_bounds),
@@ -282,7 +284,9 @@ if __name__ == '__main__':
 							[x0+r_img/2, y0, .06],
 							[x0-r_img/2, y0+r_img/2, .06],
 							[x0-r_img/2, y0-r_img/2, .06],
-							[x0, y0, .1]]))
+							[x0, y0, .1]]),
+					# tol=1e-9,
+					)
 				x0, y0, δ = opt.x
 			M = r0/rA - 1
 			if VERBOSE: print(opt)
@@ -436,7 +440,7 @@ if __name__ == '__main__':
 			plt.axis([-100, 100, -100, 100])
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} {:.1f}-{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, etime))
-			plt.close()
+			plt.show()
 
 			# plt.show()
 
