@@ -10,7 +10,7 @@ from electric_field_model import e_field
 
 NOISE_SCALE = 1.0 # [cm]
 DISPLACEMENT_NOISE = 0.#25 # [cm*MeV]
-DISPLACEMENT_CHARGE = 0.05 # [cm*MeV]
+DISPLACEMENT_CHARGE = 0.#05 # [cm*MeV]
 
 SYNTH_RESOLUTION = 2000
 
@@ -78,7 +78,7 @@ for shot, N, SNR in [('multigaussian', 800000, 8)]:
 		elif shot == 'hypergaussian':
 			img_lo = np.exp(-(X**3 + Y**3)/(2*50e-4**3))
 		elif shot == 'ellipse':
-			img_lo = np.exp(-(X**2*2 + Y**2/2)/(2*50e-4**2))
+			img_lo = np.exp(-(X**2 - X*Y*3/2 + Y**2)/(2*50e-4**2))
 		elif shot == 'multigaussian':
 			img_lo = np.exp(-(X**2 + Y**2)/(2*80e-4**2)) * np.exp(-2.0*np.exp(-((X-30e-4)**2 + Y**2)/(2*40e-4**2)))
 		img_md, img_hi = np.zeros(img_lo.shape), np.zeros(img_lo.shape)
@@ -119,8 +119,8 @@ for shot, N, SNR in [('multigaussian', 800000, 8)]:
 			δx = δx_noise(xA, yA)/energy + δr*np.cos(θ)
 			δy = δy_noise(xA, yA)/energy + δr*np.sin(θ)
 
-			xD = -(xA + (xA - xS)*M + δx) # make the image (this minus is from flipping from the TIM's perspective to looking at the CR_39)
-			yD =   yA + (yA - yS)*M + δy
+			xD = xA + (xA - xS)*M + δx # make the image
+			yD = yA + (yA - yS)*M + δy
 
 			rD = np.hypot(xD, yD)
 
@@ -135,10 +135,10 @@ for shot, N, SNR in [('multigaussian', 800000, 8)]:
 	with open(FOLDER+'simulated shot {} TIM{} {}h.txt'.format(shot, 2, 2), 'w') as f:
 		f.write(short_header)
 		for i in range(len(x_list)):
-			f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], -y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
+			f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
 
 	plt.figure()
-	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-300, 300, 101), np.linspace(-300, 300, 101)), cmap='plasma')
+	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-200, 200, 101), np.linspace(-200, 200, 101)), cmap='plasma')
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.colorbar()
