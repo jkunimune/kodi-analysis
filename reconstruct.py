@@ -21,19 +21,20 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 np.seterr('ignore')
 
 SKIP_RECONSTRUCTION = False
-SHOW_PLOTS = False
+SHOW_PLOTS = True
+SHOW_RAW_PLOTS = False
 SHOW_DEBUG_PLOTS = True
 SHOW_OFFSET = False
 VERBOSE = True
-OBJECT_SIZE = 300e-4 # cm
+OBJECT_SIZE = 200e-4 # cm
 THRESHOLD = 1e-4
 ASK_FOR_HELP = False
 
 VIEW_RADIUS = 5.0 # cm
 NON_STATISTICAL_NOISE = 0.0
-SPREAD = 1.03
+SPREAD = 1.05
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-n_bins = 350
+RESOLUTION = 50
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
@@ -108,6 +109,27 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 	plt.show()
 
 
+def plot_cooked_data(track_x, track_y, xC_bins, yC_bins, xI_bins, yI_bins, N, x0, y0, r0, r_img):
+	""" plot the data along with the initial fit to it, and the
+		reconstructed superaperture.
+	"""
+	plt.figure()
+	plt.hist2d(track_x, track_y, bins=(xC_bins, yC_bins))
+	T = np.linspace(0, 2*np.pi)
+	plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+	plt.plot(x0 - s0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+	plt.plot(x0 + s0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+	plt.plot(x0 + r_img*np.cos(T), y0 + r_img*np.sin(T), '--w')
+	plt.axis('square')
+	plt.colorbar()
+	plt.show()
+	plt.figure()
+	plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .999))
+	plt.axis('square')
+	plt.colorbar()
+	plt.show()
+
+
 def project(r, θ, ɸ, basis):
 	""" project given spherical coordinates (with angles in degrees) into the
 		detector plane x and y, as well as z out of the page.
@@ -161,7 +183,7 @@ def simple_fit(*args, a=1, b=0, c=1):
 		dy = i*np.sqrt(3)/2*s0
 		for j in range(-6, 6):
 			dx = (2*j + i%2)*s0/2
-			if dx-s0 < VIEW_RADIUS and dy-s0 < VIEW_RADIUS and dx+s0 > -VIEW_RADIUS and dy+s0 > -VIEW_RADIUS:
+			if np.hypot(dx, dy) < VIEW_RADIUS - r_img:
 				r_rel = np.hypot(x_eff - dx, y_eff - dy)
 				try:
 					teo[r_rel <= r_img] += simple_penumbra(r_rel[r_rel <= r_img], δ, Q, r0, r_img, 0, 1, e_min, e_max) # as an array of penumbrums
@@ -170,18 +192,21 @@ def simple_fit(*args, a=1, b=0, c=1):
 				include[r_rel <= r_img] = True
 				if np.any(np.isnan(teo)):
 					return np.inf
+	sigma2 = 1 + teo + (NON_STATISTICAL_NOISE*teo)**2
+	
 	if np.sum(include) == 0:
 		return np.inf
-	if minimum is None or maximum is None:
-		minimum = np.average(exp, weights=include & (teo < 1/18)) # then compute the best scaling for it
-		maximum = np.average(exp, weights=include & (teo > 17/18))
+	if minimum is None: # if the max and min are unspecified
+		scale, minimum = mysignal.linregress(teo, exp, include/sigma2)
+		maximum = minimum + scale
 	if minimum > maximum:
-		minimum, maximum = maximum, minimum
-	teo = minimum + (teo - teo.min())/(teo.max() - teo.min())*(maximum - minimum)
-	error = np.sum((exp - teo)**2/(teo + (NON_STATISTICAL_NOISE*teo)**2),
-			where=include) # use a gaussian error model
-	penalty = -np.sum(include) \
-		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
+		return np.inf
+	teo = minimum + teo*(maximum - minimum)
+	error = np.sum((exp - teo)**2/sigma2, where=include) - 2*np.sum(include) # use a gaussian error model
+	penalty = \
+		- 2*np.sum(include) \
+		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) \
+		+ Q/.05 - X.size*np.log(maximum/minimum - 1)
 	return error + penalty
 
 
@@ -189,17 +214,6 @@ if __name__ == '__main__':
 	shot_list = pd.read_csv('shot_list.csv')
 
 	for i, scan in shot_list.iterrows():
-		filename = None
-		for fname in os.listdir(FOLDER):
-			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'tim'+str(scan[TIM]) in fname.lower() and scan[ETCH_TIME].replace(' ','') in fname:
-				filename = fname
-				print("Beginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
-				break
-		if filename is None:
-			print("Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
-			continue
-		track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
-
 		Q = None
 		L = scan[APERTURE_DISTANCE] # cm
 		M = scan[MAGNIFICATION] # cm
@@ -220,6 +234,23 @@ if __name__ == '__main__':
 		x_off, y_off, z_off = project(float(scan[R_OFFSET]), float(scan[Θ_OFFSET]), float(scan[Φ_OFFSET]), basis)*1e-4 # cm
 		x_flo, y_flo, z_flo = project(float(scan[R_FLOW]), float(scan[Θ_FLOW]), float(scan[Φ_FLOW]), basis)*1e-4 # cm/ns
 
+		filename = None
+		for fname in os.listdir(FOLDER):
+			if fname.endswith('.txt') and str(scan[SHOT]) in fname and 'tim'+str(scan[TIM]) in fname.lower() and scan[ETCH_TIME].replace(' ','') in fname:
+				filename = fname
+				print("Beginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+				break
+		if filename is None:
+			print("Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+			continue
+		track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32')
+
+		r0 = (M + 1)*rA
+		s0 = (M + 1)*sA
+		r_img = SPREAD*r0 + M*OBJECT_SIZE
+		VIEW_RADIUS = max(np.max(track_list['x(cm)']), np.max(track_list['y(cm)']))
+		n_bins = min(1000, int(RESOLUTION/(OBJECT_SIZE*M)*r_img)) # get the image resolution needed to resolve the object
+
 		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy()
 		track_list['x(cm)'] =  np.cos(rotation+np.pi)*x_temp - np.sin(rotation+np.pi)*y_temp # apply any requested rotation, plus 180 flip to deal with inherent flip due to aperture
 		track_list['y(cm)'] =  np.sin(rotation+np.pi)*x_temp + np.cos(rotation+np.pi)*y_temp
@@ -229,23 +260,19 @@ if __name__ == '__main__':
 			track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
 		hicontrast = (track_list['cn(%)'] < 35) & (track_list['e(%)'] < 15)
 
-		if SKIP_RECONSTRUCTION:
-			plot_raw_data(track_list[hicontrast], xC_bins, yC_bins, f"Penumbral image, TIM{scan[TIM]}, shot {scan[SHOT]}")
-			continue
-
 		track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 		track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
-		VIEW_RADIUS = max(np.max(track_list['x(cm)']), np.max(track_list['y(cm)']))
 		xC_bins, yC_bins = np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1), np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1) # this is the CR39 coordinate system, centered at 0,0
 		dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
 		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2 # change these to bin centers
 		XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
 
-		r0 = (M + 1)*rA
-		s0 = (M + 1)*sA
-		r_img = SPREAD*r0 + M*OBJECT_SIZE
-		
+		if SHOW_RAW_PLOTS:
+			plot_raw_data(track_list[hicontrast], xC_bins, yC_bins, f"Penumbral image, TIM{scan[TIM]}, shot {scan[SHOT]}")
+		if SKIP_RECONSTRUCTION:
+			continue
+
 		image_layers, x_layers, y_layers = [], [], []
 
 		if np.std(track_list['d(µm)']) == 0:
@@ -280,19 +307,19 @@ if __name__ == '__main__':
 			if Q is None:
 				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, s0, r_img, None, None, XC, YC, N, *e_in_bounds),
 					method='Nelder-Mead', options=dict(initial_simplex=[
-						[x0+r_img/2, y0, .06, 1e-1],
-						[x0-r_img/2, y0+r_img/2, .06, 1e-1],
-						[x0-r_img/2, y0-r_img/2, .06, 1e-1],
-						[x0, y0, .1, 1e-1],
-						[x0, y0, .06, 1.9e-1]]))
+						[x0+r_img/2, y0,         OBJECT_SIZE*M/3, 1.0e-1],
+						[x0-r_img/2, y0+r_img/2, OBJECT_SIZE*M/3, 1.0e-1],
+						[x0-r_img/2, y0-r_img/2, OBJECT_SIZE*M/3, 1.0e-1],
+						[x0,         y0,         OBJECT_SIZE*M/2, 1.0e-1],
+						[x0,         y0,         OBJECT_SIZE*M/3, 1.9e-1]]))
 				x0, y0, δ, Q = opt.x
 			else:
 				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, s0, r_img, None, None, XC, YC, N, *e_in_bounds),
 					method='Nelder-Mead', options=dict(initial_simplex=[
-						[x0+r_img/2, y0, .06],
-						[x0-r_img/2, y0+r_img/2, .06],
-						[x0-r_img/2, y0-r_img/2, .06],
-						[x0, y0, .1]]))
+						[x0+r_img/2, y0, OBJECT_SIZE*M/3],
+						[x0-r_img/2, y0+r_img/2, OBJECT_SIZE*M/3],
+						[x0-r_img/2, y0-r_img/2, OBJECT_SIZE*M/3],
+						[x0, y0, OBJECT_SIZE*M/2]]))
 				x0, y0, δ = opt.x
 			if VERBOSE: print(opt)
 			print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm/MeV, M = {5:.2f}".format(np.sum(N), x0, y0, δ/M/1e-4, Q, M))
@@ -322,21 +349,7 @@ if __name__ == '__main__':
 			XS, YS = np.meshgrid(xS, yS, indexing='ij')
 
 			if SHOW_PLOTS:
-				plt.figure()
-				plt.hist2d(track_x, track_y, bins=(xC_bins, yC_bins))
-				T = np.linspace(0, 2*np.pi)
-				plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
-				# plt.plot(x0 - s0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
-				# plt.plot(x0 + s0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
-				plt.plot(x0 + r_img*np.cos(T), y0 + r_img*np.sin(T), '--w')
-				plt.axis('square')
-				plt.colorbar()
-				plt.show()
-				plt.figure()
-				plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .999))
-				plt.axis('square')
-				plt.colorbar()
-				plt.show()
+				plot_cooked_data(track_x, track_y, xC_bins, yC_bins, xI_bins, yI_bins, N, x0, y0, r0, r_img)
 
 			del(track_x)
 			del(track_y)
@@ -381,7 +394,7 @@ if __name__ == '__main__':
 			plt.title("B(x, y) of TIM {} on shot {} with d ∈ [{:.1f}μm,{:.1f}μm)".format(scan[TIM], scan[SHOT], *d_bounds))
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
-			plt.axis([x0/M*1e-4 - 200, x0/M*1e-4 + 200, y0/M*1e-4 - 200, y0/M*1e-4 + 200])
+			plt.axis([(x0/M - OBJECT_SIZE)/1e-4, (x0/M + OBJECT_SIZE)/1e-4, (y0/M - OBJECT_SIZE)/1e-4, (y0/M + OBJECT_SIZE)/1e-4])
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} {:.1f}-{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, etch_time))
 
@@ -410,10 +423,10 @@ if __name__ == '__main__':
 			plt.savefig("results/{} TIM{} xray sourceimage.png".format(scan[SHOT], scan[TIM]))
 			plt.close()
 
-		x0 = x_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
-		y0 = y_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
-
 		if len(image_layers) > 1:
+			x0 = x_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
+			y0 = y_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
+
 			plt.figure()
 			plt.contourf((x_layers[1] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
 			# plt.contourf((x_layers[2] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
@@ -427,7 +440,7 @@ if __name__ == '__main__':
 				plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(z_off/r_off, z_flo/r_flo),
 					verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
 			plt.axis('square')
-			plt.axis([-100, 100, -100, 100])
+			plt.axis([-150, 150, -150, 150])
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
 			plt.title("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))

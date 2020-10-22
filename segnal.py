@@ -7,6 +7,18 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
+def linregress(x, y, weights=None):
+	""" fit a line to y(x) using least squares. """
+	if weights is None:
+		weights = np.ones(x.shape)
+	weights /= np.sum(weights)
+	μx = np.sum(weights*x)
+	μy = np.sum(weights*y)
+	m = np.sum(weights*(x - μx)*(y - μy))/np.sum(weights*(x - μx)**2)
+	b = μy - m*μx
+	return m, b
+
+
 def shape_parameters(x, y, f, contour=0):
 	""" get some scalar parameters that describe the shape of this distribution. """
 	if contour == 0:
