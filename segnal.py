@@ -1,6 +1,7 @@
 """ some signal utility functions, including the all-important Gelfgat reconstruction """
 import numpy as np
 import scipy.signal as pysignal
+import scipy.stats as stats
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
@@ -41,6 +42,7 @@ def shape_parameters(x, y, f, contour=0):
 
 def sl(a, b, c):
 	""" slice convenience function """
+	if (b < -1 and a > 0) or (a < -1 and b > 0): raise ValueError()
 	if b == -1 and c < 0: b = None
 	return slice(a, b, c)
 
@@ -51,70 +53,119 @@ def convolve2d(a, b, where=None):
 		symmetric.
 	"""
 	if where is None:
-		where = np.full((a.shape[0] + b.shape[0] - 1, a.shape[1] + b.shape[1] - 1))
+		where = np.full((a.shape[0] + b.shape[0] - 1, a.shape[1] + b.shape[1] - 1), True)
+	n, m = a.shape
 	c = np.zeros(where.shape)
 	for i, j in zip(*np.nonzero(where)):
-		mt = max( 0, i - b.shape[0] + 1) # omitted rows on top
-		mb = max( 0, a.shape[0] - i - 1) # omitted rows on bottom
-		mr = max( 0, j - b.shape[1] + 1) # omitted columns on right
-		ml = max( 0, a.shape[1] - j - 1) # omitted rows on left
-		c[i,j] = np.sum(a[mt:a.shape[0]-mb, mr:a.shape[1]-ml]*b[sl(i-mt, i-a.shape[0]+mb, -1), sl(j-mr, j-a.shape[1]+ml, -1)])
+		nt = max( 0, i - b.shape[0] + 1) # omitted rows on top
+		nb = max( 0, n - i - 1) # omitted rows on bottom
+		ml = max( 0, j - b.shape[1] + 1) # omitted columns on right
+		mr = max( 0, m - j - 1) # omitted rows on left
+		c[i,j] = np.sum(a[nt:n-nb, ml:m-mr]*b[sl(i-nt, i-n+nb, -1), sl(j-ml, j-m+mr, -1)])
 	return c
 
 
-def gelfgat_deconvolve2d(F, q, D, tolerance, where=None, illegal=None, verbose=False, show_plots=False):
+def gelfgat_deconvolve2d(F, Q, where=None, illegal=None, verbose=False, show_plots=False):
 	""" perform the algorithm outlined in
 			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
 			data…" in *Computer Physics Communications* 74 (1993)
-		to deconvolve the simple discrete 2d kernel q from the full measurement F and
-		expected uncertainty D. a mask with the same shape as F can be applied; if so,
-		only bins where where[i,j]>0 will be considered valid for the deconvolution. as
-		this is an iterative algorithm, a relative tolerance must be provided to
-		dictate the stop condition. pixels in the deconvolved image marked with illegal
-		will be coerced to zero
+		to deconvolve the simple discrete 2d kernel q from the full histogrammed measurement
+		F. a background value will be automatically inferred. a mask with the same shape as
+		F can be applied; if so, only bins where where[i,j]>0 will be considered valid for
+		the deconvolution. pixels in the deconvolved image marked with illegal will be
+		coerced to zero.
 	"""
 	assert len(F.shape) == 2 and F.shape[0] == F.shape[1], "I don't kno how too doo that."
-	n = m = F.shape[0] - q.shape[0] + 1
-	if where is None:
-		where = np.full(F.shape, True)
-	else:
-		where = where.astype(bool)
-	n_data_bins = np.sum(where)
+	n = m = F.shape[0] - Q.shape[0] + 1
+	# if where is None:
+	# 	where = np.full(F.shape, True)
+	# else:
+	# 	where = where.astype(bool)
+	where = np.full(F.shape, True)
 
-	g = np.ones((n, m))
-	if illegal is not None:
-		g[illegal] = 0
+	g = np.ones((n, m)) # define the normalized signal matrix
+	# if illegal is not None:
+	# 	g[illegal] = 0
+	g0 = 1 # and the normalized signal background pixel
+	G = F.sum()/Q.sum()
 
-	# χ2_95 = stats.chi2.ppf(.95, n_data_bins)
-	# while iterations < 50 and χ2 > χ2_95:
-	χ2, χ2_prev, iterations = np.inf, np.inf, 0
-	while iterations < 1 or ((χ2_prev - χ2)/n_data_bins > tolerance and iterations < 50):
-		g /= g.sum() # correct for roundoff
-		s = convolve2d(g, q, where=where)
-		G = np.sum(F*s/D, where=where)/np.sum(s**2/D, where=where)
-		S = G*s
-		dLdF = (F - S)/D
-		δg = np.zeros(g.shape) # step direction
-		for i, j in zip(*np.nonzero(where)): # we need a for loop for this part because of memory constraints
-			nt = max( 0, i - q.shape[0] + 1)
-			nb = max( 0, n - i - 1)
-			ml = max( 0, j - q.shape[1] + 1)
-			mr = max( 0, m - j - 1)
-			δg[nt:n-nb, ml:m-mr] += g[nt:n-nb, ml:m-mr]*dLdF[i,j]*q[sl(i-nt, i-n+nb, -1), sl(j-ml, j-m+mr, -1)]
-		δs = convolve2d(δg, q, where=where) # step projected into measurement space
-		Fs, Fδ = np.sum(F*s/D, where=where), np.sum(F*δs/D, where=where)
-		Ss, Sδ = np.sum(s**2/D, where=where), np.sum(s*δs/D, where=where)
-		Dδ = np.sum(δs**2/D, where=where)
-		h = (Fδ - G*Sδ)/(G*Dδ - Fδ*Sδ/Ss)
-		g += h/2*δg
-		χ2_prev, χ2 = χ2, np.sum((F - S)**2/D, where=where)
+	N = F.sum()
+	f = F/N # make sure the counts are normalized
+	q = Q/Q.sum() # make sure the kernel is normalized
+
+	χ2_red_95 = stats.chi2.ppf(.05, np.sum(where))/np.sum(where)
+	iterations, χ2_red = 0, np.inf
+	while iterations < 100 and χ2_red > χ2_red_95:
+		gsum = g.sum() + g0
+		g, g0 = g/gsum, g0/gsum # correct for roundoff
+		# s = pysignal.convolve2d(g, q, mode='full') + g0/f.size
+		s = convolve2d(g, q, where=where) + g0/f.size
+		dlds = f/s - 1
+		δg, δg0 = np.zeros(g.shape), 0 # step direction
+		# for i, j in zip(*np.nonzero(where)): # we need a for loop for this part because of memory constraints
+		# 	nt = max( 0, i - q.shape[0] + 1)
+		# 	nb = max( 0, n - i - 1)
+		# 	ml = max( 0, j - q.shape[1] + 1)
+		# 	mr = max( 0, m - j - 1)
+		# 	δg[nt:n-nb, ml:m-mr] += g[nt:n-nb, ml:m-mr] * q[sl(i-nt, i-n+nb, -1), sl(j-ml, j-m+mr, -1)] * dlds[i,j]
+		# 	δg0 += g0 * (1/f.size) * dlds[i,j]
+		for i in range(g.shape[0]):
+			for j in range(g.shape[1]):
+				test_s = np.zeros(s.shape)
+				test_s[i:i+q.shape[0], j:j+q.shape[1]] = q
+				δg[i,j] += g[i,j]*np.sum(test_s*(f/s - 1))
+		δg0 = g0*np.mean(f/s - 1)
+		δs = convolve2d(δg, q, where=where) + δg0/f.size # step projected into measurement space
+		# δs = pysignal.convolve2d(δg, q, mode='full') + δg0/f.size # step projected into measurement space
+		# L = N*np.sum(f*np.log(s))
+		# dg = 1e-5
+		# for i in range(n):
+		# 	for j in range(m):
+		# 		g[i,j] += dg
+		# 		s_d = convolve2d(g, q, where=where) + g0/f.size
+		# 		L_d = N*np.sum(f*np.log(s_d))
+		# 		g[i,j] -= dg
+		# 		print(f"df/dg[{i},{j}] = {(L_d - L)/dg} = {N*δg[i,j]/g[i,j]}")
+		# s_d = convolve2d(g, q, where=where) + (g0+dg)/f.size
+		# L_d = N*np.sum(f*np.log(s_d))
+		# print(f"df/dgB = {(L_d - L)/dg} = {N*δg0/g0}")
+		# print(g.sum()+g0, s.sum(), f.sum(), δg.sum()+δg0, δs.sum())
+		dLdh = N*(np.sum(δg**2/g, where=g!=0) + δg0**2/g0)
+		d2Ldh2 = -N*np.sum(f*δs**2/s**2)
+		assert dLdh > 0 and d2Ldh2 < 0, f"{dLdh} > 0; {d2Ldh2} < 0"
+		h = -dLdh/d2Ldh2/2
+		# print(f'{h:.4g}')
+		# xs = np.linspace(-h, 2*h, 18)
+		# ys0 = []
+		# ys1 = []
+		# for x in xs:
+		# 	ys0.append(N*np.sum(f*np.log(s + x*δs)))
+		# 	ys1.append(N*np.sum(f*np.log(s)) + dLdh*x + d2Ldh2*x**2/2)
+		# plt.plot(xs, ys0)
+		# plt.plot(xs, ys1, '--')
+		# print(ys0, ys1)
+		# plt.show()
+		assert np.all(g >= 0) and g0 >= 0, g
+		if np.amin(g + h*δg) < 0: # if one of the pixels would become negative from this step,
+			print(f"a pixel would go negative.")
+			print(f"{h} -> {np.amin(-g/δg, where=δg < 0, initial=h)}")
+			h = np.amin(-g/δg, where=δg < 0, initial=h) # stop short
+		if g0 + h*δg0 < 0: # that applies to the background pixel, as well
+			print("background would go negative")
+			print(f"{h} -> {-g0/δg0}")
+			h = -g0/δg0
+		assert h > 0, h
+		g += h*δg
+		g0 += h*δg0
+		g = np.maximum(0, g) # sometimes roundoff makes this dip negative. that mustn't be allowed.
+		χ2_red = N*np.sum((s - f)**2/s, where=where)/np.sum(where)
 		iterations += 1
-		if verbose: print("[{}],".format(χ2/n_data_bins))
+		if verbose: print("[{}],".format(χ2_red))
 		if show_plots:
 			fig, axes = plt.subplots(3, 2)
-			fig.subplots_adjust(hspace= 0, wspace=0)
 			gs1 = gridspec.GridSpec(4, 4)
 			gs1.update(wspace= 0, hspace=0) # set the spacing between axes.
+			fig.subplots_adjust(hspace= 0, wspace=0)
 			axes[0,0].set_title("Previous step")
 			plot = axes[0,0].pcolormesh(G*h/2*δg, cmap='plasma')
 			axes[0,0].axis('square')
@@ -128,20 +179,20 @@ def gelfgat_deconvolve2d(F, q, D, tolerance, where=None, illegal=None, verbose=F
 			axes[1,0].axis('square')
 			fig.colorbar(plot, ax=axes[1,0])
 			axes[1,1].set_title("Fit penumbral image")
-			plot = axes[1,1].pcolormesh(S.T, vmin= 0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			plot = axes[1,1].pcolormesh(N*s.T, vmin= 0, vmax=F.max(where=where, initial=0), cmap='viridis')
 			axes[1,1].axis('square')
 			fig.colorbar(plot, ax=axes[1,1])
-			axes[2,0].set_title("Expected variance")
-			plot = axes[2,0].pcolormesh(D.T, vmin= 0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			axes[2,0].set_title("Point spread function")
+			plot = axes[2,0].pcolormesh(Q, vmin= 0, vmax=Q.max(), cmap='viridis')
 			axes[2,0].axis('square')
 			fig.colorbar(plot, ax=axes[2,0])
 			axes[2,1].set_title("Chi squared")
-			plot = axes[2,1].pcolormesh(((F - S)**2/D).T, vmin= 0, vmax=10, cmap='inferno')
+			plot = axes[2,1].pcolormesh(np.where(where, N*(s - f)**2/s, 0).T, vmin= 0, vmax=10, cmap='inferno')
 			axes[2,1].axis('square')
 			fig.colorbar(plot, ax=axes[2,1])
 			plt.tight_layout()
 			plt.show()
-	return G*g, χ2
+	return G*g, χ2_red
 
 
 if __name__ == '__main__':
@@ -157,21 +208,29 @@ if __name__ == '__main__':
 		[ 1,  1,  1],
 		[ 0,  1,  0],
 	])
-	signal = pysignal.convolve2d(source, kernel, mode='full')
+	signal = convolve2d(source, kernel) + 10
 	signal = np.random.poisson(signal)
 
-	reconstruction = gelfgat_deconvolve2d(signal, kernel, signal + 1, 1e-3)
+	reconstruction, χ2 = gelfgat_deconvolve2d(signal, kernel, verbose=True)
 
 	plt.figure()
-	plt.pcolormesh(source)
+	plt.pcolormesh(source, vmin=0, vmax=source.max())
+	plt.colorbar()
 	plt.title('source')
+
 	plt.figure()
 	plt.pcolormesh(kernel)
+	plt.colorbar()
 	plt.title('krenel')
+
 	plt.figure()
 	plt.pcolormesh(signal)
+	plt.colorbar()
 	plt.title('signal')
+
 	plt.figure()
-	plt.pcolormesh(reconstruction)
+	plt.pcolormesh(reconstruction, vmin=0, vmax=source.max())
+	plt.colorbar()
 	plt.title('reconstruccion')
+
 	plt.show()

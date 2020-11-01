@@ -6,7 +6,6 @@ import pandas as pd
 import os
 import scipy.optimize as optimize
 import scipy.signal as pysignal
-import scipy.stats as stats
 import scipy.special as special
 from scipy.spatial import Delaunay
 import gc
@@ -23,8 +22,8 @@ np.seterr('ignore')
 SKIP_RECONSTRUCTION = False
 SHOW_PLOTS = True
 SHOW_RAW_PLOTS = False
-SHOW_DEBUG_PLOTS = True
-SHOW_OFFSET = False
+SHOW_DEBUG_PLOTS = False
+SHOW_OFFSET = True
 VERBOSE = True
 OBJECT_SIZE = 200e-4 # cm
 THRESHOLD = 1e-4
@@ -32,7 +31,7 @@ ASK_FOR_HELP = False
 
 VIEW_RADIUS = 5.0 # cm
 NON_STATISTICAL_NOISE = 0.0
-SPREAD = 1.05
+SPREAD = 1.20
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 RESOLUTION = 50
 
@@ -97,7 +96,7 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 	plt.tight_layout()
 
 	plt.figure()
-	plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 51), np.linspace(0, 40, 41)), cmap=COFFEE, vmin=0, vmax=13000)
+	plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 51), np.linspace(0, 40, 41)), cmap=COFFEE)#, vmin=0, vmax=13000)
 	plt.plot([2, 2], [0, 40], 'k--')
 	plt.plot([3, 3], [0, 40], 'k--')
 	plt.xlabel("Diameter (μm)", fontsize=16) # plot N(d,c)
@@ -109,24 +108,51 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 	plt.show()
 
 
-def plot_cooked_data(track_x, track_y, xC_bins, yC_bins, xI_bins, yI_bins, N, x0, y0, r0, r_img):
+def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, x0, y0, r0, r_img, δ, Q, e_min, e_max):
 	""" plot the data along with the initial fit to it, and the
 		reconstructed superaperture.
 	"""
 	plt.figure()
-	plt.hist2d(track_x, track_y, bins=(xC_bins, yC_bins))
+	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-3)/NC.size))
 	T = np.linspace(0, 2*np.pi)
 	plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
-	plt.plot(x0 - s0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
-	plt.plot(x0 + s0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+	if s0 + r0 < np.max(np.hypot(track_x - x0, track_y - y0)):
+		for t in range(0, 6):
+			plt.plot(x0 + r0*np.cos(T) + s0*np.cos(2*np.pi/6*t), y0 + r0*np.sin(T) + s0*np.sin(2*np.pi/6*t), '--w')
 	plt.plot(x0 + r_img*np.cos(T), y0 + r_img*np.sin(T), '--w')
 	plt.axis('square')
+	plt.xlabel("x (cm)", fontsize=16)
+	plt.ylabel("y (cm)", fontsize=16)
+	plt.gca().xaxis.set_tick_params(labelsize=16)
+	plt.gca().yaxis.set_tick_params(labelsize=16)
 	plt.colorbar()
-	plt.show()
+	plt.tight_layout()
+
 	plt.figure()
-	plt.pcolormesh(xI_bins, yI_bins, N.T, vmax=np.quantile(N, .999))
+	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-3)/NI.size))
 	plt.axis('square')
+	plt.xlabel("x (cm)", fontsize=16)
+	plt.ylabel("y (cm)", fontsize=16)
+	plt.gca().xaxis.set_tick_params(labelsize=16)
+	plt.gca().yaxis.set_tick_params(labelsize=16)
 	plt.colorbar()
+	plt.tight_layout()
+
+	plt.figure()
+	track_r = np.hypot(track_x - x0, track_y - y0)
+	n_exp, r_exp = np.histogram(track_r, weights=1/(2*np.pi*track_r), bins=np.linspace(0, r_img, 36))
+	plt.bar(x=r_exp[:-1], height=n_exp, width=r_exp[:-1] - r_exp[1:],  label="Data")
+	n = simple_penumbra((r_exp[1:]+r_exp[:-1])/2, δ, Q, r0, r_img, 0, 1, e_min=e_min, e_max=e_max)
+	signal, background = mysignal.linregress(n, n_exp, (r_exp[1:]+r_exp[:-1])/2)
+	r = np.linspace(0, r_img, 216)
+	n = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+	plt.plot(r, n, '-C1', label="Fit with aperture charging")
+	n = simple_penumbra(r, δ, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+	plt.plot(r, n, '--C2', label="Hypothetical without charging")
+	plt.xlabel("Radius (cm)")
+	plt.legend()
+	plt.tight_layout()
+
 	plt.show()
 
 
@@ -199,14 +225,15 @@ def simple_fit(*args, a=1, b=0, c=1):
 	if minimum is None: # if the max and min are unspecified
 		scale, minimum = mysignal.linregress(teo, exp, include/sigma2)
 		maximum = minimum + scale
+		minimum = max(0, minimum)
 	if minimum > maximum:
-		return np.inf
+		minimum, maximum = maximum, minimum
 	teo = minimum + teo*(maximum - minimum)
-	error = np.sum((exp - teo)**2/sigma2, where=include) - 2*np.sum(include) # use a gaussian error model
+	error = np.sum((exp - teo)**2/sigma2, where=include) # use a gaussian error model
 	penalty = \
 		- 2*np.sum(include) \
-		+ (a**2 + 2*b**2 + c**2)/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) \
-		+ Q/.05 - X.size*np.log(maximum/minimum - 1)
+		+ (np.sqrt(a*c - b**2) - 1)**2/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) \
+		- Q/.1
 	return error + penalty
 
 
@@ -214,7 +241,7 @@ if __name__ == '__main__':
 	shot_list = pd.read_csv('shot_list.csv')
 
 	for i, scan in shot_list.iterrows():
-		Q = None
+		Q = 0#None
 		L = scan[APERTURE_DISTANCE] # cm
 		M = scan[MAGNIFICATION] # cm
 		rA = scan[APERTURE_RADIUS]/1.e4 # cm
@@ -270,15 +297,16 @@ if __name__ == '__main__':
 
 		if SHOW_RAW_PLOTS:
 			plot_raw_data(track_list[hicontrast], xC_bins, yC_bins, f"Penumbral image, TIM{scan[TIM]}, shot {scan[SHOT]}")
-		if SKIP_RECONSTRUCTION:
-			continue
 
 		image_layers, x_layers, y_layers = [], [], []
 
 		if np.std(track_list['d(µm)']) == 0:
 			cuts = [('plasma', [0, 5])]
 		else:
-			cuts = [(GREYS, [0, 13]), (REDS, [0, 5]), (GREENS, [5, 9]), (BLUES, [9, 13])] # [MeV] (post-filtering)
+			# cuts = [(GREYS, [4, 8])]
+			# cuts = [(GREYS, [0, 13]), (REDS, [0, 5]), (GREENS, [5, 9]), (BLUES, [9, 13])] # [MeV] (post-filtering)
+			# cuts = [(REDS, [0, 5]), (BLUES, [9, 13])] # [MeV] (post-filtering)
+			cuts = [(GREYS, [0, 13]), (REDS, [0, 2]), (REDS, [2, 4]), (REDS, [4, 5]), (GREENS, [5, 7]), (GREENS, [7, 9]), (BLUES, [9, 11]), (BLUES, [11, 13])] # [MeV] (post-filtering)
 
 		for color, (cmap, e_out_bounds) in enumerate(cuts):
 			d_bounds = diameter.D(np.array(e_out_bounds), τ=etch_time)[::-1] # make some diameter cuts
@@ -292,20 +320,20 @@ if __name__ == '__main__':
 
 			# Q = None
 
-			N, xC_bins, yC_bins = np.histogram2d( # make a histogram
+			NC, xC_bins, yC_bins = np.histogram2d( # make a histogram
 				track_x, track_y, bins=(xC_bins, yC_bins))
-			assert N.shape == XC.shape
+			assert NC.shape == XC.shape
 
 			if ASK_FOR_HELP:
 				try: # ask the user for help finding the center
-					x0, y0 = where_is_the_ocean(xC_bins, yC_bins, N, "Please click on the center of a penumbrum.", timeout=8.64)
+					x0, y0 = where_is_the_ocean(xC_bins, yC_bins, NC, "Please click on the center of a penumbrum.", timeout=8.64)
 				except:
 					x0, y0 = (0, 0)
 			else:
 				x0, y0 = (0, 0)
 
 			if Q is None:
-				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, s0, r_img, None, None, XC, YC, N, *e_in_bounds),
+				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, s0, r_img, None, None, XC, YC, NC, *e_in_bounds),
 					method='Nelder-Mead', options=dict(initial_simplex=[
 						[x0+r_img/2, y0,         OBJECT_SIZE*M/3, 1.0e-1],
 						[x0-r_img/2, y0+r_img/2, OBJECT_SIZE*M/3, 1.0e-1],
@@ -314,7 +342,7 @@ if __name__ == '__main__':
 						[x0,         y0,         OBJECT_SIZE*M/3, 1.9e-1]]))
 				x0, y0, δ, Q = opt.x
 			else:
-				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, s0, r_img, None, None, XC, YC, N, *e_in_bounds),
+				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, s0, r_img, None, None, XC, YC, NC, *e_in_bounds),
 					method='Nelder-Mead', options=dict(initial_simplex=[
 						[x0+r_img/2, y0, OBJECT_SIZE*M/3],
 						[x0-r_img/2, y0+r_img/2, OBJECT_SIZE*M/3],
@@ -322,19 +350,19 @@ if __name__ == '__main__':
 						[x0, y0, OBJECT_SIZE*M/2]]))
 				x0, y0, δ = opt.x
 			if VERBOSE: print(opt)
-			print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm/MeV, M = {5:.2f}".format(np.sum(N), x0, y0, δ/M/1e-4, Q, M))
+			print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm/MeV, M = {5:.2f}".format(np.sum(NC), x0, y0, δ/M/1e-4, Q, M))
 
 			xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, n_bins+1), np.linspace(y0 - r_img, y0 + r_img, n_bins+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 			xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 			XI, YI = np.meshgrid(xI, yI, indexing='ij')
-			N = np.zeros(XI.shape) # and N combines all penumbra on that square
+			NI = np.zeros(XI.shape) # and N combines all penumbra on that square
 			for i in range(-6, 6):
 				dy = i*np.sqrt(3)/2*s0
 				for j in range(-6, 6):
 					dx = (2*j + i%2)*s0/2
 					if np.hypot(dx, dy) + r_img <= VIEW_RADIUS:
-						N += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
+						NI += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
 
 			kernel_size = int(2*SPREAD*r0/dxI) + 1
 			if kernel_size%2 == 0:
@@ -349,43 +377,42 @@ if __name__ == '__main__':
 			XS, YS = np.meshgrid(xS, yS, indexing='ij')
 
 			if SHOW_PLOTS:
-				plot_cooked_data(track_x, track_y, xC_bins, yC_bins, xI_bins, yI_bins, N, x0, y0, r0, r_img)
+				plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, x0, y0, r0, r_img, δ, Q, *e_in_bounds)
+			if SKIP_RECONSTRUCTION:
+				continue
 
 			del(track_x)
 			del(track_y)
 			gc.collect()
 
-			penumbral_kernel = np.zeros(XK.shape) # build the penumbral kernel
+			penumbral_kernel = np.zeros(XK.shape) # build the point spread function
 			for dx in [-dxK/3, 0, dxK/3]: # sampling over a few pixels
 				for dy in [-dyK/3, 0, dyK/3]:
 					penumbral_kernel += simple_penumbra(np.hypot(XK+dxK, YK+dyK), 0, Q, r0, r_img, 0, 1, *e_in_bounds)
 			penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
 
-			background = np.average(N,
-				weights=(np.hypot(XI - x0, YI - y0) > (r_img + r0)/2)) # compute these with the better centering
-			umbra = np.average(N,
-				weights=(np.hypot(XI - x0, YI - y0) < r0/2))
-			D = simple_penumbra(np.hypot(XI - x0, YI - y0), δ, Q, r0, r_img, background, umbra, *e_in_bounds) # make D equal to the rough fit to N
-
-			penumbra_low = np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-			penumbra_hih = np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
 			reach = pysignal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
-			data_bins = np.isfinite(N) & (reach/reach.max() > penumbra_low) & (reach/reach.max() < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
-			data_bins &= ~((N == 0) & (Delaunay(np.transpose([XI[N > 0], YI[N > 0]])).find_simplex(np.transpose([XI.ravel(), YI.ravel()])) == -1).reshape(N.shape)) # crop it at the convex hull where counts go to zero
+			penumbra_low = .01*XS.size*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
+			penumbra_hih = .95*XS.size*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+			data_bins = np.isfinite(NI) & (reach > penumbra_low) & (reach < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
+			data_bins &= ~((NI == 0) & (Delaunay(np.transpose([XI[NI > 0], YI[NI > 0]])).find_simplex(np.transpose([XI.ravel(), YI.ravel()])) == -1).reshape(NI.shape)) # crop it at the convex hull where counts go to zero
 
-			B, χ2 = mysignal.gelfgat_deconvolve2d(
-				N - background,
+			B, χ2_red = mysignal.gelfgat_deconvolve2d(
+				NI,
 				penumbral_kernel,
-				D,
-				THRESHOLD,
 				where=data_bins,
 				illegal=np.hypot(XS - (xS[0] + xS[-1])/2, YS - (yS[0] + yS[-1])/2) >= (xS[-1] - xS[0])/2 + (xS[1] - xS[0]),
 				verbose=VERBOSE,
 				show_plots=SHOW_DEBUG_PLOTS) # deconvolve!
-			if χ2/np.sum(data_bins) >= 2.0: # throw it away if it looks unreasonable
+			if χ2_red >= 2.0: # throw it away if it looks unreasonable
 				print("Could not find adequate fit.")
 				continue
 			B = np.maximum(0, B) # we know this must be positive
+
+			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(XS, YS, B)
+			print(f"P0 = {p0/1e-4:.2f}μm")
+			print(f"P1 = {p1/1e-4:.2f}μm = {p1/p0*100:.1f}%, θ = {np.degrees(θ1)}°")
+			print(f"P2 = {p2/1e-4:.2f}μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2)}°")
 
 			plt.figure()
 			plt.pcolormesh(xS_bins/1e-4, yS_bins/1e-4, B.T, cmap=cmap, vmin=0)
@@ -434,10 +461,11 @@ if __name__ == '__main__':
 			if xray is not None:
 				plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
 			if SHOW_OFFSET:
-				plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
-				plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
+				# plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
+				# plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
 				plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k', head_width=5, head_length=5, length_includes_head=True)
-				plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(z_off/r_off, z_flo/r_flo),
+				plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(
+					z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
 					verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
 			plt.axis('square')
 			plt.axis([-150, 150, -150, 150])
@@ -447,9 +475,3 @@ if __name__ == '__main__':
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} nestplot.png".format(scan[SHOT], scan[TIM]))
 			plt.close()
-
-		if len(image_layers) > 0:
-			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(XS, YS, image_layers[0])
-			print(f"P0 = {p0/1e-4:.2f}μm")
-			print(f"P1 = {p1/1e-4:.2f}μm = {p1/p0*100:.1f}%, θ = {np.degrees(θ1)}°")
-			print(f"P2 = {p2/1e-4:.2f}μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2)}°")
