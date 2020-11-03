@@ -20,7 +20,7 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 np.seterr('ignore')
 
 SKIP_RECONSTRUCTION = False
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 SHOW_RAW_PLOTS = False
 SHOW_DEBUG_PLOTS = False
 SHOW_OFFSET = True
@@ -241,7 +241,7 @@ if __name__ == '__main__':
 	shot_list = pd.read_csv('shot_list.csv')
 
 	for i, scan in shot_list.iterrows():
-		Q = 0#None
+		Q = None
 		L = scan[APERTURE_DISTANCE] # cm
 		M = scan[MAGNIFICATION] # cm
 		rA = scan[APERTURE_RADIUS]/1.e4 # cm
@@ -304,9 +304,8 @@ if __name__ == '__main__':
 			cuts = [('plasma', [0, 5])]
 		else:
 			# cuts = [(GREYS, [4, 8])]
-			# cuts = [(GREYS, [0, 13]), (REDS, [0, 5]), (GREENS, [5, 9]), (BLUES, [9, 13])] # [MeV] (post-filtering)
+			cuts = [(GREYS, [0, 13]), (REDS, [0, 5]), (BLUES, [9, 13])] # [MeV] (post-filtering)
 			# cuts = [(REDS, [0, 5]), (BLUES, [9, 13])] # [MeV] (post-filtering)
-			cuts = [(GREYS, [0, 13]), (REDS, [0, 2]), (REDS, [2, 4]), (REDS, [4, 5]), (GREENS, [5, 7]), (GREENS, [7, 9]), (BLUES, [9, 11]), (BLUES, [11, 13])] # [MeV] (post-filtering)
 
 		for color, (cmap, e_out_bounds) in enumerate(cuts):
 			d_bounds = diameter.D(np.array(e_out_bounds), τ=etch_time)[::-1] # make some diameter cuts
@@ -416,7 +415,7 @@ if __name__ == '__main__':
 
 			plt.figure()
 			plt.pcolormesh(xS_bins/1e-4, yS_bins/1e-4, B.T, cmap=cmap, vmin=0)
-			plt.colorbar()
+			# plt.colorbar()
 			plt.axis('square')
 			plt.title("B(x, y) of TIM {} on shot {} with d ∈ [{:.1f}μm,{:.1f}μm)".format(scan[TIM], scan[SHOT], *d_bounds))
 			plt.xlabel("x (μm)")
@@ -424,6 +423,8 @@ if __name__ == '__main__':
 			plt.axis([(x0/M - OBJECT_SIZE)/1e-4, (x0/M + OBJECT_SIZE)/1e-4, (y0/M - OBJECT_SIZE)/1e-4, (y0/M + OBJECT_SIZE)/1e-4])
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} {:.1f}-{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, etch_time))
+
+			plt.tight_layout()
 
 			if SHOW_PLOTS:
 				plt.show()
@@ -440,7 +441,7 @@ if __name__ == '__main__':
 			plt.figure()
 			# plt.pcolormesh(np.linspace(-300, 300, 3), np.linspace(-300, 300, 3), np.zeros((2, 2)), cmap=VIOLETS, vmin=0, vmax=1)
 			plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)
-			plt.colorbar()
+			# plt.colorbar()
 			plt.axis('square')
 			plt.title("X-ray image of TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 			plt.xlabel("x (μm)")
@@ -457,9 +458,9 @@ if __name__ == '__main__':
 			plt.figure()
 			plt.contourf((x_layers[1] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
 			# plt.contourf((x_layers[2] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
-			plt.contourf((x_layers[3] - x0)/1e-4, (y_layers[3] - y0)/1e-4, image_layers[3], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
-			if xray is not None:
-				plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
+			plt.contourf((x_layers[-1] - x0)/1e-4, (y_layers[-1] - y0)/1e-4, image_layers[-1], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
+			# if xray is not None:
+			# 	plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
 			if SHOW_OFFSET:
 				# plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 				# plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')

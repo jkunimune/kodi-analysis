@@ -81,7 +81,7 @@ def gelfgat_deconvolve2d(F, Q, where=None, illegal=None, verbose=False, show_plo
 	# 	where = np.full(F.shape, True)
 	# else:
 	# 	where = where.astype(bool)
-	where = np.full(F.shape, True)
+	where = np.full(F.shape, True) # TODO I can figure this out. I just need better normalization
 
 	g = np.ones((n, m)) # define the normalized signal matrix
 	# if illegal is not None:
@@ -95,56 +95,27 @@ def gelfgat_deconvolve2d(F, Q, where=None, illegal=None, verbose=False, show_plo
 
 	χ2_red_95 = stats.chi2.ppf(.05, np.sum(where))/np.sum(where)
 	iterations, χ2_red = 0, np.inf
-	while iterations < 100 and χ2_red > χ2_red_95:
+	while iterations < 80 and χ2_red > χ2_red_95:
 		gsum = g.sum() + g0
 		g, g0 = g/gsum, g0/gsum # correct for roundoff
-		# s = pysignal.convolve2d(g, q, mode='full') + g0/f.size
 		s = convolve2d(g, q, where=where) + g0/f.size
 		dlds = f/s - 1
+
 		δg, δg0 = np.zeros(g.shape), 0 # step direction
-		# for i, j in zip(*np.nonzero(where)): # we need a for loop for this part because of memory constraints
-		# 	nt = max( 0, i - q.shape[0] + 1)
-		# 	nb = max( 0, n - i - 1)
-		# 	ml = max( 0, j - q.shape[1] + 1)
-		# 	mr = max( 0, m - j - 1)
-		# 	δg[nt:n-nb, ml:m-mr] += g[nt:n-nb, ml:m-mr] * q[sl(i-nt, i-n+nb, -1), sl(j-ml, j-m+mr, -1)] * dlds[i,j]
-		# 	δg0 += g0 * (1/f.size) * dlds[i,j]
-		for i in range(g.shape[0]):
-			for j in range(g.shape[1]):
-				test_s = np.zeros(s.shape)
-				test_s[i:i+q.shape[0], j:j+q.shape[1]] = q
-				δg[i,j] += g[i,j]*np.sum(test_s*(f/s - 1))
+		for i, j in zip(*np.nonzero(where)): # we need a for loop for this part because of memory constraints
+			nt = max( 0, i - q.shape[0] + 1)
+			nb = max( 0, n - i - 1)
+			ml = max( 0, j - q.shape[1] + 1)
+			mr = max( 0, m - j - 1)
+			δg[nt:n-nb, ml:m-mr] += g[nt:n-nb, ml:m-mr] * q[sl(i-nt, i-n+nb, -1), sl(j-ml, j-m+mr, -1)] * dlds[i,j]
 		δg0 = g0*np.mean(f/s - 1)
+
 		δs = convolve2d(δg, q, where=where) + δg0/f.size # step projected into measurement space
-		# δs = pysignal.convolve2d(δg, q, mode='full') + δg0/f.size # step projected into measurement space
-		# L = N*np.sum(f*np.log(s))
-		# dg = 1e-5
-		# for i in range(n):
-		# 	for j in range(m):
-		# 		g[i,j] += dg
-		# 		s_d = convolve2d(g, q, where=where) + g0/f.size
-		# 		L_d = N*np.sum(f*np.log(s_d))
-		# 		g[i,j] -= dg
-		# 		print(f"df/dg[{i},{j}] = {(L_d - L)/dg} = {N*δg[i,j]/g[i,j]}")
-		# s_d = convolve2d(g, q, where=where) + (g0+dg)/f.size
-		# L_d = N*np.sum(f*np.log(s_d))
-		# print(f"df/dgB = {(L_d - L)/dg} = {N*δg0/g0}")
-		# print(g.sum()+g0, s.sum(), f.sum(), δg.sum()+δg0, δs.sum())
 		dLdh = N*(np.sum(δg**2/g, where=g!=0) + δg0**2/g0)
 		d2Ldh2 = -N*np.sum(f*δs**2/s**2)
 		assert dLdh > 0 and d2Ldh2 < 0, f"{dLdh} > 0; {d2Ldh2} < 0"
-		h = -dLdh/d2Ldh2/2
-		# print(f'{h:.4g}')
-		# xs = np.linspace(-h, 2*h, 18)
-		# ys0 = []
-		# ys1 = []
-		# for x in xs:
-		# 	ys0.append(N*np.sum(f*np.log(s + x*δs)))
-		# 	ys1.append(N*np.sum(f*np.log(s)) + dLdh*x + d2Ldh2*x**2/2)
-		# plt.plot(xs, ys0)
-		# plt.plot(xs, ys1, '--')
-		# print(ys0, ys1)
-		# plt.show()
+
+		h = -dLdh/d2Ldh2/2 # compute step length
 		assert np.all(g >= 0) and g0 >= 0, g
 		if np.amin(g + h*δg) < 0: # if one of the pixels would become negative from this step,
 			print(f"a pixel would go negative.")
@@ -155,10 +126,12 @@ def gelfgat_deconvolve2d(F, Q, where=None, illegal=None, verbose=False, show_plo
 			print(f"{h} -> {-g0/δg0}")
 			h = -g0/δg0
 		assert h > 0, h
-		g += h*δg
+
+		g += h*δg # step
 		g0 += h*δg0
 		g = np.maximum(0, g) # sometimes roundoff makes this dip negative. that mustn't be allowed.
-		χ2_red = N*np.sum((s - f)**2/s, where=where)/np.sum(where)
+		
+		χ2_red = N*np.sum((s - f)**2/s, where=where)/np.sum(where) # TODO can I use a better chi squared
 		iterations += 1
 		if verbose: print("[{}],".format(χ2_red))
 		if show_plots:
