@@ -65,7 +65,7 @@ def convolve2d(a, b, where=None):
 	return c
 
 
-def gelfgat_deconvolve2d(F, Q, where=None, illegal=None, verbose=False, show_plots=False):
+def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plots=False):
 	""" perform the algorithm outlined in
 			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
 			data…" in *Computer Physics Communications* 74 (1993)
@@ -76,46 +76,48 @@ def gelfgat_deconvolve2d(F, Q, where=None, illegal=None, verbose=False, show_plo
 		coerced to zero.
 	"""
 	assert len(F.shape) == 2 and F.shape[0] == F.shape[1], "I don't kno how too doo that."
-	n = m = F.shape[0] - Q.shape[0] + 1
-	# if where is None:
-	# 	where = np.full(F.shape, True)
-	# else:
-	# 	where = where.astype(bool)
-	where = np.full(F.shape, True) # TODO I can figure this out. I just need better normalization
+	n = m = F.shape[0] - q.shape[0] + 1
+	if where is None:
+		where = np.full(F.shape, True)
+	else:
+		where = where.astype(bool)
 
 	g = np.ones((n, m)) # define the normalized signal matrix
-	# if illegal is not None:
-	# 	g[illegal] = 0
-	g0 = 1 # and the normalized signal background pixel
-	G = F.sum()/Q.sum()
+	η = np.empty(g.shape) # find the total effect of each pixel
+	for i in range(n):
+		for j in range(m):
+			η[i,j] = np.sum(q*where[i:i+q.shape[0], j:j+q.shape[1]])
+	if illegal is not None:
+		g[illegal] = 0
+	g0 = n*m - np.sum(illegal) # and the normalized signal background pixel
+	η0 = np.sum(where)
 
-	N = F.sum()
+	N = F.sum(where=where)
 	f = F/N # make sure the counts are normalized
-	q = Q/Q.sum() # make sure the kernel is normalized
 
 	χ2_red_95 = stats.chi2.ppf(.05, np.sum(where))/np.sum(where)
 	iterations, χ2_red = 0, np.inf
 	while iterations < 80 and χ2_red > χ2_red_95:
 		gsum = g.sum() + g0
 		g, g0 = g/gsum, g0/gsum # correct for roundoff
-		s = convolve2d(g, q, where=where) + g0/f.size
-		dlds = f/s - 1
+		s = convolve2d(g/η, q, where=where) + g0/η0
 
+		dlds = f/s - 1
 		δg, δg0 = np.zeros(g.shape), 0 # step direction
 		for i, j in zip(*np.nonzero(where)): # we need a for loop for this part because of memory constraints
 			nt = max( 0, i - q.shape[0] + 1)
 			nb = max( 0, n - i - 1)
 			ml = max( 0, j - q.shape[1] + 1)
 			mr = max( 0, m - j - 1)
-			δg[nt:n-nb, ml:m-mr] += g[nt:n-nb, ml:m-mr] * q[sl(i-nt, i-n+nb, -1), sl(j-ml, j-m+mr, -1)] * dlds[i,j]
-		δg0 = g0*np.mean(f/s - 1)
+			δg[nt:n-nb, ml:m-mr] += g[nt:n-nb, ml:m-mr] * q[sl(i-nt, i-n+nb, -1), sl(j-ml, j-m+mr, -1)]/η[nt:n-nb, ml:m-mr] * dlds[i,j]
+			δg0 += g0 / η0 * dlds[i,j]
 
-		δs = convolve2d(δg, q, where=where) + δg0/f.size # step projected into measurement space
+		δs = convolve2d(δg/η, q, where=where) + δg0/η0 # step projected into measurement space
 		dLdh = N*(np.sum(δg**2/g, where=g!=0) + δg0**2/g0)
-		d2Ldh2 = -N*np.sum(f*δs**2/s**2)
+		d2Ldh2 = -N*np.sum(f*δs**2/s**2, where=where)
 		assert dLdh > 0 and d2Ldh2 < 0, f"{dLdh} > 0; {d2Ldh2} < 0"
 
-		h = -dLdh/d2Ldh2/2 # compute step length
+		h = -dLdh/d2Ldh2/2 # compute step length TODO try the full step length, too
 		assert np.all(g >= 0) and g0 >= 0, g
 		if np.amin(g + h*δg) < 0: # if one of the pixels would become negative from this step,
 			print(f"a pixel would go negative.")
@@ -130,42 +132,41 @@ def gelfgat_deconvolve2d(F, Q, where=None, illegal=None, verbose=False, show_plo
 		g += h*δg # step
 		g0 += h*δg0
 		g = np.maximum(0, g) # sometimes roundoff makes this dip negative. that mustn't be allowed.
-		
+
 		χ2_red = N*np.sum((s - f)**2/s, where=where)/np.sum(where) # TODO can I use a better chi squared
 		iterations += 1
 		if verbose: print("[{}],".format(χ2_red))
 		if show_plots:
 			fig, axes = plt.subplots(3, 2)
-			gs1 = gridspec.GridSpec(4, 4)
-			gs1.update(wspace= 0, hspace=0) # set the spacing between axes.
-			fig.subplots_adjust(hspace= 0, wspace=0)
+			fig.subplots_adjust(hspace=0, wspace=0)
 			axes[0,0].set_title("Previous step")
-			plot = axes[0,0].pcolormesh(G*h/2*δg, cmap='plasma')
+			plot = axes[0,0].pcolormesh(N*h/2*δg/η, cmap='plasma')
 			axes[0,0].axis('square')
 			fig.colorbar(plot, ax=axes[0,0])
 			axes[0,1].set_title("Fit source image")
-			plot = axes[0,1].pcolormesh(G*g, vmin= 0, vmax=G*g.max(), cmap='plasma')
+			plot = axes[0,1].pcolormesh(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap='plasma')
 			axes[0,1].axis('square')
 			fig.colorbar(plot, ax=axes[0,1])
 			axes[1,0].set_title("Penumbral image")
-			plot = axes[1,0].pcolormesh(F.T, vmin= 0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			plot = axes[1,0].pcolormesh(F.T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
 			axes[1,0].axis('square')
 			fig.colorbar(plot, ax=axes[1,0])
 			axes[1,1].set_title("Fit penumbral image")
-			plot = axes[1,1].pcolormesh(N*s.T, vmin= 0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			plot = axes[1,1].pcolormesh(N*s.T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
 			axes[1,1].axis('square')
 			fig.colorbar(plot, ax=axes[1,1])
 			axes[2,0].set_title("Point spread function")
-			plot = axes[2,0].pcolormesh(Q, vmin= 0, vmax=Q.max(), cmap='viridis')
+			plot = axes[2,0].pcolormesh(q, vmin=0, vmax=q.max(), cmap='viridis')
 			axes[2,0].axis('square')
 			fig.colorbar(plot, ax=axes[2,0])
 			axes[2,1].set_title("Chi squared")
 			plot = axes[2,1].pcolormesh(np.where(where, N*(s - f)**2/s, 0).T, vmin= 0, vmax=10, cmap='inferno')
 			axes[2,1].axis('square')
 			fig.colorbar(plot, ax=axes[2,1])
-			plt.tight_layout()
+			gs1 = gridspec.GridSpec(4, 4)
+			gs1.update(wspace= 0, hspace=0) # set the spacing between axes.
 			plt.show()
-	return G*g, χ2_red
+	return N*g/η, χ2_red
 
 
 if __name__ == '__main__':

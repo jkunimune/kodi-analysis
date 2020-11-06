@@ -17,13 +17,15 @@ import segnal as mysignal
 from electric_field_model import get_analytic_brightness
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
+plt.rcParams.update({'font.size': 16})
+
 np.seterr('ignore')
 
 SKIP_RECONSTRUCTION = False
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 SHOW_RAW_PLOTS = False
 SHOW_DEBUG_PLOTS = False
-SHOW_OFFSET = True
+SHOW_OFFSET = False
 VERBOSE = True
 OBJECT_SIZE = 200e-4 # cm
 THRESHOLD = 1e-4
@@ -87,11 +89,9 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 	""" plot basic histograms of the tracks that have been loaded. """
 	plt.figure()
 	plt.hist2d(track_list['x(cm)'], track_list['y(cm)'], bins=(x_bins, y_bins))
-	plt.xlabel("x (cm)", fontsize=16)
-	plt.ylabel("y (cm)", fontsize=16)
-	plt.title(title, fontsize=16)
-	plt.gca().xaxis.set_tick_params(labelsize=16)
-	plt.gca().yaxis.set_tick_params(labelsize=16)
+	plt.xlabel("x (cm)")
+	plt.ylabel("y (cm)")
+	plt.title(title)
 	plt.axis('square')
 	plt.tight_layout()
 
@@ -99,11 +99,8 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 	plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 51), np.linspace(0, 40, 41)), cmap=COFFEE)#, vmin=0, vmax=13000)
 	plt.plot([2, 2], [0, 40], 'k--')
 	plt.plot([3, 3], [0, 40], 'k--')
-	plt.xlabel("Diameter (μm)", fontsize=16) # plot N(d,c)
-	plt.ylabel("Contrast (%)", fontsize=16)
-	plt.title(" ", fontsize=16)
-	plt.gca().xaxis.set_tick_params(labelsize=16)
-	plt.gca().yaxis.set_tick_params(labelsize=16)
+	plt.xlabel("Diameter (μm)") # plot N(d,c)
+	plt.ylabel("Contrast (%)")
 	plt.tight_layout()
 	plt.show()
 
@@ -121,20 +118,16 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, x0, y0, r0, r_i
 			plt.plot(x0 + r0*np.cos(T) + s0*np.cos(2*np.pi/6*t), y0 + r0*np.sin(T) + s0*np.sin(2*np.pi/6*t), '--w')
 	plt.plot(x0 + r_img*np.cos(T), y0 + r_img*np.sin(T), '--w')
 	plt.axis('square')
-	plt.xlabel("x (cm)", fontsize=16)
-	plt.ylabel("y (cm)", fontsize=16)
-	plt.gca().xaxis.set_tick_params(labelsize=16)
-	plt.gca().yaxis.set_tick_params(labelsize=16)
+	plt.xlabel("x (cm)")
+	plt.ylabel("y (cm)")
 	plt.colorbar()
 	plt.tight_layout()
 
 	plt.figure()
 	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-3)/NI.size))
 	plt.axis('square')
-	plt.xlabel("x (cm)", fontsize=16)
-	plt.ylabel("y (cm)", fontsize=16)
-	plt.gca().xaxis.set_tick_params(labelsize=16)
-	plt.gca().yaxis.set_tick_params(labelsize=16)
+	plt.xlabel("x (cm)")
+	plt.ylabel("y (cm)")
 	plt.colorbar()
 	plt.tight_layout()
 
@@ -390,17 +383,27 @@ if __name__ == '__main__':
 					penumbral_kernel += simple_penumbra(np.hypot(XK+dxK, YK+dyK), 0, Q, r0, r_img, 0, 1, *e_in_bounds)
 			penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
 
-			reach = pysignal.convolve2d(np.ones(XS.shape), penumbral_kernel, mode='full')
-			penumbra_low = .01*XS.size*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-			penumbra_hih = .95*XS.size*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+			source_bins = np.hypot(XS - XS.mean(), YS - YS.mean()) <= OBJECT_SIZE
+			reach = pysignal.convolve2d(source_bins, penumbral_kernel, mode='full')
+			penumbra_low = .01*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
+			penumbra_hih = .99*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
 			data_bins = np.isfinite(NI) & (reach > penumbra_low) & (reach < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
 			data_bins &= ~((NI == 0) & (Delaunay(np.transpose([XI[NI > 0], YI[NI > 0]])).find_simplex(np.transpose([XI.ravel(), YI.ravel()])) == -1).reshape(NI.shape)) # crop it at the convex hull where counts go to zero
+
+			if SHOW_DEBUG_PLOTS:
+				plt.figure()
+				plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
+				plt.title("Point spread function")
+				plt.figure()
+				plt.pcolormesh(xI_bins, yI_bins, np.where(data_bins, reach, np.nan))
+				plt.title("Maximum convolution")
+				plt.show()
 
 			B, χ2_red = mysignal.gelfgat_deconvolve2d(
 				NI,
 				penumbral_kernel,
 				where=data_bins,
-				illegal=np.hypot(XS - (xS[0] + xS[-1])/2, YS - (yS[0] + yS[-1])/2) >= (xS[-1] - xS[0])/2 + (xS[1] - xS[0]),
+				illegal=np.logical_not(source_bins),
 				verbose=VERBOSE,
 				show_plots=SHOW_DEBUG_PLOTS) # deconvolve!
 			if χ2_red >= 2.0: # throw it away if it looks unreasonable
@@ -417,7 +420,7 @@ if __name__ == '__main__':
 			plt.pcolormesh(xS_bins/1e-4, yS_bins/1e-4, B.T, cmap=cmap, vmin=0)
 			# plt.colorbar()
 			plt.axis('square')
-			plt.title("B(x, y) of TIM {} on shot {} with d ∈ [{:.1f}μm,{:.1f}μm)".format(scan[TIM], scan[SHOT], *d_bounds))
+			plt.title("B(x, y) of TIM {} on shot {} with d ∈ [{:.1f}μm,{:.1f}μm)".format(scan[TIM], scan[SHOT], *d_bounds), fontsize=12)
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
 			plt.axis([(x0/M - OBJECT_SIZE)/1e-4, (x0/M + OBJECT_SIZE)/1e-4, (y0/M - OBJECT_SIZE)/1e-4, (y0/M + OBJECT_SIZE)/1e-4])
@@ -443,7 +446,7 @@ if __name__ == '__main__':
 			plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)
 			# plt.colorbar()
 			plt.axis('square')
-			plt.title("X-ray image of TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+			plt.title("X-ray image of TIM {} on shot {}".format(scan[TIM], scan[SHOT]), fontsize=12)
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
 			plt.axis([-100, 100, -100, 100])
@@ -465,9 +468,9 @@ if __name__ == '__main__':
 				# plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 				# plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
 				plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k', head_width=5, head_length=5, length_includes_head=True)
-				plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(
-					z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
-					verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
+				# plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(
+				# 	z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
+				# 	verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
 			plt.axis('square')
 			plt.axis([-150, 150, -150, 150])
 			plt.xlabel("x (μm)")
