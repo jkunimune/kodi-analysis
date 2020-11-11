@@ -8,6 +8,9 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
+ALPHA = 3e-4 # entropy weight
+
+
 def linregress(x, y, weights=None):
 	""" fit a line to y(x) using least squares. """
 	if weights is None:
@@ -82,6 +85,9 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 	else:
 		where = where.astype(bool)
 
+	N = F.sum(where=where)
+	f = F/N # make sure the counts are normalized
+
 	g = np.ones((n, m)) # define the normalized signal matrix
 	η = np.empty(g.shape) # find the total effect of each pixel
 	for i in range(n):
@@ -92,15 +98,13 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 	g0 = n*m - np.sum(illegal) # and the normalized signal background pixel
 	η0 = np.sum(where)
 
-	N = F.sum(where=where)
-	f = F/N # make sure the counts are normalized
+	s = convolve2d(g/η, q, where=where) + g0/η0 # get the starting thing
 
-	χ2_red_95 = stats.chi2.ppf(.05, np.sum(where))/np.sum(where)
-	iterations, χ2_red = 0, np.inf
-	while iterations < 80 and χ2_red > χ2_red_95:
+	L0 = N*np.sum(f*np.log(f), where=where & (f > 0))
+	scores, best_G = [], None
+	while len(scores) < 100:# and (iterations < 6 or χ2_red > χ2_red_95):
 		gsum = g.sum() + g0
-		g, g0 = g/gsum, g0/gsum # correct for roundoff
-		s = convolve2d(g/η, q, where=where) + g0/η0
+		g, g0, s = g/gsum, g0/gsum, s/gsum # correct for roundoff
 
 		dlds = f/s - 1
 		δg, δg0 = np.zeros(g.shape), 0 # step direction
@@ -113,29 +117,27 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 			δg0 += g0 / η0 * dlds[i,j]
 
 		δs = convolve2d(δg/η, q, where=where) + δg0/η0 # step projected into measurement space
-		dLdh = N*(np.sum(δg**2/g, where=g!=0) + δg0**2/g0)
+		dLdh = N*(np.sum(δg**2/g, where=g!=0) + (δg0**2/g0 if g0!=0 else 0))
 		d2Ldh2 = -N*np.sum(f*δs**2/s**2, where=where)
 		assert dLdh > 0 and d2Ldh2 < 0, f"{dLdh} > 0; {d2Ldh2} < 0"
 
-		h = -dLdh/d2Ldh2/2 # compute step length TODO try the full step length, too
+		h = -dLdh/d2Ldh2/2 # compute step length
 		assert np.all(g >= 0) and g0 >= 0, g
 		if np.amin(g + h*δg) < 0: # if one of the pixels would become negative from this step,
-			print(f"a pixel would go negative.")
-			print(f"{h} -> {np.amin(-g/δg, where=δg < 0, initial=h)}")
-			h = np.amin(-g/δg, where=δg < 0, initial=h) # stop short
+			h = np.amin(-g/δg*5/6, where=δg < 0, initial=h) # stop short
 		if g0 + h*δg0 < 0: # that applies to the background pixel, as well
-			print("background would go negative")
-			print(f"{h} -> {-g0/δg0}")
-			h = -g0/δg0
+			h = -g0/δg0*5/6
 		assert h > 0, h
 
 		g += h*δg # step
 		g0 += h*δg0
-		g = np.maximum(0, g) # sometimes roundoff makes this dip negative. that mustn't be allowed.
+		s += h*δs
 
-		χ2_red = N*np.sum((s - f)**2/s, where=where)/np.sum(where) # TODO can I use a better chi squared
-		iterations += 1
-		if verbose: print("[{}],".format(χ2_red))
+		# χ2_red = N*np.sum((s - f)**2/s, where=where)/np.sum(where) # TODO can I use a better chi squared
+		L = N*np.sum(f*np.log(s), where=where)
+		S = N*np.sum(g/η*np.log(g/η), where=g!=0)# + N*g/η*np.log(N)
+		scores.append(L - ALPHA*S)
+		if verbose: print(f"[{L - L0}, {S}, {scores[-1] - L0}],")
 		if show_plots:
 			fig, axes = plt.subplots(3, 2)
 			fig.subplots_adjust(hspace=0, wspace=0)
@@ -148,11 +150,11 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 			axes[0,1].axis('square')
 			fig.colorbar(plot, ax=axes[0,1])
 			axes[1,0].set_title("Penumbral image")
-			plot = axes[1,0].pcolormesh(F.T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			plot = axes[1,0].pcolormesh(np.where(where, F, np.nan).T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
 			axes[1,0].axis('square')
 			fig.colorbar(plot, ax=axes[1,0])
 			axes[1,1].set_title("Fit penumbral image")
-			plot = axes[1,1].pcolormesh(N*s.T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			plot = axes[1,1].pcolormesh(np.where(where, N*s, np.nan).T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
 			axes[1,1].axis('square')
 			fig.colorbar(plot, ax=axes[1,1])
 			axes[2,0].set_title("Point spread function")
@@ -166,7 +168,12 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 			gs1 = gridspec.GridSpec(4, 4)
 			gs1.update(wspace= 0, hspace=0) # set the spacing between axes.
 			plt.show()
-	return N*g/η, χ2_red
+
+		if np.argmax(scores) == len(scores) - 1: # keep track of the best we've found
+			best_G = N*g/η
+		elif len(scores) >= 3 and scores[-1] < scores[-2] and scores[-2] < scores[-3]: # if the value function decreases twice in a row, quit
+			break
+	return N*g/η, N*np.sum((s - f)**2/s, where=where)/np.sum(where)
 
 
 if __name__ == '__main__':

@@ -385,7 +385,7 @@ if __name__ == '__main__':
 
 			source_bins = np.hypot(XS - XS.mean(), YS - YS.mean()) <= OBJECT_SIZE
 			reach = pysignal.convolve2d(source_bins, penumbral_kernel, mode='full')
-			penumbra_low = .01*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
+			penumbra_low = .005*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
 			penumbra_hih = .99*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
 			data_bins = np.isfinite(NI) & (reach > penumbra_low) & (reach < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
 			data_bins &= ~((NI == 0) & (Delaunay(np.transpose([XI[NI > 0], YI[NI > 0]])).find_simplex(np.transpose([XI.ravel(), YI.ravel()])) == -1).reshape(NI.shape)) # crop it at the convex hull where counts go to zero
@@ -454,7 +454,7 @@ if __name__ == '__main__':
 			plt.savefig("results/{} TIM{} xray sourceimage.png".format(scan[SHOT], scan[TIM]))
 			plt.close()
 
-		if len(image_layers) > 1:
+		if len(image_layers) >= 3:
 			x0 = x_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
 			y0 = y_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
 
