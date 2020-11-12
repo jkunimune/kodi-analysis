@@ -95,7 +95,7 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 			η[i,j] = np.sum(q*where[i:i+q.shape[0], j:j+q.shape[1]])
 	if illegal is not None:
 		g[illegal] = 0
-	g0 = n*m - np.sum(illegal) # and the normalized signal background pixel
+	g0 = n*m - (np.sum(illegal) if illegal is not None else 0) # and the normalized signal background pixel
 	η0 = np.sum(where)
 
 	s = convolve2d(g/η, q, where=where) + g0/η0 # get the starting thing
