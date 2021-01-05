@@ -1,7 +1,9 @@
 import numpy as np
 import scipy.special as sp
+import scipy.signal as signal
 import matplotlib.pyplot as plt
 import pandas as pd
+import pickle
 
 from simulations import load_shot, make_image
 from perlin import perlin_generator, wave_generator
@@ -11,7 +13,7 @@ from electric_field_model import e_field
 NOISE_SCALE = 1.0 # [cm]
 
 GROUPS = 10 # larger numbers are better for memory but worse for speed
-SYNTH_RESOLUTION = 2000
+SYNTH_RESOLUTION = 5e-4
 
 M = 14
 L = 4.21 # cm
@@ -50,35 +52,39 @@ Limits imposed on tracks listed below:
 """
 
 
-def construct_data(shot, aperture, N, SNR, name=None):
+def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
-		img_hi, x_bins, y_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[2], EIN_CUTS[3]])
-		img_md, x_bins, y_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[1], EIN_CUTS[2]])
-		img_lo, x_bins, y_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[0], EIN_CUTS[1]])
-		x_bins, y_bins = x_bins*1e-4, y_bins*1e-4 # convert to cm
-		x, y = (x_bins[1:] + x_bins[:-1])/2, (y_bins[1:] + y_bins[:-1])/2
-		X, Y = np.meshgrid(x, y)
+		img_hi, xS_bins, yS_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[2], EIN_CUTS[3]])
+		img_md, xS_bins, yS_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[1], EIN_CUTS[2]])
+		img_lo, xS_bins, yS_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[0], EIN_CUTS[1]])
+		xS_bins, yS_bins = x_bins*1e-4, y_bins*1e-4 # convert to cm
+		xS, yS = (xS_bins[1:] + xS_bins[:-1])/2, (yS_bins[1:] + yS_bins[:-1])/2
+		XS, YS = np.meshgrid(xS, yS)
 	else:
-		x = np.linspace(-250e-4, 250e-4, SYNTH_RESOLUTION)
-		y = np.linspace(-250e-4, 250e-4, SYNTH_RESOLUTION)
-		X, Y = np.meshgrid(x, y)
+		n_bins = int(500e-4/SYNTH_RESOLUTION)//2*2
+		xS_bins = np.linspace(-SYNTH_RESOLUTION*n_bins/2, SYNTH_RESOLUTION*n_bins/2, n_bins+1)
+		yS_bins = np.linspace(-SYNTH_RESOLUTION*n_bins/2, SYNTH_RESOLUTION*n_bins/2, n_bins+1)
+		xS, yS = (xS_bins[1:] + xS_bins[:-1])/2, (yS_bins[1:] + yS_bins[:-1])/2
+		XS, YS = np.meshgrid(xS, yS)
 		if shot == 'square':
-			img_lo = np.where((np.absolute(X) < 60e-4) & (np.absolute(Y) < 60e-4), 1, 0)
-			img_lo[(X > 0) & (Y > 0)] = 0
-			img_lo[(X < 0) & (Y > 0) & (X > -30e-4)] *= 2
+			img_lo = np.where((np.absolute(XS) < 60e-4) & (np.absolute(YS) < 60e-4), 1, 0)
+			img_lo[(XS > 0) & (YS > 0)] = 0
+			img_lo[(XS < 0) & (YS > 0) & (XS > -30e-4)] *= 2
 		elif shot == 'eclipse':
-			img_lo = np.where((np.hypot(X-80e-4, Y+40e-4) < 80e-4) & (np.hypot(X-96e-4, Y+32e-4) > 40e-4), 1, 0)
+			img_lo = np.where((np.hypot(XS-80e-4, YS+40e-4) < 80e-4) & (np.hypot(XS-96e-4, YS+32e-4) > 40e-4), 1, 0)
 		elif shot == 'gaussian':
-			img_lo = np.exp(-(X**2 + Y**2)/(2*50e-4**2))
+			img_lo = np.exp(-(XS**2 + YS**2)/(2*50e-4**2))
 		elif shot == 'hypergaussian':
-			img_lo = np.exp(-(X**3 + Y**3)/(2*50e-4**3))
+			img_lo = np.exp(-(XS**3 + YS**3)/(2*50e-4**3))
 		elif shot == 'ellipse':
-			img_lo = np.exp(-(X**2 - X*Y*3/2 + Y**2)/(2*50e-4**2))
+			img_lo = np.exp(-(XS**2 - XS*YS*3/2 + YS**2)/(2*50e-4**2))
 		elif shot == 'multigaussian':
-			img_lo = np.exp(-(X**2 + Y**2)/(2*80e-4**2)) * np.exp(-2.0*np.exp(-((X-30e-4)**2 + Y**2)/(2*40e-4**2)))
+			img_lo = np.exp(-(XS**2 + YS**2)/(2*80e-4**2)) * np.exp(-2.0*np.exp(-((XS-30e-4)**2 + YS**2)/(2*40e-4**2)))
 		elif shot == 'disc':
-			img_lo = np.where(np.hypot(X, Y) < 50e-4, 1, 0)
+			img_lo = np.where(np.hypot(XS, YS) < 100e-4, 1, 0)
+		else:
+			raise Error(shot)
 		img_md, img_hi = np.zeros(img_lo.shape), np.zeros(img_lo.shape)
 
 	apertures = [(0, 0)] # cm
@@ -96,69 +102,96 @@ def construct_data(shot, aperture, N, SNR, name=None):
 					apertures.append((j*1100e-4, i*np.sqrt(3)/2*1100e-4)) # cm
 		elif aperture == 'charged':
 			rA = 1900e-4 # cm
-			Q = .05 # [cm*MeV]
+			Q = 0.20 # [cm*MeV]
+	elif type(aperture) == int:
+		rA = aperture*1e-4
 	else:
-		rA, Q = aperture*1e-4
+		rA, Q = aperture[0]*1e-4, aperture[1]
 	apertures = np.array(apertures)
 
-	N /= GROUPS
+	if mode == 'mc':
+		N /= GROUPS
 
-	δx_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, Q)
-	δy_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, Q)
+		δx_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, Q)
+		δy_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, Q)
 
-	xq, yq = np.meshgrid(np.linspace(-rA, rA, 12), np.linspace(-rA, rA, 12))
-	rq, θq = np.hypot(xq, yq), np.arctan2(yq, xq)
-	xq, yq, rq, θq = xq[rq < rA], yq[rq < rA], rq[rq < rA], θq[rq < rA]
-	δr = Q*e_field(rq/rA)
+		xq, yq = np.meshgrid(np.linspace(-rA, rA, 12), np.linspace(-rA, rA, 12))
+		rq, θq = np.hypot(xq, yq), np.arctan2(yq, xq)
+		xq, yq, rq, θq = xq[rq < rA], yq[rq < rA], rq[rq < rA], θq[rq < rA]
+		δr = Q*e_field(rq/rA)
 
-	# plt.quiver(10*xq, 10*yq, (δx_noise(xq, yq) + δr*np.cos(θq))/6, (δy_noise(xq, yq) + δr*np.sin(θq))/6, scale=1)
-	# plt.axis('square')
-	# plt.axis([-10*rA, 10*rA, -10*rA, 10*rA])
-	# plt.xlabel("x (mm)")
-	# plt.ylabel("y (mm)")
-	# plt.show()
+		# plt.quiver(10*xq, 10*yq, (δx_noise(xq, yq) + δr*np.cos(θq))/6, (δy_noise(xq, yq) + δr*np.sin(θq))/6, scale=1)
+		# plt.axis('square')
+		# plt.axis([-10*rA, 10*rA, -10*rA, 10*rA])
+		# plt.xlabel("x (mm)")
+		# plt.ylabel("y (mm)")
+		# plt.show()
 
-	with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.txt', 'w') as f:
-		f.write(short_header)
+		with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.txt', 'w') as f:
+			f.write(short_header)
 
-	for img, diameter, energy_in_bin in [(img_hi, 1, (EIN_CUTS[2], EIN_CUTS[3])), (img_md, 2.5, (EIN_CUTS[1], EIN_CUTS[2])), (img_lo, 5, (EIN_CUTS[0], EIN_CUTS[1]))]: # do each diameter bin separately
-		if img.sum() == 0: # but skip synthetically empty bins
-			continue
+		for img, diameter, energy_in_bin in [(img_hi, 1, (EIN_CUTS[2], EIN_CUTS[3])), (img_md, 2.5, (EIN_CUTS[1], EIN_CUTS[2])), (img_lo, 5, (EIN_CUTS[0], EIN_CUTS[1]))]: # do each diameter bin separately
+			if img.sum() == 0: # but skip synthetically empty bins
+				continue
 
-		N_signal = int(N*(np.sum(img)/np.sum(img_hi + img_md + img_lo)) * len(apertures)*(rA/1000e-4)**2)
+			N_signal = int(N*(np.sum(img)/np.sum(img_hi + img_md + img_lo)) * len(apertures)*(rA/1000e-4)**2)
 
-		for i in range(GROUPS):
-			pixel_index = np.random.choice(np.arange(len(X.ravel())), N_signal, p=img.ravel()/img.sum()) # sample from the distribution
-			xS, yS = np.stack([X.ravel(), Y.ravel()], axis=1)[pixel_index].T
-			aperture_index = np.random.choice(np.arange(len(apertures)), N_signal)
-			x0, y0 = apertures[aperture_index].T
-			energy = np.random.uniform(*energy_in_bin, len(xS))
+			for i in range(GROUPS):
+				pixel_index = np.random.choice(np.arange(len(XS.ravel())), N_signal, p=img.ravel()/img.sum()) # sample from the distribution
+				xJ, yJ = np.stack([XS.ravel(), YS.ravel()], axis=1)[pixel_index].T
+				aperture_index = np.random.choice(np.arange(len(apertures)), N_signal)
+				x0, y0 = apertures[aperture_index].T
+				energy = np.random.uniform(*energy_in_bin, len(xJ))
 
-			r = L*np.arccos(1 - np.random.random(len(xS))*(1 - np.cos(rA/L))) # sample over the aperture
-			θ = 2*np.pi*np.random.random(len(xS))
-			xA = r*np.cos(θ)
-			yA = r*np.sin(θ)
+				r = L*np.arccos(1 - np.random.random(len(xJ))*(1 - np.cos(rA/L))) # sample over the aperture
+				θ = 2*np.pi*np.random.random(len(xJ))
+				xA = r*np.cos(θ)
+				yA = r*np.sin(θ)
 
-			δr = Q/energy*e_field(r/rA)
-			δx = δx_noise(xA, yA)/energy + δr*np.cos(θ)
-			δy = δy_noise(xA, yA)/energy + δr*np.sin(θ)
+				δr = Q/energy*e_field(r/rA)
+				δx = δr*np.cos(θ) #+ δx_noise(xA, yA)/energy
+				δy = δr*np.sin(θ) #+ δx_noise(xA, yA)/energy
 
-			xD = xA + x0 + (xA + x0 - xS)*M + δx # make the image
-			yD = yA + y0 + (yA + y0 - yS)*M + δy
+				xD = xA + x0 + (xA + x0 - xJ)*M + δx # make the image
+				yD = yA + y0 + (yA + y0 - yJ)*M + δy
 
-			rD = np.hypot(xD, yD)
+				rD = np.hypot(xD, yD)
 
-			N_background = int(N_signal/(len(apertures)*np.pi*rA**2*(M + 1)**2)/SNR*8**2) #  compute the desired background
+				N_background = int(N_signal/(len(apertures)*np.pi*rA**2*(M + 1)**2)/SNR*8**2) #  compute the desired background
 
-			# x_list += list(xD[(np.hypot(xS, yS) <= 60e-4*np.sqrt(2)) & ((rD <= (M+1)*rA/12) | (rD >= (M+1)*rA*.90))])
-			# y_list += list(yD[(np.hypot(xS, yS) <= 60e-4*np.sqrt(2)) & ((rD <= (M+1)*rA/12) | (rD >= (M+1)*rA*.90))])
-			x_list = np.concatenate([xD, np.random.uniform(-4, 4, N_background)])
-			y_list = np.concatenate([yD, np.random.uniform(-4, 4, N_background)])
-			d_list = np.full(len(xS) + N_background, diameter) # and add it in with the signal
+				# x_list += list(xD[(np.hypot(xJ, yS) <= 60e-4*np.sqrt(2)) & ((rD <= (M+1)*rA/12) | (rD >= (M+1)*rA*.90))])
+				# y_list += list(yD[(np.hypot(xJ, yS) <= 60e-4*np.sqrt(2)) & ((rD <= (M+1)*rA/12) | (rD >= (M+1)*rA*.90))])
+				x_list = np.concatenate([xD, np.random.uniform(-4, 4, N_background)])
+				y_list = np.concatenate([yD, np.random.uniform(-4, 4, N_background)])
+				d_list = np.full(len(xJ) + N_background, diameter) # and add it in with the signal
 
-			with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.txt', 'a') as f:
-				for i in range(len(x_list)):
-					f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
+				with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.txt', 'a') as f:
+					for i in range(len(x_list)):
+						f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
+
+	elif mode == 'convolve': # in this mode, calculate bin counts directly using a convolution
+		r0 = (M + 1)*rA
+		d_img = 2*(r0 + M*xS_bins.max())
+		m_bins = int(d_img/M/SYNTH_RESOLUTION)//2*2
+		xI_bins = np.linspace(-SYNTH_RESOLUTION*M*m_bins/2, SYNTH_RESOLUTION*M*m_bins/2, m_bins + 1)
+		yI_bins = np.linspace(-SYNTH_RESOLUTION*M*m_bins/2, SYNTH_RESOLUTION*M*m_bins/2, m_bins + 1)
+		dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
+
+		xK = xI_bins[n_bins//2:-n_bins//2]
+		yK = xK
+		XK, YK = np.meshgrid(xK, yK)
+		NK = np.zeros((xK.size, xK.size))
+		for cx in [-1/3, 0, 1/3]:
+			for cy in [-1/3, 0, 1/3]:
+				NK += np.hypot(cx*dxI + XK, cy*dyI + YK) < r0
+		NK /= NK.max()
+		NI = N*(signal.convolve2d(NK, img_lo/img_lo.sum(), mode='full') + 1/SNR)*dxI*dyI*apertures.shape[0]
+		assert NI.shape == (xI_bins.size - 1, yI_bins.size - 1)
+		NI = np.random.poisson(NI)
+		with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.pkl', 'wb') as f:
+			pickle.dump((xI_bins, yI_bins, NI), f)
+	else:
+		raise KeyError(mode)
 
 	plt.figure()
 	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-200, 200, 101), np.linspace(-200, 200, 101)), cmap='plasma')
@@ -175,5 +208,7 @@ def construct_data(shot, aperture, N, SNR, name=None):
 if __name__ == '__main__':
 	# for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
 	# 	construct_data(shot, (1000, .05), N, SNR)
-	for shot, N, SNR in [('ellipse', 200000, 8)]:
-		construct_data(shot, 1000, N, SNR)
+	# for shot, N, SNR in [('ellipse', 200000, 8)]:
+	# 	construct_data(shot, (1000, .1), N, SNR)
+	construct_data('gaussian', 'big', 1000000, 8, name='charge0')
+	construct_data('gaussian', 'charged', 1000000, 8, name='charge1')

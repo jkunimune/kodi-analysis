@@ -8,7 +8,7 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
-ALPHA = 3e-4 # entropy weight
+SMOOTHING = 3e2 # entropy weight
 
 
 def linregress(x, y, weights=None):
@@ -101,7 +101,7 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 	s = convolve2d(g/η, q, where=where) + g0/η0 # get the starting thing
 
 	L0 = N*np.sum(f*np.log(f), where=where & (f > 0))
-	scores, best_G = [], None
+	scores, best_G, best_S = [], None, None
 	while len(scores) < 100:# and (iterations < 6 or χ2_red > χ2_red_95):
 		gsum = g.sum() + g0
 		g, g0, s = g/gsum, g0/gsum, s/gsum # correct for roundoff
@@ -133,10 +133,9 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 		g0 += h*δg0
 		s += h*δs
 
-		# χ2_red = N*np.sum((s - f)**2/s, where=where)/np.sum(where) # TODO can I use a better chi squared
 		L = N*np.sum(f*np.log(s), where=where)
-		S = N*np.sum(g/η*np.log(g/η), where=g!=0)# + N*g/η*np.log(N)
-		scores.append(L - ALPHA*S)
+		S = np.sum(g*np.log(g), where=g!=0) + g0*np.log(g0)
+		scores.append(L - SMOOTHING*S)
 		if verbose: print(f"[{L - L0}, {S}, {scores[-1] - L0}],")
 		if show_plots:
 			fig, axes = plt.subplots(3, 2)
@@ -171,9 +170,10 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 
 		if np.argmax(scores) == len(scores) - 1: # keep track of the best we've found
 			best_G = N*g/η
-		elif len(scores) >= 3 and scores[-1] < scores[-2] and scores[-2] < scores[-3]: # if the value function decreases twice in a row, quit
+			best_S = N*s
+		elif np.argmax(scores) < len(scores) - 6: # if the value function decreases twice in a row, quit
 			break
-	return N*g/η, N*np.sum((s - f)**2/s, where=where)/np.sum(where)
+	return best_G, np.sum((best_S - N*f)**2/best_S, where=where)/np.sum(where)
 
 
 if __name__ == '__main__':
