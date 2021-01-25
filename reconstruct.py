@@ -15,6 +15,7 @@ import time
 
 import diameter
 import segnal as mysignal
+from srim import get_E_out, get_E_in
 from electric_field_model import get_analytic_brightness
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
@@ -22,20 +23,20 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 np.seterr('ignore')
 
-SKIP_RECONSTRUCTION = True
+SKIP_RECONSTRUCTION = False
 SHOW_PLOTS = True
-SHOW_RAW_PLOTS = True
-SHOW_DEBUG_PLOTS = False
-SHOW_OFFSET = False
+SHOW_RAW_PLOTS = False
+SHOW_DEBUG_PLOTS = True
+SHOW_OFFSET = True
 VERBOSE = False
-OBJECT_SIZE = 250e-4 # cm
 ASK_FOR_HELP = False
+OBJECT_SIZE = 300e-4 # cm
 
 VIEW_RADIUS = 5.0 # cm
 NON_STATISTICAL_NOISE = 0.0
 SPREAD = 1.10
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-RESOLUTION = 50
+RESOLUTION = 60
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
@@ -97,53 +98,63 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 
 	plt.figure()
 	plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 51), np.linspace(0, 40, 41)), cmap=COFFEE)#, vmin=0, vmax=13000)
-	plt.plot([2, 2], [0, 40], 'k--')
-	plt.plot([3, 3], [0, 40], 'k--')
+	# plt.plot([2, 2], [0, 40], 'k--')
+	# plt.plot([3, 3], [0, 40], 'k--')
 	plt.xlabel("Diameter (μm)") # plot N(d,c)
 	plt.ylabel("Contrast (%)")
 	plt.tight_layout()
 	plt.show()
 
 
-def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, x0, y0, r0, r_img, δ, Q, e_min, e_max):
+def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
+					 x0, y0, r0, r_img, δ, Q, e_min, e_max):
 	""" plot the data along with the initial fit to it, and the
 		reconstructed superaperture.
 	"""
 	plt.figure()
 	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-3)/NC.size))
-	T = np.linspace(0, 2*np.pi)
-	plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
-		for t in range(0, 6):
-			plt.plot(x0 + r0*np.cos(T) + s0*np.cos(2*np.pi/6*t), y0 + r0*np.sin(T) + s0*np.sin(2*np.pi/6*t), '--w')
-	plt.plot(x0 + r_img*np.cos(T), y0 + r_img*np.sin(T), '--w')
+	# T = np.linspace(0, 2*np.pi)
+	# plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 	# if s0 + r0 < np.max(np.hypot(XC - x0, YC - y0)):
+	# 	for t in range(0, 6):
+	# 		plt.plot(x0 + r0*np.cos(T) + s0*np.cos(2*np.pi/6*t), y0 + r0*np.sin(T) + s0*np.sin(2*np.pi/6*t), '--w')
+	# plt.plot(x0 + r_img*np.cos(T), y0 + r_img*np.sin(T), '--w')
 	plt.axis('square')
+	plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	plt.colorbar()
+	bar = plt.colorbar()
+	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
 
 	plt.figure()
 	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-3)/NI.size))
 	plt.axis('square')
+	plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	plt.colorbar()
+	bar = plt.colorbar()
+	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
 
-	# if mode == 'hist':
-	# 	plt.figure()
-	# 	plt.bar(x=r_exp[:-1], height=n_exp, width=r_exp[:-1] - r_exp[1:],  label="Data")
-	# 	n = simple_penumbra((r_exp[1:]+r_exp[:-1])/2, δ, Q, r0, r_img, 0, 1, e_min=e_min, e_max=e_max)
-	# 	signal, background = mysignal.linregress(n, n_exp, (r_exp[1:]+r_exp[:-1])/2)
-	# 	r = np.linspace(0, r_img, 216)
-	# 	n = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
-	# 	plt.plot(r, n, '-C1', label="Fit with aperture charging")
-	# 	n = simple_penumbra(r, δ, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
-	# 	plt.plot(r, n, '--C2', label="Hypothetical without charging")
-	# 	plt.xlabel("Radius (cm)")
-	# 	plt.legend()
-	# 	plt.tight_layout()
+	if mode == 'hist':
+		rI, drI = (rI_bins[1:] + rI_bins[:-1])/2, rI_bins[:-1] - rI_bins[1:]
+		nI = nI/(np.pi*(rI_bins[1:]**2 - rI_bins[:-1]**2))
+		plt.figure()
+		plt.bar(x=rI, height=nI, width=drI,  label="Data", color=(0.773, 0.498, 0.357))
+		n = simple_penumbra(rI, δ, Q, r0, r_img, 0, 1, e_min=e_min, e_max=e_max)
+		signal, background = mysignal.linregress(n, nI, rI)
+		r = np.linspace(0, r_img, 216)
+		n = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+		plt.plot(r, n, '-', color=(0.208, 0.455, 0.663), linewidth=2, label="Fit with charging")
+		# n = simple_penumbra(r, δ, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+		n = simple_penumbra(r, 0.17, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+		plt.plot(r, n, '--', color=(0.278, 0.439, 0.239), linewidth=2, label="Fit without charging")
+		plt.xlim(0, r_img)
+		plt.xlabel("Radius (cm)")
+		plt.ylabel("Track density (1/cm^2)")
+		plt.legend()
+		plt.tight_layout()
 
 	plt.show()
 
@@ -265,7 +276,7 @@ if __name__ == '__main__':
 		for fname in os.listdir(FOLDER):
 			if (fname.endswith('.txt') or fname.endswith('.pkl')) and str(scan[SHOT]) in fname and 'tim'+str(scan[TIM]) in fname.lower() and scan[ETCH_TIME].replace(' ','') in fname:
 				filename = fname
-				print("Beginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+				print("\nBeginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 				break
 		if filename is None:
 			print("Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
@@ -308,16 +319,17 @@ if __name__ == '__main__':
 
 		image_layers, x_layers, y_layers = [], [], []
 
-		if mode == 'raster' or np.std(track_list['d(µm)']) == 0:
+		if mode == 'raster' or np.std(track_list['d(µm)']) == 0: # choose which cuts to use depending on whether this is synthetic or real
 			cuts = [('plasma', [0, 5])]
 		else:
 			# cuts = [(GREYS, [4, 8])]
-			cuts = [(GREYS, [0, 13]), (REDS, [0, 5]), (BLUES, [9, 13])] # [MeV] (post-filtering)
-			# cuts = [(REDS, [0, 5]), (BLUES, [9, 13])] # [MeV] (post-filtering)
+			cuts = [(GREYS, [0, 100]), (REDS, [0, 7]), (BLUES, [10, 100])] # [MeV] (post-filtering)
+			# cuts = [(REDS, [0, 7]), (BLUES, [9, 100])] # [MeV] (post-filtering)
 
-		for color, (cmap, e_out_bounds) in enumerate(cuts):
-			d_bounds = diameter.D(np.array(e_out_bounds), τ=etch_time)[::-1] # make some diameter cuts
-			e_in_bounds = np.clip(np.array(e_out_bounds) + 2, 0, 12)
+		for color, (cmap, e_in_bounds) in enumerate(cuts): # iterate over the cuts
+			e_out_bounds = get_E_out(1, 2, e_in_bounds, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
+			e_in_bounds = get_E_in(1, 2, e_out_bounds, ['Ta'], 16) # convert back to exclude particles that are ranged out
+			d_bounds = diameter.D(e_out_bounds, τ=etch_time, k=1)[::-1] # convert to diameters
 			if mode == 'hist': # if we still need to tally the histogram
 				track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 				track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
@@ -325,7 +337,7 @@ if __name__ == '__main__':
 				if len(track_x) <= 0:
 					print("No tracks found in this cut.")
 					continue
-				print(d_bounds)
+				print(f"d ∈ {d_bounds} μm")
 
 				# Q = None
 
@@ -377,11 +389,13 @@ if __name__ == '__main__':
 							NI += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
 
 				track_r = np.hypot(track_x - x0, track_y - y0)
-				n_exp, r_exp = np.histogram(track_r, weights=1/(2*np.pi*track_r), bins=np.linspace(0, r_img, 36)) # also do a radial histogram because that might be useful
+				nI, rI_bins = np.histogram(track_r, bins=np.linspace(0, r_img, 36)) # also do a radial histogram because that might be useful
 
 				del(track_x)
 				del(track_y)
 				gc.collect()
+			else:
+				nI, rI_bins = None, None
 
 			kernel_size = xI_bins.size - 2*int(OBJECT_SIZE*M/dxI) # now make the kernel (from here on, it's the same in both modes)
 			if kernel_size%2 == 0: # make sure the kernel is odd
@@ -396,7 +410,8 @@ if __name__ == '__main__':
 			XS, YS = np.meshgrid(xS, yS, indexing='ij')
 
 			if SHOW_PLOTS:
-				plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, x0, y0, r0, r_img, δ, Q, *e_in_bounds)
+				assert e_in_bounds[0] != 0
+				plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI, x0, y0, r0, r_img, δ, Q, *e_in_bounds)
 			if SKIP_RECONSTRUCTION:
 				continue
 
@@ -442,7 +457,7 @@ if __name__ == '__main__':
 				print(f"χ^2/n = {χ2_red}")
 			B = np.maximum(0, B) # we know this must be positive
 
-			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(XS, YS, B)
+			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(XS, YS, B) # compute the three number summary
 			print(f"P0 = {p0/1e-4:.2f}μm")
 			print(f"P1 = {p1/1e-4:.2f}μm = {p1/p0*100:.1f}%, θ = {np.degrees(θ1)}°")
 			print(f"P2 = {p2/1e-4:.2f}μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2)}°")
@@ -451,31 +466,29 @@ if __name__ == '__main__':
 				return A*(1 + special.erf((100e-4 - x)/mouth))/2
 			real = source_bins
 			cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
-			(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4))
-			# plt.scatter(np.hypot(XS - cx, YS - cy)[real], func(np.hypot(XS - cx, YS - cy)[real], A, mouth))
-			# plt.scatter(np.hypot(XS - cx, YS - cy)[real], B[real])
-			# plt.show()
-			print(f"XXX[{scan[SHOT][-5:]}, {mouth/1e-4:.1f}],")
+			(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
+			# print(f"XXX[{scan[SHOT][-5:]}, {mouth/1e-4:.1f}],")
 
-			plt.figure()
-			plt.pcolormesh(xS_bins/1e-4, yS_bins/1e-4, B.T, cmap=cmap, vmin=0)
+			plt.figure() # plot the reconstructed ource image
+			plt.pcolormesh((xS_bins - cx)/1e-4, (yS_bins - cy)/1e-4, B.T, cmap=cmap, vmin=0)
 			T = np.linspace(0, 2*np.pi)
-			# plt.plot((cx + ronnot*np.cos(T))/1e-4, (cy + ronnot*np.sin(T))/1e-4, 'w--')
+			# plt.plot(ronnot*np.cos(T)/1e-4, ronnot*np.sin(T)/1e-4, 'w--')
 			# plt.colorbar()
 			plt.axis('square')
-			plt.title("B(x, y) of TIM {} on shot {} with d ∈ [{:.1f}μm,{:.1f}μm)".format(scan[TIM], scan[SHOT], *d_bounds), fontsize=12)
+			# plt.title("TIM {} on shot {}, {:.1f} MeV – {:.1f} MeV".format(scan[TIM], scan[SHOT], *e_in_bounds))
+			plt.title(f"{e_in_bounds[0]:.1f} MeV – {min(12.5, e_in_bounds[1]):.1f} MeV")
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
-			plt.axis([(x0/M - OBJECT_SIZE)/1e-4, (x0/M + OBJECT_SIZE)/1e-4, (y0/M - OBJECT_SIZE)/1e-4, (y0/M + OBJECT_SIZE)/1e-4])
+			plt.axis([-100, 100, -100, 100])
 			plt.tight_layout()
-			plt.savefig("results/{} TIM{} {:.1f}-{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, etch_time))
+			plt.savefig("results/{} TIM{} {:.1f}—{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, etch_time))
 
 			plt.tight_layout()
 
 			if SHOW_PLOTS:
 				plt.show()
 			else:
-				plt.clf()
+				plt.close()
 
 			image_layers.append(B/B.max())
 			x_layers.append(XS)
@@ -505,17 +518,16 @@ if __name__ == '__main__':
 
 			plt.figure()
 			plt.contourf((x_layers[1] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
-			# plt.contourf((x_layers[2] - x0)/1e-4, (y_layers[2] - y0)/1e-4, image_layers[2], levels=[0, 0.25, 1], colors=['#00000000', '#55FF55BB', '#000000FF'])
 			plt.contourf((x_layers[-1] - x0)/1e-4, (y_layers[-1] - y0)/1e-4, image_layers[-1], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 			# if xray is not None:
 			# 	plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
 			if SHOW_OFFSET:
-				# plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
-				# plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
+				plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
+				plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
 				plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k', head_width=5, head_length=5, length_includes_head=True)
-				# plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(
-				# 	z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
-				# 	verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
+				plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(
+					z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
+					verticalalignment='top', transform=plt.gca().transAxes, fontsize=12)
 			plt.axis('square')
 			plt.axis([-150, 150, -150, 150])
 			plt.xlabel("x (μm)")

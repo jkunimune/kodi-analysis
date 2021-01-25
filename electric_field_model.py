@@ -26,8 +26,8 @@ for i, a in enumerate(x_ref):
 	E_ref[i] = integrate.quad(lambda b: np.sqrt(1 - b**2)/((a - b)*np.sqrt(1 - b**2 + (a - b)**2)), -1, 2*a-1)[0] + integrate.quad(lambda b: (np.sqrt(1 - b**2)/np.sqrt((a - b)**2 + 1 - b**2) - np.sqrt(1 - (2*a - b)**2)/np.sqrt((a - b)**2 + 1 - (2*a - b)**2))/(a - b), 2*a-1, a)[0]
 E_ref -= x_ref/x_ref[1]*E_ref[1]
 
-R = np.linspace(0, 3, 3000) # normalized position
-E = np.geomspace(1e-1, 1e6, 700)
+R = np.linspace(0, 3, 3000) # the normalized position
+E = np.geomspace(1e-1, 1e6, 700) # the sample energy
 K = 1/E
 N = np.empty((len(K), len(R)))
 for i, k in enumerate(K):
