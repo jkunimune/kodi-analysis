@@ -102,7 +102,7 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 
 	L0 = N*np.sum(f*np.log(f), where=where & (f > 0))
 	scores, best_G, best_S = [], None, None
-	while len(scores) < 100:# and (iterations < 6 or χ2_red > χ2_red_95):
+	while len(scores) < 200:# and (iterations < 6 or χ2_red > χ2_red_95):
 		gsum = g.sum() + g0
 		g, g0, s = g/gsum, g0/gsum, s/gsum # correct for roundoff
 

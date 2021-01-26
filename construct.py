@@ -53,6 +53,17 @@ Limits imposed on tracks listed below:
 
 
 def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
+	"""
+		shot:		either an int, the shot number of the LILAC simulation to use, or a str
+						from `['eclipse', 'gaussian', 'hypergaussian', 'ellipse',
+						'multigaussian', 'disc']`
+		aperture:	either an int for the radius in microns, or (int, float) where the twoth
+						float is the charging, or a str from `['big', 'small', 'multi',
+						'charged']`
+		N:			track density in cm^(-2)
+		SNR:		the ratio of the umbra to the background
+		name:		the name as which to save the file, uses `shot` if `name` is not specified
+	"""
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, xS_bins, yS_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[2], EIN_CUTS[3]])

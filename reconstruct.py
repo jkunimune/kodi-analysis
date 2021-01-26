@@ -147,8 +147,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 		r = np.linspace(0, r_img, 216)
 		n = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
 		plt.plot(r, n, '-', color=(0.208, 0.455, 0.663), linewidth=2, label="Fit with charging")
-		# n = simple_penumbra(r, δ, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
-		n = simple_penumbra(r, 0.17, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+		n = simple_penumbra(r, δ, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
 		plt.plot(r, n, '--', color=(0.278, 0.439, 0.239), linewidth=2, label="Fit without charging")
 		plt.xlim(0, r_img)
 		plt.xlabel("Radius (cm)")
@@ -317,7 +316,7 @@ if __name__ == '__main__':
 			xC_bins, yC_bins, NC = xI_bins, yI_bins, NI
 			XC, YC = XI, YI
 
-		image_layers, x_layers, y_layers = [], [], []
+		image_layers, X_layers, Y_layers = [], [], []
 
 		if mode == 'raster' or np.std(track_list['d(µm)']) == 0: # choose which cuts to use depending on whether this is synthetic or real
 			cuts = [('plasma', [0, 5])]
@@ -491,8 +490,8 @@ if __name__ == '__main__':
 				plt.close()
 
 			image_layers.append(B/B.max())
-			x_layers.append(XS)
-			y_layers.append(YS)
+			X_layers.append(XS)
+			Y_layers.append(YS)
 
 		try:
 			xray = np.loadtxt('scans/KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(scan[SHOT]), int(scan[TIM]), [2,4,5].index(int(scan[TIM]))+1), delimiter=',')
@@ -513,12 +512,12 @@ if __name__ == '__main__':
 			plt.close()
 
 		if len(image_layers) >= 3:
-			x0 = x_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
-			y0 = y_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
+			x0 = X_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
+			y0 = Y_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
 
 			plt.figure()
-			plt.contourf((x_layers[1] - x0)/1e-4, (y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.25, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
-			plt.contourf((x_layers[-1] - x0)/1e-4, (y_layers[-1] - y0)/1e-4, image_layers[-1], levels=[0, 0.25, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
+			plt.contourf((X_layers[1] - x0)/1e-4, (Y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.15, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
+			plt.contourf((X_layers[-1] - x0)/1e-4, (Y_layers[-1] - y0)/1e-4, image_layers[-1], levels=[0, 0.15, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 			# if xray is not None:
 			# 	plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
 			if SHOW_OFFSET:
