@@ -8,6 +8,7 @@ import pickle
 from simulations import load_shot, make_image
 from perlin import perlin_generator, wave_generator
 from electric_field_model import e_field
+from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
 
 NOISE_SCALE = 1.0 # [cm]
@@ -92,6 +93,8 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 			img_lo = np.exp(-(XS**2 - XS*YS*3/2 + YS**2)/(2*50e-4**2))
 		elif shot == 'multigaussian':
 			img_lo = np.exp(-(XS**2 + YS**2)/(2*80e-4**2)) * np.exp(-2.0*np.exp(-((XS-30e-4)**2 + YS**2)/(2*40e-4**2)))
+		elif shot == 'comet':
+			img_lo = np.maximum(np.exp(-(XS**2 + YS**2)/(2*25e-4**2)), np.where(XS > 0, np.exp(-XS/100e-4)*np.exp(-YS**2/(2*20e-4**2)), 0))
 		elif shot == 'disc':
 			img_lo = np.where(np.hypot(XS, YS) < 100e-4, 1, 0)
 		else:
@@ -205,15 +208,17 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 		raise KeyError(mode)
 
 	plt.figure()
-	plt.hist2d(xS/1e-4, yS/1e-4, bins=(np.linspace(-200, 200, 101), np.linspace(-200, 200, 101)), cmap='plasma')
+	plt.hist2d(yJ/1e-4, xJ/1e-4, bins=(np.linspace(-200, 200, 41), np.linspace(-200, 200, 41)), cmap=GREYS)
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
+	# plt.xticks([])
+	# plt.yticks([])
 	plt.colorbar()
 	plt.axis('square')
 	plt.tight_layout()
 	plt.savefig("simulated_shot_{}.png".format(shot))
+	plt.show()
 	plt.close()
-	# plt.show()
 
 
 if __name__ == '__main__':
@@ -221,5 +226,5 @@ if __name__ == '__main__':
 	# 	construct_data(shot, (1000, .05), N, SNR)
 	# for shot, N, SNR in [('ellipse', 200000, 8)]:
 	# 	construct_data(shot, (1000, .1), N, SNR)
-	construct_data('gaussian', 'big', 1000000, 8, name='charge0')
-	construct_data('gaussian', 'charged', 1000000, 8, name='charge1')
+	construct_data('comet', 1000, 1000000, 8, name='comet', mode='mc')
+	# construct_data('gaussian', 'charged', 1000000, 8, name='charge1')

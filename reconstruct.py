@@ -19,12 +19,12 @@ from srim import get_E_out, get_E_in
 from electric_field_model import get_analytic_brightness
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
-plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
+plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
 
 np.seterr('ignore')
 
 SKIP_RECONSTRUCTION = False
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 SHOW_RAW_PLOTS = False
 SHOW_DEBUG_PLOTS = True
 SHOW_OFFSET = True
@@ -444,7 +444,7 @@ if __name__ == '__main__':
 			B, χ2_red = mysignal.gelfgat_deconvolve2d(
 				NI,
 				penumbral_kernel,
-				where=data_bins,
+				# where=data_bins,
 				illegal=np.logical_not(source_bins),
 				verbose=VERBOSE,
 				show_plots=SHOW_DEBUG_PLOTS) # deconvolve!
@@ -468,8 +468,11 @@ if __name__ == '__main__':
 			(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
 			# print(f"XXX[{scan[SHOT][-5:]}, {mouth/1e-4:.1f}],")
 
+			x0 = XS[np.unravel_index(np.argmax(B), XS.shape)]
+			y0 = YS[np.unravel_index(np.argmax(B), YS.shape)]
+
 			plt.figure() # plot the reconstructed ource image
-			plt.pcolormesh((xS_bins - cx)/1e-4, (yS_bins - cy)/1e-4, B.T, cmap=cmap, vmin=0)
+			plt.pcolormesh((xS_bins - x0)/1e-4, (yS_bins - y0)/1e-4, B.T, cmap=cmap, vmin=0)
 			T = np.linspace(0, 2*np.pi)
 			# plt.plot(ronnot*np.cos(T)/1e-4, ronnot*np.sin(T)/1e-4, 'w--')
 			# plt.colorbar()
