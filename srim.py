@@ -66,14 +66,14 @@ def get_E_in(z, a, E_out, mate, d, ρ=None, I=None):
 
 
 if __name__ == '__main__':
-	z, a, E0, = 1, 2, 12.5
+	print(get_E_out(1, 3, [12.5, 10, 7, 3, .1], ['Ta'], 15, 16500, 700))
+
+	z, a, E0, = 1, 3, 12.5
 	# z, a, E0, = 1, 3, 10.6
 
 	mate, ρ, I = ['C']*12+['H']*18+['O']*7, 1320, 55 # g/L, eV
 	# mate, ρ, I = ['Al'], 2700, 166 # g/L, eV
 	# mate, ρ, I = ['Ta'], 16690, 718 # g/L, eV
-
-	print(get_E_out(1, 2, [12.5, 10, 7, 3, .1], ['Ta'], 15, 16500, 700))
 
 	x, E = get_stopping(z, a, E0, mate, ρ, I)
 	if x[-1] == 0:
