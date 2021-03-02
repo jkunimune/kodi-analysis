@@ -37,7 +37,7 @@ VIEW_RADIUS = 5.0 # cm
 NON_STATISTICAL_NOISE = 0.0
 SPREAD = 1.10
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-RESOLUTION = 30
+RESOLUTION = 70
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
@@ -136,7 +136,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
 
-	if mode == 'hist':
+	if mode == 'hist' and s0 == 0:
 		rI, drI = (rI_bins[1:] + rI_bins[:-1])/2, rI_bins[:-1] - rI_bins[1:]
 		nI = nI/(np.pi*(rI_bins[1:]**2 - rI_bins[:-1]**2))
 		plt.figure()
@@ -166,6 +166,20 @@ def project(r, θ, ɸ, basis):
 	return np.matmul(basis.T, v)
 
 
+def convex_hull(x, y, N):
+	""" return an array of the same shape as z with pixels inside the convex hull
+		of the data markd True and those outside markd false.
+	"""
+	triangulacion = Delaunay(np.transpose([x[N > 0], y[N > 0]]))
+	hull_object = triangulacion.find_simplex(np.transpose([x.ravel(), y.ravel()]))
+	inside = ~((N == 0) & (hull_object == -1).reshape(N.shape))
+	inside[:, 1:] &= inside[:, :-1] # erode hull by one pixel in all directions to ignore edge effects
+	inside[:, :-1] &= inside[:, 1:]
+	inside[1:, :] &= inside[:-1, :]
+	inside[:-1, :] &= inside[1:, :]
+	return inside
+
+
 def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
 	""" compute the shape of a simple analytic single-apeture penumbral image """
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
@@ -189,15 +203,15 @@ def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
 
 def simple_fit(*args, a=1, b=0, c=1):
 	""" compute how close these data are to this penumbral image """
-	if len(args[0]) == 3 and len(args) == 12: # first, parse the parameters
-		(x0, y0, δ), Q, r0, s0, r_img, minimum, maximum, X, Y, exp, e_min, e_max = args
-	elif len(args[0]) == 4 and len(args) == 10:
-		(x0, y0, δ, r0), s0, r_img, minimum, maximum, X, Y, exp, e_min, e_max = args
-		Q = 0
+	if len(args[0]) == 3 and len(args) == 13: # first, parse the parameters
+		(x0, y0, δ), Q, r0, s0, r_img, minimum, maximum, X, Y, exp, populated_region, e_min, e_max = args
 	elif len(args[0]) == 4 and len(args) == 11:
-		(x0, y0, δ, Q), r0, s0, r_img, minimum, maximum, X, Y, exp, e_min, e_max = args
-	elif len(args[0]) == 7 and len(args) == 11:
-		(x0, y0, δ, Q, a, b, c), r0, s0, r_img, minimum, maximum, X, Y, exp, e_min, e_max = args
+		(x0, y0, δ, r0), s0, r_img, minimum, maximum, X, Y, exp, populated_region, e_min, e_max = args
+		Q = 0
+	elif len(args[0]) == 4 and len(args) == 12:
+		(x0, y0, δ, Q), r0, s0, r_img, minimum, maximum, X, Y, exp, populated_region, e_min, e_max = args
+	elif len(args[0]) == 7 and len(args) == 12:
+		(x0, y0, δ, Q, a, b, c), r0, s0, r_img, minimum, maximum, X, Y, exp, populated_region, e_min, e_max = args
 	else:
 		raise ValueError("unsupported set of arguments")
 	if Q < 0 or abs(x0) > VIEW_RADIUS or abs(y0) > VIEW_RADIUS: return float('inf') # and reject impossible ones
@@ -215,6 +229,8 @@ def simple_fit(*args, a=1, b=0, c=1):
 			return np.inf
 	if np.any(np.isnan(teo)):
 		return np.inf
+
+	include = include & populated_region # exclude outer regions where there are clearly no data
 	
 	if np.sum(include) == 0:
 		return np.inf
@@ -270,7 +286,6 @@ if __name__ == '__main__':
 		rA = scan[APERTURE_RADIUS]/1.e4 # cm
 		sA = scan[APERTURE_SPACING]/1.e4 # cm
 		rotation = np.radians(scan[ROTATION]) # rad
-		if sA == 0: sA = 6*VIEW_RADIUS/(M + 1)
 		etch_time = float(scan[ETCH_TIME].strip(' h'))
 
 		r0 = (M + 1)*rA # calculate the penumbra parameters
@@ -341,14 +356,14 @@ if __name__ == '__main__':
 		if mode == 'raster' or np.std(track_list['d(µm)']) == 0: # choose which cuts to use depending on whether this is synthetic or real
 			cuts = [('plasma', [0, 5])]
 		else:
-			# cuts = [(GREYS, [4, 8])]
+			# cuts = [(GREYS, [0, 100])]
 			cuts = [(GREYS, [0, 100]), (REDS, [0, 7]), (BLUES, [10, 100])] # [MeV] (post-filtering)
 			# cuts = [(REDS, [0, 7]), (BLUES, [9, 100])] # [MeV] (post-filtering)
 
 		for color, (cmap, e_in_bounds) in enumerate(cuts): # iterate over the cuts
 			e_out_bounds = get_E_out(1, 2, e_in_bounds, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
 			e_in_bounds = get_E_in(1, 2, e_out_bounds, ['Ta'], 16) # convert back to exclude particles that are ranged out
-			d_bounds = diameter.D(e_out_bounds, τ=etch_time, k=1)[::-1] # convert to diameters
+			d_bounds = diameter.D(e_out_bounds, τ=etch_time)[::-1] # convert to diameters
 			if mode == 'hist': # if we still need to tally the histogram
 				track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 				track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
@@ -375,8 +390,10 @@ if __name__ == '__main__':
 			else:
 				x0, y0 = (0, 0)
 
+			hullC = convex_hull(XC, YC, NC) # compute the convex hull for future uce
+
 			if Q is None:
-				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, s0, r_img, None, None, XC, YC, NC, *e_in_bounds),
+				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, s0, r_img, None, None, XC, YC, NC, hullC, *e_in_bounds),
 					method='Nelder-Mead', options=dict(initial_simplex=[
 						[x0+r_img*.4, y0,         OBJECT_SIZE*M/4, 1.0e-1],
 						[x0-r_img*.2, y0+r_img*.3, OBJECT_SIZE*M/4, 1.0e-1],
@@ -385,7 +402,7 @@ if __name__ == '__main__':
 						[x0,         y0,         OBJECT_SIZE*M/4, 1.9e-1]]))
 				x0, y0, δ, Q = opt.x
 			else:
-				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, s0, r_img, None, None, XC, YC, NC, *e_in_bounds),
+				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, s0, r_img, None, None, XC, YC, NC, hullC, *e_in_bounds),
 					method='Nelder-Mead', options=dict(initial_simplex=[
 						[x0+r_img*.4, y0,         OBJECT_SIZE*M/4],
 						[x0-r_img*.2, y0+r_img*.3, OBJECT_SIZE*M/4],
@@ -443,7 +460,7 @@ if __name__ == '__main__':
 			penumbra_hih = .99*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
 			data_bins = (np.hypot(XI, YI) <= r_img) & np.isfinite(NI) & (reach > penumbra_low) & (reach < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
 			try:
-				data_bins &= ~((NI == 0) & (Delaunay(np.transpose([XI[NI > 0], YI[NI > 0]])).find_simplex(np.transpose([XI.ravel(), YI.ravel()])) == -1).reshape(NI.shape)) # crop it at the convex hull where counts go to zero
+				data_bins &= convex_hull(XI, YI, NI) # crop it at the convex hull where counts go to zero
 			except MemoryError:
 				print("WARN: could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
 
@@ -461,7 +478,7 @@ if __name__ == '__main__':
 			B, χ2_red = mysignal.gelfgat_deconvolve2d(
 				NI,
 				penumbral_kernel,
-				# where=data_bins,
+				where=data_bins,
 				illegal=np.logical_not(source_bins),
 				verbose=VERBOSE,
 				show_plots=SHOW_DEBUG_PLOTS) # deconvolve!
@@ -498,7 +515,7 @@ if __name__ == '__main__':
 			plt.title(f"{e_in_bounds[0]:.1f} MeV – {min(12.5, e_in_bounds[1]):.1f} MeV")
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
-			plt.axis([-100, 100, -100, 100])
+			# plt.axis([-100, 100, -100, 100])
 			plt.tight_layout()
 			plt.savefig("results/{} TIM{} {:.1f}—{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, etch_time))
 
