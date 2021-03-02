@@ -137,8 +137,8 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 		S = np.sum(g*np.log(g), where=g!=0) + g0*np.log(g0)
 		scores.append(L - SMOOTHING*S)
 		if verbose: print(f"[{L - L0}, {S}, {scores[-1] - L0}],")
-		if show_plots:
-			fig, axes = plt.subplots(2, 1)
+		if show_plots and len(scores)%10 == 0:
+			fig, axes = plt.subplots(2, 1, figsize=(3, 6))
 			# fig.subplots_adjust(hspace=0, wspace=0)
 			# axes[0,0].set_title("Previous step")
 			# plot = axes[0,0].pcolormesh(N*h/2*δg/η, cmap='plasma')

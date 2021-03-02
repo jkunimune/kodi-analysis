@@ -30,13 +30,14 @@ SHOW_DEBUG_PLOTS = True
 SHOW_OFFSET = True
 VERBOSE = False
 ASK_FOR_HELP = False
-OBJECT_SIZE = 300e-4 # cm
+OBJECT_SIZE = 200e-4 # cm
+APERTURE_CHARGE_FITTING = 'none' #'same'
 
 VIEW_RADIUS = 5.0 # cm
 NON_STATISTICAL_NOISE = 0.0
 SPREAD = 1.10
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-RESOLUTION = 60
+RESOLUTION = 30
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
@@ -113,12 +114,10 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	"""
 	plt.figure()
 	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-3)/NC.size))
-	# T = np.linspace(0, 2*np.pi)
-	# plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
-	# if s0 + r0 < np.max(np.hypot(XC - x0, YC - y0)):
-	# 	for t in range(0, 6):
-	# 		plt.plot(x0 + r0*np.cos(T) + s0*np.cos(2*np.pi/6*t), y0 + r0*np.sin(T) + s0*np.sin(2*np.pi/6*t), '--w')
-	# plt.plot(x0 + r_img*np.cos(T), y0 + r_img*np.sin(T), '--w')
+	T = np.linspace(0, 2*np.pi)
+	for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode='square'):
+		plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
+		plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
 	plt.axis('square')
 	plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (cm)")
@@ -205,21 +204,17 @@ def simple_fit(*args, a=1, b=0, c=1):
 
 	x_eff = a*(X - x0) + b*(Y - y0)
 	y_eff = b*(X - x0) + c*(Y - y0)
-	teo = np.zeros(X.shape) # build up the theoretical image
-	include = np.full(X.shape, False) # and decide at which pixels to even look
-	for i in range(-6, 6):
-		dy = i*np.sqrt(3)/2*s0
-		for j in range(-6, 6):
-			dx = (2*j + i%2)*s0/2
-			if np.hypot(dx, dy) < VIEW_RADIUS - r_img:
-				r_rel = np.hypot(x_eff - dx, y_eff - dy)
-				try:
-					teo[r_rel <= r_img] += simple_penumbra(r_rel[r_rel <= r_img], δ, Q, r0, r_img, 0, 1, e_min, e_max) # as an array of penumbrums
-				except ValueError:
-					return np.inf
-				include[r_rel <= r_img] = True
-				if np.any(np.isnan(teo)):
-					return np.inf
+	include = np.full(X.shape, False) # decide at which pixels to even look
+	teo = np.zeros(X.shape) # and build up the theoretical image
+	for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode='square'):
+		r_rel = np.hypot(x_eff - dx, y_eff - dy)
+		include[r_rel <= r_img] = True
+		try:
+			teo[r_rel <= r_img] += simple_penumbra(r_rel[r_rel <= r_img], δ, Q, r0, r_img, 0, 1, e_min, e_max) # as an array of penumbrums
+		except ValueError:
+			return np.inf
+	if np.any(np.isnan(teo)):
+		return np.inf
 	
 	if np.sum(include) == 0:
 		return np.inf
@@ -240,11 +235,36 @@ def simple_fit(*args, a=1, b=0, c=1):
 	return error + penalty
 
 
+def get_relative_aperture_positions(spacing, r_img, r_max, mode='hex'):
+	""" yield the positions of the individual penumbral images in the array relative
+		to the center, in the detector plane
+	"""
+	if spacing == 0:
+		yield (0, 0)
+	elif mode == 'hex':
+		for i in range(-6, 6):
+			dy = i*np.sqrt(3)/2*spacing
+			for j in range(-6, 6):
+				dx = (2*j + i%2)*spacing/2
+				if np.hypot(dx, dy) + r_img <= r_max:
+					yield (dx, dy)
+	elif mode == 'square':
+		for dx in [-spacing/2, spacing/2]:
+			for dy in [-spacing/2, spacing/2]:
+				yield (dx, dy)
+	else:
+		raise f"what in davy jones's locker is a {mode}"
+
+
 if __name__ == '__main__':
 	shot_list = pd.read_csv('shot_list.csv')
 
 	for i, scan in shot_list.iterrows():
-		Q = None
+		if APERTURE_CHARGE_FITTING == 'none':
+			Q = 0
+		else:
+			Q = None
+
 		L = scan[APERTURE_DISTANCE] # cm
 		M = scan[MAGNIFICATION] # cm
 		rA = scan[APERTURE_RADIUS]/1.e4 # cm
@@ -338,7 +358,8 @@ if __name__ == '__main__':
 					continue
 				print(f"d ∈ {d_bounds} μm")
 
-				# Q = None
+				if APERTURE_CHARGE_FITTING == 'same':
+					Q = None
 
 				NC, xC_bins, yC_bins = np.histogram2d( # make a histogram
 					track_x, track_y, bins=(xC_bins, yC_bins))
@@ -380,12 +401,8 @@ if __name__ == '__main__':
 				xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 				XI, YI = np.meshgrid(xI, yI, indexing='ij')
 				NI = np.zeros(XI.shape) # and N combines all penumbra on that square
-				for i in range(-6, 6):
-					dy = i*np.sqrt(3)/2*s0
-					for j in range(-6, 6):
-						dx = (2*j + i%2)*s0/2
-						if np.hypot(dx, dy) + r_img <= VIEW_RADIUS:
-							NI += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
+				for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode='square'):
+					NI += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
 
 				track_r = np.hypot(track_x - x0, track_y - y0)
 				nI, rI_bins = np.histogram(track_r, bins=np.linspace(0, r_img, 36)) # also do a radial histogram because that might be useful

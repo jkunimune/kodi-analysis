@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 def E(D, τ=6, vB=2.66, k=.8, n=1.2):
 	return 2*((2*τ*vB/D - 1)/k)**(1/n)
 def D(E, τ=6, vB=2.66, k=.8, n=1.2):
-	return np.where(E > 0,
+	return np.where(E >= 0,
 		2*τ*vB/(1 + k*(E/2)**n),
 		0)
 
 
 if __name__ == '__main__':
+	print(D(np.array([0, 0]), τ=6.0)[::-1])
 	plt.rcParams.update({'font.family': 'serif', 'font.size': 14})
 	x = np.linspace(1, 13)
 	# for k, n in [(.849, .806), (.626, .867), (.651, .830), (.651, .779), (.868, 1.322)]:
