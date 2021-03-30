@@ -13,7 +13,7 @@ def e_field(x):
 		np.interp(x, x_ref, E_ref))
 
 def get_analytic_brightness(r0, Q, e_min=1e-15, e_max=1):
-	""" get the effective brightness as a function of radius, accounting for a roughly boxcar energy spectrum """
+	""" get the effective brightness as a function of radius, accounting for a point source and roughly boxcar energy spectrum """
 	present_blurs = (K >= Q/e_max/r0) & (K < Q/e_min/r0)
 	if np.sum(present_blurs) == 0:
 		present_blurs[np.argmin(np.absolute(K - Q/((e_min+e_max)/2)/r0))] = True

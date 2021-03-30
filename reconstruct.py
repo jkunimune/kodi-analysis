@@ -15,7 +15,7 @@ import time
 
 import diameter
 import segnal as mysignal
-from srim import get_E_out, get_E_in
+from fake_srim import get_E_out, get_E_in
 from electric_field_model import get_analytic_brightness
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
@@ -24,20 +24,21 @@ plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
 np.seterr('ignore')
 
 SKIP_RECONSTRUCTION = False
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 SHOW_RAW_PLOTS = False
-SHOW_DEBUG_PLOTS = True
-SHOW_OFFSET = True
+SHOW_DEBUG_PLOTS = False
+SHOW_OFFSET = False
 VERBOSE = False
 ASK_FOR_HELP = False
 OBJECT_SIZE = 200e-4 # cm
-APERTURE_CHARGE_FITTING = 'none' #'same'
+APERTURE_CHARGE_FITTING = 'none'#'same'
 
 VIEW_RADIUS = 5.0 # cm
 NON_STATISTICAL_NOISE = 0.0
 SPREAD = 1.10
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-RESOLUTION = 70
+RESOLUTION = 40
+APERTURE_CONFIGURACION = 'hex'
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
@@ -115,7 +116,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	plt.figure()
 	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-3)/NC.size))
 	T = np.linspace(0, 2*np.pi)
-	for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode='square'):
+	for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode=APERTURE_CONFIGURACION):
 		plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
 		plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
 	plt.axis('square')
@@ -220,7 +221,7 @@ def simple_fit(*args, a=1, b=0, c=1):
 	y_eff = b*(X - x0) + c*(Y - y0)
 	include = np.full(X.shape, False) # decide at which pixels to even look
 	teo = np.zeros(X.shape) # and build up the theoretical image
-	for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode='square'):
+	for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode=APERTURE_CONFIGURACION):
 		r_rel = np.hypot(x_eff - dx, y_eff - dy)
 		include[r_rel <= r_img] = True
 		try:
@@ -354,26 +355,30 @@ if __name__ == '__main__':
 		image_layers, X_layers, Y_layers = [], [], []
 
 		if mode == 'raster' or np.std(track_list['d(µm)']) == 0: # choose which cuts to use depending on whether this is synthetic or real
-			cuts = [('plasma', [0, 5])]
+			cuts = [('plasma', [0, 100])]
 		else:
 			# cuts = [(GREYS, [0, 100])]
-			cuts = [(GREYS, [0, 100]), (REDS, [0, 7]), (BLUES, [10, 100])] # [MeV] (post-filtering)
-			# cuts = [(REDS, [0, 7]), (BLUES, [9, 100])] # [MeV] (post-filtering)
+			cuts = [(GREYS, [0, 100]), (REDS, [0, 7]), (BLUES, [10, 100])] # [MeV] (pre-filtering)
+			# cuts = [(REDS, [0, 7]), (BLUES, [9, 100])] # [MeV] (pre-filtering)
 
 		for color, (cmap, e_in_bounds) in enumerate(cuts): # iterate over the cuts
 			e_out_bounds = get_E_out(1, 2, e_in_bounds, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
 			e_in_bounds = get_E_in(1, 2, e_out_bounds, ['Ta'], 16) # convert back to exclude particles that are ranged out
 			d_bounds = diameter.D(e_out_bounds, τ=etch_time)[::-1] # convert to diameters
+			if np.isnan(d_bounds[1]):
+				d_bounds[1] = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
+
 			if mode == 'hist': # if we still need to tally the histogram
+
+				print(f"d ∈ {d_bounds} μm")
 				track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 				track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 
 				if len(track_x) <= 0:
 					print("No tracks found in this cut.")
 					continue
-				print(f"d ∈ {d_bounds} μm")
 
-				if APERTURE_CHARGE_FITTING == 'same':
+				if APERTURE_CHARGE_FITTING == 'all':
 					Q = None
 
 				NC, xC_bins, yC_bins = np.histogram2d( # make a histogram
@@ -393,6 +398,7 @@ if __name__ == '__main__':
 			hullC = convex_hull(XC, YC, NC) # compute the convex hull for future uce
 
 			if Q is None:
+				print('fitting electric field')
 				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, s0, r_img, None, None, XC, YC, NC, hullC, *e_in_bounds),
 					method='Nelder-Mead', options=dict(initial_simplex=[
 						[x0+r_img*.4, y0,         OBJECT_SIZE*M/4, 1.0e-1],
@@ -410,7 +416,7 @@ if __name__ == '__main__':
 						[x0,         y0,         OBJECT_SIZE*M/3]]))
 				x0, y0, δ = opt.x
 			if VERBOSE: print(opt)
-			print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm/MeV, M = {5:.2f}".format(np.sum(NC), x0, y0, δ/M/1e-4, Q, M))
+			print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm*MeV, M = {5:.2f}".format(np.sum(NC), x0, y0, δ/M/1e-4, Q, M))
 
 			if mode == 'hist':
 				xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, n_bins+1), np.linspace(y0 - r_img, y0 + r_img, n_bins+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
@@ -418,7 +424,7 @@ if __name__ == '__main__':
 				xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 				XI, YI = np.meshgrid(xI, yI, indexing='ij')
 				NI = np.zeros(XI.shape) # and N combines all penumbra on that square
-				for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode='square'):
+				for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode=APERTURE_CONFIGURACION):
 					NI += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
 
 				track_r = np.hypot(track_x - x0, track_y - y0)

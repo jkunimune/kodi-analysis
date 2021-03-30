@@ -66,7 +66,7 @@ def get_E_in(z, a, E_out, mate, d, ρ=None, I=None):
 
 
 if __name__ == '__main__':
-	print(get_E_out(1, 3, [12.5, 10, 7, 3, .1], ['Ta'], 15, 16500, 700))
+	print(get_E_out(1, 3, [12.5, 10, 7, 3, .5], ['Ta'], 2, 16650, 718))
 
 	z, a, E0, = 1, 3, 12.5
 	# z, a, E0, = 1, 3, 10.6

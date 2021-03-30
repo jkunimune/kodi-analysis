@@ -114,9 +114,10 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 			for i in np.arange(-2, 3):
 				for j in np.arange(-2 + abs(i)/2, 2.5 - abs(i)/2):
 					apertures.append((j*1100e-4, i*np.sqrt(3)/2*1100e-4)) # cm
-		elif aperture == 'charged':
-			rA = 1900e-4 # cm
-			Q = 0.20 # [cm*MeV]
+		elif aperture.startswith('charged'):
+			rA = 450e-4 # cm
+			charge_magnitude = float(aperture[7:])
+			Q = 10**charge_magnitude if charge_magnitude != 0 else 0 # [cm*MeV]
 	elif type(aperture) == int:
 		rA = aperture*1e-4
 	else:
@@ -132,7 +133,6 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 		xq, yq = np.meshgrid(np.linspace(-rA, rA, 12), np.linspace(-rA, rA, 12))
 		rq, θq = np.hypot(xq, yq), np.arctan2(yq, xq)
 		xq, yq, rq, θq = xq[rq < rA], yq[rq < rA], rq[rq < rA], θq[rq < rA]
-		δr = Q*e_field(rq/rA)
 
 		# plt.quiver(10*xq, 10*yq, (δx_noise(xq, yq) + δr*np.cos(θq))/6, (δy_noise(xq, yq) + δr*np.sin(θq))/6, scale=1)
 		# plt.axis('square')
@@ -207,18 +207,25 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 	else:
 		raise KeyError(mode)
 
-	plt.figure()
-	plt.hist2d(yJ/1e-4, xJ/1e-4, bins=(np.linspace(-200, 200, 41), np.linspace(-200, 200, 41)), cmap=GREYS)
-	plt.xlabel("x (μm)")
-	plt.ylabel("y (μm)")
-	# plt.xticks([])
-	# plt.yticks([])
-	plt.colorbar()
-	plt.axis('square')
-	plt.tight_layout()
-	plt.savefig("simulated_shot_{}.png".format(shot))
-	plt.show()
-	plt.close()
+	# plt.figure()
+	# plt.hist2d(xD, yD, bins=36, cmap='viridis')
+	# plt.colorbar()
+	# plt.axis('square')
+	# plt.tight_layout()
+	# plt.show()
+
+	# plt.figure()
+	# plt.hist2d(xJ/1e-4, yJ/1e-4, bins=(np.linspace(-200, 200, 41), np.linspace(-200, 200, 41)), cmap=GREYS)
+	# plt.xlabel("x (μm)")
+	# plt.ylabel("y (μm)")
+	# # plt.xticks([])
+	# # plt.yticks([])
+	# plt.colorbar()
+	# plt.axis('square')
+	# plt.tight_layout()
+	# plt.savefig("simulated_shot_{}.png".format(shot))
+	# plt.show()
+	# plt.close()
 
 
 if __name__ == '__main__':

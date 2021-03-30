@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 def E(D, τ=6, vB=2.66, k=.8, n=1.2):
 	return 2*((2*τ*vB/D - 1)/k)**(1/n)
 def D(E, τ=6, vB=2.66, k=.8, n=1.2):
-	return np.where(E >= 0,
+	return np.where(E > 0,
 		2*τ*vB/(1 + k*(E/2)**n),
-		0)
+		np.nan)
 
 
 if __name__ == '__main__':
