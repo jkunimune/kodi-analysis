@@ -1,6 +1,7 @@
 LILAC_sims/*
 scans/*
 *.png
+*.eps
 *.csv
 
 # Byte-compiled / optimized / DLL files

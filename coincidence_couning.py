@@ -10,58 +10,82 @@ from cmap import COFFEE
 
 
 N = 10000
-depth = 100
-time = 4
+depth = 200
+time1 = 4
+time2 = 4
 
 
-def jitter(X, scale=0.2):
+def jitter(X, scale=0.1):
 	return X + np.random.normal(scale=scale, size=X.size)
 
 
 if __name__ == '__main__':
-	spectrum = np.maximum(0, np.loadtxt('scans/93865 initial spectrum.csv', delimiter=',', skiprows=1))
-	spectrum[:,1] /= spectrum[:,1].sum()
+	mn = 1.009
+	md = 2.014
+	mt = 3.016
 
-	e0_d = np.random.choice(spectrum[:,0], p=spectrum[:,1], size=N)
-	e0_t = 2/3*np.random.choice(spectrum[:,0], p=spectrum[:,1], size=N//2)
-	e1_d = fake_srim.get_E_out(1, 2, e0_d, ['Ta'], 100)
-	e1_t = fake_srim.get_E_out(1, 3, e0_t, ['Ta'], 100)
+	coefs_d = [51.6, 52.5, 59.9, -17.4, 20.8, -14.8, 7.73, -4.92, 3.11] # mbarn/sr
+	coefs_t = [79.2, 116, 118, 14.8, 14.8] # mbarn/sr
+
+	cosθ = np.linspace(-1, 1, 1000)
+	energy_d = 14.1*np.linspace(1 - ((md/mn - 1)/(md/mn + 1))**2, 0, 1000)
+	energy_t = 14.1*np.linspace(1 - ((mt/mn - 1)/(mt/mn + 1))**2, 0, 1000)
+	spectrum_d = np.polynomial.legendre.legval(cosθ, coefs_d)*4*np.pi/(energy_d[0] - energy_d[-1]) # [mbarn]
+	spectrum_t = np.polynomial.legendre.legval(cosθ, coefs_t)*4*np.pi/(energy_t[0] - energy_t[-1]) # [mbarn]
+
+	e0_d = np.random.choice(energy_d, p=spectrum_d/np.sum(spectrum_d), size=N)
+	e0_t = np.random.choice(energy_t, p=spectrum_t/np.sum(spectrum_t), size=int(N*np.sum(spectrum_t)/np.sum(spectrum_d)))
+	e1_d = fake_srim.get_E_out(1, 2, e0_d, ['Al'], 25)
+	e1_t = fake_srim.get_E_out(1, 3, e0_t, ['Al'], 25)
 	e2_d = fake_srim.get_E_out(1, 2, e1_d, ['C']*12+['H']*18+['O']*7, depth, 1320, 55)
 	e2_t = fake_srim.get_E_out(1, 3, e1_t, ['C']*12+['H']*18+['O']*7, depth, 1320, 55)
-	d1_d = diameter.D(e1_d, time)
-	d1_t = diameter.D(e1_t/1.5, time)
-	d1 = diameter.D(np.concatenate([e1_d, e1_t/1.5]), time)
-	d2 = diameter.D(np.concatenate([e2_d, e2_t/1.5]), time)
+	d1_d = diameter.D(e1_d, time1)
+	d1_t = diameter.D(e1_t/1.5, time1)
+	d1 = diameter.D(np.concatenate([e1_d, e1_t/1.5]), time1)
+	d2 = diameter.D(np.concatenate([e2_d, e2_t/1.5]), time2)
 
-	bins = np.linspace(0, 25, 37)
+	ebins = np.linspace(2, 12.5, 22)
+	dbins = np.linspace(0, 25, 37)
 
 	# plt.figure()
-	# plt.hist(jitter(d1_d[np.isfinite(d1_d)]), bins=bins)
+	# plt.hist(e0_d, bins=ebins)
+	# plt.xlabel("Energy (MeV)")
+	# plt.ylabel("Deuterons per bin")
+	# plt.tight_layout()
+
+	# plt.figure()
+	# plt.hist(e0_t, bins=ebins)
+	# plt.xlabel("Energy (MeV)")
+	# plt.ylabel("Tritons per bin")
+	# plt.tight_layout()
+
+	# plt.figure()
+	# plt.hist(jitter(d1_d[np.isfinite(d1_d)]), bins=dbins)
 	# plt.xlabel("Diameter (μm)")
 	# plt.ylabel("Deuteron tracks per bin")
 	# plt.tight_layout()
 
 	# plt.figure()
-	# plt.hist(jitter(d1_t[np.isfinite(d1_t)]), bins=bins)
+	# plt.hist(jitter(d1_t[np.isfinite(d1_t)]), bins=dbins)
 	# plt.xlabel("Diameter (μm)")
 	# plt.ylabel("Triton tracks per bin")
 	# plt.tight_layout()
 
 	# plt.figure()
-	# plt.hist(jitter(d1[np.isfinite(d1)]), bins=bins)
+	# plt.hist(jitter(d1[np.isfinite(d1)]), bins=dbins)
 	# plt.xlabel("Diameter before bulk-etch (μm)")
 	# plt.ylabel("Tracks per bin")
 	# plt.tight_layout()
 
 	# plt.figure()
-	# plt.hist(jitter(d2[np.isfinite(d2)]), bins=bins)
+	# plt.hist(jitter(d2[np.isfinite(d2)]), bins=dbins)
 	# plt.xlabel("Diameter after bulk-etch (μm)")
 	# plt.ylabel("Tracks per bin")
 	# plt.tight_layout()
 
 	plt.figure()
-	plt.hist(e0_d[e2_d > 0], bins=np.linspace(0, 12.5, 26), label="d")
-	plt.hist(e0_t[e2_t > 0], bins=np.linspace(0, 12.5, 26), label="t")
+	plt.hist(e0_d[e2_d > 0], bins=ebins, label="d")
+	plt.hist(e0_t[e2_t > 0], bins=ebins, label="t")
 	plt.xlabel("Energy before filtering (μm)")
 	plt.ylabel("Remaining tracks per bin")
 	plt.legend()
@@ -71,9 +95,9 @@ if __name__ == '__main__':
 	plt.hist2d(jitter(d1[np.isfinite(d2)]), jitter(d2[np.isfinite(d2)]), bins=np.linspace(2, 20, 73), cmap=COFFEE, norm=colors.LogNorm())
 	plt.xlabel("Diameter before bulk-etch (μm)")
 	plt.ylabel("Diameter after bulk-etch (μm)")
-	plt.axis([3, 20, 3, 20])
-	plt.xticks(2*np.arange(2, 11))
-	plt.yticks(2*np.arange(2, 11))
+	plt.xticks(2*np.arange(1, 11))
+	plt.yticks(2*np.arange(1, 11))
+	# plt.axis([2, 10, 2, 10])
 	plt.colorbar()
 	plt.tight_layout()
 

@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap, LogNorm
 import pandas as pd
 import pickle
 import os
@@ -19,25 +19,26 @@ from fake_srim import get_E_out, get_E_in
 from electric_field_model import get_analytic_brightness
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
-plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
+plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 np.seterr('ignore')
 
+e_in_bounds = 2
+
 SKIP_RECONSTRUCTION = False
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 SHOW_RAW_PLOTS = False
 SHOW_DEBUG_PLOTS = False
 SHOW_OFFSET = False
 VERBOSE = False
 ASK_FOR_HELP = False
-OBJECT_SIZE = 200e-4 # cm
-APERTURE_CHARGE_FITTING = 'none'#'same'
+OBJECT_SIZE = 250e-4 # cm
+APERTURE_CHARGE_FITTING = 'same'#'none'
 
-VIEW_RADIUS = 5.0 # cm
 NON_STATISTICAL_NOISE = 0.0
 SPREAD = 1.10
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-RESOLUTION = 40
+RESOLUTION = 20
 APERTURE_CONFIGURACION = 'hex'
 
 FOLDER = 'scans/'
@@ -96,10 +97,13 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 	plt.ylabel("y (cm)")
 	plt.title(title)
 	plt.axis('square')
+	plt.title(f"TIM {scan[TIM]} on shot {scan[SHOT]}")
 	plt.tight_layout()
+	plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} raw.png')
+	plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} raw.eps')
 
 	plt.figure()
-	plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 10, 51), np.linspace(0, 40, 41)), cmap=COFFEE)#, vmin=0, vmax=13000)
+	plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 41), np.linspace(0, 40, 41)), cmap=COFFEE, norm=LogNorm())#, vmin=0, vmax=13000)
 	# plt.plot([2, 2], [0, 40], 'k--')
 	# plt.plot([3, 3], [0, 40], 'k--')
 	plt.xlabel("Diameter (μm)") # plot N(d,c)
@@ -114,11 +118,11 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 		reconstructed superaperture.
 	"""
 	plt.figure()
-	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-3)/NC.size))
+	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-6)/NC.size))
 	T = np.linspace(0, 2*np.pi)
-	for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode=APERTURE_CONFIGURACION):
-		plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
-		plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
+	# for dx, dy in get_relative_aperture_positions(s0, r_img, xC_bins.max(), mode=APERTURE_CONFIGURACION):
+	# 	plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
+	# 	plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
 	plt.axis('square')
 	plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (cm)")
@@ -128,14 +132,16 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	plt.tight_layout()
 
 	plt.figure()
-	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-3)/NI.size))
+	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size))
 	plt.axis('square')
-	plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
+	plt.title(f"TIM {scan[TIM]} on shot {scan[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
+	plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} [{e_min:.1f},{min(12.5, e_max):.1f}] centered.png')
+	plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} [{e_min:.1f},{min(12.5, e_max):.1f}] centered.eps')
 
 	if mode == 'hist' and s0 == 0:
 		rI, drI = (rI_bins[1:] + rI_bins[:-1])/2, rI_bins[:-1] - rI_bins[1:]
@@ -153,7 +159,10 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 		plt.xlabel("Radius (cm)")
 		plt.ylabel("Track density (1/cm^2)")
 		plt.legend()
+		plt.title(f"TIM {scan[TIM]} on shot {scan[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
 		plt.tight_layout()
+		plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} [{e_min:.1f},{min(12.5, e_max):.1f}] radial-lineout.png')
+		plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} [{e_min:.1f},{min(12.5, e_max):.1f}] radial-lineout.eps')
 
 	plt.show()
 
@@ -215,13 +224,13 @@ def simple_fit(*args, a=1, b=0, c=1):
 		(x0, y0, δ, Q, a, b, c), r0, s0, r_img, minimum, maximum, X, Y, exp, populated_region, e_min, e_max = args
 	else:
 		raise ValueError("unsupported set of arguments")
-	if Q < 0 or abs(x0) > VIEW_RADIUS or abs(y0) > VIEW_RADIUS: return float('inf') # and reject impossible ones
+	if Q < 0 or abs(x0) > abs(X).max() or abs(y0) > abs(Y).max(): return float('inf') # and reject impossible ones
 
 	x_eff = a*(X - x0) + b*(Y - y0)
 	y_eff = b*(X - x0) + c*(Y - y0)
 	include = np.full(X.shape, False) # decide at which pixels to even look
 	teo = np.zeros(X.shape) # and build up the theoretical image
-	for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode=APERTURE_CONFIGURACION):
+	for dx, dy in get_relative_aperture_positions(s0, r_img, X.max(), mode=APERTURE_CONFIGURACION):
 		r_rel = np.hypot(x_eff - dx, y_eff - dy)
 		include[r_rel <= r_img] = True
 		try:
@@ -242,6 +251,12 @@ def simple_fit(*args, a=1, b=0, c=1):
 	if minimum > maximum:
 		minimum, maximum = maximum, 2*minimum
 	teo = minimum + teo*(maximum - minimum)
+
+	if SHOW_DEBUG_PLOTS:
+		plt.pcolormesh(np.where(include, exp - teo, 0), cmap='RdBu')
+		plt.axis('square')
+		plt.title(f"r0 = ({x0:.2f}, {y0:.2f}), δ = {δ:.3f}, Q = {Q:.3f}")
+		plt.show()
 
 	sigma2 = teo + (NON_STATISTICAL_NOISE*teo)**2
 	error = np.sum((exp - teo)**2/sigma2, where=include) # use a gaussian error model
@@ -309,7 +324,9 @@ if __name__ == '__main__':
 
 		filename = None
 		for fname in os.listdir(FOLDER):
-			if (fname.endswith('.txt') or fname.endswith('.pkl')) and str(scan[SHOT]) in fname and 'tim'+str(scan[TIM]) in fname.lower() and scan[ETCH_TIME].replace(' ','') in fname:
+			if (fname.endswith('.txt') or fname.endswith('.pkl')) \
+					and	str(scan[SHOT]) in fname and ('tim'+str(scan[TIM]) in fname.lower() or 'tim' not in fname.lower()) \
+					and scan[ETCH_TIME].replace(' ','') in fname:
 				filename = fname
 				print("\nBeginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
 				break
@@ -332,8 +349,8 @@ if __name__ == '__main__':
 			track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 			track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
-			VIEW_RADIUS = max(np.max(track_list['x(cm)']), np.max(track_list['y(cm)']))
-			xC_bins, yC_bins = np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1), np.linspace(-VIEW_RADIUS, VIEW_RADIUS, n_bins+1) # this is the CR39 coordinate system, centered at 0,0
+			view_radius = max(np.max(track_list['x(cm)']), np.max(track_list['y(cm)']))
+			xC_bins, yC_bins = np.linspace(-view_radius, view_radius, n_bins+1), np.linspace(-view_radius, view_radius, n_bins+1) # this is the CR39 coordinate system, centered at 0,0
 			dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
 			xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2 # change these to bin centers
 			XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
@@ -358,8 +375,8 @@ if __name__ == '__main__':
 			cuts = [('plasma', [0, 100])]
 		else:
 			# cuts = [(GREYS, [0, 100])]
-			cuts = [(GREYS, [0, 100]), (REDS, [0, 7]), (BLUES, [10, 100])] # [MeV] (pre-filtering)
-			# cuts = [(REDS, [0, 7]), (BLUES, [9, 100])] # [MeV] (pre-filtering)
+			# cuts = [(GREYS, [0, 100]), (REDS, [0, 7]), (BLUES, [10, 100])] # [MeV] (pre-filtering)
+			cuts = [(REDS, [0, 7]), (BLUES, [9, 100])] # [MeV] (pre-filtering)
 
 		for color, (cmap, e_in_bounds) in enumerate(cuts): # iterate over the cuts
 			e_out_bounds = get_E_out(1, 2, e_in_bounds, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
@@ -424,7 +441,7 @@ if __name__ == '__main__':
 				xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 				XI, YI = np.meshgrid(xI, yI, indexing='ij')
 				NI = np.zeros(XI.shape) # and N combines all penumbra on that square
-				for dx, dy in get_relative_aperture_positions(s0, r_img, VIEW_RADIUS, mode=APERTURE_CONFIGURACION):
+				for dx, dy in get_relative_aperture_positions(s0, r_img, xC_bins.max(), mode=APERTURE_CONFIGURACION):
 					NI += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
 
 				track_r = np.hypot(track_x - x0, track_y - y0)
@@ -489,11 +506,13 @@ if __name__ == '__main__':
 				verbose=VERBOSE,
 				show_plots=SHOW_DEBUG_PLOTS) # deconvolve!
 
-			if χ2_red >= 2.0: # throw it away if it looks unreasonable
-				print("Could not find adequate fit.")
-				continue
-			else:
-				print(f"χ^2/n = {χ2_red}")
+			# if χ2_red >= 2.0: # throw it away if it looks unreasonable
+			# 	print("Could not find adequate fit.")
+			# 	continue
+			# else:
+			print(f"χ^2/n = {χ2_red}")
+			if χ2_red >= 2.0:
+				print("Warn: χ^2/n is suspiciously hi.")
 			B = np.maximum(0, B) # we know this must be positive
 
 			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(XS, YS, B) # compute the three number summary
@@ -523,7 +542,8 @@ if __name__ == '__main__':
 			plt.ylabel("y (μm)")
 			# plt.axis([-100, 100, -100, 100])
 			plt.tight_layout()
-			plt.savefig("results/{} TIM{} {:.1f}—{:.1f} {}h.png".format(scan[SHOT], scan[TIM], *d_bounds, etch_time))
+			for filetype in ['png', 'eps']:
+				plt.savefig("results/reconstruction-{}-{} [{:.1f}—{:.1f}] {}h.{}".format(scan[SHOT], scan[TIM], *d_bounds, etch_time, filetype))
 
 			plt.tight_layout()
 
@@ -551,16 +571,24 @@ if __name__ == '__main__':
 			plt.ylabel("y (μm)")
 			plt.axis([-100, 100, -100, 100])
 			plt.tight_layout()
-			plt.savefig("results/{} TIM{} xray sourceimage.png".format(scan[SHOT], scan[TIM]))
+			for filetype in ['png', 'eps']:
+				plt.savefig("results/{} TIM{} xray sourceimage.{}".format(scan[SHOT], scan[TIM], filetype))
 			plt.close()
 
-		if len(image_layers) >= 3:
+		if len(image_layers) >= 2:
 			x0 = X_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
 			y0 = Y_layers[0][np.unravel_index(np.argmax(image_layers[0]), image_layers[0].shape)]
 
+			if len(image_layers) == 2:
+				red = 0
+				blu = 1
+			else:
+				red = 1
+				blu = -1
+
 			plt.figure()
-			plt.contourf((X_layers[1] - x0)/1e-4, (Y_layers[1] - y0)/1e-4, image_layers[1], levels=[0, 0.15, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
-			plt.contourf((X_layers[-1] - x0)/1e-4, (Y_layers[-1] - y0)/1e-4, image_layers[-1], levels=[0, 0.15, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
+			plt.contourf((X_layers[red] - x0)/1e-4, (Y_layers[red] - y0)/1e-4, image_layers[red], levels=[0, 0.15, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
+			plt.contourf((X_layers[blu] - x0)/1e-4, (Y_layers[blu] - y0)/1e-4, image_layers[blu], levels=[0, 0.15, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 			# if xray is not None:
 			# 	plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
 			if SHOW_OFFSET:

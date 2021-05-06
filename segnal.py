@@ -8,7 +8,7 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
-SMOOTHING = 2e2 # entropy weight
+SMOOTHING = 1e3 # entropy weight
 
 
 def linregress(x, y, weights=None):
@@ -102,7 +102,7 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 
 	L0 = N*np.sum(f*np.log(f), where=where & (f > 0))
 	scores, best_G, best_S = [], None, None
-	while len(scores) < 200:# and (iterations < 6 or χ2_red > χ2_red_95):
+	while len(scores) < 200:
 		gsum = g.sum() + g0
 		g, g0, s = g/gsum, g0/gsum, s/gsum # correct for roundoff
 
@@ -132,14 +132,15 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 		g += h*δg # step
 		g0 += h*δg0
 		s += h*δs
+		γ = g/η/np.sum(g/η)
 
 		L = N*np.sum(f*np.log(s), where=where)
-		S = np.sum(g*np.log(g), where=g!=0) + g0*np.log(g0)
+		S = np.sum(γ*np.log(γ), where=g!=0)
 		scores.append(L - SMOOTHING*S)
 		if verbose: print(f"[{L - L0}, {S}, {scores[-1] - L0}],")
 		if show_plots and len(scores)%10 == 0:
 			fig, axes = plt.subplots(3, 2, figsize=(6, 9))
-			fig.subplots_adjust(hspace=.01, wspace=.01)
+			fig.subplots_adjust(top=0.05, bottom=0.05, hspace=.05, wspace=.05)
 			axes[0,0].set_title("Previous step")
 			plot = axes[0,0].pcolormesh(N*h/2*δg/η, cmap='plasma')
 			axes[0,0].axis('square')
