@@ -41,6 +41,8 @@ EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 RESOLUTION = 20
 APERTURE_CONFIGURACION = 'hex'
 
+CONTOUR = 0.5
+
 FOLDER = 'scans/'
 SHOT = 'Shot number'
 TIM = 'TIM'
@@ -515,10 +517,9 @@ if __name__ == '__main__':
 				print("Warn: χ^2/n is suspiciously hi.")
 			B = np.maximum(0, B) # we know this must be positive
 
-			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(XS, YS, B) # compute the three number summary
-			print(f"P0 = {p0/1e-4:.2f}μm")
-			print(f"P1 = {p1/1e-4:.2f}μm = {p1/p0*100:.1f}%, θ = {np.degrees(θ1)}°")
-			print(f"P2 = {p2/1e-4:.2f}μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2)}°")
+			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xS, yS, B, contour=CONTOUR) # compute the three number summary
+			print(f"P0 = {p0/1e-4:.2f} μm")
+			print(f"P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 			def func(x, A, mouth):
 				return A*(1 + special.erf((100e-4 - x)/mouth))/2
@@ -561,6 +562,11 @@ if __name__ == '__main__':
 		except (ValueError, OSError):
 			xray = None
 		if xray is not None:
+			print("Xray image")
+			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xX, yX, xray.T, contour=CONTOUR) # compute the three number summary
+			print(f"P0 = {p0:.2f} μm")
+			print(f"P2 = {p2:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
+
 			plt.figure()
 			# plt.pcolormesh(np.linspace(-300, 300, 3), np.linspace(-300, 300, 3), np.zeros((2, 2)), cmap=VIOLETS, vmin=0, vmax=1)
 			plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)

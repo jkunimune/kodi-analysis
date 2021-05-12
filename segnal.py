@@ -2,6 +2,8 @@
 import numpy as np
 import scipy.signal as pysignal
 import scipy.stats as stats
+import scipy.interpolate as interpolate
+from skimage import measure
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
@@ -25,20 +27,39 @@ def linregress(x, y, weights=None):
 
 def shape_parameters(x, y, f, contour=0):
 	""" get some scalar parameters that describe the shape of this distribution. """
+	assert len(x.shape) == len(y.shape) == 1
+	X, Y = np.meshgrid(x, y, indexing='ij')
 	if contour == 0:
 		μ0 = np.sum(f) # image sum
-		μx = np.sum(x*f)/μ0 # image centroid
-		μy = np.sum(y*f)/μ0
-		μxx = np.sum(x**2*f)/μ0 - μx**2 # image rotational inertia
-		μxy = np.sum(x*y*f)/μ0 - μx*μy
-		μyy = np.sum(y**2*f)/μ0 - μy**2
+		μx = np.sum(X*f)/μ0 # image centroid
+		μy = np.sum(Y*f)/μ0
+		μxx = np.sum(X**2*f)/μ0 - μx**2 # image rotational inertia
+		μxy = np.sum(X*Y*f)/μ0 - μx*μy
+		μyy = np.sum(Y**2*f)/μ0 - μy**2
 		eigval, eigvec = np.linalg.eig([[μxx, μxy], [μxy, μyy]])
 		i1, i2 = np.argmax(eigval), np.argmin(eigval)
 		p0 = np.sqrt(μxx + μyy)
 		p1, θ1 = np.hypot(μx, μy), np.arctan2(μy, μx)
 		p2, θ2 = np.sqrt(eigval[i1]) - np.sqrt(eigval[i2]), np.arctan2(eigvec[1,i1], eigvec[0,i1])
 	else:
-		raise NotImplementedError
+		contours = measure.find_contours(f, contour*f.max())
+		contour = max(contours, key=len)
+		x_contour = np.interp(contour[:,0], np.arange(x.size), x)
+		y_contour = np.interp(contour[:,1], np.arange(y.size), y)
+		x0, y0 = np.average(X, weights=f), np.average(Y, weights=f)
+		r = np.hypot(x_contour - x0, y_contour - y0)
+		θ = np.arctan2(y_contour - y0, x_contour - x0)
+		θL, θR = np.concatenate([θ[1:], θ[:1]]), np.concatenate([θ[-1:], θ[:-1]])
+		dθ = abs(np.arcsin(np.sin(θL)*np.cos(θR) - np.cos(θL)*np.sin(θR)))/2
+		p0 = np.sum(r*dθ)/np.pi/2
+		p1x = np.sum(r*np.cos(θ)*dθ)/np.pi
+		p1y = np.sum(r*np.sin(θ)*dθ)/np.pi
+		p1 = np.hypot(x0 + p1x, y0 + p1y)
+		θ1 = np.arctan2(y0 + p1y, x0 + p1x)
+		p2x = np.sum(r*np.cos(2*θ)*dθ)/np.pi
+		p2y = np.sum(r*np.sin(2*θ)*dθ)/np.pi
+		p2 = np.hypot(p2x, p2y)
+		θ2 = np.arctan2(p2y, p2x)/2
 
 	return p0, (p1, θ1), (p2, θ2)
 
