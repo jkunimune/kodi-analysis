@@ -13,16 +13,20 @@ from scipy.spatial import Delaunay
 import gc
 import re
 import time
+import warnings
 
 import diameter
+from hdf5_util import save_as_hdf5
 import segnal as mysignal
 from fake_srim import get_E_out, get_E_in
 from electric_field_model import get_analytic_brightness
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 
+warnings.filterwarnings("ignore")
+np.seterr('ignore')
+plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
-np.seterr('ignore')
 
 e_in_bounds = 2
 
@@ -100,10 +104,8 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 	plt.ylabel("y (cm)")
 	plt.title(title)
 	plt.axis('square')
-	plt.title(f"TIM {scan[TIM]} on shot {scan[SHOT]}")
+	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]}")
 	plt.tight_layout()
-	plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} raw.png')
-	plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} raw.eps')
 
 	plt.figure()
 	plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 41), np.linspace(0, 40, 41)), cmap=COFFEE, norm=LogNorm())#, vmin=0, vmax=13000)
@@ -137,35 +139,37 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	plt.figure()
 	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size))
 	plt.axis('square')
-	plt.title(f"TIM {scan[TIM]} on shot {scan[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
+	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
-	plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} [{e_min:.1f},{min(12.5, e_max):.1f}] centered.png')
-	plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} [{e_min:.1f},{min(12.5, e_max):.1f}] centered.eps')
+	for filetype in ['png', 'eps']:
+		plt.savefig(f'results/{data[SHOT]} TIM{data[TIM]} [{e_min:.1f},{e_max:.1f}] projection.{filetype}')
+	save_as_hdf5(f'results/{data[SHOT]} TIM{data[TIM]} [{e_min:.1f},{e_max:.1f}] projection', x=xI_bins, y=yI_bins, z=NI)
 
 	if mode == 'hist' and s0 == 0:
 		rI, drI = (rI_bins[1:] + rI_bins[:-1])/2, rI_bins[:-1] - rI_bins[1:]
 		nI = nI/(np.pi*(rI_bins[1:]**2 - rI_bins[:-1]**2))
 		plt.figure()
 		plt.bar(x=rI, height=nI, width=drI,  label="Data", color=(0.773, 0.498, 0.357))
-		n = simple_penumbra(rI, δ, Q, r0, r_img, 0, 1, e_min=e_min, e_max=e_max)
-		signal, background = mysignal.linregress(n, nI, rI)
+		n_test = simple_penumbra(rI, δ, Q, r0, r_img, 0, 1, e_min=e_min, e_max=e_max)
+		signal, background = mysignal.linregress(n_test, nI, rI)
 		r = np.linspace(0, r_img, 216)
-		n = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
-		plt.plot(r, n, '-', color=(0.208, 0.455, 0.663), linewidth=2, label="Fit with charging")
-		n = simple_penumbra(r, δ, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
-		plt.plot(r, n, '--', color=(0.278, 0.439, 0.239), linewidth=2, label="Fit without charging")
+		n_actual = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+		plt.plot(r, n_actual, '-', color=(0.208, 0.455, 0.663), linewidth=2, label="Fit with charging")
+		n_uncharged = simple_penumbra(r, δ+5*Q/e_max, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+		plt.plot(r, n_uncharged, '--', color=(0.278, 0.439, 0.239), linewidth=2, label="Fit without charging")
 		plt.xlim(0, r_img)
 		plt.xlabel("Radius (cm)")
 		plt.ylabel("Track density (1/cm^2)")
 		plt.legend()
-		plt.title(f"TIM {scan[TIM]} on shot {scan[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
+		plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
 		plt.tight_layout()
-		plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} [{e_min:.1f},{min(12.5, e_max):.1f}] radial-lineout.png')
-		plt.savefig(f'C:\\Users\\Justin Kunimune\\Desktop\\data\\{scan[SHOT]} t{scan[TIM]} [{e_min:.1f},{min(12.5, e_max):.1f}] radial-lineout.eps')
+		for filetype in ['png', 'eps']:
+			plt.savefig(f'results/{data[SHOT]} TIM{data[TIM]} [{e_min:.1f},{e_max:.1f}] radial-lineout.{filetype}')
+		save_as_hdf5(f'results/{data[SHOT]} TIM{data[TIM]} [{e_min:.1f},{e_max:.1f}] radial-lineout', x1=rI, y1=nI, x2=r, y2=n_actual, x3=r, y3=n_uncharged)
 
 	plt.show()
 
@@ -312,18 +316,18 @@ def get_relative_aperture_positions(spacing, r_img, r_max, mode='hex'):
 if __name__ == '__main__':
 	shot_list = pd.read_csv('shot_list.csv')
 
-	for i, scan in shot_list.iterrows():
+	for i, data in shot_list.iterrows():
 		if APERTURE_CHARGE_FITTING == 'none':
-			Q = 0
+			Q, dQ = 0, 0
 		else:
-			Q = None
+			Q, dQ = None, None
 
-		L = scan[APERTURE_DISTANCE] # cm
-		M = scan[MAGNIFICATION] # cm
-		rA = scan[APERTURE_RADIUS]/1.e4 # cm
-		sA = scan[APERTURE_SPACING]/1.e4 # cm
-		rotation = np.radians(scan[ROTATION]) # rad
-		etch_time = float(scan[ETCH_TIME].strip(' h'))
+		L = data[APERTURE_DISTANCE] # cm
+		M = data[MAGNIFICATION] # cm
+		rA = data[APERTURE_RADIUS]/1.e4 # cm
+		sA = data[APERTURE_SPACING]/1.e4 # cm
+		rotation = np.radians(data[ROTATION]) # rad
+		etch_time = float(data[ETCH_TIME].strip(' h'))
 
 		r0 = (M + 1)*rA # calculate the penumbra parameters
 		s0 = (M + 1)*sA
@@ -332,7 +336,7 @@ if __name__ == '__main__':
 			r_img = s0/2 # make sure the image at which we look is small enough to avoid other penumbrae
 		n_bins = min(1000, int(RESOLUTION/(1.05*M*OBJECT_SIZE)*r_img)) # get the image resolution needed to resolve the object
 
-		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(scan[TIM])-1])
+		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(data[TIM])-1])
 		basis = np.array([
 			[0, 0, 0],
 			[np.sin(θ_TIM-np.pi/2)*np.cos(ɸ_TIM), np.sin(θ_TIM-np.pi/2)*np.sin(ɸ_TIM), np.cos(θ_TIM-np.pi/2)],
@@ -340,19 +344,19 @@ if __name__ == '__main__':
 		]).T
 		basis[:,0] = np.cross(basis[:,1], basis[:,2])
 
-		x_off, y_off, z_off = project(float(scan[R_OFFSET]), float(scan[Θ_OFFSET]), float(scan[Φ_OFFSET]), basis)*1e-4 # cm
-		x_flo, y_flo, z_flo = project(float(scan[R_FLOW]), float(scan[Θ_FLOW]), float(scan[Φ_FLOW]), basis)*1e-4 # cm/ns
+		x_off, y_off, z_off = project(float(data[R_OFFSET]), float(data[Θ_OFFSET]), float(data[Φ_OFFSET]), basis)*1e-4 # cm
+		x_flo, y_flo, z_flo = project(float(data[R_FLOW]), float(data[Θ_FLOW]), float(data[Φ_FLOW]), basis)*1e-4 # cm/ns
 
 		filename = None
 		for fname in os.listdir(FOLDER):
 			if (fname.endswith('.txt') or fname.endswith('.pkl')) \
-					and	str(scan[SHOT]) in fname and ('tim'+str(scan[TIM]) in fname.lower() or 'tim' not in fname.lower()) \
-					and scan[ETCH_TIME].replace(' ','') in fname:
+					and	str(data[SHOT]) in fname and ('tim'+str(data[TIM]) in fname.lower() or 'tim' not in fname.lower()) \
+					and data[ETCH_TIME].replace(' ','') in fname:
 				filename = fname
-				print("\nBeginning reconstruction for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+				print("\nBeginning reconstruction for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 				break
 		if filename is None:
-			print("Could not find text file for TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+			print("Could not find text file for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 			continue
 		if filename.endswith('.txt'): # if it is a typical CPSA-derived text file
 			mode = 'hist'
@@ -361,7 +365,7 @@ if __name__ == '__main__':
 			x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy()
 			track_list['x(cm)'] =  np.cos(rotation+np.pi)*x_temp - np.sin(rotation+np.pi)*y_temp # apply any requested rotation, plus 180 flip to deal with inherent flip due to aperture
 			track_list['y(cm)'] =  np.sin(rotation+np.pi)*x_temp + np.cos(rotation+np.pi)*y_temp
-			if re.fullmatch(r'[0-9]+', str(scan[SHOT])): # adjustments for real data:
+			if re.fullmatch(r'[0-9]+', str(data[SHOT])): # adjustments for real data:
 				track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
 				track_list['cn(%)'] -= np.min(track_list['cn(%)'])
 				track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
@@ -377,7 +381,7 @@ if __name__ == '__main__':
 			XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
 
 			if SHOW_RAW_PLOTS:
-				plot_raw_data(track_list[hicontrast], xC_bins, yC_bins, "")#f"Penumbral image, TIM{scan[TIM]}, shot {scan[SHOT]}")
+				plot_raw_data(track_list[hicontrast], xC_bins, yC_bins, "")#f"Penumbral image, TIM{data[TIM]}, shot {data[SHOT]}")
 
 		else: # if it is a pickle file, load the histogram directly like a raster image
 			mode = 'raster'
@@ -534,13 +538,12 @@ if __name__ == '__main__':
 				verbose=VERBOSE,
 				show_plots=SHOW_DEBUG_PLOTS) # deconvolve!
 
-			# if χ2_red >= 2.0: # throw it away if it looks unreasonable
-			# 	print("Could not find adequate fit.")
-			# 	continue
-			# else:
+			if χ2_red >= 1.5: # throw it away if it looks unreasonable
+				print("Could not find adequate fit.")
+				continue
 			print(f"χ^2/n = {χ2_red}")
-			if χ2_red >= 2.0:
-				print("Warn: χ^2/n is suspiciously hi.")
+			# if χ2_red >= 2.0:
+			# 	print("Warn: χ^2/n is suspiciously hi.")
 			B[np.hypot(XS, YS) >= OBJECT_SIZE] = 0 # trim the edges
 			B = np.maximum(0, B) # we know this must be nonnegative
 
@@ -551,28 +554,30 @@ if __name__ == '__main__':
 			def func(x, A, mouth):
 				return A*(1 + erf((100e-4 - x)/mouth))/2
 			real = source_bins
-			cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
-			(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
-			# print(f"XXX[{scan[SHOT][-5:]}, {mouth/1e-4:.1f}],")
+			# cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
+			# (A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
+			# print(f"XXX[{data[SHOT][-5:]}, {mouth/1e-4:.1f}],")
 
 			x0 = XS[np.unravel_index(np.argmax(B), XS.shape)]
 			y0 = YS[np.unravel_index(np.argmax(B), YS.shape)]
 
-			plt.figure() # plot the reconstructed ource image
+			cut_name = 'lo' if cmap is REDS else 'md' if cmap is GREENS else 'hi' if cmap is BLUES else 'all'
+
+			plt.figure() # plot the reconstructed source image
 			plt.pcolormesh((xS_bins - x0)/1e-4, (yS_bins - y0)/1e-4, B.T, cmap=cmap, vmin=0)
 			T = np.linspace(0, 2*np.pi)
 			# plt.plot(ronnot*np.cos(T)/1e-4, ronnot*np.sin(T)/1e-4, 'w--')
 			# plt.colorbar()
 			plt.axis('square')
-			# plt.title("TIM {} on shot {}, {:.1f} MeV – {:.1f} MeV".format(scan[TIM], scan[SHOT], *e_in_bounds))
+			# plt.title("TIM {} on shot {}, {:.1f} MeV – {:.1f} MeV".format(data[TIM], data[SHOT], *e_in_bounds))
 			plt.title(f"{e_in_bounds[0]:.1f} MeV – {min(12.5, e_in_bounds[1]):.1f} MeV")
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
-			# plt.axis([-100, 100, -100, 100])
+			plt.axis([-150, 150, -150, 150])
 			plt.tight_layout()
 			for filetype in ['png', 'eps']:
-				plt.savefig("results/reconstruction-{}-{} [{:.1f}—{:.1f}] {}h.{}".format(scan[SHOT], scan[TIM], *d_bounds, etch_time, filetype))
-
+				plt.savefig(f"results/{data[SHOT]} TIM{data[TIM]} {cut_name} {etch_time}h reconstruction.{filetype}")
+			save_as_hdf5(f"results/{data[SHOT]} TIM{data[TIM]} {cut_name} {etch_time}h reconstruction", x=xS_bins, y=yS_bins, z=B.T)
 			plt.tight_layout()
 
 			if SHOW_PLOTS:
@@ -585,7 +590,10 @@ if __name__ == '__main__':
 			Y_layers.append(YS)
 
 		try:
-			xray = np.loadtxt('scans/KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(scan[SHOT]), int(scan[TIM]), [2,4,5].index(int(scan[TIM]))+1), delimiter=',')
+			xX_bins, yX_bins = np.linspace(-100, 100, 101), np.linspace(-100, 100, 101)
+			xX, yX = (xX_bins[:-1] + xX_bins[1:])/2, (yX_bins[:-1] + yX_bins[1:])/2 # change these to bin centers
+			XX, YX = np.meshgrid(xX, yX, indexing='ij') # change these to matrices
+			xray = np.loadtxt('scans/KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T
 		except (ValueError, OSError):
 			xray = None
 		if xray is not None:
@@ -595,17 +603,17 @@ if __name__ == '__main__':
 			print(f"P2 = {p2:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 			plt.figure()
-			# plt.pcolormesh(np.linspace(-300, 300, 3), np.linspace(-300, 300, 3), np.zeros((2, 2)), cmap=VIOLETS, vmin=0, vmax=1)
-			plt.pcolormesh(np.linspace(-100, 100, 101), np.linspace(-100, 100, 101), xray, cmap=VIOLETS, vmin=0)
+			plt.pcolormesh(xX_bins, yX_bins, xray, cmap=VIOLETS, vmin=0)
 			# plt.colorbar()
 			plt.axis('square')
-			plt.title("X-ray image of TIM {} on shot {}".format(scan[TIM], scan[SHOT]), fontsize=12)
+			plt.title("X-ray image of TIM {} on shot {}".format(data[TIM], data[SHOT]), fontsize=12)
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
-			plt.axis([-100, 100, -100, 100])
+			plt.axis([-150, 150, -150, 150])
 			plt.tight_layout()
 			for filetype in ['png', 'eps']:
-				plt.savefig("results/{} TIM{} xray sourceimage.{}".format(scan[SHOT], scan[TIM], filetype))
+				plt.savefig(f"results/{data[SHOT]} TIM{data[TIM]} xray sourceimage.{filetype}")
+			save_as_hdf5(f"results/{data[SHOT]} TIM{data[TIM]} xray sourceimage", x=xX_bins, y=yX_bins, z=xray)
 			plt.close()
 
 		if len(image_layers) >= 2:
@@ -619,11 +627,15 @@ if __name__ == '__main__':
 				red = 1
 				blu = -1
 
+			dx = np.average(X_layers[blu], weights=image_layers[blu]) - np.average(X_layers[red], weights=image_layers[red])
+			dy = np.average(Y_layers[blu], weights=image_layers[blu]) - np.average(Y_layers[red], weights=image_layers[red])
+			print(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
+
 			plt.figure()
 			plt.contourf((X_layers[red] - x0)/1e-4, (Y_layers[red] - y0)/1e-4, image_layers[red], levels=[0, 0.15, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
 			plt.contourf((X_layers[blu] - x0)/1e-4, (Y_layers[blu] - y0)/1e-4, image_layers[blu], levels=[0, 0.15, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
 			# if xray is not None:
-			# 	plt.contour(np.linspace(-100, 100, 100), np.linspace(-100, 100, 100), xray, levels=[.25], colors=['#550055BB'])
+			# 	plt.contour(XX, YX, xray, levels=[.25], colors=['#550055BB'])
 			if SHOW_OFFSET:
 				plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 				plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
@@ -635,7 +647,8 @@ if __name__ == '__main__':
 			plt.axis([-150, 150, -150, 150])
 			plt.xlabel("x (μm)")
 			plt.ylabel("y (μm)")
-			plt.title("TIM {} on shot {}".format(scan[TIM], scan[SHOT]))
+			plt.title("TIM {} on shot {}".format(data[TIM], data[SHOT]))
 			plt.tight_layout()
-			plt.savefig("results/{} TIM{} nestplot.png".format(scan[SHOT], scan[TIM]))
+			for filetype in ['png', 'eps']:
+				plt.savefig(f"results/{data[SHOT]} TIM{data[TIM]} nested sourceimage.{filetype}")
 			plt.close()
