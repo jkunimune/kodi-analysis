@@ -10,7 +10,7 @@ from cmap import COFFEE
 
 
 N = 10000
-depth = 200
+depth = 100
 time1 = 4
 time2 = 4
 
@@ -41,8 +41,13 @@ if __name__ == '__main__':
 	e2_t = fake_srim.get_E_out(1, 3, e1_t, ['C']*12+['H']*18+['O']*7, depth, 1320, 55)
 	d1_d = diameter.D(e1_d, time1)
 	d1_t = diameter.D(e1_t/1.5, time1)
-	d1 = diameter.D(np.concatenate([e1_d, e1_t/1.5]), time1)
-	d2 = diameter.D(np.concatenate([e2_d, e2_t/1.5]), time2)
+	d2_d = diameter.D(e2_d, time2)
+	d2_t = diameter.D(e2_t/1.5, time2)
+	e0 = np.concatenate([e0_d, e0_t])
+	e1 = np.concatenate([e1_d, e1_t])
+	e2 = np.concatenate([e2_d, e2_t])
+	d1 = np.concatenate([d1_d, d1_t])
+	d2 = np.concatenate([d2_d, d2_t])
 
 	ebins = np.linspace(2, 12.5, 22)
 	dbins = np.linspace(0, 25, 37)
@@ -83,22 +88,32 @@ if __name__ == '__main__':
 	# plt.ylabel("Tracks per bin")
 	# plt.tight_layout()
 
-	plt.figure()
-	plt.hist(e0_d[e2_d > 0], bins=ebins, label="d")
-	plt.hist(e0_t[e2_t > 0], bins=ebins, label="t")
-	plt.xlabel("Energy before filtering (μm)")
-	plt.ylabel("Remaining tracks per bin")
-	plt.legend()
-	plt.tight_layout()
+	# plt.figure()
+	# plt.hist(e0_d[e2_d > 0], bins=ebins, label="d")
+	# plt.hist(e0_t[e2_t > 0], bins=ebins, label="t")
+	# plt.xlabel("Energy before filtering (μm)")
+	# plt.ylabel("Remaining tracks per bin")
+	# plt.legend()
+	# plt.tight_layout()
+
+	# plt.figure()
+	# plt.hist2d(jitter(d1[np.isfinite(d2)]), jitter(d2[np.isfinite(d2)]), bins=np.linspace(2, 20, 73), cmap=COFFEE, norm=colors.LogNorm())
+	# plt.xlabel("Diameter before bulk-etch (μm)")
+	# plt.ylabel("Diameter after bulk-etch (μm)")
+	# plt.xticks(2*np.arange(1, 11))
+	# plt.yticks(2*np.arange(1, 11))
+	# # plt.axis([2, 10, 2, 10])
+	# plt.colorbar()
+	# plt.tight_layout()
 
 	plt.figure()
-	plt.hist2d(jitter(d1[np.isfinite(d2)]), jitter(d2[np.isfinite(d2)]), bins=np.linspace(2, 20, 73), cmap=COFFEE, norm=colors.LogNorm())
-	plt.xlabel("Diameter before bulk-etch (μm)")
+	plt.hist2d(np.concatenate([np.sqrt(4*e0_d), np.sqrt(6*e0_t)]), jitter(d1, scale=1), bins=(np.linspace(4, 8.5), dbins), cmap=COFFEE, norm=colors.LogNorm())
+	plt.xlabel("Rigidity (sqrt(Da*MeV)/e)")
+	plt.ylabel("Diameter before bulk-etch (μm)")
+
+	plt.figure()
+	plt.hist2d(np.concatenate([np.sqrt(4*e0_d), np.sqrt(6*e0_t)]), jitter(d2, scale=1), bins=(np.linspace(4, 8.5), dbins), cmap=COFFEE, norm=colors.LogNorm())
+	plt.xlabel("Rigidity (sqrt(Da*MeV)/e)")
 	plt.ylabel("Diameter after bulk-etch (μm)")
-	plt.xticks(2*np.arange(1, 11))
-	plt.yticks(2*np.arange(1, 11))
-	# plt.axis([2, 10, 2, 10])
-	plt.colorbar()
-	plt.tight_layout()
 
 	plt.show()
