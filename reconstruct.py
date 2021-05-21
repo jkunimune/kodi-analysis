@@ -1,13 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap, LogNorm
+from matplotlib.colors import CenteredNorm, ListedColormap, LinearSegmentedColormap, LogNorm
+import numdifftools as nd
 import pandas as pd
 import pickle
 import os
 import scipy.optimize as optimize
 import scipy.signal as pysignal
-import scipy.special as special
+from scipy.special import comb, erf, factorial
 from scipy.spatial import Delaunay
 import gc
 import re
@@ -26,22 +27,22 @@ np.seterr('ignore')
 e_in_bounds = 2
 
 SKIP_RECONSTRUCTION = False
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 SHOW_RAW_PLOTS = False
 SHOW_DEBUG_PLOTS = False
 SHOW_OFFSET = False
 VERBOSE = False
 ASK_FOR_HELP = False
 OBJECT_SIZE = 250e-4 # cm
-APERTURE_CHARGE_FITTING = 'same'#'none'
+APERTURE_CHARGE_FITTING = 'all'#'same'
 
-NON_STATISTICAL_NOISE = 0.0
+NON_STATISTICAL_NOISE = .10
 SPREAD = 1.10
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-RESOLUTION = 20
+RESOLUTION = 60
 APERTURE_CONFIGURACION = 'hex'
 
-CONTOUR = 0.5
+CONTOUR = .5
 
 FOLDER = 'scans/'
 SHOT = 'Shot number'
@@ -192,6 +193,13 @@ def convex_hull(x, y, N):
 	return inside
 
 
+def hessian(f, x, args, epsilon=None):
+	def f_red(xp):
+		return f(xp, *args)
+	H = nd.Hessian(f_red, step=epsilon)
+	return H(x)
+
+
 def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
 	""" compute the shape of a simple analytic single-apeture penumbral image """
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
@@ -254,19 +262,30 @@ def simple_fit(*args, a=1, b=0, c=1):
 		minimum, maximum = maximum, 2*minimum
 	teo = minimum + teo*(maximum - minimum)
 
-	if SHOW_DEBUG_PLOTS:
-		plt.pcolormesh(np.where(include, exp - teo, 0), cmap='RdBu')
-		plt.axis('square')
-		plt.title(f"r0 = ({x0:.2f}, {y0:.2f}), δ = {δ:.3f}, Q = {Q:.3f}")
-		plt.show()
-
-	sigma2 = teo + (NON_STATISTICAL_NOISE*teo)**2
-	error = np.sum((exp - teo)**2/sigma2, where=include) # use a gaussian error model
 	penalty = \
 		- 2*np.sum(include) \
 		+ (np.sqrt(a*c - b**2) - 1)**2/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) \
 		- Q/.1
-	return error + penalty
+
+	include = include & (teo != 0) # from now on, ignore problematic pixels
+
+	if np.any((teo == 0) & (exp != 0)): # if they are truly problematic, quit now
+		return np.inf
+	elif NON_STATISTICAL_NOISE > 1/6*np.max(exp, where=include, initial=0)**(-1/2):
+		α = 1/NON_STATISTICAL_NOISE**2 # use a poisson error model with a gamma-distributed rate
+		error = (α + exp)*np.log(α/teo + 1) - α*np.log(α/teo) - np.log(comb(α + exp - 1, exp))
+	else: # but you can just use plain poisson if it's all the same to you
+		error = teo - exp*np.log(teo) + np.log(factorial(exp))
+
+	if SHOW_DEBUG_PLOTS:
+		plt.pcolormesh(np.where(include, error, 2), vmin=0, vmax=10)
+		# plt.pcolormesh(np.where(include, exp - teo, 0), cmap='RdBu', norm=CenteredNorm())
+		plt.axis('square')
+		plt.title(f"r0 = ({x0:.2f}, {y0:.2f}), δ = {δ:.3f}, Q = {Q:.3f}")
+		plt.text(0, 0, f"ɛ = {np.sum(error, where=include) + penalty:.1f} Np")
+		plt.show()
+
+	return np.sum(error, where=include) + penalty
 
 
 def get_relative_aperture_positions(spacing, r_img, r_max, mode='hex'):
@@ -308,10 +327,10 @@ if __name__ == '__main__':
 
 		r0 = (M + 1)*rA # calculate the penumbra parameters
 		s0 = (M + 1)*sA
-		r_img = SPREAD*r0 + M*OBJECT_SIZE
+		r_img = SPREAD*r0 + 1.05*M*OBJECT_SIZE
 		if s0 != 0 and r_img > s0/2:
 			r_img = s0/2 # make sure the image at which we look is small enough to avoid other penumbrae
-		n_bins = min(1000, int(RESOLUTION/(OBJECT_SIZE*M)*r_img)) # get the image resolution needed to resolve the object
+		n_bins = min(1000, int(RESOLUTION/(1.05*M*OBJECT_SIZE)*r_img)) # get the image resolution needed to resolve the object
 
 		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(scan[TIM])-1])
 		basis = np.array([
@@ -418,7 +437,8 @@ if __name__ == '__main__':
 
 			if Q is None:
 				print('fitting electric field')
-				opt = optimize.minimize(simple_fit, x0=[None]*4, args=(r0, s0, r_img, None, None, XC, YC, NC, hullC, *e_in_bounds),
+				args = (r0, s0, r_img, None, None, XC, YC, NC, hullC, *e_in_bounds)
+				opt = optimize.minimize(simple_fit, x0=[None]*4, args=args,
 					method='Nelder-Mead', options=dict(initial_simplex=[
 						[x0+r_img*.4, y0,         OBJECT_SIZE*M/4, 1.0e-1],
 						[x0-r_img*.2, y0+r_img*.3, OBJECT_SIZE*M/4, 1.0e-1],
@@ -426,16 +446,22 @@ if __name__ == '__main__':
 						[x0,         y0,         OBJECT_SIZE*M/3, 1.0e-1],
 						[x0,         y0,         OBJECT_SIZE*M/4, 1.9e-1]]))
 				x0, y0, δ, Q = opt.x
+				hess = hessian(simple_fit, opt.x, args=args)
+				print(hess)
+				dx0, dy0, dδ, dQ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
 			else:
-				opt = optimize.minimize(simple_fit, x0=[None]*3, args=(Q, r0, s0, r_img, None, None, XC, YC, NC, hullC, *e_in_bounds),
+				args = (Q, r0, s0, r_img, None, None, XC, YC, NC, hullC, *e_in_bounds)
+				opt = optimize.minimize(simple_fit, x0=[None]*3, args=args,
 					method='Nelder-Mead', options=dict(initial_simplex=[
 						[x0+r_img*.4, y0,         OBJECT_SIZE*M/4],
 						[x0-r_img*.2, y0+r_img*.3, OBJECT_SIZE*M/4],
 						[x0-r_img*.2, y0-r_img*.3, OBJECT_SIZE*M/4],
 						[x0,         y0,         OBJECT_SIZE*M/3]]))
 				x0, y0, δ = opt.x
+				hess = hessian(simple_fit, opt.x, args=args)
+				dx0, dy0, dδ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
 			if VERBOSE: print(opt)
-			print("n = {0:.4g}, (x0, y0) = ({1:.3f}, {2:.3f}), δ = {3:.3f} μm, Q = {4:.3f} cm*MeV, M = {5:.2f}".format(np.sum(NC), x0, y0, δ/M/1e-4, Q, M))
+			print(f"n = {np.sum(NC):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}), δ = {δ/M/1e-4:.3f} ± {dδ:.3f} μm, Q = {Q:.3f} ± {dQ:.3f} cm*MeV, M = {M:.2f}")
 
 			if mode == 'hist':
 				xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, n_bins+1), np.linspace(y0 - r_img, y0 + r_img, n_bins+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
@@ -455,7 +481,7 @@ if __name__ == '__main__':
 			else:
 				nI, rI_bins = None, None
 
-			kernel_size = xI_bins.size - 2*int(OBJECT_SIZE*M/dxI) # now make the kernel (from here on, it's the same in both modes)
+			kernel_size = xI_bins.size - 2*int(1.05*M*OBJECT_SIZE/dxI) # now make the kernel (from here on, it's the same in both modes)
 			if kernel_size%2 == 0: # make sure the kernel is odd
 				kernel_size -= 1
 			xK_bins, yK_bins = np.linspace(-dxI*kernel_size/2, dxI*kernel_size/2, kernel_size+1), np.linspace(-dyI*kernel_size/2, dyI*kernel_size/2, kernel_size+1)
@@ -515,14 +541,15 @@ if __name__ == '__main__':
 			print(f"χ^2/n = {χ2_red}")
 			if χ2_red >= 2.0:
 				print("Warn: χ^2/n is suspiciously hi.")
-			B = np.maximum(0, B) # we know this must be positive
+			B[np.hypot(XS, YS) >= OBJECT_SIZE] = 0 # trim the edges
+			B = np.maximum(0, B) # we know this must be nonnegative
 
 			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xS, yS, B, contour=CONTOUR) # compute the three number summary
 			print(f"P0 = {p0/1e-4:.2f} μm")
 			print(f"P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 			def func(x, A, mouth):
-				return A*(1 + special.erf((100e-4 - x)/mouth))/2
+				return A*(1 + erf((100e-4 - x)/mouth))/2
 			real = source_bins
 			cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
 			(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
