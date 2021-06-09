@@ -1,6 +1,7 @@
 """ some signal utility functions, including the all-important Gelfgat reconstruction """
 import numpy as np
 import scipy.signal as pysignal
+from scipy.special import comb, erf, factorial
 import scipy.stats as stats
 import scipy.interpolate as interpolate
 from skimage import measure
@@ -10,7 +11,7 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
-SMOOTHING = 1e3 # entropy weight
+SMOOTHING = 50 # entropy weight
 
 
 def linregress(x, y, weights=None):
@@ -89,7 +90,7 @@ def convolve2d(a, b, where=None):
 	return c
 
 
-def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plots=False):
+def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose=False, show_plots=False):
 	""" perform the algorithm outlined in
 			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
 			data…" in *Computer Physics Communications* 74 (1993)
@@ -109,7 +110,12 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 	N = F.sum(where=where)
 	f = F/N # make sure the counts are normalized
 
-	g = np.ones((n, m)) # define the normalized signal matrix
+	if g_inicial is not None:
+		assert g_inicial.shape == (n, m), g_inicial.shape
+		assert np.all(g_inicial >= 0), g_inicial.min()
+		g = g_inicial/np.mean(g_inicial)
+	else:
+		g = np.ones((n, m)) # define the normalized signal matrix
 	η = np.empty(g.shape) # find the total effect of each pixel
 	for i in range(n):
 		for j in range(m):
@@ -159,9 +165,9 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 		S = np.sum(γ*np.log(γ), where=g!=0)
 		scores.append(L - SMOOTHING*S)
 		if verbose: print(f"[{L - L0}, {S}, {scores[-1] - L0}],")
-		if show_plots and len(scores)%10 == 0:
+		if show_plots and len(scores)%10 == 1:
 			fig, axes = plt.subplots(3, 2, figsize=(6, 9))
-			fig.subplots_adjust(top=0.05, bottom=0.05, hspace=.05, wspace=.05)
+			fig.subplots_adjust(top=0.95, bottom=0.05, hspace=.05, wspace=.05)
 			axes[0,0].set_title("Previous step")
 			plot = axes[0,0].pcolormesh(N*h/2*δg/η, cmap='plasma')
 			axes[0,0].axis('square')
@@ -188,7 +194,8 @@ def gelfgat_deconvolve2d(F, q, where=None, illegal=None, verbose=False, show_plo
 			axes[2,0].axis('square')
 			fig.colorbar(plot, ax=axes[2,0])
 			axes[2,1].set_title("Chi squared")
-			plot = axes[2,1].pcolormesh(np.where(where, N*(s - f)**2/s, 0).T, vmin= 0, vmax=10, cmap='inferno')
+			plot = axes[2,1].pcolormesh(np.where(where&(s>0), N*s - F*np.log(N*s) + np.log(factorial(F)), 0).T, vmin= 0, vmax=6, cmap='inferno')
+			print(np.sum(N*s - F*np.log(N*s) + np.log(factorial(F)), where=(where&(s>0))))
 			axes[2,1].axis('square')
 			fig.colorbar(plot, ax=axes[2,1])
 			gs1 = gridspec.GridSpec(4, 4)

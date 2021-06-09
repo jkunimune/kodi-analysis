@@ -31,19 +31,19 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 e_in_bounds = 2
 
 SKIP_RECONSTRUCTION = False
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 SHOW_RAW_PLOTS = False
 SHOW_DEBUG_PLOTS = False
 SHOW_OFFSET = False
 VERBOSE = False
 ASK_FOR_HELP = False
-OBJECT_SIZE = 250e-4 # cm
+OBJECT_SIZE = 150e-4 # cm
 APERTURE_CHARGE_FITTING = 'all'#'same'
 
-NON_STATISTICAL_NOISE = .10
-SPREAD = 1.10
+NON_STATISTICAL_NOISE = .0
+SPREAD = 1.20
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-RESOLUTION = 60
+RESOLUTION = 40
 APERTURE_CONFIGURACION = 'hex'
 
 CONTOUR = .5
@@ -99,9 +99,9 @@ def where_is_the_ocean(x, y, z, title, timeout=None):
 def plot_raw_data(track_list, x_bins, y_bins, title):
 	""" plot basic histograms of the tracks that have been loaded. """
 	plt.figure()
-	plt.hist2d(track_list['x(cm)'], track_list['y(cm)'], bins=(x_bins, y_bins))
-	plt.xlabel("x (cm)")
-	plt.ylabel("y (cm)")
+	plt.hist2d(track_list['x[cm]'], track_list['y[cm]'], bins=(x_bins, y_bins))
+	plt.xlabel("x [cm]")
+	plt.ylabel("y [cm]")
 	plt.title(title)
 	plt.axis('square')
 	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]}")
@@ -125,13 +125,13 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	plt.figure()
 	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-6)/NC.size))
 	T = np.linspace(0, 2*np.pi)
-	# for dx, dy in get_relative_aperture_positions(s0, r_img, xC_bins.max(), mode=APERTURE_CONFIGURACION):
-	# 	plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
-	# 	plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
+	for dx, dy in get_relative_aperture_positions(s0, r_img, xC_bins.max(), mode=APERTURE_CONFIGURACION):
+		plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
+		# plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
 	plt.axis('square')
 	plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
-	plt.xlabel("x (cm)")
-	plt.ylabel("y (cm)")
+	plt.xlabel("x [cm]")
+	plt.ylabel("y [cm]")
 	bar = plt.colorbar()
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
@@ -140,8 +140,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size))
 	plt.axis('square')
 	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
-	plt.xlabel("x (cm)")
-	plt.ylabel("y (cm)")
+	plt.xlabel("x [cm]")
+	plt.ylabel("y [cm]")
 	bar = plt.colorbar()
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
@@ -162,8 +162,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 		n_uncharged = simple_penumbra(r, δ+5*Q/e_max, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
 		plt.plot(r, n_uncharged, '--', color=(0.278, 0.439, 0.239), linewidth=2, label="Fit without charging")
 		plt.xlim(0, r_img)
-		plt.xlabel("Radius (cm)")
-		plt.ylabel("Track density (1/cm^2)")
+		plt.xlabel("Radius [cm]")
+		plt.ylabel("Track density [1/cm^2]")
 		plt.legend()
 		plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
 		plt.tight_layout()
@@ -225,32 +225,32 @@ def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
 	return minimum + (maximum-minimum)*w
 
 
-def simple_fit(*args, a=1, b=0, c=1):
+def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	""" compute how close these data are to this penumbral image """
-	if len(args[0]) == 3 and len(args) == 13: # first, parse the parameters
-		(x0, y0, δ), Q, r0, s0, r_img, minimum, maximum, X, Y, exp, populated_region, e_min, e_max = args
-	elif len(args[0]) == 4 and len(args) == 11:
-		(x0, y0, δ, r0), s0, r_img, minimum, maximum, X, Y, exp, populated_region, e_min, e_max = args
+	if len(args[0]) == 5 and len(args) == 11: # first, parse the parameters
+		(x0, y0, δ, background, briteness), Q, r0, s0, r_img, X, Y, exp, populated_region, e_min, e_max = args
+	elif len(args[0]) == 6 and len(args) == 10:
+		(x0, y0, δ, background, briteness, Q), r0, s0, r_img, X, Y, exp, populated_region, e_min, e_max = args
+	elif len(args[0]) == 6 and len(args) == 9:
+		(x0, y0, δ, background, briteness, r0), s0, r_img, X, Y, exp, populated_region, e_min, e_max = args
 		Q = 0
-	elif len(args[0]) == 4 and len(args) == 12:
-		(x0, y0, δ, Q), r0, s0, r_img, minimum, maximum, X, Y, exp, populated_region, e_min, e_max = args
-	elif len(args[0]) == 7 and len(args) == 12:
-		(x0, y0, δ, Q, a, b, c), r0, s0, r_img, minimum, maximum, X, Y, exp, populated_region, e_min, e_max = args
 	else:
 		raise ValueError("unsupported set of arguments")
-	if Q < 0 or abs(x0) > abs(X).max() or abs(y0) > abs(Y).max(): return float('inf') # and reject impossible ones
+	if Q < 0 or δ < 0: return float('inf') # and reject impossible ones
 
 	x_eff = a*(X - x0) + b*(Y - y0)
-	y_eff = b*(X - x0) + c*(Y - y0)
+	y_eff = b*(X - x0) + c*(Y - y0) #TODO: this funccion take a lot of time... can I speed it at all?
 	include = np.full(X.shape, False) # decide at which pixels to even look
 	teo = np.zeros(X.shape) # and build up the theoretical image
 	for dx, dy in get_relative_aperture_positions(s0, r_img, X.max(), mode=APERTURE_CONFIGURACION):
 		r_rel = np.hypot(x_eff - dx, y_eff - dy)
-		include[r_rel <= r_img] = True
+		in_penumbra = (r_rel <= r_img) & (r_rel >= r0/2)#2*r0 - r_img)
+		include[in_penumbra] = True
 		try:
-			teo[r_rel <= r_img] += simple_penumbra(r_rel[r_rel <= r_img], δ, Q, r0, r_img, 0, 1, e_min, e_max) # as an array of penumbrums
+			teo[in_penumbra] += simple_penumbra(r_rel[in_penumbra], δ, Q, r0, r_img, 0, 1, e_min, e_max) # as an array of penumbrums
 		except ValueError:
 			return np.inf
+
 	if np.any(np.isnan(teo)):
 		return np.inf
 
@@ -258,15 +258,19 @@ def simple_fit(*args, a=1, b=0, c=1):
 	
 	if np.sum(include) == 0:
 		return np.inf
-	if minimum is None: # if the max and min are unspecified
+	if background is not None:
+		minimum = background
+		maximum = minimum + briteness*δ**2
+	else: # if the max and min are unspecified
 		scale, minimum = mysignal.linregress(teo, exp, include/(1 + teo))
 		maximum = minimum + scale
 		minimum = max(0, minimum)
-	if minimum > maximum:
-		minimum, maximum = maximum, 2*minimum
+		if minimum > maximum:
+			minimum, maximum = maximum, 2*minimum
 	teo = minimum + teo*(maximum - minimum)
 
 	penalty = \
+		- 50*(2*np.log(δ)) \
 		- 2*np.sum(include) \
 		+ (np.sqrt(a*c - b**2) - 1)**2/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) \
 		- Q/.1
@@ -277,12 +281,13 @@ def simple_fit(*args, a=1, b=0, c=1):
 		return np.inf
 	elif NON_STATISTICAL_NOISE > 1/6*np.max(exp, where=include, initial=0)**(-1/2):
 		α = 1/NON_STATISTICAL_NOISE**2 # use a poisson error model with a gamma-distributed rate
-		error = (α + exp)*np.log(α/teo + 1) - α*np.log(α/teo) - np.log(comb(α + exp - 1, exp))
+		error = (α + exp)*np.log(α/teo + 1) - α*np.log(α/teo) #- np.log(comb(α + exp - 1, exp))
 	else: # but you can just use plain poisson if it's all the same to you
-		error = teo - exp*np.log(teo) + np.log(factorial(exp))
+		error = -exp*np.log(teo) + teo + np.log(factorial(exp))
 
-	if SHOW_DEBUG_PLOTS:
-		plt.pcolormesh(np.where(include, error, 2), vmin=0, vmax=10)
+	if plot and SHOW_DEBUG_PLOTS:
+		plt.figure()
+		plt.pcolormesh(np.where(include, error, 2), vmin=0, vmax=6, cmap='inferno')
 		# plt.pcolormesh(np.where(include, exp - teo, 0), cmap='RdBu', norm=CenteredNorm())
 		plt.axis('square')
 		plt.title(f"r0 = ({x0:.2f}, {y0:.2f}), δ = {δ:.3f}, Q = {Q:.3f}")
@@ -374,8 +379,9 @@ if __name__ == '__main__':
 			track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 			track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
-			view_radius = max(np.max(track_list['x(cm)']), np.max(track_list['y(cm)']))
-			xC_bins, yC_bins = np.linspace(-view_radius, view_radius, n_bins+1), np.linspace(-view_radius, view_radius, n_bins+1) # this is the CR39 coordinate system, centered at 0,0
+			r_full = max(np.max(track_list['x(cm)']), np.max(track_list['y(cm)']))
+			n_bins_full = int(n_bins*r_full/r_img)
+			xC_bins, yC_bins = np.linspace(-r_full, r_full, n_bins_full+1), np.linspace(-r_full, r_full, n_bins_full+1) # this is the CR39 coordinate system, centered at 0,0
 			dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
 			xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2 # change these to bin centers
 			XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
@@ -402,6 +408,7 @@ if __name__ == '__main__':
 			# cuts = [(GREYS, [0, 100])]
 			# cuts = [(GREYS, [0, 100]), (REDS, [0, 7]), (BLUES, [10, 100])] # [MeV] (pre-filtering)
 			cuts = [(REDS, [0, 7]), (BLUES, [9, 100])] # [MeV] (pre-filtering)
+			# cuts = [(BLUES, [9, 100]), (REDS, [0, 7])] # [MeV] (pre-filtering)
 
 		for color, (cmap, e_in_bounds) in enumerate(cuts): # iterate over the cuts
 			e_out_bounds = get_E_out(1, 2, e_in_bounds, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
@@ -439,33 +446,59 @@ if __name__ == '__main__':
 
 			hullC = convex_hull(XC, YC, NC) # compute the convex hull for future uce
 
-			if Q is None:
-				print('fitting electric field')
-				args = (r0, s0, r_img, None, None, XC, YC, NC, hullC, *e_in_bounds)
-				opt = optimize.minimize(simple_fit, x0=[None]*4, args=args,
-					method='Nelder-Mead', options=dict(initial_simplex=[
-						[x0+r_img*.4, y0,         OBJECT_SIZE*M/4, 1.0e-1],
-						[x0-r_img*.2, y0+r_img*.3, OBJECT_SIZE*M/4, 1.0e-1],
-						[x0-r_img*.2, y0-r_img*.3, OBJECT_SIZE*M/4, 1.0e-1],
-						[x0,         y0,         OBJECT_SIZE*M/3, 1.0e-1],
-						[x0,         y0,         OBJECT_SIZE*M/4, 1.9e-1]]))
-				x0, y0, δ, Q = opt.x
-				hess = hessian(simple_fit, opt.x, args=args)
-				print(hess)
-				dx0, dy0, dδ, dQ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
+			gess = [       0,        0, OBJECT_SIZE*M*.20, .2*np.max(NC),    np.max(NC)/(OBJECT_SIZE*M*.20)**2]
+			step = [.1*r_img, .1*r_img, OBJECT_SIZE*M*.16, .1*np.max(NC), .3*np.max(NC)/(OBJECT_SIZE*M*.20)**2]
+			bounds = [(None,None), (None,None), (0,None), (0,None), (0,None)]
+			args = (r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds)
+			if Q is None: # decide whether to fit the electrick feeld
+				print("fitting electrick feeld")
+				gess.append(.15)
+				step.append(.10)
+				bounds.append((0, None))
+			else: # or not
+				print(f"setting electrick feeld to {Q}")
+				args = (Q, *args)
+
+			for i in range(3):
+				inicial_simplex = [gess]
+				for i in range(len(gess)):
+					inicial_simplex.append(np.copy(gess))
+					inicial_simplex[i+1][i] += step[i]
+				opt = optimize.minimize( # do the 1D fit
+					simple_fit,
+					x0=[None]*len(gess),
+					args=args,
+					method='Nelder-Mead',
+					options=dict(
+						initial_simplex=inicial_simplex,
+					)
+				)
+				gess = opt.x
+
+				for i in range(len(step)): # adjust the step value for use in Hessian-estimacion
+					for bound in bounds[i]:
+						if bound != None:
+							step[i] = min(step[i], abs(opt.x[i] - bound)/2)
+			hess = hessian( # and then get the hessian
+				simple_fit,
+				x=opt.x,
+				args=args,
+				epsilon=.1*np.array(step),
+			)
+			if Q is None: # and use it to get error bars
+				x0, y0, δ, _, _, Q = opt.x
+				dx0, dy0, dδ, _, _, dQ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
 			else:
-				args = (Q, r0, s0, r_img, None, None, XC, YC, NC, hullC, *e_in_bounds)
-				opt = optimize.minimize(simple_fit, x0=[None]*3, args=args,
-					method='Nelder-Mead', options=dict(initial_simplex=[
-						[x0+r_img*.4, y0,         OBJECT_SIZE*M/4],
-						[x0-r_img*.2, y0+r_img*.3, OBJECT_SIZE*M/4],
-						[x0-r_img*.2, y0-r_img*.3, OBJECT_SIZE*M/4],
-						[x0,         y0,         OBJECT_SIZE*M/3]]))
-				x0, y0, δ = opt.x
-				hess = hessian(simple_fit, opt.x, args=args)
-				dx0, dy0, dδ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
-			if VERBOSE: print(opt)
-			print(f"n = {np.sum(NC):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}), δ = {δ/M/1e-4:.3f} ± {dδ:.3f} μm, Q = {Q:.3f} ± {dQ:.3f} cm*MeV, M = {M:.2f}")
+				x0, y0, δ, _, _ = opt.x
+				dx0, dy0, dδ, _, _ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
+				dQ = 0
+
+			if VERBOSE:
+				print(simple_fit(opt.x, *args, plot=True))
+				print(opt)
+			print(
+				f"n = {np.sum(NC):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
+				f"δ = {δ/M/1e-4:.1f} ± {dδ/M/1e-4:.1f} μm, Q = {Q:.3f} ± {dQ:.3f} cm*MeV, M = {M:.2f}")
 
 			if mode == 'hist':
 				xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, n_bins+1), np.linspace(y0 - r_img, y0 + r_img, n_bins+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
@@ -533,6 +566,7 @@ if __name__ == '__main__':
 			B, χ2_red = mysignal.gelfgat_deconvolve2d(
 				NI,
 				penumbral_kernel,
+				# g_inicial=np.exp(-((XS - x0/M)**2 + (YS - y0/M)**2)/(δ/M)**2),
 				where=data_bins,
 				illegal=np.logical_not(source_bins),
 				verbose=VERBOSE,
@@ -546,6 +580,9 @@ if __name__ == '__main__':
 			# 	print("Warn: χ^2/n is suspiciously hi.")
 			B[np.hypot(XS, YS) >= OBJECT_SIZE] = 0 # trim the edges
 			B = np.maximum(0, B) # we know this must be nonnegative
+
+			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xS, yS, B, contour=0) # compute the three number summary
+			print(simple_fit((p1*np.cos(θ1)*M, p1*np.sin(θ1)*M, p0/1.1775*M, None, None, Q), r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds, plot=True))
 
 			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xS, yS, B, contour=CONTOUR) # compute the three number summary
 			print(f"P0 = {p0/1e-4:.2f} μm")
