@@ -11,7 +11,7 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
-SMOOTHING = 50 # entropy weight
+SMOOTHING = 200 # entropy weight
 
 
 def linregress(x, y, weights=None):
@@ -32,6 +32,7 @@ def shape_parameters(x, y, f, contour=0):
 	X, Y = np.meshgrid(x, y, indexing='ij')
 	if contour == 0:
 		μ0 = np.sum(f) # image sum
+		if μ0 == 0: return np.nan, (np.nan, np.nan), (np.nan, np.nan)
 		μx = np.sum(X*f)/μ0 # image centroid
 		μy = np.sum(Y*f)/μ0
 		μxx = np.sum(X**2*f)/μ0 - μx**2 # image rotational inertia
@@ -43,11 +44,11 @@ def shape_parameters(x, y, f, contour=0):
 		p1, θ1 = np.hypot(μx, μy), np.arctan2(μy, μx)
 		p2, θ2 = np.sqrt(eigval[i1]) - np.sqrt(eigval[i2]), np.arctan2(eigvec[1,i1], eigvec[0,i1])
 	else:
-		contours = measure.find_contours(f, contour*f.max())
-		contour = max(contours, key=len)
-		x_contour = np.interp(contour[:,0], np.arange(x.size), x)
-		y_contour = np.interp(contour[:,1], np.arange(y.size), y)
-		x0, y0 = np.average(X, weights=f), np.average(Y, weights=f)
+		contour_paths = measure.find_contours(f, contour*f.max())
+		contour_path = max(contour_paths, key=len)
+		x_contour = np.interp(contour_path[:,0], np.arange(x.size), x)
+		y_contour = np.interp(contour_path[:,1], np.arange(y.size), y)
+		x0, y0 = np.average(X, weights = f > contour*f.max()), np.average(Y, weights = f > contour*f.max())
 		r = np.hypot(x_contour - x0, y_contour - y0)
 		θ = np.arctan2(y_contour - y0, x_contour - x0)
 		θL, θR = np.concatenate([θ[1:], θ[:1]]), np.concatenate([θ[-1:], θ[:-1]])
@@ -195,7 +196,6 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 			fig.colorbar(plot, ax=axes[2,0])
 			axes[2,1].set_title("Chi squared")
 			plot = axes[2,1].pcolormesh(np.where(where&(s>0), N*s - F*np.log(N*s) + np.log(factorial(F)), 0).T, vmin= 0, vmax=6, cmap='inferno')
-			print(np.sum(N*s - F*np.log(N*s) + np.log(factorial(F)), where=(where&(s>0))))
 			axes[2,1].axis('square')
 			fig.colorbar(plot, ax=axes[2,1])
 			gs1 = gridspec.GridSpec(4, 4)

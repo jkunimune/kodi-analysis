@@ -14,10 +14,18 @@ def e_field(x):
 
 def get_analytic_brightness(r0, Q, e_min=1e-15, e_max=1):
 	""" get the effective brightness as a function of radius, accounting for a point source and roughly boxcar energy spectrum """
-	present_blurs = (K >= Q/e_max/r0) & (K < Q/e_min/r0)
-	if np.sum(present_blurs) == 0:
-		present_blurs[np.argmin(np.absolute(K - Q/((e_min+e_max)/2)/r0))] = True
-	return r0*R, normalize(np.sum(N[present_blurs, :], axis=0))
+	if Q == 0:
+		return r0*R, normalize(np.where(R < 1, 1, 0))
+
+	d_index = index[1] - index[0]
+	min_bound = min(np.log(e_min*r0/Q) - d_index/2, np.log(e_max*r0/Q) - d_index)
+	max_bound = max(np.log(e_max*r0/Q) + d_index/2, np.log(e_min*r0/Q) + d_index)
+	weights = np.where( # the briteness will be a weited linear combination of pre-solved profiles
+		index < min_bound, 0, np.where(
+		index < min_bound + d_index, (index - min_bound)/d_index, np.where(
+		index < max_bound - d_index, 1, np.where(
+		index < max_bound, (max_bound - index)/d_index, 0))))
+	return r0*R, normalize(np.sum(weights[:, None]*N[:, :], axis=0))
 
 
 x_ref = np.linspace(0, 1, 2001)[:-1]
@@ -27,8 +35,9 @@ for i, a in enumerate(x_ref):
 E_ref -= x_ref/x_ref[1]*E_ref[1]
 
 R = np.linspace(0, 3, 3000) # the normalized position
-E = np.geomspace(1e-1, 1e6, 700) # the sample energy
+E = np.geomspace(1e-1, 1e6, 1000) # the sample energy
 K = 1/E
+index = np.log(E)
 N = np.empty((len(K), len(R)))
 for i, k in enumerate(K):
 	rS = np.concatenate([np.linspace(0, .9, 50)[:-1], (1 - np.geomspace(.1, 1e-6, 50))])
