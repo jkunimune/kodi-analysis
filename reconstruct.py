@@ -42,6 +42,7 @@ APERTURE_CHARGE_FITTING = 'all'#'same'
 
 APERTURE_CONFIGURACION = 'hex'
 RESOLUTION = 50
+MAX_NUM_PIXELS = 1000
 SPREAD = 1.20
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
@@ -98,13 +99,12 @@ def where_is_the_ocean(x, y, z, title, timeout=None):
 		raise TimeoutError
 
 
-def plot_raw_data(track_list, x_bins, y_bins, title):
+def plot_raw_data(track_list, x_bins, y_bins, data):
 	""" plot basic histograms of the tracks that have been loaded. """
 	plt.figure()
 	plt.hist2d(track_list['x(cm)'], track_list['y(cm)'], bins=(x_bins, y_bins))
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	plt.title(title)
 	plt.axis('square')
 	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]}")
 	plt.tight_layout()
@@ -120,7 +120,7 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 
 
 def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
-					 x0, y0, r0, r_img, δ, Q, e_min, e_max, name):
+					 x0, y0, r0, r_img, δ, Q, e_min, e_max, name, data, show):
 	""" plot the data along with the initial fit to it, and the
 		reconstructed superaperture.
 	"""
@@ -173,19 +173,23 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 			plt.savefig(f'results/{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-radial-lineout.{filetype}')
 		save_as_hdf5(f'results/{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-radial-lineout', x1=rI, y1=nI, x2=r, y2=n_actual, x3=r, y3=n_uncharged)
 
-	plt.show()
+	if show:
+		plt.show()
+	plt.close()
 
 
-def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name):
+def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name, data, show):
 	x0 = ((x_bins[1:] + x_bins[:-1])/2)[np.argmax(np.sum(Z, axis=0))]
 	y0 = ((y_bins[1:] + y_bins[:-1])/2)[np.argmax(np.sum(Z, axis=1))]
 
 	plt.figure() # plot the reconstructed source image
 	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z, cmap=cmap, vmin=0)
-	T = np.linspace(0, 2*np.pi)
 	# plt.colorbar()
 	plt.axis('square')
-	plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
+	if e_max is not None:
+		plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
+	else:
+		plt.title("X-ray image")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.axis([-150, 150, -150, 150])
@@ -194,8 +198,12 @@ def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name):
 		plt.savefig(f"results/{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.{filetype}")
 	save_as_hdf5(f"results/{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction", x=x_bins, y=y_bins, z=Z)
 
+	if show:
+		plt.show()
+	plt.close()
 
-def plot_overlaid_contors(X_red, Y_red, image_red, X_blu, Y_blu, image_blu, projected_offset, projected_flow):
+
+def plot_overlaid_contors(X_red, Y_red, image_red, X_blu, Y_blu, image_blu, projected_offset, projected_flow, data):
 	x0 = X_blu[np.unravel_index(np.argmax(image_blu), image_blu.shape)]
 	y0 = Y_blu[np.unravel_index(np.argmax(image_blu), image_blu.shape)]
 
@@ -503,7 +511,7 @@ if __name__ == '__main__':
 			XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
 
 			if SHOW_RAW_PLOTS:
-				plot_raw_data(track_list[hicontrast], xC_bins, yC_bins, "")#f"Penumbral image, TIM{data[TIM]}, shot {data[SHOT]}")
+				plot_raw_data(track_list[hicontrast], xC_bins, yC_bins, data)
 
 		else: # if it is a pickle file, load the histogram directly like a raster image
 			mode = 'raster'
@@ -644,9 +652,9 @@ if __name__ == '__main__':
 			xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
 			XS, YS = np.meshgrid(xS, yS, indexing='ij')
 
-			if SHOW_PLOTS:
-				assert e_in_bounds[0] != 0
-				plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI, x0, y0, r0, r_img, δ, Q, *e_in_bounds, cut_name)
+			plot_cooked_data(
+				xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
+				x0, y0, r0, r_img, δ, Q, *e_in_bounds, cut_name, data, SHOW_PLOTS)
 			if SKIP_RECONSTRUCTION:
 				continue
 
@@ -706,12 +714,7 @@ if __name__ == '__main__':
 			# (A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
 			# print(f"XXX[{data[SHOT][-5:]}, {mouth/1e-4:.1f}],")
 
-			plot_reconstruction(xS_bins, yS_bins, B.T, cmap, *e_in_bounds, cut_name)
-
-			if SHOW_PLOTS:
-				plt.show()
-			else:
-				plt.close()
+			plot_reconstruction(xS_bins, yS_bins, B.T, cmap, *e_in_bounds, cut_name, data, SHOW_PLOTS)
 
 			image_layers.append(B/B.max())
 			X_layers.append(XS)
@@ -732,31 +735,20 @@ if __name__ == '__main__':
 			))
 
 		try:
-			xX_bins, yX_bins = np.linspace(-100, 100, 101), np.linspace(-100, 100, 101)
-			xX, yX = (xX_bins[:-1] + xX_bins[1:])/2, (yX_bins[:-1] + yX_bins[1:])/2 # change these to bin centers
-			XX, YX = np.meshgrid(xX, yX, indexing='ij') # change these to matrices
 			xray = np.loadtxt('scans/KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T
 		except (ValueError, OSError):
 			xray = None
 		if xray is not None:
-			print("Xray image")
+			print("x-ray image")
+			xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
+			xX, yX = (xX_bins[:-1] + xX_bins[1:])/2, (yX_bins[:-1] + yX_bins[1:])/2 # change these to bin centers
+			XX, YX = np.meshgrid(xX, yX, indexing='ij') # change these to matrices
+
 			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xX, yX, xray.T, contour=CONTOUR) # compute the three number summary
 			print(f"P0 = {p0:.2f} μm")
 			print(f"P2 = {p2:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
-			plt.figure()
-			plt.pcolormesh(xX_bins, yX_bins, xray, cmap=VIOLETS, vmin=0)
-			# plt.colorbar()
-			plt.axis('square')
-			plt.title("X-ray image of TIM {} on shot {}".format(data[TIM], data[SHOT]))
-			plt.xlabel("x (μm)")
-			plt.ylabel("y (μm)")
-			plt.axis([-150, 150, -150, 150])
-			plt.tight_layout()
-			for filetype in ['png', 'eps']:
-				plt.savefig(f"results/{data[SHOT]} TIM{data[TIM]} xray sourceimage.{filetype}")
-			save_as_hdf5(f"results/{data[SHOT]} TIM{data[TIM]} xray sourceimage", x=xX_bins, y=yX_bins, z=xray)
-			plt.close()
+			plot_reconstruction(xX_bins, yX_bins, xray, VIOLETS, None, None, "xray", data, False)
 
 		if len(image_layers) >= 2:
 			red = next(i for i, (name, color, bounds) in enumerate(cuts) if name == 'lo')
@@ -774,6 +766,7 @@ if __name__ == '__main__':
 				X_layers[blu], Y_layers[blu], image_layers[blu],
 				project(float(data[R_OFFSET]), float(data[Θ_OFFSET]), float(data[Φ_OFFSET]), basis)*1e-4, # cm
 				project(float(data[R_FLOW]), float(data[Θ_FLOW]), float(data[Φ_FLOW]), basis)*1e-4, # cm/ns
+				data
 			)
 
 		dataframe = pd.DataFrame(results)
