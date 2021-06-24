@@ -37,14 +37,16 @@ SHOW_DEBUG_PLOTS = False
 SHOW_OFFSET = False
 VERBOSE = False
 ASK_FOR_HELP = False
-OBJECT_SIZE = 150e-4 # cm
+OBJECT_SIZE = 250e-4 # cm
 APERTURE_CHARGE_FITTING = 'all'#'same'
 
-NON_STATISTICAL_NOISE = .0
+APERTURE_CONFIGURACION = 'hex'
+RESOLUTION = 50
 SPREAD = 1.20
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-RESOLUTION = 40
-APERTURE_CONFIGURACION = 'hex'
+EXPECTED_SIGNAL_TO_NOISE = 5
+NON_STATISTICAL_NOISE = .0
+SMOOTHING = 100
 
 CONTOUR = .5
 
@@ -100,8 +102,8 @@ def plot_raw_data(track_list, x_bins, y_bins, title):
 	""" plot basic histograms of the tracks that have been loaded. """
 	plt.figure()
 	plt.hist2d(track_list['x(cm)'], track_list['y(cm)'], bins=(x_bins, y_bins))
-	plt.xlabel("x [cm]")
-	plt.ylabel("y [cm]")
+	plt.xlabel("x (cm)")
+	plt.ylabel("y (cm)")
 	plt.title(title)
 	plt.axis('square')
 	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]}")
@@ -130,8 +132,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 		# plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
 	plt.axis('square')
 	plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
-	plt.xlabel("x [cm]")
-	plt.ylabel("y [cm]")
+	plt.xlabel("x (cm)")
+	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
@@ -140,8 +142,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size))
 	plt.axis('square')
 	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
-	plt.xlabel("x [cm]")
-	plt.ylabel("y [cm]")
+	plt.xlabel("x (cm)")
+	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
@@ -162,8 +164,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 		n_uncharged = simple_penumbra(r, δ+4*Q/e_max, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
 		plt.plot(r, n_uncharged, '--', color=(0.278, 0.439, 0.239), linewidth=2, label="Fit without charging")
 		plt.xlim(0, r_img)
-		plt.xlabel("Radius [cm]")
-		plt.ylabel("Track density [1/cm^2]")
+		plt.xlabel("Radius (cm)")
+		plt.ylabel("Track density (1/cm²)")
 		plt.legend()
 		plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
 		plt.tight_layout()
@@ -201,8 +203,8 @@ def plot_overlaid_contors(X_red, Y_red, image_red, X_blu, Y_blu, image_blu, proj
 	x_flo, y_flo, z_flo = projected_flow
 
 	plt.figure()
-	plt.contourf((X_red - x0)/1e-4, (Y_red - y0)/1e-4, image_red, levels=[0, 0.15, 1], colors=['#00000000', '#FF5555BB', '#000000FF'])
-	plt.contourf((X_blu - x0)/1e-4, (Y_blu - y0)/1e-4, image_blu, levels=[0, 0.15, 1], colors=['#00000000', '#5555FFBB', '#000000FF'])
+	plt.contourf((X_red - x0)/1e-4, (Y_red - y0)/1e-4, image_red, levels=[.15, 1], colors=['#FF5555'])
+	plt.contourf((X_blu - x0)/1e-4, (Y_blu - y0)/1e-4, image_blu, levels=[.15, 1], colors=['#5555FF'])
 	# if xray is not None:
 	# 	plt.contour(XX, YX, xray, levels=[.25], colors=['#550055BB'])
 	if SHOW_OFFSET:
@@ -219,7 +221,7 @@ def plot_overlaid_contors(X_red, Y_red, image_red, X_blu, Y_blu, image_blu, proj
 	plt.title("TIM {} on shot {}".format(data[TIM], data[SHOT]))
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
-		plt.savefig(f"results/{data[SHOT]} TIM{data[TIM]} nested sourceimage.{filetype}")
+		plt.savefig(f"results/{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction.{filetype}")
 	plt.close()
 
 
@@ -315,9 +317,9 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	teo = background + scale*teo
 
 	penalty = \
-		+ 10*(background/scale)/(1 - background/scale) \
+		+ np.exp(EXPECTED_SIGNAL_TO_NOISE*background/scale) \
 		- 2*np.sum(weits) \
-		- 100*(2*np.log(δ)) \
+		- SMOOTHING*(2*np.log(δ)) \
 		+ (np.sqrt(a*c - b**2) - 1)**2/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) \
 		- Q/.1
 
@@ -402,11 +404,11 @@ def minimize_repeated_nelder_mead(fun, x0, args, simplex_size, **kwargs):
 		)
 		if not opt.success:
 			print(f"WARN: could not find good fit because {opt.message}")
-			return x0
+			opt.x = x0
+			return opt
 
 		x0 = opt.x
 		past_bests.append(opt.fun)
-		print(opt.fun)
 
 	return opt
 
@@ -429,7 +431,7 @@ def get_relative_aperture_positions(spacing, r_img, r_max, mode='hex'):
 			for dy in [-spacing/2, spacing/2]:
 				yield (dx, dy)
 	else:
-		raise f"what in davy jones's locker is a {mode}"
+		raise Exception(f"what in davy jones's locker is a {mode}")
 
 
 if __name__ == '__main__':
@@ -451,10 +453,11 @@ if __name__ == '__main__':
 
 		r0 = (M + 1)*rA # calculate the penumbra parameters
 		s0 = (M + 1)*sA
-		r_img = SPREAD*r0 + 1.05*M*OBJECT_SIZE
+		δ0 = M*OBJECT_SIZE*(1 + 2/RESOLUTION)
+		r_img = SPREAD*r0 + δ0
 		if s0 != 0 and r_img > s0/2:
 			r_img = s0/2 # make sure the image at which we look is small enough to avoid other penumbrae
-		n_bins = min(1000, int(RESOLUTION/(1.05*M*OBJECT_SIZE)*r_img)) # get the image resolution needed to resolve the object
+			δ0 = r_img - SPREAD*r0
 
 		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(data[TIM])-1])
 		basis = np.array([
@@ -491,8 +494,9 @@ if __name__ == '__main__':
 			track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 			track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
+			n_bins = min(MAX_NUM_PIXELS, int(RESOLUTION/δ0*r_img)) # get the image resolution needed to resolve the object
 			r_full = max(np.max(track_list['x(cm)']), np.max(track_list['y(cm)']))
-			n_bins_full = int(n_bins*r_full/r_img)
+			n_bins_full = int(min(2*MAX_NUM_PIXELS, n_bins*r_full/r_img))
 			xC_bins, yC_bins = np.linspace(-r_full, r_full, n_bins_full+1), np.linspace(-r_full, r_full, n_bins_full+1) # this is the CR39 coordinate system, centered at 0,0
 			dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
 			xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2 # change these to bin centers
@@ -517,10 +521,10 @@ if __name__ == '__main__':
 		if mode == 'raster' or np.std(track_list['d(µm)']) == 0: # choose which cuts to use depending on whether this is synthetic or real
 			cuts = [('all', 'plasma', [0, 100])]
 		else:
-			# cuts = [('all', GREYS, [0, 100])]
+			# cuts = [('all', GREYS, [0, 100])] # [MeV] (pre-filtering)
+			# cuts = [('hi', BLUES, [9, 100])] # [MeV] (pre-filtering)
 			# cuts = [('all', GREYS, [0, 100]), ('lo', REDS, [0, 7]), ('hi', BLUES, [10, 100])] # [MeV] (pre-filtering)
-			# cuts = [('lo', REDS, [0, 7]), ('hi', BLUES, [9, 100])] # [MeV] (pre-filtering)
-			cuts = [('hi', BLUES, [9, 100]), ('lo', REDS, [0, 7])] # [MeV] (pre-filtering)
+			cuts = [('lo', REDS, [0, 7]), ('hi', BLUES, [9, 100])] # [MeV] (pre-filtering)
 
 		for cut_name, cmap, e_in_bounds in cuts: # iterate over the cuts
 			e_out_bounds = get_E_out(1, 2, e_in_bounds, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
@@ -531,7 +535,7 @@ if __name__ == '__main__':
 
 			if mode == 'hist': # if we still need to tally the histogram
 
-				print(f"d ∈ {d_bounds} μm")
+				print(f"d in [{d_bounds[0]:5.2f}, {d_bounds[1]:5.2f}] μm")
 				track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 				track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 
@@ -558,9 +562,9 @@ if __name__ == '__main__':
 
 			hullC = convex_hull(XC, YC, NC) # compute the convex hull for future uce
 
-			spacial_scan = np.linspace(-r0, r0, 9)
+			spacial_scan = np.linspace(-r0, r0, 5)
 			gess = [ spacial_scan, spacial_scan, .20*min(OBJECT_SIZE*M, r0), .5*np.mean(NC)]
-			step = [        .1*r0,        .1*r0, .16*min(OBJECT_SIZE*M, r0), .3*np.mean(NC)]
+			step = [        .2*r0,        .2*r0, .16*min(OBJECT_SIZE*M, r0), .3*np.mean(NC)]
 			bounds = [(None,None), (None,None), (0,None), (0,None)]
 			args = (r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds)
 			if Q is None: # decide whether to fit the electrick feeld
@@ -628,9 +632,9 @@ if __name__ == '__main__':
 			else:
 				nI, rI_bins = None, None
 
-			kernel_size = xI_bins.size - 2*int(1.05*M*OBJECT_SIZE/dxI) # now make the kernel (from here on, it's the same in both modes)
+			kernel_size = xI.size - 2*int(δ0/dxI) # now make the kernel (from here on, it's the same in both modes)
 			if kernel_size%2 == 0: # make sure the kernel is odd
-				kernel_size -= 1
+				kernel_size += 1
 			xK_bins, yK_bins = np.linspace(-dxI*kernel_size/2, dxI*kernel_size/2, kernel_size+1), np.linspace(-dyI*kernel_size/2, dyI*kernel_size/2, kernel_size+1)
 			dxK, dyK = xK_bins[1] - xK_bins[0], yK_bins[1] - yK_bins[0]
 			XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2, indexing='ij') # this is the kernel coordinate system, measured from the center of the umbra
@@ -682,16 +686,11 @@ if __name__ == '__main__':
 				verbose=VERBOSE,
 				show_plots=SHOW_DEBUG_PLOTS) # deconvolve!
 
-			if χ2_red >= 1.5: # throw it away if it looks unreasonable
-				print("Could not find adequate fit.")
-				continue
 			print(f"χ^2/n = {χ2_red}")
-			# if χ2_red >= 2.0:
-			# 	print("Warn: χ^2/n is suspiciously hi.")
-			B = np.maximum(0, B) # we know this must be nonnegative
-			if np.all(B == 0):
-				print("fucc")
+			if χ2_red >= 1.5: # throw it away if it looks unreasonable
+				print("Could not find adequate fit")
 				continue
+			B = np.maximum(0, B) # we know this must be nonnegative
 
 			# p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xS, yS, B, contour=0) # compute the three number summary
 			# print(simple_fit((p1*np.cos(θ1)*M, p1*np.sin(θ1)*M, p0/1.1775*M, None, None, Q), r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds, plot=True))
@@ -760,10 +759,8 @@ if __name__ == '__main__':
 			plt.close()
 
 		if len(image_layers) >= 2:
-			if len(image_layers) == 2:
-				red, blu = 0, 1
-			else:
-				red, blu = 1, -1
+			red = next(i for i, (name, color, bounds) in enumerate(cuts) if name == 'lo')
+			blu = next(i for i, (name, color, bounds) in enumerate(cuts) if name == 'hi')
 
 			dx = np.average(X_layers[blu], weights=image_layers[blu]) - np.average(X_layers[red], weights=image_layers[red])
 			dy = np.average(Y_layers[blu], weights=image_layers[blu]) - np.average(Y_layers[red], weights=image_layers[red])
