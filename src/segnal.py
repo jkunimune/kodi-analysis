@@ -38,9 +38,9 @@ def harmonics_from_covariance(Σ):
 	""" convert a covariance matrix to a circular harmonick representacion of its conture """
 	eigval, eigvec = np.linalg.eig(Σ)
 	i1, i2 = np.argmax(eigval), np.argmin(eigval)
-	λ1, λ2 = eigval[i1], eigval[i2]
-	p0 = (λ1 + λ2)/2
-	p2, θ2 = (λ1 - λ2)/2, np.arctan2(eigvec[1,i1], eigvec[0,i1])
+	a, b = np.sqrt(eigval[i1]), np.sqrt(eigval[i2])
+	p0 = (a + b)/2
+	p2, θ2 = (a - b)/2, np.arctan2(eigvec[1,i1], eigvec[0,i1])
 	return p0, (p2, θ2)
 
 
