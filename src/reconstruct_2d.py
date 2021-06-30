@@ -51,7 +51,8 @@ SMOOTHING = 100
 
 CONTOUR = .5
 
-FOLDER = 'scans/'
+INPUT_FOLDER = '../scans/'
+OUTPUT_FOLDER = '../results/'
 SHOT = 'Shot number'
 TIM = 'TIM'
 APERTURE_RADIUS = 'Aperture Radius'
@@ -92,7 +93,7 @@ def where_is_the_ocean(x, y, z, title, timeout=None):
 	start = time.time()
 	while center_guess[0] is None and (timeout is None or time.time() - start < timeout):
 		plt.pause(.01)
-	plt.close()
+	plt.close('all')
 	if center_guess[0] is not None:
 		return center_guess
 	else:
@@ -148,8 +149,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
-		plt.savefig(f'results/{data[SHOT]}-tim{data[TIM]}-{name:s}-projection.{filetype}')
-	save_as_hdf5(f'results/{data[SHOT]}-tim{data[TIM]}-{name:s}-projection', x=xI_bins, y=yI_bins, z=NI)
+		plt.savefig(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{name:s}-projection.{filetype}')
+	save_as_hdf5(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{name:s}-projection', x=xI_bins, y=yI_bins, z=NI)
 
 	if mode == 'hist' and s0 == 0:
 		rI, drI = (rI_bins[1:] + rI_bins[:-1])/2, rI_bins[:-1] - rI_bins[1:]
@@ -170,20 +171,31 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 		plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
 		plt.tight_layout()
 		for filetype in ['png', 'eps']:
-			plt.savefig(f'results/{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-radial-lineout.{filetype}')
-		save_as_hdf5(f'results/{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-radial-lineout', x1=rI, y1=nI, x2=r, y2=n_actual, x3=r, y3=n_uncharged)
+			plt.savefig(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-radial-lineout.{filetype}')
+		save_as_hdf5(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-radial-lineout', x1=rI, y1=nI, x2=r, y2=n_actual, x3=r, y3=n_uncharged)
 
 	if show:
 		plt.show()
-	plt.close()
+	plt.close('all')
 
 
 def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name, data, show):
+	p0, (p2, θ2) = mysignal.shape_parameters(
+			(x_bins[:-1] + x_bins[1:])/2,
+			(y_bins[:-1] + y_bins[1:])/2,
+			Z, contour=CONTOUR) # compute the three number summary
+	print(f"P0 = {p0:.2f} μm")
+	print(f"P2 = {p2:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
+
 	x0 = ((x_bins[1:] + x_bins[:-1])/2)[np.argmax(np.sum(Z, axis=0))]
 	y0 = ((y_bins[1:] + y_bins[:-1])/2)[np.argmax(np.sum(Z, axis=1))]
 
 	plt.figure() # plot the reconstructed source image
 	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z, cmap=cmap, vmin=0)
+	T = np.linspace(0, 2*np.pi, 144)
+	R = p0 + p2*np.cos(2*(T - θ2)) + p2*np.sin(2*(T - θ2))
+	plt.plot((x0 + R*np.cos(T))/1e-4, (y0 + R*np.sin(T))/1e-4)
+	plt.axis('equal')
 	# plt.colorbar()
 	plt.axis('square')
 	if e_max is not None:
@@ -195,12 +207,13 @@ def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name, data, s
 	plt.axis([-150, 150, -150, 150])
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
-		plt.savefig(f"results/{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.{filetype}")
-	save_as_hdf5(f"results/{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction", x=x_bins, y=y_bins, z=Z)
+		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.{filetype}")
+	save_as_hdf5(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction", x=x_bins, y=y_bins, z=Z)
 
 	if show:
 		plt.show()
-	plt.close()
+	plt.close('all')
+	return p0, (p2, θ2)
 
 
 def plot_overlaid_contors(X_red, Y_red, image_red, X_blu, Y_blu, image_blu, projected_offset, projected_flow, data):
@@ -229,8 +242,8 @@ def plot_overlaid_contors(X_red, Y_red, image_red, X_blu, Y_blu, image_blu, proj
 	plt.title("TIM {} on shot {}".format(data[TIM], data[SHOT]))
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
-		plt.savefig(f"results/{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction.{filetype}")
-	plt.close()
+		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction.{filetype}")
+	plt.close('all')
 
 
 def project(r, θ, ɸ, basis):
@@ -443,7 +456,7 @@ def get_relative_aperture_positions(spacing, r_img, r_max, mode='hex'):
 
 
 if __name__ == '__main__':
-	shot_list = pd.read_csv('shot_list.csv')
+	shot_list = pd.read_csv('../shot_list.csv')
 	results = []
 
 	for i, data in shot_list.iterrows():
@@ -476,7 +489,7 @@ if __name__ == '__main__':
 		basis[:,0] = np.cross(basis[:,1], basis[:,2])
 
 		filename = None
-		for fname in os.listdir(FOLDER):
+		for fname in os.listdir(INPUT_FOLDER):
 			if (fname.endswith('.txt') or fname.endswith('.pkl')) \
 					and	str(data[SHOT]) in fname and ('tim'+str(data[TIM]) in fname.lower() or 'tim' not in fname.lower()) \
 					and data[ETCH_TIME].replace(' ','') in fname:
@@ -488,7 +501,7 @@ if __name__ == '__main__':
 			continue
 		if filename.endswith('.txt'): # if it is a typical CPSA-derived text file
 			mode = 'hist'
-			track_list = pd.read_csv(FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32') # load all track coordinates
+			track_list = pd.read_csv(INPUT_FOLDER+filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32') # load all track coordinates
 
 			x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy()
 			track_list['x(cm)'] =  np.cos(rotation+np.pi)*x_temp - np.sin(rotation+np.pi)*y_temp # apply any requested rotation, plus 180 flip to deal with inherent flip due to aperture
@@ -515,7 +528,7 @@ if __name__ == '__main__':
 
 		else: # if it is a pickle file, load the histogram directly like a raster image
 			mode = 'raster'
-			with open(FOLDER+filename, 'rb') as f:
+			with open(INPUT_FOLDER+filename, 'rb') as f:
 				xI_bins, yI_bins, NI = pickle.load(f)
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 			xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
@@ -700,12 +713,11 @@ if __name__ == '__main__':
 				continue
 			B = np.maximum(0, B) # we know this must be nonnegative
 
+			with open(OUTPUT_FOLDER+f'image-{data[SHOT]}-{data[TIM]}-{cut_name}.pkl', 'wb') as f:
+				pickle.dump((XI, YI, B), f)
+
 			# p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xS, yS, B, contour=0) # compute the three number summary
 			# print(simple_fit((p1*np.cos(θ1)*M, p1*np.sin(θ1)*M, p0/1.1775*M, None, None, Q), r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds, plot=True))
-
-			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xS, yS, B, contour=CONTOUR) # compute the three number summary
-			print(f"P0 = {p0/1e-4:.2f} μm")
-			print(f"P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 			def func(x, A, mouth):
 				return A*(1 + erf((100e-4 - x)/mouth))/2
@@ -714,7 +726,7 @@ if __name__ == '__main__':
 			# (A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
 			# print(f"XXX[{data[SHOT][-5:]}, {mouth/1e-4:.1f}],")
 
-			plot_reconstruction(xS_bins, yS_bins, B.T, cmap, *e_in_bounds, cut_name, data, SHOW_PLOTS)
+			p0, (p2, θ2) = plot_reconstruction(xS_bins, yS_bins, B, cmap, *e_in_bounds, cut_name, data, SHOW_PLOTS)
 
 			image_layers.append(B/B.max())
 			X_layers.append(XS)
@@ -735,7 +747,7 @@ if __name__ == '__main__':
 			))
 
 		try:
-			xray = np.loadtxt('scans/KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T
+			xray = np.loadtxt(INPUT_FOLDER+'KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T
 		except (ValueError, OSError):
 			xray = None
 		if xray is not None:
@@ -743,10 +755,6 @@ if __name__ == '__main__':
 			xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
 			xX, yX = (xX_bins[:-1] + xX_bins[1:])/2, (yX_bins[:-1] + yX_bins[1:])/2 # change these to bin centers
 			XX, YX = np.meshgrid(xX, yX, indexing='ij') # change these to matrices
-
-			p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xX, yX, xray.T, contour=CONTOUR) # compute the three number summary
-			print(f"P0 = {p0:.2f} μm")
-			print(f"P2 = {p2:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 			plot_reconstruction(xX_bins, yX_bins, xray, VIOLETS, None, None, "xray", data, False)
 
@@ -770,4 +778,4 @@ if __name__ == '__main__':
 			)
 
 		dataframe = pd.DataFrame(results)
-		dataframe.to_csv("results/summary.csv", index=False)
+		dataframe.to_csv(OUTPUT_FOLDER+"/summary.csv", index=False)

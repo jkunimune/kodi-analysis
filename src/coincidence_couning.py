@@ -10,7 +10,7 @@ from cmap import COFFEE
 
 
 N = 10000
-depth = 350
+depth = 300
 time1 = 4
 time2 = 5
 
@@ -102,7 +102,7 @@ if __name__ == '__main__':
 	plt.ylabel("Diameter after bulk-etch (μm)")
 	plt.xticks(2*np.arange(1, 11))
 	plt.yticks(2*np.arange(1, 11))
-	plt.axis([2, 10, 2, 20])
+	plt.axis([2, 20, 2, 20])
 	plt.colorbar()
 	plt.tight_layout()
 
@@ -110,10 +110,12 @@ if __name__ == '__main__':
 	plt.hist2d(np.concatenate([np.sqrt(4*e0_d), np.sqrt(6*e0_t)]), jitter(d1), bins=(np.linspace(4, 8.5), dbins), cmap=COFFEE, norm=colors.LogNorm())
 	plt.xlabel("Rigidity (sqrt(Da*MeV)/e)")
 	plt.ylabel("Diameter before bulk-etch (μm)")
+	plt.tight_layout()
 
 	plt.figure()
 	plt.hist2d(np.concatenate([np.sqrt(4*e0_d), np.sqrt(6*e0_t)]), jitter(d2), bins=(np.linspace(4, 8.5), dbins), cmap=COFFEE, norm=colors.LogNorm())
 	plt.xlabel("Rigidity (sqrt(Da*MeV)/e)")
 	plt.ylabel("Diameter after bulk-etch (μm)")
+	plt.tight_layout()
 
 	plt.show()

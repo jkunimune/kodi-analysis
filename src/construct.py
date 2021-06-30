@@ -21,7 +21,7 @@ L = 4.21 # cm
 
 EIN_CUTS = [2.2, 6, 10, 15]
 
-FOLDER = 'scans/'
+FOLDER = '../scans/'
 
 short_header = """\
 TABULATION OF TRACKS in SCAN FILE SUPER_ULTIMATE_CR39_MASTER_SHOWDOWN_FINAL_SMASH.cpsa

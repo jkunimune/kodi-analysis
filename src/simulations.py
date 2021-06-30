@@ -203,7 +203,7 @@ if __name__ == '__main__':
 		# 	plt.ylabel("y (μm)")
 		# 	plt.axis([-200, 200, -200, 200])
 		# 	plt.tight_layout()
-		# 	plt.savefig("results/{}_LILAC_{}-{}_sourceimage.png".format(SHOT, *e_bounds))
+		# 	plt.savefig("../results/{}_LILAC_{}-{}_sourceimage.png".format(SHOT, *e_bounds))
 		# 	plt.close()
 
 		# plt.show()

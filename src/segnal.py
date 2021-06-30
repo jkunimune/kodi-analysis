@@ -11,7 +11,7 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
-SMOOTHING = 200 # entropy weight
+SMOOTHING = 100 # entropy weight
 
 
 def linregress(x, y, weights=None):
@@ -26,44 +26,70 @@ def linregress(x, y, weights=None):
 	return m, b
 
 
-def shape_parameters(x, y, f, contour=0):
-	""" get some scalar parameters that describe the shape of this distribution. """
-	assert len(x.shape) == len(y.shape) == 1
-	X, Y = np.meshgrid(x, y, indexing='ij')
-	if contour == 0:
+def covariance_from_harmonics(p0, p2, θ2):
+	""" convert a circular harmonick representacion of a conture to a covariance matrix """
+	return np.matmul(np.matmul(
+			np.array([[np.cos(θ2), -np.sin(θ2)], [np.sin(θ2), np.cos(θ2)]]),
+			np.array([[(p0 + p2)**2, 0], [0, (p0 - p2)**2]])),
+			np.array([[np.cos(θ2), np.sin(θ2)], [-np.sin(θ2), np.cos(θ2)]]))
+
+
+def harmonics_from_covariance(Σ):
+	""" convert a covariance matrix to a circular harmonick representacion of its conture """
+	eigval, eigvec = np.linalg.eig(Σ)
+	i1, i2 = np.argmax(eigval), np.argmin(eigval)
+	λ1, λ2 = eigval[i1], eigval[i2]
+	p0 = (λ1 + λ2)/2
+	p2, θ2 = (λ1 - λ2)/2, np.arctan2(eigvec[1,i1], eigvec[0,i1])
+	return p0, (p2, θ2)
+
+
+def fit_ellipse(x, y, f, contour):
+	""" fit an ellipse to the given image, and represent that ellipse as a simmetrick matrix """
+	assert len(x.shape) == len(y.shape) and len(x.shape) == 1
+	X, Y = np.meshgrid(x, y, indexing='ij') # f should be indexd in the ij convencion
+
+	if contour is None:
 		μ0 = np.sum(f) # image sum
-		if μ0 == 0: return np.nan, (np.nan, np.nan), (np.nan, np.nan)
+		if μ0 == 0: return np.full((2, 2), np.nan)
 		μx = np.sum(X*f)/μ0 # image centroid
 		μy = np.sum(Y*f)/μ0
 		μxx = np.sum(X**2*f)/μ0 - μx**2 # image rotational inertia
 		μxy = np.sum(X*Y*f)/μ0 - μx*μy
 		μyy = np.sum(Y**2*f)/μ0 - μy**2
-		eigval, eigvec = np.linalg.eig([[μxx, μxy], [μxy, μyy]])
-		i1, i2 = np.argmax(eigval), np.argmin(eigval)
-		p0 = np.sqrt(μxx + μyy)
-		p1, θ1 = np.hypot(μx, μy), np.arctan2(μy, μx)
-		p2, θ2 = np.sqrt(eigval[i1]) - np.sqrt(eigval[i2]), np.arctan2(eigvec[1,i1], eigvec[0,i1])
+		return np.array([[μxx, μxy], [μxy, μyy]])
+
 	else:
+		contour_paths = measure
 		contour_paths = measure.find_contours(f, contour*f.max())
 		contour_path = max(contour_paths, key=len)
 		x_contour = np.interp(contour_path[:,0], np.arange(x.size), x)
 		y_contour = np.interp(contour_path[:,1], np.arange(y.size), y)
-		x0, y0 = np.average(X, weights = f > contour*f.max()), np.average(Y, weights = f > contour*f.max())
+		x0 = X[np.unravel_index(np.argmax(f), f.shape)]
+		y0 = Y[np.unravel_index(np.argmax(f), f.shape)]
 		r = np.hypot(x_contour - x0, y_contour - y0)
 		θ = np.arctan2(y_contour - y0, x_contour - x0)
 		θL, θR = np.concatenate([θ[1:], θ[:1]]), np.concatenate([θ[-1:], θ[:-1]])
 		dθ = abs(np.arcsin(np.sin(θL)*np.cos(θR) - np.cos(θL)*np.sin(θR)))/2
+
 		p0 = np.sum(r*dθ)/np.pi/2
+
 		p1x = np.sum(r*np.cos(θ)*dθ)/np.pi
 		p1y = np.sum(r*np.sin(θ)*dθ)/np.pi
 		p1 = np.hypot(x0 + p1x, y0 + p1y)
 		θ1 = np.arctan2(y0 + p1y, x0 + p1x)
+
 		p2x = np.sum(r*np.cos(2*θ)*dθ)/np.pi
 		p2y = np.sum(r*np.sin(2*θ)*dθ)/np.pi
 		p2 = np.hypot(p2x, p2y)
 		θ2 = np.arctan2(p2y, p2x)/2
 
-	return p0, (p1, θ1), (p2, θ2)
+		return covariance_from_harmonics(p0, p2, θ2)
+
+
+def shape_parameters(x, y, f, contour=None):
+	""" get some scalar parameters that describe the shape of this distribution. """
+	return harmonics_from_covariance(fit_ellipse(x, y, f, contour))
 
 
 def sl(a, b, c):
