@@ -480,7 +480,7 @@ if __name__ == '__main__':
 			r_img = s0/2 # make sure the image at which we look is small enough to avoid other penumbrae
 			δ0 = r_img - SPREAD*r0
 
-		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(row['TIM'])-1])
+		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(data['TIM'])-1])
 		basis = np.array([
 			[-np.sin(ɸ_TIM), np.cos(ɸ_TIM), 0],
 			[-np.cos(θ_TIM)*np.cos(ɸ_TIM), -np.cos(θ_TIM)*np.sin(ɸ_TIM), np.sin(θ_TIM)],
