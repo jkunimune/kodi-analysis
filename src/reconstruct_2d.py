@@ -41,7 +41,7 @@ OBJECT_SIZE = 250e-4 # cm
 APERTURE_CHARGE_FITTING = 'all'#'same'
 
 APERTURE_CONFIGURACION = 'hex'
-RESOLUTION = 50
+RESOLUTION = 100
 MAX_NUM_PIXELS = 1000
 SPREAD = 1.20
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -480,13 +480,12 @@ if __name__ == '__main__':
 			r_img = s0/2 # make sure the image at which we look is small enough to avoid other penumbrae
 			δ0 = r_img - SPREAD*r0
 
-		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(data[TIM])-1])
+		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(row['TIM'])-1])
 		basis = np.array([
-			[0, 0, 0],
-			[np.sin(θ_TIM-np.pi/2)*np.cos(ɸ_TIM), np.sin(θ_TIM-np.pi/2)*np.sin(ɸ_TIM), np.cos(θ_TIM-np.pi/2)],
-			[np.sin(θ_TIM)*np.cos(ɸ_TIM), np.sin(θ_TIM)*np.sin(ɸ_TIM), np.cos(θ_TIM)],
+			[-np.sin(ɸ_TIM), np.cos(ɸ_TIM), 0],
+			[-np.cos(θ_TIM)*np.cos(ɸ_TIM), -np.cos(θ_TIM)*np.sin(ɸ_TIM), np.sin(θ_TIM)],
+			[ np.sin(θ_TIM)*np.cos(ɸ_TIM), np.sin(θ_TIM)*np.sin(ɸ_TIM), np.cos(θ_TIM)],
 		]).T
-		basis[:,0] = np.cross(basis[:,1], basis[:,2])
 
 		filename = None
 		for fname in os.listdir(INPUT_FOLDER):

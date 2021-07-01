@@ -17,7 +17,7 @@ kB = 8.617333262145e-8 # keV/K
 ɛ0 = 8.854e-12 # F/m
 qe = 1.6e-19 # C
 
-σD = np.loadtxt('endf-6[58591].txt', skiprows=4)
+σD = np.loadtxt('../endf-6[58591].txt', skiprows=4)
 σD[:,0] = 14.1*4/9*(1 - σD[:,0]) # MeV
 σD[:,1] = .64e-28/(4*np.pi)*2*σD[:,1] # m^2/srad
 
