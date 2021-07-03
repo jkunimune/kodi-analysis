@@ -15,7 +15,7 @@ TIM_LOCATIONS = [
 	[100.81, 270.00],
 	[np.nan, np.nan]]
 
-images = pd.read_csv('../results/summary.csv')
+images = pd.read_csv('../results/fake-summary.csv', sep=r'\s*,\s*')
 images = images[images['energy_cut'] == 'hi'] # for now, we only worry about hot spot images
 
 reconstructions = []
@@ -40,10 +40,10 @@ for shot in images['shot'].unique(): # go thru each shot
 			line_of_site.P2_magnitude,
 			line_of_site.P2_angle) # get the covariance matrix from the reconstructed image
 
-		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(row['TIM'])-1])
+		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(line_of_site['tim'])-1])
 		basis = np.array([
 			[-np.sin(ɸ_TIM), np.cos(ɸ_TIM), 0],
-			[-np.cos(θ_TIM)*np.cos(ɸ_TIM), -np.cos(θ_TIM)*np.sin(ɸ_TIM), np.sin(θ_TIM)],
+			[-np.cos(θ_TIM)*np.cos(ɸ_TIM), -np.cos(θ_TIM)*np.sin(ɸ_TIM), np.sin(θ_TIM)], # XXX THETA IS THE POLAR ANGLE NOT PHI
 			[ np.sin(θ_TIM)*np.cos(ɸ_TIM), np.sin(θ_TIM)*np.sin(ɸ_TIM), np.cos(θ_TIM)],
 		]).T # get the absolute direccion of the axes of this image
 
@@ -83,4 +83,4 @@ for shot in images['shot'].unique(): # go thru each shot
 
 	print(f"offset by ⟨{absolute_offset[0]: .2f}, {absolute_offset[1]: .2f}, {absolute_offset[2]: .2f}⟩ μm")
 
-	reconstructions.append([])
+	# reconstructions.append([])

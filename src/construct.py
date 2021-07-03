@@ -14,7 +14,7 @@ from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 NOISE_SCALE = 1.0 # [cm]
 
 GROUPS = 10 # larger numbers are better for memory but worse for speed
-SYNTH_RESOLUTION = 5e-4
+SYNTH_RESOLUTION = 10e-4
 
 M = 14
 L = 4.21 # cm
@@ -113,7 +113,7 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 			apertures = []
 			for i in np.arange(-2, 3):
 				for j in np.arange(-2 + abs(i)/2, 2.5 - abs(i)/2):
-					apertures.append((j*1100e-4, i*np.sqrt(3)/2*1100e-4)) # cm
+					apertures.append((j*600e-4, i*np.sqrt(3)/2*600e-4)) # cm
 		elif aperture.startswith('charged'):
 			rA = 450e-4 # cm
 			charge_magnitude = float(aperture[7:])

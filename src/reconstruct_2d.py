@@ -37,11 +37,11 @@ SHOW_DEBUG_PLOTS = False
 SHOW_OFFSET = False
 VERBOSE = False
 ASK_FOR_HELP = False
-OBJECT_SIZE = 250e-4 # cm
+OBJECT_SIZE = 200e-4 # cm
 APERTURE_CHARGE_FITTING = 'all'#'same'
 
 APERTURE_CONFIGURACION = 'hex'
-RESOLUTION = 100
+RESOLUTION = 40
 MAX_NUM_PIXELS = 1000
 SPREAD = 1.20
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -49,7 +49,7 @@ EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
 SMOOTHING = 100
 
-CONTOUR = .5
+CONTOUR = .50 # TODO: what is the significance of the 17% contour?
 
 INPUT_FOLDER = '../scans/'
 OUTPUT_FOLDER = '../results/'
@@ -191,10 +191,10 @@ def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name, data, s
 	y0 = ((y_bins[1:] + y_bins[:-1])/2)[np.argmax(np.sum(Z, axis=1))]
 
 	plt.figure() # plot the reconstructed source image
-	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z, cmap=cmap, vmin=0)
+	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=cmap, vmin=0)
 	T = np.linspace(0, 2*np.pi, 144)
 	R = p0 + p2*np.cos(2*(T - θ2)) + p2*np.sin(2*(T - θ2))
-	plt.plot((x0 + R*np.cos(T))/1e-4, (y0 + R*np.sin(T))/1e-4)
+	plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
 	plt.axis('equal')
 	# plt.colorbar()
 	plt.axis('square')
@@ -279,15 +279,16 @@ def hessian(f, x, args, epsilon=None):
 def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
 	""" compute the shape of a simple analytic single-apeture penumbral image """
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
-	if 4*δ >= r_max/n_bins: # if 4*source size is smaller than the image radius but bigger than the pixel size
-		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/r_max*n_bins)*2+1) # make a little kernel
+	n_pixel = r.size//2
+	if 4*δ >= r_max/n_pixel: # if 4*source size is smaller than the image radius but bigger than the pixel size
+		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/r_max*n_pixel)*2+1) # make a little kernel
 		n_kernel = np.exp(-r_kernel**2/δ**2)
 		r_point = np.arange(-4*δ, r_max + 4*δ, r_kernel[1] - r_kernel[0]) # rebin the existing image to match the kernel spacing
 		n_point = np.interp(r_point, rB, nB, right=0)
 		assert len(n_point) >= len(n_kernel)
 		penumbra = np.convolve(n_point, n_kernel, mode='same') # and convolve
 	elif δ >= 0: # if 4*source size is smaller than one pixel and nonnegative
-		r_point = np.linspace(0, r_max, n_bins) # use a dirac kernel instead of a gaussian
+		r_point = np.linspace(0, r_max, n_pixel) # use a dirac kernel instead of a gaussian
 		penumbra = np.interp(r_point, rB, nB, right=0)
 	else:
 		raise ValueError("δ cannot be negative")
