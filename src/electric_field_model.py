@@ -28,6 +28,8 @@ def get_analytic_brightness(r0, Q, e_min=1e-15, e_max=1):
 	return r0*R, normalize(np.sum(weights[:, None]*N[:, :], axis=0))
 
 
+np.seterr(divide='ignore', invalid='ignore')
+
 x_ref = np.linspace(0, 1, 2001)[:-1]
 E_ref = np.empty(x_ref.shape)
 for i, a in enumerate(x_ref):
@@ -47,6 +49,8 @@ for i, k in enumerate(K):
 	nB[0] = nB[1] # deal with this singularity
 	N[i,:] = np.interp(R, rB, nB, right=0)
 N *= np.gradient(E)[:,np.newaxis] # weigh for uniform energy distribution
+
+np.seterr(divide='warn', invalid='warn')
 
 
 if __name__ == '__main__':

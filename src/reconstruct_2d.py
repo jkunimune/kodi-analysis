@@ -15,6 +15,7 @@ import re
 import time
 import warnings
 
+from coordinate import tim_coordinates, project
 import diameter
 from hdf5_util import save_as_hdf5
 import segnal as mysignal
@@ -67,14 +68,6 @@ R_OFFSET = 'Offset (um)'
 R_FLOW = 'Flow (km/s)'
 Θ_FLOW = 'Flow theta (deg)'
 Φ_FLOW = 'Flow phi (deg)'
-
-TIM_LOCATIONS = [
-	[np.nan,np.nan],
-	[ 37.38, 162.00],
-	[np.nan,np.nan],
-	[ 63.44, 342.00],
-	[100.81, 270.00],
-	[np.nan,np.nan]]
 
 
 def where_is_the_ocean(x, y, z, title, timeout=None):
@@ -130,7 +123,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	T = np.linspace(0, 2*np.pi)
 	for dx, dy in get_relative_aperture_positions(s0, r_img, xC_bins.max(), mode=APERTURE_CONFIGURACION):
 		plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
-		# plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
+		plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
 	plt.axis('square')
 	plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (cm)")
@@ -141,6 +134,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 
 	plt.figure()
 	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size))
+	T = np.linspace(0, 2*np.pi)
+	plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 	plt.axis('square')
 	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
 	plt.xlabel("x (cm)")
@@ -171,8 +166,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 		plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({e_min:.1f} – {min(12.5, e_max):.1f} MeV)")
 		plt.tight_layout()
 		for filetype in ['png', 'eps']:
-			plt.savefig(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-radial-lineout.{filetype}')
-		save_as_hdf5(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-radial-lineout', x1=rI, y1=nI, x2=r, y2=n_actual, x3=r, y3=n_uncharged)
+			plt.savefig(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-penumbral-lineout.{filetype}')
+		save_as_hdf5(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{cut_name:s}-penumbral-lineout', x1=rI, y1=nI, x2=r, y2=n_actual, x3=r, y3=n_uncharged)
 
 	if show:
 		plt.show()
@@ -180,15 +175,14 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 
 
 def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name, data, show):
-	p0, (p2, θ2) = mysignal.shape_parameters(
+	p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(
 			(x_bins[:-1] + x_bins[1:])/2,
 			(y_bins[:-1] + y_bins[1:])/2,
 			Z, contour=CONTOUR) # compute the three number summary
 	print(f"P0 = {p0:.2f} μm")
 	print(f"P2 = {p2:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
-	x0 = ((x_bins[1:] + x_bins[:-1])/2)[np.argmax(np.sum(Z, axis=0))]
-	y0 = ((y_bins[1:] + y_bins[:-1])/2)[np.argmax(np.sum(Z, axis=1))]
+	x0, y0 = p1*np.cos(θ1), p1*np.sin(θ1)
 
 	plt.figure() # plot the reconstructed source image
 	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=cmap, vmin=0)
@@ -209,6 +203,16 @@ def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name, data, s
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.{filetype}")
 	save_as_hdf5(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction", x=x_bins, y=y_bins, z=Z)
+
+	j_lineout = np.argmax(np.sum(Z, axis=0))
+	plt.figure()
+	plt.plot(np.repeat(x_bins, 2)[1:-1] - x0, np.repeat(Z[:,j_lineout], 2))
+	plt.xlabel("x (μm)")
+	plt.ylabel("Fluence")
+	plt.xlim(-150, 150)
+	plt.tight_layout()
+	for filetype in ['png', 'eps']:
+		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction-lineout.{filetype}")
 
 	if show:
 		plt.show()
@@ -246,15 +250,6 @@ def plot_overlaid_contors(X_red, Y_red, image_red, X_blu, Y_blu, image_blu, proj
 	plt.close('all')
 
 
-def project(r, θ, ɸ, basis):
-	""" project given spherical coordinates (with angles in degrees) into the
-		detector plane x and y, as well as z out of the page.
-	"""
-	θ, ɸ = np.radians(θ), np.radians(ɸ)
-	v = [r*np.sin(θ)*np.cos(ɸ), r*np.sin(θ)*np.sin(ɸ), r*np.cos(θ)]
-	return np.matmul(basis.T, v)
-
-
 def convex_hull(x, y, N):
 	""" return an array of the same shape as z with pixels inside the convex hull
 		of the data markd True and those outside markd false.
@@ -279,15 +274,17 @@ def hessian(f, x, args, epsilon=None):
 def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
 	""" compute the shape of a simple analytic single-apeture penumbral image """
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
-	n_pixel = r.size//2
-	if 4*δ >= r_max/n_pixel: # if 4*source size is smaller than the image radius but bigger than the pixel size
-		r_kernel = np.linspace(-4*δ, 4*δ, int(4*δ/r_max*n_pixel)*2+1) # make a little kernel
+	n_pixel = int(min(r.size/6, 6*r0/max(δ, 1e-4)))
+	# if 3*δ >= r_max: # if 3*source size is bigger than the image radius
+	# 	raise ValueError("δ cannot be this big")
+	if 3*δ >= r_max/n_pixel: # if 3*source size is smaller than the image radius but bigger than the pixel size
+		r_kernel = np.linspace(-3*δ, 3*δ, int(3*δ/r_max*n_pixel)*2+1) # make a little kernel
 		n_kernel = np.exp(-r_kernel**2/δ**2)
-		r_point = np.arange(-4*δ, r_max + 4*δ, r_kernel[1] - r_kernel[0]) # rebin the existing image to match the kernel spacing
+		r_point = np.arange(-3*δ, r_max + 3*δ, r_kernel[1] - r_kernel[0]) # rebin the existing image to match the kernel spacing
 		n_point = np.interp(r_point, rB, nB, right=0)
 		assert len(n_point) >= len(n_kernel)
 		penumbra = np.convolve(n_point, n_kernel, mode='same') # and convolve
-	elif δ >= 0: # if 4*source size is smaller than one pixel and nonnegative
+	elif δ >= 0: # if 3*source size is smaller than one pixel and nonnegative
 		r_point = np.linspace(0, r_max, n_pixel) # use a dirac kernel instead of a gaussian
 		penumbra = np.interp(r_point, rB, nB, right=0)
 	else:
@@ -307,7 +304,7 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 		Q = 0
 	else:
 		raise ValueError("unsupported set of arguments")
-	if Q < 0 or δ <= 0 or δ > r0/4: return float('inf') # and reject impossible ones
+	if Q < 0 or δ <= 0: return float('inf') # and reject impossible ones
 
 	dr = 2*(X[1,0] - X[0,0])
 	x_eff = a*(X - x0) + b*(Y - y0)
@@ -481,12 +478,7 @@ if __name__ == '__main__':
 			r_img = s0/2 # make sure the image at which we look is small enough to avoid other penumbrae
 			δ0 = r_img - SPREAD*r0
 
-		θ_TIM, ɸ_TIM = np.radians(TIM_LOCATIONS[int(data['TIM'])-1])
-		basis = np.array([
-			[-np.sin(ɸ_TIM), np.cos(ɸ_TIM), 0],
-			[-np.cos(θ_TIM)*np.cos(ɸ_TIM), -np.cos(θ_TIM)*np.sin(ɸ_TIM), np.sin(θ_TIM)],
-			[ np.sin(θ_TIM)*np.cos(ɸ_TIM), np.sin(θ_TIM)*np.sin(ɸ_TIM), np.cos(θ_TIM)],
-		]).T
+		basis = tim_coordinates(data[TIM])
 
 		filename = None
 		for fname in os.listdir(INPUT_FOLDER):
@@ -722,9 +714,9 @@ if __name__ == '__main__':
 			def func(x, A, mouth):
 				return A*(1 + erf((100e-4 - x)/mouth))/2
 			real = source_bins
-			# cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
-			# (A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
-			# print(f"XXX[{data[SHOT][-5:]}, {mouth/1e-4:.1f}],")
+			cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
+			(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
+			# print(f"XXX[{str(data[SHOT][-5:])}, {mouth/1e-4:.1f}],")
 
 			p0, (p2, θ2) = plot_reconstruction(xS_bins, yS_bins, B, cmap, *e_in_bounds, cut_name, data, SHOW_PLOTS)
 

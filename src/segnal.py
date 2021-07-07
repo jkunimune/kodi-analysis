@@ -11,7 +11,7 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
-SMOOTHING = 200 # entropy weight
+SMOOTHING = 100 # entropy weight
 
 
 def linregress(x, y, weights=None):
@@ -26,22 +26,28 @@ def linregress(x, y, weights=None):
 	return m, b
 
 
-def covariance_from_harmonics(p0, p2, θ2):
+def covariance_from_harmonics(p0, p1, θ1, p2, θ2):
 	""" convert a circular harmonick representacion of a conture to a covariance matrix """
-	return np.matmul(np.matmul(
+	return (
+		np.matmul(np.matmul(
 			np.array([[np.cos(θ2), -np.sin(θ2)], [np.sin(θ2), np.cos(θ2)]]),
 			np.array([[(p0 + p2)**2, 0], [0, (p0 - p2)**2]])),
-			np.array([[np.cos(θ2), np.sin(θ2)], [-np.sin(θ2), np.cos(θ2)]]))
+			np.array([[np.cos(θ2), np.sin(θ2)], [-np.sin(θ2), np.cos(θ2)]])),
+		np.array([p1*np.cos(θ1), p1*np.sin(θ1)])
+	)
 
 
-def harmonics_from_covariance(Σ):
+def harmonics_from_covariance(Σ, μ):
 	""" convert a covariance matrix to a circular harmonick representacion of its conture """
 	eigval, eigvec = np.linalg.eig(Σ)
 	i1, i2 = np.argmax(eigval), np.argmin(eigval)
 	a, b = np.sqrt(eigval[i1]), np.sqrt(eigval[i2])
 	p0 = (a + b)/2
+
+	p1, θ1 = np.hypot(μ[0], μ[1]), np.arctan2(μ[1], μ[0])
+
 	p2, θ2 = (a - b)/2, np.arctan2(eigvec[1,i1], eigvec[0,i1])
-	return p0, (p2, θ2)
+	return p0, (p1, θ1), (p2, θ2)
 
 
 def fit_ellipse(x, y, f, contour):
@@ -57,7 +63,7 @@ def fit_ellipse(x, y, f, contour):
 		μxx = np.sum(X**2*f)/μ0 - μx**2 # image rotational inertia
 		μxy = np.sum(X*Y*f)/μ0 - μx*μy
 		μyy = np.sum(Y**2*f)/μ0 - μy**2
-		return np.array([[μxx, μxy], [μxy, μyy]])
+		return np.array([[μxx, μxy], [μxy, μyy]]), np.array([μx, μy])
 
 	else:
 		contour_paths = measure
@@ -74,22 +80,22 @@ def fit_ellipse(x, y, f, contour):
 
 		p0 = np.sum(r*dθ)/np.pi/2
 
-		p1x = np.sum(r*np.cos(θ)*dθ)/np.pi
-		p1y = np.sum(r*np.sin(θ)*dθ)/np.pi
-		p1 = np.hypot(x0 + p1x, y0 + p1y)
-		θ1 = np.arctan2(y0 + p1y, x0 + p1x)
+		p1x = np.sum(r*np.cos(θ)*dθ)/np.pi + x0
+		p1y = np.sum(r*np.sin(θ)*dθ)/np.pi + y0
+		p1 = np.hypot(p1x, p1y)
+		θ1 = np.arctan2(p1y, p1x)
 
 		p2x = np.sum(r*np.cos(2*θ)*dθ)/np.pi
 		p2y = np.sum(r*np.sin(2*θ)*dθ)/np.pi
 		p2 = np.hypot(p2x, p2y)
 		θ2 = np.arctan2(p2y, p2x)/2
 
-		return covariance_from_harmonics(p0, p2, θ2)
+		return covariance_from_harmonics(p0, p1, θ1, p2, θ2)
 
 
 def shape_parameters(x, y, f, contour=None):
 	""" get some scalar parameters that describe the shape of this distribution. """
-	return harmonics_from_covariance(fit_ellipse(x, y, f, contour))
+	return harmonics_from_covariance(*fit_ellipse(x, y, f, contour))
 
 
 def sl(a, b, c):
