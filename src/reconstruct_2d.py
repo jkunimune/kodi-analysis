@@ -153,7 +153,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 		plt.figure()
 		plt.bar(x=rI, height=nI, width=drI,  label="Data", color=(0.773, 0.498, 0.357))
 		n_test = simple_penumbra(rI, δ, Q, r0, r_img, 0, 1, e_min=e_min, e_max=e_max)
-		signal, background = mysignal.linregress(n_test, nI, rI)
+		signal, background = mysignal.linregress(n_test, nI, rI/np.sqrt(1 + nI))
 		r = np.linspace(0, r_img, 216)
 		n_actual = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
 		plt.plot(r, n_actual, '-', color=(0.208, 0.455, 0.663), linewidth=2, label="Fit with charging")
@@ -186,8 +186,9 @@ def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name, data, s
 
 	plt.figure() # plot the reconstructed source image
 	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=cmap, vmin=0)
+	plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[0.5*np.max(Z)], colors='w')
 	T = np.linspace(0, 2*np.pi, 144)
-	R = p0 + p2*np.cos(2*(T - θ2)) + p2*np.sin(2*(T - θ2))
+	R = p0 + p2*np.cos(2*(T - θ2))
 	plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
 	plt.axis('equal')
 	# plt.colorbar()
@@ -206,10 +207,11 @@ def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name, data, s
 
 	j_lineout = np.argmax(np.sum(Z, axis=0))
 	plt.figure()
-	plt.plot(np.repeat(x_bins, 2)[1:-1] - x0, np.repeat(Z[:,j_lineout], 2))
+	plt.plot((np.repeat(x_bins, 2)[1:-1] - x0)/1e-4, np.repeat(Z[:,j_lineout], 2))
 	plt.xlabel("x (μm)")
 	plt.ylabel("Fluence")
 	plt.xlim(-150, 150)
+	plt.ylim(0, None)
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction-lineout.{filetype}")
@@ -274,7 +276,7 @@ def hessian(f, x, args, epsilon=None):
 def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
 	""" compute the shape of a simple analytic single-apeture penumbral image """
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
-	n_pixel = int(min(r.size/6, 6*r0/max(δ, 1e-4)))
+	n_pixel = 72
 	# if 3*δ >= r_max: # if 3*source size is bigger than the image radius
 	# 	raise ValueError("δ cannot be this big")
 	if 3*δ >= r_max/n_pixel: # if 3*source size is smaller than the image radius but bigger than the pixel size
@@ -311,14 +313,17 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	y_eff = b*(X - x0) + c*(Y - y0) #TODO: this funccion take a lot of time... can I speed it at all?
 	weits = np.zeros(X.shape) # decide at what pixels to look
 	teo = np.zeros(X.shape) # and build up the theoretical image
-	for dx, dy in get_relative_aperture_positions(s0, r_img, X.max(), mode=APERTURE_CONFIGURACION): # go to each circle
-		r_rel = np.hypot(x_eff - dx, y_eff - dy)
-		in_penumbra = (r_rel <= r_img + dr) #& (r_rel >= min(r0 - 4*δ, .75*r0) - dr)
+	for xA, yA in get_relative_aperture_positions(s0, r_img, X.max(), mode=APERTURE_CONFIGURACION): # go to each circle
+		r_rel = np.hypot(x_eff - xA, y_eff - yA)
+		in_penumbra = (r_rel <= r_img + dr)
 		weits[in_penumbra] = np.minimum(1, (r_img + dr - r_rel[in_penumbra])/dr) # add it to the weits array
-		try:
-			teo[in_penumbra] += simple_penumbra(r_rel[in_penumbra], δ, Q, r0, r_img, 0, 1, e_min, e_max) # and add in its penumbrum
-		except ValueError:
-			return np.inf
+		for dx in [-dr/6, dr/6]:
+			for dy in [-dr/6, dr/6]:
+				r_rel = np.hypot(x_eff - xA - dx, y_eff - yA - dy)
+				try:
+					teo[in_penumbra] += simple_penumbra(r_rel[in_penumbra], δ, Q, r0, r_img, 0, 1, e_min, e_max) # and add in its penumbrum
+				except ValueError:
+					return np.inf
 
 	if np.any(np.isnan(teo)):
 		return np.inf
