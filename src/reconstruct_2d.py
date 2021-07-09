@@ -42,7 +42,7 @@ OBJECT_SIZE = 200e-4 # cm
 APERTURE_CHARGE_FITTING = 'all'#'same'
 
 APERTURE_CONFIGURACION = 'hex'
-RESOLUTION = 40
+RESOLUTION = 5e-4
 MAX_NUM_PIXELS = 1000
 SPREAD = 1.20
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -50,7 +50,7 @@ EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
 SMOOTHING = 100
 
-CONTOUR = .50 # TODO: what is the significance of the 17% contour?
+CONTOUR = .25 # TODO: what is the significance of the 17% contour?
 
 INPUT_FOLDER = '../scans/'
 OUTPUT_FOLDER = '../results/'
@@ -114,12 +114,12 @@ def plot_raw_data(track_list, x_bins, y_bins, data):
 
 
 def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
-					 x0, y0, r0, r_img, δ, Q, e_min, e_max, name, data, show):
+					 x0, y0, r0, r_img, δ, Q, e_min, e_max, name, data, show): # TODO: put the plotting stuff in a separate script
 	""" plot the data along with the initial fit to it, and the
 		reconstructed superaperture.
 	"""
 	plt.figure()
-	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-6)/NC.size))
+	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-6)/NC.size), rasterized=True)
 	T = np.linspace(0, 2*np.pi)
 	for dx, dy in get_relative_aperture_positions(s0, r_img, xC_bins.max(), mode=APERTURE_CONFIGURACION):
 		plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
@@ -133,7 +133,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, rI_bins, nI,
 	plt.tight_layout()
 
 	plt.figure()
-	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size))
+	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size), rasterized=True)
 	T = np.linspace(0, 2*np.pi)
 	plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 	plt.axis('square')
@@ -179,17 +179,17 @@ def plot_reconstruction(x_bins, y_bins, Z, cmap, e_min, e_max, cut_name, data, s
 			(x_bins[:-1] + x_bins[1:])/2,
 			(y_bins[:-1] + y_bins[1:])/2,
 			Z, contour=CONTOUR) # compute the three number summary
-	print(f"P0 = {p0:.2f} μm")
-	print(f"P2 = {p2:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
+	print(f"  P0 = {p0/1e-4:.2f} μm")
+	print(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 	x0, y0 = p1*np.cos(θ1), p1*np.sin(θ1)
 
 	plt.figure() # plot the reconstructed source image
-	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=cmap, vmin=0)
-	plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[0.5*np.max(Z)], colors='w')
-	T = np.linspace(0, 2*np.pi, 144)
-	R = p0 + p2*np.cos(2*(T - θ2))
-	plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
+	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=cmap, vmin=0, rasterized=True)
+	plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[CONTOUR*np.max(Z)], colors='w')
+	# T = np.linspace(0, 2*np.pi, 144)
+	# R = p0 + p2*np.cos(2*(T - θ2))
+	# plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
 	plt.axis('equal')
 	# plt.colorbar()
 	plt.axis('square')
@@ -317,8 +317,8 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 		r_rel = np.hypot(x_eff - xA, y_eff - yA)
 		in_penumbra = (r_rel <= r_img + dr)
 		weits[in_penumbra] = np.minimum(1, (r_img + dr - r_rel[in_penumbra])/dr) # add it to the weits array
-		for dx in [-dr/6, dr/6]:
-			for dy in [-dr/6, dr/6]:
+		for dx in [0]:#[-dr/6, dr/6]:
+			for dy in [0]:#[-dr/6, dr/6]:
 				r_rel = np.hypot(x_eff - xA - dx, y_eff - yA - dy)
 				try:
 					teo[in_penumbra] += simple_penumbra(r_rel[in_penumbra], δ, Q, r0, r_img, 0, 1, e_min, e_max) # and add in its penumbrum
@@ -357,20 +357,7 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	else: # but you can just use plain poisson if it's all the same to you
 		error = -exp*np.log(teo) + teo #+ np.log(factorial(exp))
 
-	# print(f"SNR of {scale/background:.4g} leads to {np.sum(error*weits, where=weits>0):.2f} + {penalty:.2f} = {np.sum(error*weits, where=weits>0) + penalty:.2f}")
 	if plot:
-		plt.figure()
-		plt.pcolormesh(np.where(weits > 0, exp, np.nan), cmap='viridis', vmin=0, vmax=5)#, norm=CenteredNorm())
-		plt.colorbar()
-		plt.axis('square')
-		plt.title(f"r0 = ({x0:.2f}, {y0:.2f}), δ = {δ:.3f}, Q = {Q:.3f}")
-		plt.text(0, 0, f"ɛ = {np.sum(error*weits, where=weits > 0) + penalty:.1f} Np")
-		plt.figure()
-		plt.pcolormesh(np.where(weits > 0, teo, np.nan), cmap='viridis', vmin=0, vmax=5)#, norm=CenteredNorm())
-		plt.colorbar()
-		plt.axis('square')
-		plt.title(f"r0 = ({x0:.2f}, {y0:.2f}), δ = {δ:.3f}, Q = {Q:.3f}")
-		plt.text(0, 0, f"ɛ = {np.sum(error*weits, where=weits > 0) + penalty:.1f} Np")
 		plt.figure()
 		plt.pcolormesh(np.where(weits > 0, error, 2), vmin=0, vmax=6, cmap='inferno')
 		# plt.pcolormesh(np.where(weits > 0, (teo - exp)/np.sqrt(teo), 0), cmap='RdBu', vmin=-5, vmax=5)#, norm=CenteredNorm())
@@ -427,7 +414,7 @@ def minimize_repeated_nelder_mead(fun, x0, args, simplex_size, **kwargs):
 			**kwargs,
 		)
 		if not opt.success:
-			print(f"WARN: could not find good fit because {opt.message}")
+			print(f"  WARN: could not find good fit because {opt.message}")
 			opt.x = x0
 			return opt
 
@@ -475,9 +462,10 @@ if __name__ == '__main__':
 		rotation = np.radians(data[ROTATION]) # rad
 		etch_time = float(data[ETCH_TIME].strip(' h'))
 
+		binsS = 2*OBJECT_SIZE/RESOLUTION
 		r0 = (M + 1)*rA # calculate the penumbra parameters
 		s0 = (M + 1)*sA
-		δ0 = M*OBJECT_SIZE*(1 + 2/RESOLUTION)
+		δ0 = M*OBJECT_SIZE*(1 + RESOLUTION/OBJECT_SIZE)
 		r_img = SPREAD*r0 + δ0
 		if s0 != 0 and r_img > s0/2:
 			r_img = s0/2 # make sure the image at which we look is small enough to avoid other penumbrae
@@ -494,7 +482,7 @@ if __name__ == '__main__':
 				print("\nBeginning reconstruction for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 				break
 		if filename is None:
-			print("Could not find text file for TIM {} on shot {}".format(data[TIM], data[SHOT]))
+			print("  Could not find text file for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 			continue
 		if filename.endswith('.txt'): # if it is a typical CPSA-derived text file
 			mode = 'hist'
@@ -512,10 +500,10 @@ if __name__ == '__main__':
 			track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 			track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
 
-			n_bins = min(MAX_NUM_PIXELS, int(RESOLUTION/δ0*r_img)) # get the image resolution needed to resolve the object
+			binsI = min(MAX_NUM_PIXELS, int(binsS/δ0*r_img)) # get the image resolution needed to resolve the object
 			r_full = max(np.max(track_list['x(cm)']), np.max(track_list['y(cm)']))
-			n_bins_full = int(min(2*MAX_NUM_PIXELS, n_bins*r_full/r_img))
-			xC_bins, yC_bins = np.linspace(-r_full, r_full, n_bins_full+1), np.linspace(-r_full, r_full, n_bins_full+1) # this is the CR39 coordinate system, centered at 0,0
+			binsC = int(min(2*MAX_NUM_PIXELS, binsI*r_full/r_img))
+			xC_bins, yC_bins = np.linspace(-r_full, r_full, binsC+1), np.linspace(-r_full, r_full, binsC+1) # this is the CR39 coordinate system, centered at 0,0
 			dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
 			xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2 # change these to bin centers
 			XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
@@ -558,7 +546,7 @@ if __name__ == '__main__':
 				track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 
 				if len(track_x) <= 0:
-					print("No tracks found in this cut.")
+					print("  No tracks found in this cut.")
 					continue
 
 				if APERTURE_CHARGE_FITTING == 'all':
@@ -586,12 +574,12 @@ if __name__ == '__main__':
 			bounds = [(None,None), (None,None), (0,None), (0,None)]
 			args = (r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds)
 			if Q is None: # decide whether to fit the electrick feeld
-				print("fitting electrick feeld")
+				print("  fitting electrick feeld")
 				gess.append(.15)
 				step.append(.10)
 				bounds.append((0, None))
 			else: # or not
-				print(f"setting electrick feeld to {Q}")
+				print(f"  setting electrick feeld to {Q}")
 				args = (Q, *args)
 
 			opt = minimize_repeated_nelder_mead(
@@ -621,19 +609,17 @@ if __name__ == '__main__':
 					dx0, dy0, dδ, _ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
 					dQ = 0
 			except np.linalg.LinAlgError:
-				print(hess)
-				print("help call a wambulance. waaa waaa waaa waaa")
 				dx0, dy0, dδ, dQ = 0, 0, 0, 0
 
 			if VERBOSE:
-				print(simple_fit(opt.x, *args, plot=SHOW_DEBUG_PLOTS))
-				print(opt)
+				print(f"  {simple_fit(opt.x, *args, plot=SHOW_DEBUG_PLOTS)}")
+				print(f"  {opt}")
 			print(
-				f"n = {np.sum(NC):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
+				f"  n = {np.sum(NC):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
 				f"δ = {δ/M/1e-4:.2f} ± {dδ/M/1e-4:.2f} μm, Q = {Q:.3f} ± {dQ:.3f} cm*MeV, M = {M:.2f}")
 
 			if mode == 'hist':
-				xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, n_bins+1), np.linspace(y0 - r_img, y0 + r_img, n_bins+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
+				xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, binsI+1), np.linspace(y0 - r_img, y0 + r_img, binsI+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
 				dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 				xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 				XI, YI = np.meshgrid(xI, yI, indexing='ij')
@@ -650,14 +636,14 @@ if __name__ == '__main__':
 			else:
 				nI, rI_bins = None, None
 
-			kernel_size = xI.size - 2*int(δ0/dxI) # now make the kernel (from here on, it's the same in both modes)
-			if kernel_size%2 == 0: # make sure the kernel is odd
-				kernel_size += 1
-			xK_bins, yK_bins = np.linspace(-dxI*kernel_size/2, dxI*kernel_size/2, kernel_size+1), np.linspace(-dyI*kernel_size/2, dyI*kernel_size/2, kernel_size+1)
+			binsK = xI.size - 2*int(δ0/dxI) # now make the kernel (from here on, it's the same in both modes)
+			if binsK%2 == 0: # make sure the kernel is odd
+				binsK += 1
+			xK_bins, yK_bins = np.linspace(-dxI*binsK/2, dxI*binsK/2, binsK+1), np.linspace(-dyI*binsK/2, dyI*binsK/2, binsK+1)
 			dxK, dyK = xK_bins[1] - xK_bins[0], yK_bins[1] - yK_bins[0]
 			XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2, (yK_bins[:-1] + yK_bins[1:])/2, indexing='ij') # this is the kernel coordinate system, measured from the center of the umbra
 
-			xS_bins, yS_bins = xI_bins[kernel_size//2:-(kernel_size//2)]/M, yI_bins[kernel_size//2:-(kernel_size//2)]/M # this is the source system.
+			xS_bins, yS_bins = xI_bins[binsK//2:-(binsK//2)]/M, yI_bins[binsK//2:-(binsK//2)]/M # this is the source system.
 			dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
 			xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
 			XS, YS = np.meshgrid(xS, yS, indexing='ij')
@@ -682,7 +668,7 @@ if __name__ == '__main__':
 			try:
 				data_bins &= convex_hull(XI, YI, NI) # crop it at the convex hull where counts go to zero
 			except MemoryError:
-				print("WARN: could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
+				print("  WARN: could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
 
 			if SHOW_DEBUG_PLOTS:
 				plt.figure()
@@ -704,24 +690,21 @@ if __name__ == '__main__':
 				verbose=VERBOSE,
 				show_plots=SHOW_DEBUG_PLOTS) # deconvolve!
 
-			print(f"χ^2/n = {χ2_red}")
+			print(f"  χ^2/n = {χ2_red}")
 			if χ2_red >= 1.5: # throw it away if it looks unreasonable
-				print("Could not find adequate fit")
+				print("  Could not find adequate fit")
 				continue
 			B = np.maximum(0, B) # we know this must be nonnegative
 
 			with open(OUTPUT_FOLDER+f'image-{data[SHOT]}-{data[TIM]}-{cut_name}.pkl', 'wb') as f:
 				pickle.dump((XI, YI, B), f)
 
-			# p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(xS, yS, B, contour=0) # compute the three number summary
-			# print(simple_fit((p1*np.cos(θ1)*M, p1*np.sin(θ1)*M, p0/1.1775*M, None, None, Q), r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds, plot=True))
-
 			def func(x, A, mouth):
 				return A*(1 + erf((100e-4 - x)/mouth))/2
 			real = source_bins
 			cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
 			(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
-			# print(f"XXX[{str(data[SHOT][-5:])}, {mouth/1e-4:.1f}],")
+			# print(f"  XXX[{str(data[SHOT][-5:])}, {mouth/1e-4:.1f}],")
 
 			p0, (p2, θ2) = plot_reconstruction(xS_bins, yS_bins, B, cmap, *e_in_bounds, cut_name, data, SHOW_PLOTS)
 
