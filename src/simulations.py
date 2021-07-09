@@ -3,12 +3,13 @@ import matplotlib.pyplot as plt
 import scipy.interpolate as sp
 import matplotlib.colors as colors
 from mpl_toolkits.mplot3d import Axes3D
+import pickle
 
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
 
 
 N_simul = 1000000
-# SHOT = 95521
+# SHOT = 95520
 
 mD = 2.014*1.66053904e-27
 mT = 3.016*1.66053904e-27
@@ -27,44 +28,23 @@ L = 4.21e-2
 
 def load_shot(shot_num):
 	""" get the R, rho, P, V, Ti, and Te profiles for this shot. """
-	with open("LILAC_sims/Param_spatial_{}.dat".format(shot_num), 'r') as f:
-		header = f.readline().split(',')
-		t_steps = int(header[-1][header[-1].index('=')+2:].strip())
-		columns = f.readline().split()[-1].split(',')
-		columns = [c.strip('"') for c in columns]
+	with open("../LILAC_sims/{}.pkl".format(shot_num), 'rb') as f:
+		time, profiles = pickle.load(f)
 
-		time = []
-		profiles = ([], [], [], [], [], [])
-		for t in range(t_steps):
-			header = f.readline().split(',')
-			r_steps = int(header[0][header[0].index('=')+1:].strip())
-			t_zay = float(header[2][header[2].index('=')+1:].strip())
-			time.append(t_zay)
-			for profile in profiles:
-				profile.append([])
-			for i in range(r_steps):
-				row = f.readline().split()
-				for j, profile in enumerate(profiles):
-					profile[t].append(float(row[j]))
-
-		return np.array(time), [np.array(profile) for profile in profiles]
+	return np.array(time), [np.array(profile) for profile in profiles]
 
 def normalize(a):
 	return a/a.sum()
 
 def make_image(t, R, ρ, Ti, e_bounds):
-	R = R*1e-2 # convert to meters
+	R = R*1e-6 # convert to meters
 	ρ = ρ*1e-3/(1e-2)**3 # convert to kg/m^3
-	Ti = kB*Ti # keV
 	ne = ρ/((mD + mT)/2)
 	nD, nT = ne/2, ne/2
 	dt = np.gradient(t)
 	dR = np.gradient(R, axis=1)
 
-	C = [0, 1.17302e-15, 1.51361e-2, 7.51886e-2, 4.60643e-3, 1.35000e-2, -1.06750e-4, 1.36600e-5]
-	θ = Ti/(1 - (Ti*(C[2] + Ti*(C[4] + Ti*C[6]))/(1 + Ti*(C[3] + Ti*(C[5] + Ti*C[7])))))
-	ξ = (34.3827**2/(4*θ))**(1/3)
-	σv = C[1]*θ*np.sqrt(ξ/(1124656*Ti**3))*np.exp(-3*ξ) # m^3/s
+	σv = 9.1e-22*np.exp(-0.572*abs(np.log(T/64.2))**2.13) # m^3/s
 	σv[np.isnan(σv)] = 0
 	# plt.loglog(Ti[Ti > 1], σv[Ti > 1], '.')
 	# plt.show()
@@ -131,55 +111,46 @@ def make_image(t, R, ρ, Ti, e_bounds):
 
 
 if __name__ == '__main__':
-	for SHOT in range(95520, 95525):
+	for SHOT in range(95522, 95523):
 		print(SHOT)
-		t, (R, ρ, P, V, Te, Ti) = load_shot(SHOT)
+		t, (R, ρ, P, Te, Ti) = load_shot(SHOT)
 
-		R = R*1e-2 # convert to meters
-		ρ = ρ*1e-3/(1e-2)**3 # convert to kg/m^3
-		Ti = kB*Ti # convert to keV
-		Te = kB*Te
-		ne = ρ/((mD + mT)/2) # m^-3
+		ne = ρ*1e-3/(1e-2)**3/((mD + mT)/2) # m^-3
 		nD, nT = ne/2, ne/2
 		dt = np.gradient(t)
 		dR = np.gradient(R, axis=1)
 
-		C = [0, 1.17302e-15, 1.51361e-2, 7.51886e-2, 4.60643e-3, 1.35000e-2, -1.06750e-4, 1.36600e-5]
-		θ = Ti/(1 - (Ti*(C[2] + Ti*(C[4] + Ti*C[6]))/(1 + Ti*(C[3] + Ti*(C[5] + Ti*C[7])))))
-		ξ = (34.3827**2/(4*θ))**(1/3)
-		σv = C[1]*θ*np.sqrt(ξ/(1124656*Ti**3))*np.exp(-3*ξ) # m^3/s
-		σv[np.isnan(σv)] = 0
+		σv = 9.1e-22*np.exp(-0.572*abs(np.log(Ti/64.2))**2.13) # m^3/s
 		# plt.loglog(Ti[Ti > 1], σv[Ti > 1], '.')
 		# plt.show()
 		Yn = nD*nT*σv # [1/(m^3 s)]
 
-		Ti = qe*1e3*Ti # convert to J
 		Te = qe*1e3*Te # convert to J
 
 		Γ = qe**2/(4*np.pi*ɛ0*Te)*(4/3*np.pi*ne)**(1/3)
 
-		plt.figure()
-		iBT = np.argmax(np.sum(Yn*R**2, axis=1)*np.sum(ρ, axis=1))
-		for i in list(range(0, R.shape[1], 2)) + [iBT]:
-			plt.clf()
-			plt.plot(R[i,:-1]/1e-6, Γ[i,:-1])
-			# plt.plot(R[i,:]/1e-6, ρ[i,:])
-			# plt.plot(R[i,:]/1e-6, Yn[i,:])
-			plt.yscale('log')
-			plt.xlim(0, 400)
-			# plt.ylim(Γ[:,:-1].min(), Γ[:,:-1].max())
-			plt.ylim(1e-3, 1e2)
-			plt.pause(.01)
-		plt.show()
-
 		# plt.figure()
-		# plt.pcolormesh(np.tile(t, (R.shape[1], 1)).T/1e-9, R/1e-6, ρ*1e-3/(1e-2)**3, cmap='magma')
-		# plt.colorbar().set_label("Density (g/cm^3)")
-		# plt.contour(np.tile(t, (R.shape[1], 1)).T/1e-9, R/1e-6, Yn, levels=[Yn.max()/10], colors=['white'])
-		# plt.xlabel("Time (ns)")
-		# plt.ylabel("Radius (um)")
-		# plt.title("Shot {}".format(SHOT))
-		# plt.axis([0, t[-1]/1e-9, 0, 400])
+		# iBT = np.argmax(np.sum(Yn*R**2, axis=1)*np.sum(ρ, axis=1))
+		# for i in list(range(0, R.shape[1], 2)) + [iBT]:
+		# 	plt.clf()
+		# 	# plt.plot(R[i,:-1]/1e-6, Γ[i,:-1])
+		# 	plt.plot(R[i,:]/1e-6, ρ[i,:])
+		# 	# plt.plot(R[i,:]/1e-6, Yn[i,:])
+		# 	plt.yscale('log')
+		# 	# plt.xlim(0, 400)
+		# 	# plt.ylim(Γ[:,:-1].min(), Γ[:,:-1].max())
+		# 	# plt.ylim(1e-3, 1e2)
+		# 	plt.pause(.01)
+		# plt.show()
+
+		plt.figure()
+		plt.contourf(np.tile(t, (R.shape[1], 1)).T, R, ρ, levels=12, cmap='magma')
+		plt.colorbar().set_label("Density (g/cm^3)")
+		plt.contour(np.tile(t, (R.shape[1], 1)).T, R, Yn, levels=[Yn.max()/10], colors=['white'])
+		plt.xlabel("Time (ns)")
+		plt.ylabel("Radius (um)")
+		plt.title("Shot {}".format(SHOT))
+		plt.axis([0, t[-1], 0, 500])
 
 		# fig = plt.figure()
 		# ax = fig.add_subplot(111, projection='3d')
@@ -206,4 +177,4 @@ if __name__ == '__main__':
 		# 	plt.savefig("../results/{}_LILAC_{}-{}_sourceimage.png".format(SHOT, *e_bounds))
 		# 	plt.close()
 
-		# plt.show()
+		plt.show()
