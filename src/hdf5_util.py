@@ -11,11 +11,21 @@ def save_as_hdf5(filename, **kwargs):
 		filename += '.h5'
 	with h5py.File(filename, 'w') as f:
 		for col_name, col_values in kwargs.items():
+			col_values = np.array(col_values)
 			dataset = f.create_dataset(col_name, col_values.shape)
 			dataset[...] = col_values	
 
+def load_hdf5(filename):
+	if not filename.endswith('.h5'):
+		filename += '.h5'
+	objects = []
+	with h5py.File(filename, 'r') as f:
+		for key in sorted(f.keys()):
+			objects.append(np.array(f[key]))
+	return objects
+
 if __name__ == '__main__':
-	# FOLDER = r'C:\Users\Justin Kunimune\Documents\GitHub\MRSt\working'
+	# FOLDER = r'C:\Users\Justin Kunimune\Documents\GitHub\MRSt\output'
 	# FILE = 'ensemble_4_10_5.0_2_1200_2020-12-24'
 	FOLDER = r'C:\Users\Justin Kunimune\Dropbox\Labori\MRSt'
 	FILE = 'nora_scan'

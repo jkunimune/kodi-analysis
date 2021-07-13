@@ -13,7 +13,6 @@ images = images[images['energy_cut'] == 'hi'] # for now, we only worry about hot
 
 reconstructions = []
 
-for 
 for shot in images['shot'].unique(): # go thru each shot
 	print(shot)
 	relevant_images = images[images['shot'] == shot]

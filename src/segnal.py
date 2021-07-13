@@ -160,6 +160,7 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 
 	s = convolve2d(g/η, q, where=where) + g0/η0 # get the starting thing
 
+	np.seterr('ignore')
 	L0 = N*np.sum(f*np.log(f), where=where & (f > 0))
 	scores, best_G, best_S = [], None, None
 	while len(scores) < 200:
@@ -239,6 +240,8 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 			best_S = N*s
 		elif np.argmax(scores) < len(scores) - 6: # if the value function decreases twice in a row, quit
 			break
+
+	np.seterr('warn')
 	return best_G, np.sum((best_S - N*f)**2/best_S, where=where)/np.sum(where)
 
 
