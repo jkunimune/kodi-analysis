@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import numdifftools as nd
 import pandas as pd
@@ -81,11 +82,11 @@ def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
 def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	""" compute how close these data are to this penumbral image """
 	if len(args[0]) == 4 and len(args) == 12: # first, parse the parameters
-		(x0, y0, δ, background), Q, r0, s0, r_img, X, Y, exp, populated_region, e_min, e_max, config = args
+		(x0, y0, δ, background), Q, r0, s0, r_img, X, Y, exp, where, e_min, e_max, config = args
 	elif len(args[0]) == 5 and len(args) == 11:
-		(x0, y0, δ, background, Q), r0, s0, r_img, X, Y, exp, populated_region, e_min, e_max, config = args
+		(x0, y0, δ, background, Q), r0, s0, r_img, X, Y, exp, where, e_min, e_max, config = args
 	elif len(args[0]) == 5 and len(args) == 10:
-		(x0, y0, δ, background, r0), s0, r_img, X, Y, exp, populated_region, e_min, e_max, config = args
+		(x0, y0, δ, background, r0), s0, r_img, X, Y, exp, where, e_min, e_max, config = args
 		Q = 0
 	else:
 		raise ValueError("unsupported set of arguments")
@@ -94,12 +95,11 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	dr = 2*(X[1,0] - X[0,0])
 	x_eff = a*(X - x0) + b*(Y - y0)
 	y_eff = b*(X - x0) + c*(Y - y0) #TODO: this funccion take a lot of time... can I speed it at all?
-	weits = np.zeros(X.shape) # decide at what pixels to look
 	teo = np.zeros(X.shape) # and build up the theoretical image
 	for xA, yA in get_relative_aperture_positions(s0, r_img, X.max(), mode=config): # go to each circle
 		r_rel = np.hypot(x_eff - xA, y_eff - yA)
 		in_penumbra = (r_rel <= r_img + dr)
-		weits[in_penumbra] = np.minimum(1, (r_img + dr - r_rel[in_penumbra])/dr) # add it to the weits array
+		antialiasing = np.minimum(1, (r_img + dr - r_rel[in_penumbra])/dr) # apply a beveld edge to make sure it is continuous
 		for dx in [0]:#[-dr/6, dr/6]:
 			for dy in [0]:#[-dr/6, dr/6]:
 				r_rel = np.hypot(x_eff - xA - dx, y_eff - yA - dy)
@@ -107,34 +107,30 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 					teo[in_penumbra] += simple_penumbra(r_rel[in_penumbra], δ, Q, r0, r_img, 0, 1, e_min, e_max) # and add in its penumbrum
 				except ValueError:
 					return np.inf
+		teo[in_penumbra] *= antialiasing
 
 	if np.any(np.isnan(teo)):
 		return np.inf
 
-	weits[~populated_region] = 0 # exclude outer regions where there are clearly no data
-	
-	if np.sum(weits) == 0:
-		return np.inf
 	if background is not None: # if the min is specified
-		scale = abs(np.sum(exp*weits) - np.sum(background*weits))/np.sum(teo*weits) # compute the best gess at the signal scale
+		scale = abs(np.sum(exp, where=where & (teo > 0)) - background*np.sum(where & (teo > 0)))/ \
+				np.sum(teo, where=where & (teo > 0)) # compute the best gess at the signal scale
 	else: # if the max and min are unspecified
-		scale, background = mysignal.linregress(teo, exp, weits/(1 + teo))
+		scale, background = mysignal.linregress(teo, exp, 1/(1 + teo), where=where)
 		background = max(0, background)
 		scale = abs(scale)
 	teo = background + scale*teo
 
 	penalty = \
-		+ np.exp(EXPECTED_SIGNAL_TO_NOISE*background/scale) \
-		- 2*np.sum(weits) \
 		- SMOOTHING*(2*np.log(δ)) \
 		+ (np.sqrt(a*c - b**2) - 1)**2/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) \
 		- Q/.1
 
-	weits[teo == 0] = 0 # from now on, ignore problematic pixels
+	where &= (teo != 0) # from now on, ignore problematic pixels
 
 	if np.any((teo == 0) & (exp != 0)): # if they are truly problematic, quit now
 		return np.inf
-	elif NON_STATISTICAL_NOISE > 1/6*np.max(exp, where=weits > 0, initial=0)**(-1/2):
+	elif NON_STATISTICAL_NOISE > 1/6*np.max(exp, where=where, initial=0)**(-1/2):
 		α = 1/NON_STATISTICAL_NOISE**2 # use a poisson error model with a gamma-distributed rate
 		error = (α + exp)*np.log(α/teo + 1) - α*np.log(α/teo) #- np.log(comb(α + exp - 1, exp))
 	else: # but you can just use plain poisson if it's all the same to you
@@ -142,18 +138,18 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 
 	if plot:
 		plt.figure()
-		plt.pcolormesh(np.where(weits > 0, error, 2), vmin=0, vmax=6, cmap='inferno')
-		# plt.pcolormesh(np.where(weits > 0, (teo - exp)/np.sqrt(teo), 0), cmap='RdBu', vmin=-5, vmax=5)#, norm=CenteredNorm())
+		plt.pcolormesh(np.where(where, error, 2), vmin=0, vmax=6, cmap='inferno')
+		# plt.pcolormesh(np.where(where, (teo - exp)/np.sqrt(teo), 0), cmap='RdBu', vmin=-5, vmax=5)#, norm=CenteredNorm())
 		plt.colorbar()
 		plt.axis('square')
 		plt.title(f"r0 = ({x0:.2f}, {y0:.2f}), δ = {δ:.3f}, Q = {Q:.3f}")
-		plt.text(0, 0, f"ɛ = {np.sum(error*weits, where=weits > 0) + penalty:.1f} Np")
+		plt.text(0, 0, f"ɛ = {np.sum(error, where=where) + penalty:.1f} Np")
 		plt.show()
 
 	# if aggressive:
 	# 	return penalty
 	# else:
-	return np.sum(error*weits, where=weits > 0) + penalty
+	return np.sum(error, where=where) + penalty
 
 
 def minimize_repeated_nelder_mead(fun, x0, args, simplex_size, **kwargs):
@@ -305,9 +301,9 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		cuts = [('synth', [0, 100])]
 	else:
 		# cuts = [('all', [0, 100])] # [MeV] (pre-filtering)
-		# cuts = [('hi', [9, 100])] # [MeV] (pre-filtering)
+		cuts = [('hi', [9, 100]), ('lo', [0, 7])] # [MeV] (pre-filtering)
+		# cuts = [('lo', [0, 7]), ('hi', [9, 100])] # [MeV] (pre-filtering)
 		# cuts = [('all', [0, 100]), ('lo', [0, 7]), ('hi', [10, 100])] # [MeV] (pre-filtering)
-		cuts = [('lo', [0, 7]), ('hi', [9, 100])] # [MeV] (pre-filtering)
 
 	outputs = []
 	for cut_name, e_in_bounds in cuts: # iterate over the cuts
