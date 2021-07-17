@@ -24,7 +24,7 @@ MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
-SMOOTHING = 100
+SMOOTHING = 3e-4
 CONTOUR = .25 # TODO: what is the significance of the 17% contour?
 
 
@@ -112,6 +112,8 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	if np.any(np.isnan(teo)):
 		return np.inf
 
+	α = np.sum(teo*exp)*SMOOTHING
+
 	if background is not None: # if the min is specified
 		scale = abs(np.sum(exp, where=where & (teo > 0)) - background*np.sum(where & (teo > 0)))/ \
 				np.sum(teo, where=where & (teo > 0)) # compute the best gess at the signal scale
@@ -122,7 +124,7 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	teo = background + scale*teo
 
 	penalty = \
-		- SMOOTHING*(2*np.log(δ)) \
+		- α*(2*np.log(δ)) \
 		+ (np.sqrt(a*c - b**2) - 1)**2/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) \
 		- Q/.1
 
@@ -301,9 +303,9 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		cuts = [('synth', [0, 100])]
 	else:
 		# cuts = [('all', [0, 100])] # [MeV] (pre-filtering)
-		cuts = [('hi', [9, 100]), ('lo', [0, 7])] # [MeV] (pre-filtering)
-		# cuts = [('lo', [0, 7]), ('hi', [9, 100])] # [MeV] (pre-filtering)
-		# cuts = [('all', [0, 100]), ('lo', [0, 7]), ('hi', [10, 100])] # [MeV] (pre-filtering)
+		cuts = [('hi', [9, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
+		# cuts = [('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
+		# cuts = [('all', [0, 100]), ('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
 
 	outputs = []
 	for cut_name, e_in_bounds in cuts: # iterate over the cuts
@@ -388,9 +390,6 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		if verbose:
 			print(f"  {simple_fit(opt.x, *args, plot=show_plots)}")
 			print(f"  {opt}")
-		print(
-			f"  n = {np.sum(NC):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
-			f"δ = {δ/M/1e-4:.2f} ± {dδ/M/1e-4:.2f} μm, Q = {Q:.3f} ± {dQ:.3f} cm*MeV, M = {M:.2f}")
 
 		if mode == 'hist':
 			xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, binsI+1), np.linspace(y0 - r_img, y0 + r_img, binsI+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
@@ -457,6 +456,10 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		# plt.axis('square')
 		# plt.title("Maximum convolution")
 		# plt.show()
+
+		print(
+			f"  n = {np.sum(NI[data_bins]):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
+			f"δ = {δ/M/1e-4:.2f} ± {dδ/M/1e-4:.2f} μm, Q = {Q:.3f} ± {dQ:.3f} cm*MeV, M = {M:.2f}")
 
 		B, χ2_red = mysignal.gelfgat_deconvolve2d(
 			NI,

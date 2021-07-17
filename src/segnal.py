@@ -11,7 +11,7 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
-SMOOTHING = 100 # entropy weight
+SMOOTHING = 3e-4 # entropy weight
 
 
 def linregress(x, y, weights=None):
@@ -197,7 +197,7 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 
 		L = N*np.sum(f*np.log(s), where=where)
 		S = np.sum(γ*np.log(γ), where=g!=0)
-		scores.append(L - SMOOTHING*S)
+		scores.append(L - N*SMOOTHING*S)
 		if verbose: print(f"[{L - L0}, {S}, {scores[-1] - L0}],")
 		if show_plots and len(scores)%10 == 1:
 			fig, axes = plt.subplots(3, 2, figsize=(6, 9))
