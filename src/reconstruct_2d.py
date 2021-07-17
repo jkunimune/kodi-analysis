@@ -404,14 +404,15 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			if s0 == 0: # also do a radial histogram because that might be useful
 				e_min, e_max = e_in_bounds
 				track_r = np.hypot(track_x - x0, track_y - y0)
-				nI, rI_bins = np.histogram(track_r, bins=np.linspace(0, r_img, 36))
+				nI, rI_bins = np.histogram(track_r, bins=np.linspace(0, r_img, 36)) # take the histogram
 				rI = (rI_bins[:-1] + rI_bins[1:])/2
-				n_test = simple_penumbra(rI, δ, Q, r0, r_img, 0, 1, e_min=e_min, e_max=e_max)
-				signal, background = mysignal.linregress(n_test, nI, rI/np.sqrt(1 + nI))
+				zI = nI/(np.pi*(rI_bins[1:]**2 - rI_bins[:-1]**2)) # normalize it by bin area
+				z_test = simple_penumbra(rI, δ, Q, r0, r_img, 0, 1, e_min=e_min, e_max=e_max)
+				signal, background = mysignal.linregress(z_test, zI, rI/(1 + nI))
 				r = np.linspace(0, r_img, 216)
-				n_actual = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
-				n_uncharged = simple_penumbra(r, δ+4*Q/e_max, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
-				save_as_hdf5(f'{output_filename}-{cut_name}-radial', r1=rI_bins, y1=nI, r2=r, y2=n_actual, r3=r, y3=n_uncharged)
+				z_actual = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+				z_uncharged = simple_penumbra(r, δ+4*Q/e_max, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
+				save_as_hdf5(f'{output_filename}-{cut_name}-radial', x1=rI_bins, y1=zI, x2=r, y2=z_actual, x3=r, y3=z_uncharged)
 
 			del(track_x)
 			del(track_y)

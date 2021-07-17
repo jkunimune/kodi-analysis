@@ -26,9 +26,10 @@ SHOW_OFFSET = False
 
 OBJECT_SIZE = 200e-4
 RESOLUTION = 5e-4
-EXPANSION_FACTOR = 1.15
+EXPANSION_FACTOR = 1.20
 PLOT_CONTOUR = .25
 APERTURE_CONFIGURATION = 'hex'
+CHARGE_FITTING = 'all'
 
 INPUT_FOLDER = '../scans/'
 OUTPUT_FOLDER = '../results/'
@@ -98,14 +99,13 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	plt.close('all')
 
 
-def plot_radial_data(rI_bins, nI, r_actual, n_actual, r_uncharged, n_uncharged,
+def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 		             δ, Q, energy_min, energy_max, energy_cut, data, **kwargs):
 	rI, drI = (rI_bins[1:] + rI_bins[:-1])/2, rI_bins[:-1] - rI_bins[1:]
-	nI = nI/(np.pi*(rI_bins[1:]**2 - rI_bins[:-1]**2))
 	plt.figure()
-	plt.bar(x=rI, height=nI, width=drI,  label="Data", color=(0.773, 0.498, 0.357))
-	plt.plot(r_actual, n_actual, '-', color=(0.208, 0.455, 0.663), linewidth=2, label="Fit with charging")
-	plt.plot(r_uncharged, n_uncharged, '--', color=(0.278, 0.439, 0.239), linewidth=2, label="Fit without charging")
+	plt.bar(x=rI, height=zI, width=drI,  label="Data", color=(0.773, 0.498, 0.357))
+	plt.plot(r_actual, z_actual, '-', color=(0.208, 0.455, 0.663), linewidth=2, label="Fit with charging")
+	plt.plot(r_uncharged, z_uncharged, '--', color=(0.278, 0.439, 0.239), linewidth=2, label="Fit without charging")
 	plt.xlim(0, rI_bins.max())
 	plt.xlabel("Radius (cm)")
 	plt.ylabel("Track density (1/cm²)")
@@ -175,8 +175,8 @@ def plot_overlaid_contors(xR_bins, yR_bins, NR, xB_bins, yB_bins, NB, projected_
 	x_flo, y_flo, z_flo = projected_flow
 
 	plt.figure()
-	plt.contourf((XR - x0)/1e-4, (YR - y0)/1e-4, NR, levels=[PLOT_CONTOUR, 1], colors=['#FF5555'])
-	plt.contourf((XB - x0)/1e-4, (YB - y0)/1e-4, NB, levels=[PLOT_CONTOUR, 1], colors=['#5555FF'])
+	plt.contourf((XR - x0)/1e-4, (YR - y0)/1e-4, NR/NR.max(), levels=[PLOT_CONTOUR, 1], colors=['#FF5555'])
+	plt.contourf((XB - x0)/1e-4, (YB - y0)/1e-4, NB/NB.max(), levels=[PLOT_CONTOUR, 1], colors=['#5555FF'])
 	# if xray is not None:
 	# 	plt.contour(XX, YX, xray, levels=[.25], colors=['#550055BB'])
 	if SHOW_OFFSET:
@@ -258,8 +258,8 @@ if __name__ == '__main__':
 					data=data, **result)
 
 				try:
-					rI, r1, r2, nI, n1, n2 = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-radial')
-					plot_radial_data(rI, nI, r1, n1, r2, n2, data=data, **result)
+					rI, r1, r2, zI, z1, z2 = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-radial')
+					plot_radial_data(rI, zI, r1, z1, r2, z2, data=data, **result)
 				except IOError:
 					pass
 
