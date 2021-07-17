@@ -275,8 +275,8 @@ if __name__ == '__main__':
 
 				dx, dy = center_of_mass(xB_bins, yB_bins, NB) - center_of_mass(xR_bins, yR_bins, NR)
 				print(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
-				results[images_on_this_los].offset_magnitude = np.hypot(dx, dy)/1e-4
-				results[images_on_this_los].offset_angle = np.degrees(np.arctan2(dy, dx))
+				results.offset_magnitude[images_on_this_los] = np.hypot(dx, dy)/1e-4
+				results.offset_angle[images_on_this_los] = np.degrees(np.arctan2(dy, dx))
 
 				basis = tim_coordinates(data[TIM])
 		
