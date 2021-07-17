@@ -199,15 +199,15 @@ def plot_overlaid_contors(xR_bins, yR_bins, NR, xB_bins, yB_bins, NB, projected_
 
 
 if __name__ == '__main__':
-	shot_list = pd.read_csv('../shot_list.csv')
 	try:
-		results = pd.read_csv(OUTPUT_FOLDER+"/summary.csv")
+		results = pd.read_csv(OUTPUT_FOLDER+"/summary.csv", dtype={'shot': str}) # start by reading the existing data or creating a new file
 	except IOError:
-		results = pd.DataFrame()
+		results = pd.DataFrame(data={"shot": ['placeholder'], "tim": [0], "energy_cut": ['placeholder']}) # be explicit that shots can be str, but usually look like int
 
-	for i, data in shot_list.iterrows():
+	shot_list = pd.read_csv('../shot_list.csv', dtype={SHOT: str})
+	for i, data in shot_list.iterrows(): # iterate thru the shot list
 		input_filename = None
-		for fname in os.listdir(INPUT_FOLDER):
+		for fname in os.listdir(INPUT_FOLDER): # search for filenames that match each row
 			if (fname.endswith('.txt') or fname.endswith('.pkl')) \
 					and	str(data[SHOT]) in fname and ('tim'+str(data[TIM]) in fname.lower() or 'tim' not in fname.lower()) \
 					and data[ETCH_TIME].replace(' ','') in fname:
@@ -232,10 +232,11 @@ if __name__ == '__main__':
 					rotation  = np.radians(data[ROTATION]),
 					etch_time = float(data[ETCH_TIME].strip(' h')),
 					aperture_configuration = APERTURE_CONFIGURATION,
-					aperture_charge_fitting = 'all',
+					aperture_charge_fitting = CHARGE_FITTING,
 					object_size = OBJECT_SIZE,
 					resolution = RESOLUTION,
 					expansion_factor = EXPANSION_FACTOR,
+					show_plots=False,
 				)
 
 				results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM])] # clear any previous versions of this reconstruccion
@@ -299,4 +300,5 @@ if __name__ == '__main__':
 
 				plot_reconstruction(xX_bins, yX_bins, xray, None, None, "xray", data)
 
+			results = results[results.shot != 'placeholder']
 			results.to_csv(OUTPUT_FOLDER+"/summary.csv", index=False) # save the results to disk
