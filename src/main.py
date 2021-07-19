@@ -249,23 +249,25 @@ if __name__ == '__main__':
 							offset_angle=np.nan,
 							**result),
 						ignore_index=True)
+				results = results[results.shot != 'placeholder']
 
 			images_on_this_los = (results.shot == data[SHOT]) & (results.tim == data[TIM])
 			for i, result in results[images_on_this_los].iterrows():
-				cut = result.energy_cut
-				xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
-				xI_bins, yI_bins, NI = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-projection')
-				plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
-					data=data, **result)
+				if result.energy_cut != 'xray':
+					cut = result.energy_cut
+					xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
+					xI_bins, yI_bins, NI = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-projection')
+					plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
+						data=data, **result)
 
-				try:
-					rI, r1, r2, zI, z1, z2 = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-radial')
-					plot_radial_data(rI, zI, r1, z1, r2, z2, data=data, **result)
-				except IOError:
-					pass
+					try:
+						rI, r1, r2, zI, z1, z2 = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-radial')
+						plot_radial_data(rI, zI, r1, z1, r2, z2, data=data, **result)
+					except IOError:
+						pass
 
-				x_bins, y_bins, B = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstruction')
-				plot_reconstruction(x_bins, y_bins, B, result.energy_min, result.energy_max, result.energy_cut, data)
+					x_bins, y_bins, B = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstruction')
+					plot_reconstruction(x_bins, y_bins, B, result.energy_min, result.energy_max, result.energy_cut, data)
 			
 			resultR = results[images_on_this_los & (results.energy_cut == 'lo')]
 			resultB = results[images_on_this_los & (results.energy_cut == 'hi')]
@@ -295,10 +297,16 @@ if __name__ == '__main__':
 			if xray is not None:
 				print("x-ray image")
 				xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
-				xX, yX = (xX_bins[:-1] + xX_bins[1:])/2, (yX_bins[:-1] + yX_bins[1:])/2 # change these to bin centers
-				XX, YX = np.meshgrid(xX, yX, indexing='ij') # change these to matrices
+				p0, (p2, θ2) = plot_reconstruction(xX_bins, yX_bins, xray, None, None, "xray", data)
+				results = results.append( # and save the new ones to the dataframe
+					dict(
+						shot=data[SHOT],
+						tim=data[TIM],
+						energy_cut='xray',
+						P0_magnitude=p0/1e-4,
+						P2_magnitude=p2/1e-4,
+						P2_angle=θ2),
+					ignore_index=True)
 
-				plot_reconstruction(xX_bins, yX_bins, xray, None, None, "xray", data)
-
-			results = results[results.shot != 'placeholder']
+			results = results.sort_values(['shot', 'tim', 'energy_min', 'energy_max'], ascending=[True, True, True, False])
 			results.to_csv(OUTPUT_FOLDER+"/summary.csv", index=False) # save the results to disk
