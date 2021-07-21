@@ -20,7 +20,7 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 e_in_bounds = 2
 
-SKIP_RECONSTRUCTION = False
+SKIP_RECONSTRUCTION = True
 SHOW_PLOTS = False
 SHOW_OFFSET = False
 
@@ -30,6 +30,7 @@ EXPANSION_FACTOR = 1.20
 PLOT_CONTOUR = .25
 APERTURE_CONFIGURATION = 'hex'
 CHARGE_FITTING = 'all'
+MAX_NUM_PIXELS = 200
 
 INPUT_FOLDER = '../scans/'
 OUTPUT_FOLDER = '../results/'
@@ -57,11 +58,27 @@ def center_of_mass(x_bins, y_bins, N):
 		np.average((y_bins[:-1] + y_bins[1:])/2, weights=N.sum(axis=0))])
 
 
+def resample(x_bins, y_bins, N):
+	""" double the bin size of this square 2d histogram """
+	n = (x_bins.size - 1)//2
+	x_bins = x_bins[::2]
+	y_bins = y_bins[::2]
+	Np = np.zeros((n, n))
+	for i in range(0, 2):
+		for j in range(0, 2):
+			Np += N[i:2*n:2,j:2*n:2]
+	return x_bins, y_bins, Np
+
+
 def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 					 x0, y0, M, energy_min, energy_max, energy_cut, data, **kwargs):
 	""" plot the data along with the initial fit to it, and the
 		reconstructed superaperture.
 	"""
+	while xI_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
+		xC_bins, yC_bins, NC = resample(xC_bins, yC_bins, NC)
+		xI_bins, yI_bins, NI = resample(xI_bins, yI_bins, NI)
+
 	s0 = data[APERTURE_SPACING]*1e-4
 	r0 = data[APERTURE_RADIUS]*1e-4*(M + 1)
 	r_img = (xI_bins.max() - xI_bins.min())/2
@@ -130,7 +147,7 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 
 	plt.figure() # plot the reconstructed source image
 	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=CMAP[cut_name], vmin=0, rasterized=True)
-	plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[PLOT_CONTOUR*np.max(Z)], colors='w')
+	plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[PLOT_CONTOUR*np.max(Z)], colors='w', linestyle='--')
 	# T = np.linspace(0, 2*np.pi, 144)
 	# R = p0 + p2*np.cos(2*(T - θ2))
 	# plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
@@ -143,7 +160,7 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 		plt.title("X-ray image")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
-	plt.axis([-150, 150, -150, 150])
+	plt.axis([-100, 100, -100, 100])
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.{filetype}")
@@ -153,7 +170,7 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	plt.plot((np.repeat(x_bins, 2)[1:-1] - x0)/1e-4, np.repeat(Z[:,j_lineout], 2))
 	plt.xlabel("x (μm)")
 	plt.ylabel("Fluence")
-	plt.xlim(-150, 150)
+	plt.xlim(-100, 100)
 	plt.ylim(0, None)
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
