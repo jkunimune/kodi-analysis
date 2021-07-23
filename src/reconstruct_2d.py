@@ -24,7 +24,7 @@ MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
-SMOOTHING = 3e-4
+SMOOTHING = 5e-4
 CONTOUR = .25 # TODO: what is the significance of the 17% contour?
 
 
@@ -100,8 +100,8 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 		r_rel = np.hypot(x_eff - xA, y_eff - yA)
 		in_penumbra = (r_rel <= r_img + dr)
 		antialiasing = np.minimum(1, (r_img + dr - r_rel[in_penumbra])/dr) # apply a beveld edge to make sure it is continuous
-		for dx in [0]:#[-dr/6, dr/6]:
-			for dy in [0]:#[-dr/6, dr/6]:
+		for dx in [-dr/6, dr/6]:
+			for dy in [-dr/6, dr/6]:
 				r_rel = np.hypot(x_eff - xA - dx, y_eff - yA - dy)
 				try:
 					teo[in_penumbra] += simple_penumbra(r_rel[in_penumbra], δ, Q, r0, r_img, 0, 1, e_min, e_max) # and add in its penumbrum

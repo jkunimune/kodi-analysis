@@ -10,7 +10,8 @@ from coordinate import tim_coordinates
 images = pd.read_csv('../results/summary.csv', sep=r'\s*,\s*', engine='python')
 images = images[images['energy_cut'] == 'hi'] # for now, we only worry about hot spot images
 
-reconstructions = []
+separations = []
+prolatenesses = []
 
 for shot in images['shot'].unique(): # go thru each shot
 	print(shot)
@@ -23,7 +24,7 @@ for shot in images['shot'].unique(): # go thru each shot
 	coordinate_2d_matrix = []
 	covariance_vector = []
 	coordinate_1d_matrix = []
-	offset_vector = []
+	separation_vector = []
 
 	for i, line_of_site in relevant_images.iterrows(): # on each los we have
 		# image, x, y = load_hdf5(f'../results/{line_of_site.shot}-{line_of_site.tim}-hi-reconstruction')
@@ -47,7 +48,7 @@ for shot in images['shot'].unique(): # go thru each shot
 
 		for j in range(2):
 			coordinate_1d_matrix.append(basis[:,j])
-			offset_vector.append(dr[j])
+			separation_vector.append(dr[j])
 
 	ellipsoid_covariances = np.linalg.lstsq(coordinate_2d_matrix, covariance_vector, rcond=None)[0]
 	ellipsoid_covariances = ellipsoid_covariances.reshape((3, 3))
@@ -58,37 +59,96 @@ for shot in images['shot'].unique(): # go thru each shot
 	for i in order:
 		print(f"extends {np.sqrt(eigval[i]):.2f} μm in the direccion ⟨{eigvec[0,i]: .4f}, {eigvec[1,i]: .4f}, {eigvec[2,i]: .4f} ⟩")
 
-	absolute_offset = np.linalg.lstsq(coordinate_1d_matrix, offset_vector, rcond=None)[0]
+	absolute_separation = np.linalg.lstsq(coordinate_1d_matrix, separation_vector, rcond=None)[0]
 
-	print(f"offset by ⟨{absolute_offset[0]: .2f}, {absolute_offset[1]: .2f}, {absolute_offset[2]: .2f}⟩ μm")
+	print(f"separated by ⟨{absolute_separation[0]: .2f}, {absolute_separation[1]: .2f}, {absolute_separation[2]: .2f}⟩ μm")
 
-	fig = plt.figure(figsize=plt.figaspect(1))  # Square figure
-	ax = fig.add_subplot(111, projection='3d')
+	offset = [[39.9, 80.3, 28.9], [40.3, 101.4, 212.3], [.3, 84, 23], [39.6, 79.7, 29.9], [76.6, 115.5, 151.3]][int(shot)-95520]
+	r, θ, ɸ = offset[0], *np.radians(offset[1:])
+	x = r*np.cos(ɸ)*np.sin(θ)
+	y = r*np.sin(ɸ)*np.sin(θ)
+	z = r*np.cos(θ)
+	offset = [x, y, z]
 
-	# Set of all planical angles:
-	u = np.linspace(0, 2*np.pi, 100)
-	v = np.linspace(0, np.pi, 100)
+	# fig = plt.figure(figsize=(5, 5))  # Square figure
+	# ax = fig.add_subplot(111, projection='3d')
+	# ax.set_box_aspect([1,1,1])
 
-	# Cartesian coordinates that correspond to the planical angles:
-	# (this is the equacion of an ellipsoid):
-	x = np.sqrt(eigval[0]) * np.outer(np.cos(u), np.sin(v))
-	y = np.sqrt(eigval[1]) * np.outer(np.sin(u), np.sin(v))
-	z = np.sqrt(eigval[2]) * np.outer(np.ones_like(u), np.cos(v))
+	# # Set of all planical angles:
+	# u = np.linspace(0, 2*np.pi, 100)
+	# v = np.linspace(0, np.pi, 100)
 
-	x, y, z = np.transpose(np.matmul(eigvec, np.transpose([x, y, z], axes=(1,0,2))), axes=(1,0,2))
+	# # Cartesian coordinates that correspond to the planical angles:
+	# # (this is the equacion of an ellipsoid):
+	# x = np.sqrt(eigval[0]) * np.outer(np.cos(u), np.sin(v))
+	# y = np.sqrt(eigval[1]) * np.outer(np.sin(u), np.sin(v))
+	# z = np.sqrt(eigval[2]) * np.outer(np.ones_like(u), np.cos(v))
+	# x, y, z = np.transpose(np.matmul(eigvec, np.transpose([x, y, z], axes=(1,0,2))), axes=(1,0,2))
+	# # ax.plot_surface(x, y, z,  rstride=4, cstride=4, color='C0', zorder=-1)
 
-	ax.plot_surface(x, y, z,  rstride=4, cstride=4, color='C0', zorder=-1)
+	# for i in range(3):
+	# 	ax.plot(*[[0, np.sqrt(eigval[i])*eigvec[j,i]] for j in range(3)], color='k')
+	# ax.plot(*[[0, absolute_separation[i]] for i in range(3)], color='C0')
 
-	# Adjustment of the axen, so that they all have the same span:
-	max_radius = 1.5*np.sqrt(max(eigval))
+	# ax.plot(*[[0, offset[i]] for i in range(3)], 'C1')
 
-	for tim in [2, 4, 5]:
-		tim_direction = tim_coordinates(tim)[:,2]
-		plt.plot([0, max_radius*tim_direction[0]], [0, max_radius*tim_direction[1]], [0, max_radius*tim_direction[2]], f'C{tim}--', label=f"To TIM{tim}")
+	# # Adjustment of the axen, so that they all have the same span:
+	# max_radius = 1.5*np.sqrt(max(eigval))
+	# ax.set_xlim(-1.0*max_radius, 1.0*max_radius)
+	# ax.set_ylim(-1.0*max_radius, 1.0*max_radius)
+	# ax.set_zlim(-1.0*max_radius, 1.0*max_radius)
 
-	for axis in 'xyz':
-	    getattr(ax, 'set_{}lim'.format(axis))((-max_radius, max_radius))
+	# for tim in [2, 4, 5]:
+	# 	tim_direction = tim_coordinates(tim)[:,2]
+	# 	plt.plot([0, max_radius*tim_direction[0]], [0, max_radius*tim_direction[1]], [0, max_radius*tim_direction[2]], f'C{tim}--', label=f"To TIM{tim}")
 
-	plt.show()
+	# plt.title(line_of_site.shot)
 
-	# reconstructions.append([])
+	separation_in_offset_disha = np.dot(absolute_separation, offset)/np.sqrt(np.dot(offset, offset))
+	separations.append([
+		-separation_in_offset_disha,
+		np.sqrt(np.dot(absolute_separation, absolute_separation) - separation_in_offset_disha**2)
+	])
+
+	prolateness = (np.sqrt(eigval[order[2]])) - np.sqrt(eigval[order[1]])*eigvec[:,order[2]]
+	print(prolateness)
+	prolateness_in_offset_disha = np.dot(prolateness, offset)/np.sqrt(np.dot(offset, offset))
+	prolatenesses.append([
+		abs(prolateness_in_offset_disha),
+		np.sqrt(np.dot(prolateness, prolateness) - prolateness_in_offset_disha**2)
+	])
+
+plt.rcParams["legend.framealpha"] = 1
+plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
+
+separations = np.array(separations)
+prolatenesses = np.array(prolatenesses)
+
+plt.figure(figsize=(6,5))
+plt.grid()
+for indices, marker, color, label in [([2], 'o', '#f2ab23', "No offset"), ([0,1,3], 'D', '#118acd', "40 μm offset"), ([4], 'v', '#79098c', "80 μm offset")]:
+	plt.scatter(separations[indices,1], separations[indices,0], c=[color]*len(indices), marker=marker, zorder=100, label=label, s=60)
+plt.legend(loc="upper right")
+for i in range(len(separations)):
+	plt.plot([0, separations[i,1]], [0, separations[i,0]], 'k-', linewidth=1)
+plt.axis('equal')
+plt.yticks([-10, 0, 10, 20])
+plt.xlabel("Separation perpendicular to offset (μm)")
+plt.ylabel("Separation along offset (μm)")
+plt.tight_layout()
+# plt.xlim(0, 50)
+
+plt.figure(figsize=(6,5))
+plt.grid()
+for indices, marker, color, label in [([2], 'o', '#f2ab23', "No offset"), ([0,1,3], 'D', '#118acd', "40 μm offset"), ([4], 'v', '#79098c', "80 μm offset")]:
+	plt.scatter(prolatenesses[indices,1], prolatenesses[indices,0], c=[color]*len(indices), marker=marker, zorder=100, label=label, s=60)
+plt.legend(loc="upper right")
+for i in range(len(prolatenesses)):
+	plt.plot([0, prolatenesses[i,1]], [0, prolatenesses[i,0]], 'k-', linewidth=1)
+plt.axis('equal')
+plt.xlabel("Prolateness perpendicular to offset (μm)")
+plt.ylabel("Prolateness along offset (μm)")
+plt.tight_layout()
+# plt.xlim(0, 80)
+
+plt.show()

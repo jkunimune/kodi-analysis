@@ -11,7 +11,7 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
-SMOOTHING = 3e-4 # entropy weight
+SMOOTHING = 5e-4 # entropy weight
 
 
 def linregress(x, y, weights=None):
