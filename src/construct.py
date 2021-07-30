@@ -9,6 +9,7 @@ from simulations import load_shot, make_image
 from perlin import perlin_generator, wave_generator
 from electric_field_model import e_field
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
+plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 
 NOISE_SCALE = 1.0 # [cm]
@@ -214,18 +215,18 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 	# plt.tight_layout()
 	# plt.show()
 
-	# plt.figure()
-	# plt.hist2d(xJ/1e-4, yJ/1e-4, bins=(np.linspace(-200, 200, 41), np.linspace(-200, 200, 41)), cmap=GREYS)
-	# plt.xlabel("x (μm)")
-	# plt.ylabel("y (μm)")
-	# # plt.xticks([])
-	# # plt.yticks([])
+	plt.figure()
+	plt.locator_params(steps=[1, 2, 5, 10])
+	plt.hist2d(xJ/1e-4, yJ/1e-4, bins=(np.linspace(-100, 100, 21), np.linspace(-100, 100, 21)), cmap=GREYS, rasterized=True)
+	plt.xlabel("x (μm)")
+	plt.ylabel("y (μm)")
 	# plt.colorbar()
-	# plt.axis('square')
-	# plt.tight_layout()
-	# plt.savefig("simulated_shot_{}.png".format(shot))
-	# plt.show()
-	# plt.close()
+	plt.axis('square')
+	plt.tight_layout()
+	plt.savefig("../simulated_shot_{}.png".format(shot))
+	plt.savefig("../simulated_shot_{}.eps".format(shot))
+	plt.show()
+	plt.close()
 
 
 if __name__ == '__main__':
@@ -233,5 +234,6 @@ if __name__ == '__main__':
 	# 	construct_data(shot, (1000, .05), N, SNR)
 	# for shot, N, SNR in [('ellipse', 200000, 8)]:
 	# 	construct_data(shot, (1000, .1), N, SNR)
-	construct_data('comet', 1000, 1000000, 8, name='comet', mode='mc')
+	# construct_data('comet', 1000, 1000000, 8, name='comet', mode='mc')
 	# construct_data('gaussian', 'charged', 1000000, 8, name='charge1')
+	construct_data('square', 1000, 1_000_000, 10, 'test0_square', 'mc')

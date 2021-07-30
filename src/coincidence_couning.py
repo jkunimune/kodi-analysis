@@ -10,9 +10,9 @@ from cmap import COFFEE
 
 
 N = 10000
-depth = 300
-time1 = 4
-time2 = 5
+depth = 200
+time1 = 3
+time2 = 3
 
 
 def jitter(X, scale=0.3):
@@ -21,8 +21,8 @@ def jitter(X, scale=0.3):
 
 if __name__ == '__main__':
 	mn = 1.009
-	md = 2.014
-	mt = 3.016
+	md = mn#2.014
+	mt = 2.014#3.016
 
 	coefs_d = [51.6, 52.5, 59.9, -17.4, 20.8, -14.8, 7.73, -4.92, 3.11] # mbarn/sr
 	coefs_t = [79.2, 116, 118, 14.8, 14.8] # mbarn/sr
