@@ -24,7 +24,7 @@ MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
-SMOOTHING = 5e-4
+# SMOOTHING = 1e-3
 CONTOUR = .25 # TODO: what is the significance of the 17% contour?
 
 
@@ -57,21 +57,21 @@ def hessian(f, x, args, epsilon=None):
 	return H(x)
 
 
-def simple_penumbra(r, δ, Q, r0, r_max, minimum, maximum, e_min=0, e_max=1):
+def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 	""" compute the shape of a simple analytic single-apeture penumbral image """
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
 	n_pixel = 72
-	# if 3*δ >= r_max: # if 3*source size is bigger than the image radius
+	# if 3*δ >= r.max(): # if 3*source size is bigger than the image radius
 	# 	raise ValueError("δ cannot be this big")
-	if 3*δ >= r_max/n_pixel: # if 3*source size is smaller than the image radius but bigger than the pixel size
-		r_kernel = np.linspace(-3*δ, 3*δ, int(3*δ/r_max*n_pixel)*2+1) # make a little kernel
+	if 3*δ >= r.max()/n_pixel: # if 3*source size is smaller than the image radius but bigger than the pixel size
+		r_kernel = np.linspace(-3*δ, 3*δ, int(3*δ/r.max()*n_pixel)*2+1) # make a little kernel
 		n_kernel = np.exp(-r_kernel**2/δ**2)
-		r_point = np.arange(-3*δ, r_max + 3*δ, r_kernel[1] - r_kernel[0]) # rebin the existing image to match the kernel spacing
+		r_point = np.arange(-3*δ, r.max() + 3*δ, r_kernel[1] - r_kernel[0]) # rebin the existing image to match the kernel spacing
 		n_point = np.interp(r_point, rB, nB, right=0)
 		assert len(n_point) >= len(n_kernel)
 		penumbra = np.convolve(n_point, n_kernel, mode='same') # and convolve
 	elif δ >= 0: # if 3*source size is smaller than one pixel and nonnegative
-		r_point = np.linspace(0, r_max, n_pixel) # use a dirac kernel instead of a gaussian
+		r_point = np.linspace(0, r.max(), n_pixel) # use a dirac kernel instead of a gaussian
 		penumbra = np.interp(r_point, rB, nB, right=0)
 	else:
 		raise ValueError("δ cannot be negative")
@@ -104,7 +104,7 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 			for dy in [-dr/6, dr/6]:
 				r_rel = np.hypot(x_eff - xA - dx, y_eff - yA - dy)
 				try:
-					teo[in_penumbra] += simple_penumbra(r_rel[in_penumbra], δ, Q, r0, r_img, 0, 1, e_min, e_max) # and add in its penumbrum
+					teo[in_penumbra] += simple_penumbra(r_rel[in_penumbra], δ, Q, r0, 0, 1, e_min, e_max) # and add in its penumbrum
 				except ValueError:
 					return np.inf
 		teo[in_penumbra] *= antialiasing
@@ -112,7 +112,7 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	if np.any(np.isnan(teo)):
 		return np.inf
 
-	α = np.sum(teo*exp)*SMOOTHING
+	# α = np.sum(teo*exp)*SMOOTHING
 
 	if background is not None: # if the min is specified
 		scale = abs(np.sum(exp, where=where & (teo > 0)) - background*np.sum(where & (teo > 0)))/ \
@@ -124,9 +124,8 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 	teo = background + scale*teo
 
 	penalty = \
-		- α*(2*np.log(δ)) \
-		+ (np.sqrt(a*c - b**2) - 1)**2/(4*EXPECTED_MAGNIFICATION_ACCURACY**2) \
-		- Q/.1
+		+ (np.sqrt(a*c - b**2) - 1)**2/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
+		# - α*(2*np.log(δ)) \
 
 	where &= (teo != 0) # from now on, ignore problematic pixels
 
@@ -248,6 +247,8 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		aperture_configuration can be 'hex' or 'square'.
 		aperture_charge_fitting can be 'all', 'same', or 'none'
 	"""
+	assert rotation < 2*np.pi
+	
 	binsS = 2*object_size/resolution
 	r0 = (M + 1)*rA # calculate the penumbra parameters
 	s0 = (M + 1)*sA
@@ -269,10 +270,6 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy()
 		track_list['x(cm)'] =  np.cos(rotation+np.pi)*x_temp - np.sin(rotation+np.pi)*y_temp # apply any requested rotation, plus 180 flip to deal with inherent flip due to aperture
 		track_list['y(cm)'] =  np.sin(rotation+np.pi)*x_temp + np.cos(rotation+np.pi)*y_temp
-		# if re.match(r'[0-9]{5}', output_filename): # adjustments for real data:
-			# track_list['ca(%)'] -= np.min(track_list['cn(%)']) # shift the contrasts down if they're weird
-			# track_list['cn(%)'] -= np.min(track_list['cn(%)'])
-			# track_list['d(µm)'] -= np.min(track_list['d(µm)']) # shift the diameters over if they're weird
 		hicontrast = (track_list['cn(%)'] < 35) & (track_list['e(%)'] < 15)
 
 		track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
@@ -285,6 +282,10 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
 		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2 # change these to bin centers
 		XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
+		# plt.hist2d(track_list['x(cm)'], track_list['y(cm)'], bins=(xC_bins, yC_bins), vmin=0, vmax=6)
+		# plt.axis('square')
+		# plt.show()
+		# return None
 
 	else: # if it is a pickle file, load the histogram directly like a raster image
 		mode = 'raster'
@@ -391,6 +392,8 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			print(f"  {simple_fit(opt.x, *args, plot=show_plots)}")
 			print(f"  {opt}")
 
+		δ_eff = δ + 4*Q/e_in_bounds[0]
+
 		if mode == 'hist':
 			xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, binsI+1), np.linspace(y0 - r_img, y0 + r_img, binsI+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
@@ -403,15 +406,15 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			if s0 == 0: # also do a radial histogram because that might be useful
 				e_min, e_max = e_in_bounds
 				track_r = np.hypot(track_x - x0, track_y - y0)
-				nI, rI_bins = np.histogram(track_r, bins=np.linspace(0, r_img, 36)) # take the histogram
+				nI, rI_bins = np.histogram(track_r, bins=np.linspace(0, r_img, 51)) # take the histogram
 				rI = (rI_bins[:-1] + rI_bins[1:])/2
 				zI = nI/(np.pi*(rI_bins[1:]**2 - rI_bins[:-1]**2)) # normalize it by bin area
-				z_test = simple_penumbra(rI, δ, Q, r0, r_img, 0, 1, e_min=e_min, e_max=e_max)
+				z_test = simple_penumbra(rI, δ, Q, r0, 0, 1, e_min=e_min, e_max=e_max)
 				signal, background = mysignal.linregress(z_test, zI, rI/(1 + nI))
 				r = np.linspace(0, r_img, 216)
-				z_actual = simple_penumbra(r, δ, Q, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
-				z_uncharged = simple_penumbra(r, δ+4*Q/e_max, 0, r0, r_img, background, background+signal, e_min=e_min, e_max=e_max)
-				save_as_hdf5(f'{output_filename}-{cut_name}-radial', x1=rI_bins, y1=zI, x2=r, y2=z_actual, x3=r, y3=z_uncharged)
+				z_actual = simple_penumbra(r, δ, Q, r0, background, background+signal, e_min=e_min, e_max=e_max)
+				z_naive = simple_penumbra(r, δ_eff, 0, r0, background, background+signal, e_min=e_min, e_max=e_max)
+				save_as_hdf5(f'{output_filename}-{cut_name}-radial', x1=rI_bins, y1=zI, x2=r, y2=z_actual, x3=r, y3=z_naive)
 
 			del(track_x)
 			del(track_y)
@@ -434,7 +437,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		penumbral_kernel = np.zeros(XK.shape) # build the point spread function
 		for dx in [-dxK/3, 0, dxK/3]: # sampling over a few pixels
 			for dy in [-dyK/3, 0, dyK/3]:
-				penumbral_kernel += simple_penumbra(np.hypot(XK+dx, YK+dy), 0, Q, r0, r_img, 0, 1, *e_in_bounds)
+				penumbral_kernel += simple_penumbra(np.hypot(XK+dx, YK+dy), 0, Q, r0, 0, 1, *e_in_bounds)
 		penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
 
 		source_bins = np.hypot(XS - x0/M, YS - y0/M) <= (xS_bins[-1] - xS_bins[0])/2
@@ -460,6 +463,8 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		print(
 			f"  n = {np.sum(NI[data_bins]):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
 			f"δ = {δ/M/1e-4:.2f} ± {dδ/M/1e-4:.2f} μm, Q = {Q:.3f} ± {dQ:.3f} cm*MeV, M = {M:.2f}")
+		if δ_eff/δ > 1.1:
+			print(f"  Charging artificially increased source size by {(δ_eff - δ)/M/1e-4:.3f} μm (a {δ_eff/δ:.3f}× change!)")
 
 		B, χ2_red = mysignal.gelfgat_deconvolve2d(
 			NI,

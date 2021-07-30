@@ -20,9 +20,9 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 e_in_bounds = 2
 
-SKIP_RECONSTRUCTION = False
+SKIP_RECONSTRUCTION = True
 SHOW_PLOTS = False
-SHOW_OFFSET = False
+SHOW_OFFSET = True
 
 OBJECT_SIZE = 200e-4
 RESOLUTION = 5e-4
