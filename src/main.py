@@ -49,7 +49,7 @@ R_FLOW = 'Flow (km/s)'
 Θ_FLOW = 'Flow theta (deg)'
 Φ_FLOW = 'Flow phi (deg)'
 
-CMAP = {'all': GREYS, 'lo': REDS, 'md': GREENS, 'hi': BLUES, 'xray': VIOLETS, 'synth': 'plasma'}
+CMAP = {'all': GREYS, 'lo': REDS, 'md': GREENS, 'hi': BLUES, 'xray': VIOLETS, 'synth': GREYS}
 
 
 def center_of_mass(x_bins, y_bins, N):
@@ -90,7 +90,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 		plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
 		plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
 	plt.axis('square')
-	plt.title(f"{energy_min:.1f} MeV – {min(12.5, energy_max):.1f} MeV")
+	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
@@ -99,10 +99,10 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 
 	plt.figure()
 	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size), rasterized=True)
-	T = np.linspace(0, 2*np.pi) # TODO: rebin this to look nicer
+	T = np.linspace(0, 2*np.pi)
 	plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 	plt.axis('square')
-	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({energy_min:.1f} – {min(12.5, energy_max):.1f} MeV)")
+	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV)")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
@@ -118,16 +118,17 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 
 def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 		             δ, Q, energy_min, energy_max, energy_cut, data, **kwargs):
-	rI, drI = (rI_bins[1:] + rI_bins[:-1])/2, rI_bins[:-1] - rI_bins[1:]
 	plt.figure()
-	plt.bar(x=rI, height=zI, width=drI,  label="Data", color=(0.773, 0.498, 0.357))
-	plt.plot(r_actual, z_actual, '-', color=(0.208, 0.455, 0.663), linewidth=2, label="Fit with charging")
-	plt.plot(r_uncharged, z_uncharged, '--', color=(0.278, 0.439, 0.239), linewidth=2, label="Fit without charging")
+	plt.locator_params(steps=[1, 2, 4, 5, 10])
+	plt.fill_between(np.repeat(rI_bins, 2)[1:-1], 0, np.repeat(zI, 2)/1e3,  label="Data", color='#f9A72E')
+	plt.plot(r_actual, z_actual/1e3, '-', color='#0C6004', linewidth=2, label="Fit with charging")
+	plt.plot(r_uncharged, z_uncharged/1e3, '--', color='#0F71F0', linewidth=2, label="Fit without charging")
 	plt.xlim(0, rI_bins.max())
+	plt.ylim(0, min(zI.max()*1.05, z_actual.max()*1.20)/1e3)
 	plt.xlabel("Radius (cm)")
-	plt.ylabel("Track density (1/cm²)")
+	plt.ylabel("Track density (10³/cm²)")
 	plt.legend()
-	plt.title(f"TIM {data[TIM]} on shot {data[SHOT]} ({energy_min:.1f} – {min(12.5, energy_max):.1f} MeV)")
+	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout.{filetype}')
@@ -146,16 +147,17 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	x0, y0 = p1*np.cos(θ1), p1*np.sin(θ1)
 
 	plt.figure() # plot the reconstructed source image
+	plt.locator_params(steps=[1, 2, 5, 10])
 	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=CMAP[cut_name], vmin=0, rasterized=True)
-	plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[PLOT_CONTOUR*np.max(Z)], colors='w', linestyle='--')
+	# plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[PLOT_CONTOUR*np.max(Z)], colors='w', linestyle='dashed')
 	# T = np.linspace(0, 2*np.pi, 144)
 	# R = p0 + p2*np.cos(2*(T - θ2))
 	# plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
 	plt.axis('equal')
 	# plt.colorbar()
 	plt.axis('square')
-	if e_max is not None:
-		plt.title(f"{e_min:.1f} MeV – {min(12.5, e_max):.1f} MeV")
+	if e_max is not None and cut_name != 'synth':
+		plt.title(f"{e_min:.1f} – {min(12.5, e_max):.1f} MeV")
 	else:
 		plt.title("X-ray image")
 	plt.xlabel("x (μm)")
@@ -192,10 +194,11 @@ def plot_overlaid_contors(xR_bins, yR_bins, NR, xB_bins, yB_bins, NB, projected_
 	x_flo, y_flo, z_flo = projected_flow
 
 	plt.figure()
+	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
 	plt.contourf((XR - x0)/1e-4, (YR - y0)/1e-4, NR/NR.max(), levels=[PLOT_CONTOUR, 1], colors=['#FF5555'])
 	plt.contourf((XB - x0)/1e-4, (YB - y0)/1e-4, NB/NB.max(), levels=[PLOT_CONTOUR, 1], colors=['#5555FF'])
 	# if xray is not None:
-	# 	plt.contour(XX, YX, xray, levels=[.25], colors=['#550055BB'])
+	# 	plt.contour(XX, YX, xray, levels=[PLOT_CONTOUR], colors=['#550055BB'])
 	if SHOW_OFFSET:
 		plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 		plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')

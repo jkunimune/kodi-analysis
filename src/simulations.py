@@ -111,12 +111,12 @@ def make_image(t, R, ρ, Ti, e_bounds):
 
 
 if __name__ == '__main__':
-	for SHOT in range(95522, 95523):
+	for SHOT in [95520, 95522]:
 		print(SHOT)
-		t, (R, ρ, P, Te, Ti) = load_shot(SHOT)
+		t, (R, n, ρ, P, Te, Ti) = load_shot(SHOT)
 
-		ne = ρ*1e-3/(1e-2)**3/((mD + mT)/2) # m^-3
-		nD, nT = ne/2, ne/2
+		ne = n
+		nD, nT = n/2, n/2 # m^-3
 		dt = np.gradient(t)
 		dR = np.gradient(R, axis=1)
 
@@ -124,6 +124,37 @@ if __name__ == '__main__':
 		# plt.loglog(Ti[Ti > 1], σv[Ti > 1], '.')
 		# plt.show()
 		Yn = nD*nT*σv # [1/(m^3 s)]
+
+		r_bins = np.linspace(0, 150, 201)
+		r = (r_bins[:-1] + r_bins[1:])/2
+		Yn_integrated = np.zeros(r_bins.size-1)
+		nD_burn_average = np.zeros(r_bins.size-1)
+		for i in range(t.size):
+			Yn_integrated += np.interp(r, R[i,:], Yn[i,:])
+			nD_burn_average += np.interp(r, R[i,:], nD[i,:])*np.sum(Yn[i,:]*4*np.pi*R[i,:]**2*dR[i,:])
+		r_img = np.linspace(r_bins[0], r_bins[-1], r.size//2)
+		blu = np.zeros(r_img.shape)
+		red = np.zeros(r_img.shape)
+		for z in np.linspace(-150, 150/2, 100):
+			blu += np.interp(np.hypot(z, r_img), r, Yn_integrated)
+			red += np.interp(np.hypot(z, r_img), r, nD_burn_average)
+		fig, ax_left = plt.subplots()
+		plt.grid('on')
+		ax_rite = ax_left.twinx()
+		ax_left.plot(r_img, blu, 'C0-')
+		ax_left.set_ylabel("High-energy image")
+		ax_left.set_ylim(0, None)
+		ax_rite.plot(r_img, red, 'C3-')
+		ax_rite.set_ylabel("Low-energy image")
+		ax_rite.set_ylim(0, None)
+		ax_left.set_xlabel("Radius (μm)")
+		plt.title(SHOT)
+		plt.tight_layout()
+
+		Y, _ = np.histogram(R, bins=r_bins, weights=(Yn*(4*np.pi*R**2*dR)))
+		# plt.figure()
+		# plt.plot(np.repeat(r_bins, 2)[1:-1], np.repeat(Y, 2))
+		# plt.show()
 
 		Te = qe*1e3*Te # convert to J
 
@@ -146,7 +177,7 @@ if __name__ == '__main__':
 		plt.figure()
 		plt.contourf(np.tile(t, (R.shape[1], 1)).T, R, ρ, levels=12, cmap='magma')
 		plt.colorbar().set_label("Density (g/cm^3)")
-		plt.contour(np.tile(t, (R.shape[1], 1)).T, R, Yn, levels=[Yn.max()/10], colors=['white'])
+		plt.contour(np.tile(t, (R.shape[1], 1)).T, R, Yn, levels=Yn.max()*np.arange(10)/10, colors=['white'])
 		plt.xlabel("Time (ns)")
 		plt.ylabel("Radius (um)")
 		plt.title("Shot {}".format(SHOT))
@@ -177,4 +208,4 @@ if __name__ == '__main__':
 		# 	plt.savefig("../results/{}_LILAC_{}-{}_sourceimage.png".format(SHOT, *e_bounds))
 		# 	plt.close()
 
-		plt.show()
+	plt.show()
