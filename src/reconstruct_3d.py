@@ -1,154 +1,131 @@
 # reconstruct_3d.py
+# do a forward fit.
+# coordinate notes: the indices i, j, and k map to the x, y, and z direccions, respectively.
+# in index subscripts, J indicates neutron birth (jen) and D indicates scattering (darba).
+# z^ points upward, x^ points to 90-00, and y^ points whichever way makes it a rite-handed system.
+# ζ^ points toward the TIM, υ^ points perpendicular to ζ^ and upward, and ξ^ makes it rite-handed.
+# Э stands for Энергия
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
-import segnal
-from coordinate import tim_coordinates
 
-images = pd.read_csv('../results/summary.csv', sep=r'\s*,\s*', engine='python')
-images = images[images['energy_cut'] == 'hi'] # for now, we only worry about hot spot images
+Э_max = 12.5 # (MeV)
+cross_seccions = np.loadtxt('../endf-6[58591].txt', skiprows=4)
+Э_cross = 14.1*4/9*(1 - cross_seccions[:,0]) # (MeV)
+σ_cross = .64e-28/1e-12/(4*np.pi)*2*cross_seccions[:,1] # (μm^2/srad)
 
-separations = []
-prolatenesses = []
 
-for shot in images['shot'].unique(): # go thru each shot
-	print(shot)
-	relevant_images = images[images['shot'] == shot]
-	number_of_tims = len(relevant_images['tim'].unique())
-	if number_of_tims < 3: # make sure we have enuff tims
-		print(f"skipping {shot} because it only has {number_of_tims} lines of site")
-		continue
+def normalize(v):
+	return v/np.sqrt(np.sum(v**2))
 
-	coordinate_2d_matrix = []
-	covariance_vector = []
-	coordinate_1d_matrix = []
-	separation_vector = []
 
-	for i, line_of_site in relevant_images.iterrows(): # on each los we have
-		# image, x, y = load_hdf5(f'../results/{line_of_site.shot}-{line_of_site.tim}-hi-reconstruction')
-		# [[a, b], [c, d]] = segnal.fit_ellipse(x, y, image)
+def digitize(x, bins):
+	assert len(bins.shape) == 1, bins.shape
+	if np.any(np.isnan(x) | (x > bins[-1]) | (x < bins[0])):
+		raise IndexError(f"{x} not in [{bins[0]}, {bins[-1]}]")
+	return np.minimum(int((x - bins[0])/(bins[1] - bins[0])), bins.size - 2)
 
-		basis = tim_coordinates(int(line_of_site['tim'])) # get the absolute direccion of the axes of this image
 
-		cov, _ = segnal.covariance_from_harmonics(
-			line_of_site.P0_magnitude,
-			0, 0,
-			line_of_site.P2_magnitude,
-			np.radians(line_of_site.P2_angle)) # get the covariance matrix from the reconstructed image
+def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
+	images = []
+	for ζ_hat in lines_of_sight:
+		ξ_hat = normalize(np.cross([0, 0, 1], ζ_hat))
+		if any(np.isnan(ξ_hat)):
+			ξ_hat = np.array([1, 0, 0])
+		υ_hat = np.cross(ζ_hat, ξ_hat)
+		image = np.zeros((Э.size-1, ξ.size-1, υ.size-1)) # bild the image by numerically integrating
+		for iJ in range(x.size-1):
+			xJ = (x[iJ] + x[iJ+1])/2
+			for jJ in range(y.size-1):
+				yJ = (y[jJ] + y[jJ+1])/2
+				for kJ in range(z.size-1):
+					zJ = (z[kJ] + z[kJ+1])/2
 
-		for j in range(2):
-			for k in range(2):
-				coordinate_2d_matrix.append(np.ravel(np.outer(basis[:,j], basis[:,k])))
-				covariance_vector.append(cov[j,k])
+					rJ = np.array([xJ, yJ, zJ]) # every source posicion
 
-		dr = [line_of_site.offset_magnitude*np.cos(np.radians(line_of_site.offset_angle)),
-		      line_of_site.offset_magnitude*np.sin(np.radians(line_of_site.offset_angle))]
+					for iD in range(x.size-1):
+						xD = (x[iD] + x[iD+1])/2
+						for jD in range(y.size-1):
+							yD = (y[jD] + y[jD+1])/2
+							for kD in range(z.size-1):
+								zD = (z[kD] + z[kD+1])/2
 
-		for j in range(2):
-			coordinate_1d_matrix.append(basis[:,j])
-			separation_vector.append(dr[j])
+								rD = np.array([xD, yD, zD]) # and every scatter posicion
 
-	ellipsoid_covariances = np.linalg.lstsq(coordinate_2d_matrix, covariance_vector, rcond=None)[0]
-	ellipsoid_covariances = ellipsoid_covariances.reshape((3, 3))
-	
-	eigval, eigvec = np.linalg.eig(ellipsoid_covariances)
-	order = np.argsort(eigval)
+								Δr = rD - rJ
+								Δζ = np.sum(Δr*ζ_hat)
+								if Δζ <= 0:
+									continue # skip any that require backwards scattering
 
-	for i in order:
-		print(f"extends {np.sqrt(eigval[i]):.2f} μm in the direccion ⟨{eigvec[0,i]: .4f}, {eigvec[1,i]: .4f}, {eigvec[2,i]: .4f} ⟩")
+								ξD = np.sum(ξ_hat*rD) # do the local coordinates
+								υD = np.sum(υ_hat*rD)
 
-	absolute_separation = np.linalg.lstsq(coordinate_1d_matrix, separation_vector, rcond=None)[0]
+								Δr2 = np.sum(Δr**2) # compute the scattering probability
+								cosθ2 = Δζ**2/Δr2
+								ЭD = Э_max*cosθ2 # calculate the KOD birth energy TODO: account for stopping power
+								fluence = reactivity[iJ,jJ,kJ] * density[iJ,jJ,kJ] * np.interp(ЭD, Э_cross, σ_cross)/(4*np.pi*Δr2)
+								image[digitize(ЭD, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence # TODO: en el futuro, I mite need to do something whare I spred these out across all pixels it mite hit
+		images.append(image)
+	return images
 
-	print(f"separated by ⟨{absolute_separation[0]: .2f}, {absolute_separation[1]: .2f}, {absolute_separation[2]: .2f}⟩ μm")
 
-	offset = [[39.9, 80.3, 28.9], [40.3, 101.4, 212.3], [.3, 84, 23], [39.6, 79.7, 29.9], [76.6, 115.5, 151.3]][int(shot)-95520]
-	r, θ, ɸ = offset[0], *np.radians(offset[1:])
-	x = r*np.cos(ɸ)*np.sin(θ)
-	y = r*np.sin(ɸ)*np.sin(θ)
-	z = r*np.cos(θ)
-	offset = [x, y, z]
+if __name__ == '__main__':
+	N = 5 # spatial resolucion
+	M = 2 # energy resolucion
 
-	# fig = plt.figure(figsize=(5, 5))  # Square figure
-	# ax = fig.add_subplot(111, projection='3d')
-	# ax.set_box_aspect([1,1,1])
+	r_max = 150 # (μm)
+	x = np.linspace(-r_max, r_max, N+1)
+	y = np.linspace(-r_max, r_max, N+1)
+	z = np.linspace(-r_max, r_max, N+1)
+	Э = np.linspace(0, Э_max, M+1)
 
-	# # Set of all planical angles:
-	# u = np.linspace(0, 2*np.pi, 100)
-	# v = np.linspace(0, np.pi, 100)
+	H = N#np.ceil(N*np.sqrt(3))
+	ξ = np.linspace(-H/N*r_max, H/N*r_max, N+1)
+	υ = np.linspace(-H/N*r_max, H/N*r_max, N+1)
 
-	# # Cartesian coordinates that correspond to the planical angles:
-	# # (this is the equacion of an ellipsoid):
-	# x = np.sqrt(eigval[0]) * np.outer(np.cos(u), np.sin(v))
-	# y = np.sqrt(eigval[1]) * np.outer(np.sin(u), np.sin(v))
-	# z = np.sqrt(eigval[2]) * np.outer(np.ones_like(u), np.cos(v))
-	# x, y, z = np.transpose(np.matmul(eigvec, np.transpose([x, y, z], axes=(1,0,2))), axes=(1,0,2))
-	# # ax.plot_surface(x, y, z,  rstride=4, cstride=4, color='C0', zorder=-1)
+	lines_of_sight = np.array([
+		[1, 0, 0],
+		[0, 1, 0],
+		[0, 0, 1],
+	]) # ()
 
-	# for i in range(3):
-	# 	ax.plot(*[[0, np.sqrt(eigval[i])*eigvec[j,i]] for j in range(3)], color='k')
-	# ax.plot(*[[0, absolute_separation[i]] for i in range(3)], color='C0')
+	inicial_gess = [np.zeros((N, N, N)), np.ones((N, N, N))] # (n/bin, 2H/bin)
+	inicial_gess[0][N//2, N//2, N//2] = 1
+	print(inicial_gess)
 
-	# ax.plot(*[[0, offset[i]] for i in range(3)], 'C1')
+	images = synthesize_images(*inicial_gess, x, y, z, np.linspace(0, Э_max, 7), ξ, υ, lines_of_sight)
+	for i in range(images[0].shape[0]):
+		plt.figure()
+		plt.pcolormesh(x, y, images[0][i,:,:])
+		plt.axis('square')
+		plt.colorbar()
+		plt.show()
 
-	# # Adjustment of the axen, so that they all have the same span:
-	# max_radius = 1.5*np.sqrt(max(eigval))
-	# ax.set_xlim(-1.0*max_radius, 1.0*max_radius)
-	# ax.set_ylim(-1.0*max_radius, 1.0*max_radius)
-	# ax.set_zlim(-1.0*max_radius, 1.0*max_radius)
-
-	# for tim in [2, 4, 5]:
-	# 	tim_direction = tim_coordinates(tim)[:,2]
-	# 	plt.plot([0, max_radius*tim_direction[0]], [0, max_radius*tim_direction[1]], [0, max_radius*tim_direction[2]], f'C{tim}--', label=f"To TIM{tim}")
-
-	# plt.title(line_of_site.shot)
-
-	separation_in_offset_disha = np.dot(absolute_separation, offset)/np.sqrt(np.dot(offset, offset))
-	separations.append([
-		-separation_in_offset_disha,
-		np.sqrt(np.dot(absolute_separation, absolute_separation) - separation_in_offset_disha**2)
-	])
-
-	prolateness = (np.sqrt(eigval[order[2]])) - np.sqrt(eigval[order[1]])*eigvec[:,order[2]]
-	print(prolateness)
-	prolateness_in_offset_disha = np.dot(prolateness, offset)/np.sqrt(np.dot(offset, offset))
-	prolatenesses.append([
-		abs(prolateness_in_offset_disha),
-		np.sqrt(np.dot(prolateness, prolateness) - prolateness_in_offset_disha**2)
-	])
-
-plt.rcParams["legend.framealpha"] = 1
-plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
-
-separations = np.array(separations)
-prolatenesses = np.array(prolatenesses)
-
-plt.figure(figsize=(6,5))
-plt.grid()
-for indices, marker, color, label in [([2], 'o', '#f2ab23', "No offset"), ([0,1,3], 'D', '#118acd', "40 μm offset"), ([4], 'v', '#79098c', "80 μm offset")]:
-	plt.scatter(separations[indices,1], separations[indices,0], c=[color]*len(indices), marker=marker, zorder=100, label=label, s=60)
-plt.legend(loc="upper right")
-for i in range(len(separations)):
-	plt.plot([0, separations[i,1]], [0, separations[i,0]], 'k-', linewidth=1)
-plt.axis('equal')
-plt.yticks([-10, 0, 10, 20])
-plt.xlabel("Separation perpendicular to offset (μm)")
-plt.ylabel("Separation along offset (μm)")
-plt.tight_layout()
-# plt.xlim(0, 50)
-
-plt.figure(figsize=(6,5))
-plt.grid()
-for indices, marker, color, label in [([2], 'o', '#f2ab23', "No offset"), ([0,1,3], 'D', '#118acd', "40 μm offset"), ([4], 'v', '#79098c', "80 μm offset")]:
-	plt.scatter(prolatenesses[indices,1], prolatenesses[indices,0], c=[color]*len(indices), marker=marker, zorder=100, label=label, s=60)
-plt.legend(loc="upper right")
-for i in range(len(prolatenesses)):
-	plt.plot([0, prolatenesses[i,1]], [0, prolatenesses[i,0]], 'k-', linewidth=1)
-plt.axis('equal')
-plt.xlabel("Prolateness perpendicular to offset (μm)")
-plt.ylabel("Prolateness along offset (μm)")
-plt.tight_layout()
-# plt.xlim(0, 80)
-
-plt.show()
+	# images = [
+	# 	np.array([
+	# 		[[1, 1, 1],
+	# 		 [1, 1, 1],
+	# 		 [1, 1, 1]],
+	# 		[[0, 0, 0],
+	# 		 [0, 1, 0],
+	# 		 [0, 0, 0]],
+	# 	]),
+	# 	np.array([
+	# 		[[1, 1, 1],
+	# 		 [1, 1, 1],
+	# 		 [1, 1, 1]],
+	# 		[[0, 0, 0],
+	# 		 [0, 1, 0],
+	# 		 [0, 0, 0]],
+	# 	]),
+	# 	np.array([
+	# 		[[1, 1, 1],
+	# 		 [1, 1, 1],
+	# 		 [1, 1, 1]],
+	# 		[[0, 0, 0],
+	# 		 [0, 1, 0],
+	# 		 [0, 0, 0]],
+	# 	]),
+	# ] # (2H/srad/bin)
+	# assert np.shape(images) == (3, M, N, N), f"{np.shape(images)} =/= {(3, M, N, N)}"
