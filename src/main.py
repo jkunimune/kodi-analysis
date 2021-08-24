@@ -20,7 +20,7 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 e_in_bounds = 2
 
-SKIP_RECONSTRUCTION = True
+SKIP_RECONSTRUCTION = False
 SHOW_PLOTS = False
 SHOW_OFFSET = True
 
@@ -29,7 +29,7 @@ RESOLUTION = 5e-4
 EXPANSION_FACTOR = 1.20
 PLOT_CONTOUR = .25
 APERTURE_CONFIGURATION = 'hex'
-CHARGE_FITTING = 'all'
+CHARGE_FITTING = 'none'
 MAX_NUM_PIXELS = 200
 
 INPUT_FOLDER = '../scans/'
@@ -100,7 +100,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	plt.figure()
 	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size), rasterized=True)
 	T = np.linspace(0, 2*np.pi)
-	plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
+	# plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 	plt.axis('square')
 	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV)")
 	plt.xlabel("x (cm)")
@@ -156,10 +156,12 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	plt.axis('equal')
 	# plt.colorbar()
 	plt.axis('square')
-	if e_max is not None and cut_name != 'synth':
-		plt.title(f"{e_min:.1f} – {min(12.5, e_max):.1f} MeV")
-	else:
+	if cut_name == 'synth':
+		pass
+	elif e_max is None:
 		plt.title("X-ray image")
+	else:
+		plt.title(f"{e_min:.1f} – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.axis([-100, 100, -100, 100])
@@ -172,7 +174,7 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	plt.plot((np.repeat(x_bins, 2)[1:-1] - x0)/1e-4, np.repeat(Z[:,j_lineout], 2))
 	plt.xlabel("x (μm)")
 	plt.ylabel("Fluence")
-	plt.xlim(-100, 100)
+	plt.xlim(-150, 150)
 	plt.ylim(0, None)
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
@@ -318,6 +320,7 @@ if __name__ == '__main__':
 				print("x-ray image")
 				xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
 				p0, (p2, θ2) = plot_reconstruction(xX_bins, yX_bins, xray, None, None, "xray", data)
+				results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM]) | (results.energy_cut != 'xray')] # clear any previous versions of this reconstruccion
 				results = results.append( # and save the new ones to the dataframe
 					dict(
 						shot=data[SHOT],

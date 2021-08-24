@@ -25,7 +25,7 @@ EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
 # SMOOTHING = 1e-3
-CONTOUR = .25 # TODO: what is the significance of the 17% contour?
+CONTOUR = .50 #XXX.25 TODO: what is the significance of the 17% contour?
 
 
 def where_is_the_ocean(x, y, z, title, timeout=None):
@@ -473,7 +473,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			where=data_bins,
 			illegal=np.logical_not(source_bins),
 			verbose=verbose,
-			show_plots=show_plots) # deconvolve!
+			show_plots=True) # deconvolve!
 
 		print(f"  χ^2/n = {χ2_red}")
 		if χ2_red >= 1.5: # throw it away if it looks unreasonable
@@ -481,12 +481,12 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			continue
 		B = np.maximum(0, B) # we know this must be nonnegative
 
-		# def func(x, A, mouth):
-		# 	return A*(1 + erf((100e-4 - x)/mouth))/2
-		# real = source_bins
-		# cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
-		# (A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
-		# print(f"  XXX {mouth/1e-4:.1f}")
+		def func(x, A, mouth):
+			return A*(1 + erf((100e-4 - x)/mouth))/2
+		real = source_bins
+		cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
+		(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
+		print(f"  XXX {mouth/1e-4:.1f}")
 
 		save_as_hdf5(f'{output_filename}-{cut_name}-reconstruction', x=xS_bins, y=yS_bins, z=B)
 

@@ -236,4 +236,4 @@ if __name__ == '__main__':
 	# 	construct_data(shot, (1000, .1), N, SNR)
 	# construct_data('comet', 1000, 1000000, 8, name='comet', mode='mc')
 	# construct_data('gaussian', 'charged', 1000000, 8, name='charge1')
-	construct_data('square', 1000, 1_000_000, 10, 'test0_square', 'mc')
+	construct_data('square', 1000, 3_000_000, 10, 'test0_square', 'mc')
