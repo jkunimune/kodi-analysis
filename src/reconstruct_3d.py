@@ -86,19 +86,20 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 									continue # skip any that require backwards scattering
 
 								if np.array_equal(ζ_hat, [1, 0, 0]):
-									ρL = material_per_layer[iD,jD,kD]/2 + np.sum(material_per_layer[iD+1:,jD,kD])
+									ρL_min = np.sum(material_per_layer[iD+1:,jD,kD])
 								elif np.array_equal(ζ_hat, [0, 1, 0]):
-									ρL = material_per_layer[iD,jD,kD]/2 + np.sum(material_per_layer[iD,jD+1:,kD])
+									ρL_min = np.sum(material_per_layer[iD,jD+1:,kD])
 								elif np.array_equal(ζ_hat, [0, 0, 1]):
-									ρL = material_per_layer[iD,jD,kD]/2 + np.sum(material_per_layer[iD,jD,kD+1:])
+									ρL_min = np.sum(material_per_layer[iD,jD,kD+1:])
 								else:
 									raise "I haven't implemented actual path integracion."
 
 								Δr2 = np.sum(Δr**2) # compute the scattering probability
 								cosθ2 = Δζ**2/Δr2
 								ЭD = Э_max*cosθ2 # calculate the KOD birth energy TODO: account for stopping power
-								ЭV = range_down(ЭD, ρL)
-								if ЭV <= Э[0]:
+								ЭV_max = range_down(ЭD, ρL_min)
+								ЭV_min = range_down(ЭD, ρL_min + material_per_layer[iD,jD,kD])
+								if ЭV_max <= Э[0]:
 									continue
 								σ = np.interp(ЭD, Э_cross, σ_cross)
 
@@ -106,7 +107,9 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 								υD = np.sum(υ_hat*rD)
 
 								fluence = reactions_per_bin[iJ,jJ,kJ] * particles_per_bin[iJ,jJ,kJ] * σ/(4*np.pi*Δr2) # (H2/srad/bin^2)
-								image[digitize(ЭV, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence # TODO: en el futuro, I mite need to do something whare I spred these out across all pixels it mite hit
+								image[digitize(ЭV_max, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence/2 # TODO: en el futuro, I mite need to do something whare I spred these out across all pixels it mite hit
+								if ЭV_min > Э[0]:
+									image[digitize(ЭV_max, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence/2
 		images.append(image)
 	return images
 
