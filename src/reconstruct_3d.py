@@ -2,6 +2,7 @@
 # do a forward fit.
 # coordinate notes: the indices i, j, and k map to the x, y, and z direccions, respectively.
 # in index subscripts, J indicates neutron birth (jen) and D indicates scattering (darba).
+# also, V indicates deuteron detection (vide)
 # z^ points upward, x^ points to 90-00, and y^ points whichever way makes it a rite-handed system.
 # ζ^ points toward the TIM, υ^ points perpendicular to ζ^ and upward, and ξ^ makes it rite-handed.
 # Э stands for Энергия
@@ -10,10 +11,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+def integrate(y, x):
+	ydx = y*np.gradient(x)
+	cumsum = np.concatenate([[0], np.cumsum(ydx)])
+	return (cumsum[:-1] + cumsum[1:] - cumsum[1])/2
+
+
+m_DT = 3.34e-21 + 5.01e-21 # (mg)
+
 Э_max = 12.5 # (MeV)
 cross_seccions = np.loadtxt('../endf-6[58591].txt', skiprows=4)
 Э_cross = 14.1*4/9*(1 - cross_seccions[:,0]) # (MeV)
 σ_cross = .64e-28/1e-12/(4*np.pi)*2*cross_seccions[:,1] # (μm^2/srad)
+
+stopping_power = np.loadtxt('../deuterons_in_DT.csv', delimiter=',')
+Э_stopping_curve = stopping_power[:,0]/1e3 # (MeV)
+Э_stopping_curve[0] = 0
+dЭdρL = stopping_power[:,1] # (MeV/(mg/cm^2))
+ρL_stopping_curve = integrate(1/dЭdρL, Э_stopping_curve)
 
 
 def normalize(v):
@@ -27,7 +42,19 @@ def digitize(x, bins):
 	return np.minimum(int((x - bins[0])/(bins[1] - bins[0])), bins.size - 2)
 
 
+def range_down(Э0, ρL):
+	ρL0 = np.interp(Э0, Э_stopping_curve, ρL_stopping_curve)
+	return np.interp(ρL0 - ρL, ρL_stopping_curve, Э_stopping_curve)
+
+
 def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
+	""" reactivity should be given in fusion products per cm^3, density in mg/cm^3 """
+	L_pixel = (x[1] - x[0])/1e4 # (cm)
+	V_pixel = L_pixel**3 # (cm^3)
+	reactions_per_bin = reactivity*V_pixel
+	particles_per_bin = density/m_DT*V_pixel
+	material_per_layer = density*L_pixel
+
 	images = []
 	for ζ_hat in lines_of_sight:
 		ξ_hat = normalize(np.cross([0, 0, 1], ζ_hat))
@@ -58,14 +85,28 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 								if Δζ <= 0:
 									continue # skip any that require backwards scattering
 
-								ξD = np.sum(ξ_hat*rD) # do the local coordinates
-								υD = np.sum(υ_hat*rD)
+								if np.array_equal(ζ_hat, [1, 0, 0]):
+									ρL = material_per_layer[iD,jD,kD]/2 + np.sum(material_per_layer[iD+1:,jD,kD])
+								elif np.array_equal(ζ_hat, [0, 1, 0]):
+									ρL = material_per_layer[iD,jD,kD]/2 + np.sum(material_per_layer[iD,jD+1:,kD])
+								elif np.array_equal(ζ_hat, [0, 0, 1]):
+									ρL = material_per_layer[iD,jD,kD]/2 + np.sum(material_per_layer[iD,jD,kD+1:])
+								else:
+									raise "I haven't implemented actual path integracion."
 
 								Δr2 = np.sum(Δr**2) # compute the scattering probability
 								cosθ2 = Δζ**2/Δr2
 								ЭD = Э_max*cosθ2 # calculate the KOD birth energy TODO: account for stopping power
-								fluence = reactivity[iJ,jJ,kJ] * density[iJ,jJ,kJ] * np.interp(ЭD, Э_cross, σ_cross)/(4*np.pi*Δr2)
-								image[digitize(ЭD, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence # TODO: en el futuro, I mite need to do something whare I spred these out across all pixels it mite hit
+								ЭV = range_down(ЭD, ρL)
+								if ЭV <= Э[0]:
+									continue
+								σ = np.interp(ЭD, Э_cross, σ_cross)
+
+								ξD = np.sum(ξ_hat*rD) # do the local coordinates
+								υD = np.sum(υ_hat*rD)
+
+								fluence = reactions_per_bin[iJ,jJ,kJ] * particles_per_bin[iJ,jJ,kJ] * σ/(4*np.pi*Δr2) # (H2/srad/bin^2)
+								image[digitize(ЭV, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence # TODO: en el futuro, I mite need to do something whare I spred these out across all pixels it mite hit
 		images.append(image)
 	return images
 
@@ -90,9 +131,9 @@ if __name__ == '__main__':
 		[0, 0, 1],
 	]) # ()
 
-	inicial_gess = [np.zeros((N, N, N)), np.ones((N, N, N))] # (n/bin, 2H/bin)
-	inicial_gess[0][N//2, N//2, N//2] = 1
-	print(inicial_gess)
+	inicial_gess = [np.zeros((N, N, N)), np.ones((N, N, N))]
+	inicial_gess[0][N//2, N//2, N//2] = 1 # (n/cm^3)
+	inicial_gess[1] *= 1000 # (mg/cm^3)
 
 	images = synthesize_images(*inicial_gess, x, y, z, np.linspace(0, Э_max, 7), ξ, υ, lines_of_sight)
 	for i in range(images[0].shape[0]):
