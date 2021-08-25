@@ -42,9 +42,20 @@ def digitize(x, bins):
 	return np.minimum(int((x - bins[0])/(bins[1] - bins[0])), bins.size - 2)
 
 
+def interp(x, x_ref, y_ref):
+	""" assume x_ref and y_ref are unimodally increasing """
+	if x <= x_ref[0]:
+		return y_ref[0]
+	elif x >= x_ref[-1]:
+		return y_ref[-1]
+	else:
+		i = np.searchsorted([x], x_ref)[0]
+		return (x - x_ref[i])/(x_ref[i+1] - x_ref[i])*(y_ref[i+1] - y_ref[i]) + y_ref[i]
+
+
 def range_down(Э0, ρL):
-	ρL0 = np.interp(Э0, Э_stopping_curve, ρL_stopping_curve)
-	return np.interp(ρL0 - ρL, ρL_stopping_curve, Э_stopping_curve)
+	ρL0 = interp(Э0, Э_stopping_curve, ρL_stopping_curve)
+	return interp(ρL0 - ρL, ρL_stopping_curve, Э_stopping_curve)
 
 
 def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
@@ -125,7 +136,7 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 								ξD = np.sum(ξ_hat*rD) # do the local coordinates
 								υD = np.sum(υ_hat*rD)
 
-								σ = np.interp(ЭD, Э_cross, σ_cross)
+								σ = interp(ЭD, Э_cross, σ_cross)
 								fluence = reactions_per_bin[iJ,jJ,kJ] * particles_per_sector * σ/(4*np.pi*Δr2) # (H2/srad/bin^2)
 								image[digitize(ЭV, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence
 		images.append(image)
