@@ -129,8 +129,8 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 								Δr2 = np.sum(Δr**2) # compute the scattering probability
 								cosθ2 = Δζ**2/Δr2
 								ЭD = Э_max*cosθ2 # calculate the KOD birth energy
-								ЭV = range_down(ЭD, ρL[double_iD, double_jD, double_kD]) # TODO blur in energy
-								if ЭV <= Э[0]:
+								ЭV = range_down(ЭD, ρL[double_iD, double_jD, double_kD])
+								if ЭV <= Э[0] or ЭV > Э[-1]:
 									continue
 
 								ξD = np.sum(ξ_hat*rD) # do the local coordinates
@@ -138,7 +138,21 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 
 								σ = interp(ЭD, Э_cross, σ_cross)
 								fluence = reactions_per_bin[iJ,jJ,kJ] * particles_per_sector * σ/(4*np.pi*Δr2) # (H2/srad/bin^2)
-								image[digitize(ЭV, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence
+								iV = digitize(ξD, ξ)
+								jV = digitize(υD, υ)
+
+								Э_centers = (Э[:-1] + Э[1:])/2
+								if ЭV <= Э_centers[0]:
+									hV, dhV = 0, 0
+								elif ЭV >= Э_centers[-1]:
+									hV, dhV = len(Э_centers) - 1, 0
+								else:
+									hV = digitize(ЭV, Э_centers)
+									dhV = (ЭV - Э_centers[hV])/(Э_centers[hV+1] - Э_centers[hV])
+								
+								image[hV,   iV, jV] += fluence*(1-dhV) # split the fluence up over two energy bins linearly
+								if dhV > 0:
+									image[hV+1, iV, jV] += fluence*dhV
 		images.append(image)
 
 	return images
