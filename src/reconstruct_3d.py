@@ -68,6 +68,8 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 				yJ = (y[jJ] + y[jJ+1])/2
 				for kJ in range(z.size-1):
 					zJ = (z[kJ] + z[kJ+1])/2
+					if reactions_per_bin[iJ,jJ,kJ] == 0:
+						continue
 
 					rJ = np.array([xJ, yJ, zJ]) # every source posicion
 
@@ -77,6 +79,8 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 							yD = (y[jD] + y[jD+1])/2
 							for kD in range(z.size-1):
 								zD = (z[kD] + z[kD+1])/2
+								if particles_per_bin[iD,jD,kD] == 0:
+									continue
 
 								rD = np.array([xD, yD, zD]) # and every scatter posicion
 
@@ -111,14 +115,15 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 								if ЭV_min > Э[0]:
 									image[digitize(ЭV_max, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence/2
 		images.append(image)
+
 	return images
 
 
 if __name__ == '__main__':
-	N = 5 # spatial resolucion
+	N = 11 # spatial resolucion
 	M = 2 # energy resolucion
 
-	r_max = 150 # (μm)
+	r_max = 110 # (μm)
 	x = np.linspace(-r_max, r_max, N+1)
 	y = np.linspace(-r_max, r_max, N+1)
 	z = np.linspace(-r_max, r_max, N+1)
@@ -135,15 +140,20 @@ if __name__ == '__main__':
 	]) # ()
 
 	inicial_gess = [np.zeros((N, N, N)), np.ones((N, N, N))]
-	inicial_gess[0][N//2, N//2, N//2] = 1 # (n/cm^3)
+	for i in [-1, 0, 1]:
+		for j in [-1, 0, 1]:
+			for k in [-1, 0, 1]:
+				if i**2 + j**2 + k**2 < 3:
+					inicial_gess[0][N//2+i, N//2+j, N//2+k] = 1 # (n/cm^3)
 	inicial_gess[1] *= 1000 # (mg/cm^3)
+	# inicial_gess[1][-1,:,:] = 0
 
 	images = synthesize_images(*inicial_gess, x, y, z, np.linspace(0, Э_max, 7), ξ, υ, lines_of_sight)
 	for i in range(images[0].shape[0]):
 		plt.figure()
 		plt.pcolormesh(x, y, images[0][i,:,:])
 		plt.axis('square')
-		plt.colorbar()
+		# plt.colorbar()
 		plt.show()
 
 	# images = [
