@@ -19,7 +19,7 @@ def integrate(y, x):
 
 m_DT = 3.34e-21 + 5.01e-21 # (mg)
 
-Э_max = 12.5 # (MeV)
+Э_min, Э_max = 0, 12.5 # (MeV)
 cross_seccions = np.loadtxt('../endf-6[58591].txt', skiprows=4)
 Э_cross = 14.1*4/9*(1 - cross_seccions[:,0]) # (MeV)
 σ_cross = .64e-28/1e-12/(4*np.pi)*2*cross_seccions[:,1] # (μm^2/srad)
@@ -61,59 +61,66 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 		if any(np.isnan(ξ_hat)):
 			ξ_hat = np.array([1, 0, 0])
 		υ_hat = np.cross(ζ_hat, ξ_hat)
+
 		image = np.zeros((Э.size-1, ξ.size-1, υ.size-1)) # bild the image by numerically integrating
-		for iJ in range(x.size-1):
-			xJ = (x[iJ] + x[iJ+1])/2
-			for jJ in range(y.size-1):
-				yJ = (y[jJ] + y[jJ+1])/2
-				for kJ in range(z.size-1):
-					zJ = (z[kJ] + z[kJ+1])/2
-					if reactions_per_bin[iJ,jJ,kJ] == 0:
+		for double_iD in range(2*(x.size-1)):
+			iD, diD = double_iD//2, 0.25 + double_iD%2*0.50
+			xD = x[iD] + (x[1] - x[0])*diD
+			for double_jD in range(2*(y.size-1)):
+				jD, djD = double_jD//2, 0.25 + double_jD%2*0.50
+				yD = y[jD] + (y[1] - y[0])*djD
+				for double_kD in range(2*(z.size-1)):
+					kD, dkD = double_kD//2, 0.25 + double_kD%2*0.50
+					zD = z[kD] + (z[1] - z[0])*dkD
+
+					rD = np.array([xD, yD, zD]) # every vertex where it can scatter
+
+					particles_per_sector = particles_per_bin[iD, jD, kD]/8
+					if particles_per_sector == 0:
 						continue
 
-					rJ = np.array([xJ, yJ, zJ]) # every source posicion
+					ρL = material_per_layer[iD,jD,kD]
+					if np.array_equal(ζ_hat, [1, 0, 0]):
+						ρL = ρL*(1 - diD) + np.sum(material_per_layer[iD+1:,jD,kD])
+					elif np.array_equal(ζ_hat, [0, 1, 0]):
+						ρL = ρL*(1 - djD) + np.sum(material_per_layer[iD,jD+1:,kD])
+					elif np.array_equal(ζ_hat, [0, 0, 1]):
+						ρL = ρL*(1 - dkD) + np.sum(material_per_layer[iD,jD,kD+1:])
+					else:
+						raise "I haven't implemented actual path integracion."
 
-					for iD in range(x.size-1):
-						xD = (x[iD] + x[iD+1])/2
-						for jD in range(y.size-1):
-							yD = (y[jD] + y[jD+1])/2
-							for kD in range(z.size-1):
-								zD = (z[kD] + z[kD+1])/2
-								if particles_per_bin[iD,jD,kD] == 0:
+					# for iJ, jJ, kJ in [(N//2, N//2, N//2)]:
+					# 			xJ, yJ, zJ = 0, 0, 0
+					for iJ in range(x.size-1):
+						xJ = (x[iJ] + x[iJ+1])/2
+						for jJ in range(y.size-1):
+							yJ = (y[jJ] + y[jJ+1])/2
+							for kJ in range(z.size-1):
+								zJ = (z[kJ] + z[kJ+1])/2
+
+								if reactions_per_bin[iJ,jJ,kJ] == 0:
 									continue
 
-								rD = np.array([xD, yD, zD]) # and every scatter posicion
+								rJ = np.array([xJ, yJ, zJ]) # every voxel in which it can be born
 
 								Δr = rD - rJ
 								Δζ = np.sum(Δr*ζ_hat)
 								if Δζ <= 0:
 									continue # skip any that require backwards scattering
 
-								if np.array_equal(ζ_hat, [1, 0, 0]):
-									ρL_min = np.sum(material_per_layer[iD+1:,jD,kD])
-								elif np.array_equal(ζ_hat, [0, 1, 0]):
-									ρL_min = np.sum(material_per_layer[iD,jD+1:,kD])
-								elif np.array_equal(ζ_hat, [0, 0, 1]):
-									ρL_min = np.sum(material_per_layer[iD,jD,kD+1:])
-								else:
-									raise "I haven't implemented actual path integracion."
-
 								Δr2 = np.sum(Δr**2) # compute the scattering probability
 								cosθ2 = Δζ**2/Δr2
-								ЭD = Э_max*cosθ2 # calculate the KOD birth energy TODO: account for stopping power
-								ЭV_max = range_down(ЭD, ρL_min)
-								ЭV_min = range_down(ЭD, ρL_min + material_per_layer[iD,jD,kD])
-								if ЭV_max <= Э[0]:
+								ЭD = Э_max*cosθ2 # calculate the KOD birth energy
+								ЭV = range_down(ЭD, ρL)
+								if ЭV <= Э[0]:
 									continue
-								σ = np.interp(ЭD, Э_cross, σ_cross)
 
 								ξD = np.sum(ξ_hat*rD) # do the local coordinates
 								υD = np.sum(υ_hat*rD)
 
-								fluence = reactions_per_bin[iJ,jJ,kJ] * particles_per_bin[iJ,jJ,kJ] * σ/(4*np.pi*Δr2) # (H2/srad/bin^2)
-								image[digitize(ЭV_max, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence/2 # TODO: en el futuro, I mite need to do something whare I spred these out across all pixels it mite hit
-								if ЭV_min > Э[0]:
-									image[digitize(ЭV_max, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence/2
+								σ = np.interp(ЭD, Э_cross, σ_cross)
+								fluence = reactions_per_bin[iJ,jJ,kJ] * particles_per_sector * σ/(4*np.pi*Δr2) # (H2/srad/bin^2)
+								image[digitize(ЭV, Э), digitize(ξD, ξ), digitize(υD, υ)] += fluence
 		images.append(image)
 
 	return images
@@ -127,7 +134,7 @@ if __name__ == '__main__':
 	x = np.linspace(-r_max, r_max, N+1)
 	y = np.linspace(-r_max, r_max, N+1)
 	z = np.linspace(-r_max, r_max, N+1)
-	Э = np.linspace(0, Э_max, M+1)
+	Э = np.linspace(Э_min, Э_max, M+1)
 
 	H = N#np.ceil(N*np.sqrt(3))
 	ξ = np.linspace(-H/N*r_max, H/N*r_max, N+1)
@@ -139,21 +146,20 @@ if __name__ == '__main__':
 		[0, 0, 1],
 	]) # ()
 
-	inicial_gess = [np.zeros((N, N, N)), np.ones((N, N, N))]
+	source = np.zeros((N, N, N))
 	for i in [-1, 0, 1]:
 		for j in [-1, 0, 1]:
 			for k in [-1, 0, 1]:
 				if i**2 + j**2 + k**2 < 3:
-					inicial_gess[0][N//2+i, N//2+j, N//2+k] = 1 # (n/cm^3)
-	inicial_gess[1] *= 1000 # (mg/cm^3)
-	# inicial_gess[1][-1,:,:] = 0
+					source[N//2+i, N//2+j, N//2+k] = 1 # (n/cm^3)
+	density = np.where(source > 0, 0, 1000) # (mg/cm^3)
 
-	images = synthesize_images(*inicial_gess, x, y, z, np.linspace(0, Э_max, 7), ξ, υ, lines_of_sight)
+	images = synthesize_images(source, density, x, y, z, np.linspace(0, Э_max, 7), ξ, υ, lines_of_sight)
 	for i in range(images[0].shape[0]):
 		plt.figure()
-		plt.pcolormesh(x, y, images[0][i,:,:])
+		plt.pcolormesh(x, y, images[0][i,:,:])#, vmin=0, vmax=np.max(images))
 		plt.axis('square')
-		# plt.colorbar()
+		plt.colorbar()
 		plt.show()
 
 	# images = [
