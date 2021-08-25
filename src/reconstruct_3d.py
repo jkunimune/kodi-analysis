@@ -49,7 +49,7 @@ def interp(x, x_ref, y_ref):
 	elif x >= x_ref[-1]:
 		return y_ref[-1]
 	else:
-		i = np.searchsorted([x], x_ref)[0]
+		i = np.searchsorted(x_ref, x) - 1
 		return (x - x_ref[i])/(x_ref[i+1] - x_ref[i])*(y_ref[i+1] - y_ref[i]) + y_ref[i]
 
 
