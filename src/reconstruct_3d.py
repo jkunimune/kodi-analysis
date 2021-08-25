@@ -62,46 +62,53 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 			ξ_hat = np.array([1, 0, 0])
 		υ_hat = np.cross(ζ_hat, ξ_hat)
 
-		image = np.zeros((Э.size-1, ξ.size-1, υ.size-1)) # bild the image by numerically integrating
+		ρL = np.empty((2*(x.size-1), 2*(y.size-1), 2*(z.size-1)))
 		for double_iD in range(2*(x.size-1)):
 			iD, diD = double_iD//2, 0.25 + double_iD%2*0.50
-			xD = x[iD] + (x[1] - x[0])*diD
 			for double_jD in range(2*(y.size-1)):
 				jD, djD = double_jD//2, 0.25 + double_jD%2*0.50
-				yD = y[jD] + (y[1] - y[0])*djD
 				for double_kD in range(2*(z.size-1)):
 					kD, dkD = double_kD//2, 0.25 + double_kD%2*0.50
-					zD = z[kD] + (z[1] - z[0])*dkD
 
-					rD = np.array([xD, yD, zD]) # every vertex where it can scatter
-
-					particles_per_sector = particles_per_bin[iD, jD, kD]/8
-					if particles_per_sector == 0:
-						continue
-
-					ρL = material_per_layer[iD,jD,kD]
+					ρL_ = material_per_layer[iD,jD,kD]
 					if np.array_equal(ζ_hat, [1, 0, 0]):
-						ρL = ρL*(1 - diD) + np.sum(material_per_layer[iD+1:,jD,kD])
+						ρL_ = ρL_*(1 - diD) + np.sum(material_per_layer[iD+1:,jD,kD])
 					elif np.array_equal(ζ_hat, [0, 1, 0]):
-						ρL = ρL*(1 - djD) + np.sum(material_per_layer[iD,jD+1:,kD])
+						ρL_ = ρL_*(1 - djD) + np.sum(material_per_layer[iD,jD+1:,kD])
 					elif np.array_equal(ζ_hat, [0, 0, 1]):
-						ρL = ρL*(1 - dkD) + np.sum(material_per_layer[iD,jD,kD+1:])
+						ρL_ = ρL_*(1 - dkD) + np.sum(material_per_layer[iD,jD,kD+1:])
 					else:
 						raise "I haven't implemented actual path integracion."
+					ρL[double_iD,double_jD,double_kD] = ρL_
 
-					# for iJ, jJ, kJ in [(N//2, N//2, N//2)]:
-					# 			xJ, yJ, zJ = 0, 0, 0
-					for iJ in range(x.size-1):
-						xJ = (x[iJ] + x[iJ+1])/2
-						for jJ in range(y.size-1):
-							yJ = (y[jJ] + y[jJ+1])/2
-							for kJ in range(z.size-1):
-								zJ = (z[kJ] + z[kJ+1])/2
+		image = np.zeros((Э.size-1, ξ.size-1, υ.size-1)) # bild the image by numerically integrating
+		for iJ in range(x.size-1):
+			xJ = (x[iJ] + x[iJ+1])/2
+			for jJ in range(y.size-1):
+				yJ = (y[jJ] + y[jJ+1])/2
+				for kJ in range(z.size-1):
+					zJ = (z[kJ] + z[kJ+1])/2
 
-								if reactions_per_bin[iJ,jJ,kJ] == 0:
+					if reactions_per_bin[iJ,jJ,kJ] == 0:
+						continue
+
+					rJ = np.array([xJ, yJ, zJ]) # every voxel in which it can be born
+
+					for double_iD in range(2*(x.size-1)):
+						iD, diD = double_iD//2, 0.25 + double_iD%2*0.50
+						xD = x[iD] + (x[1] - x[0])*diD
+						for double_jD in range(2*(y.size-1)):
+							jD, djD = double_jD//2, 0.25 + double_jD%2*0.50
+							yD = y[jD] + (y[1] - y[0])*djD
+							for double_kD in range(2*(z.size-1)):
+								kD, dkD = double_kD//2, 0.25 + double_kD%2*0.50
+								zD = z[kD] + (z[1] - z[0])*dkD
+
+								particles_per_sector = particles_per_bin[iD, jD, kD]/8
+								if particles_per_sector == 0:
 									continue
 
-								rJ = np.array([xJ, yJ, zJ]) # every voxel in which it can be born
+								rD = np.array([xD, yD, zD]) # every vertex where it can scatter
 
 								Δr = rD - rJ
 								Δζ = np.sum(Δr*ζ_hat)
@@ -111,7 +118,7 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 								Δr2 = np.sum(Δr**2) # compute the scattering probability
 								cosθ2 = Δζ**2/Δr2
 								ЭD = Э_max*cosθ2 # calculate the KOD birth energy
-								ЭV = range_down(ЭD, ρL)
+								ЭV = range_down(ЭD, ρL[double_iD, double_jD, double_kD])
 								if ЭV <= Э[0]:
 									continue
 
