@@ -19,7 +19,7 @@ def integrate(y, x):
 
 m_DT = 3.34e-21 + 5.01e-21 # (mg)
 
-Э_min, Э_max = 0, 12.5 # (MeV)
+Э_min, Э_max = 2, 12.5 # (MeV)
 cross_seccions = np.loadtxt('../endf-6[58591].txt', skiprows=4)
 Э_cross = 14.1*4/9*(1 - cross_seccions[:,0]) # (MeV)
 σ_cross = .64e-28/1e-12/(4*np.pi)*2*cross_seccions[:,1] # (μm^2/srad)
@@ -129,7 +129,7 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 								Δr2 = np.sum(Δr**2) # compute the scattering probability
 								cosθ2 = Δζ**2/Δr2
 								ЭD = Э_max*cosθ2 # calculate the KOD birth energy
-								ЭV = range_down(ЭD, ρL[double_iD, double_jD, double_kD])
+								ЭV = range_down(ЭD, ρL[double_iD, double_jD, double_kD]) # TODO blur in energy
 								if ЭV <= Э[0]:
 									continue
 
@@ -144,8 +144,45 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 	return images
 
 
+def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight):
+	""" generate the reactivity and density profiles that create these images """
+
+	def objective(state):
+		assert state.shape == (2*N**3,)
+		synthetic = synthesize_images(
+			state[:N**3].reshape((N, N, N)),
+			state[N**3:].reshape((N, N, N)),
+			x, y, z, Э, ξ, υ, lines_of_sight,
+		)
+		return np.sum((synthetic - images)**2)
+
+	x_center = (x[:-1] + x[1:])/2
+	y_center = (y[:-1] + y[1:])/2
+	z_center = (z[:-1] + z[1:])/2
+	x_center, y_center, z_center = np.meshgrid(x_center, y_center, z_center, indexing='ij')
+	r_center = np.sqrt(x_center**2 + y_center**2 + z_center**2)
+	inicial_source = np.where(r_center <= 40, 1., 0.)
+	inicial_density = np.where((r_center > 40) & (r_center <= 100), 1000., 0.) # mg/cm^2
+
+	inicial_images = synthesize_images(inicial_source, inicial_density, x, y, z, Э, ξ, υ, lines_of_sight)
+	inicial_source *= np.sum(images)/np.sum(inicial_images) # adjust magnitude to approximately match
+	
+	# opt = optimize.minimize(objective,
+	# 	np.concatenate((inicial_source.ravel(), inicial_density.ravel())),
+	# 	method='L-BFGS-B',
+	# 	bounds=[(0, None)]*(2*N**3)
+	# )
+	# 
+	# source, density = opt.x.reshape((2, N, N, N))
+
+	source, density = inicial_source, inicial_density
+
+	return source, density
+
+
+
 if __name__ == '__main__':
-	N = 11 # spatial resolucion
+	N = 7 # spatial resolucion
 	M = 2 # energy resolucion
 
 	r_max = 110 # (μm)
@@ -164,46 +201,51 @@ if __name__ == '__main__':
 		[0, 0, 1],
 	]) # ()
 
-	source = np.zeros((N, N, N))
-	for i in [-1, 0, 1]:
-		for j in [-1, 0, 1]:
-			for k in [-1, 0, 1]:
-				if i**2 + j**2 + k**2 < 3:
-					source[N//2+i, N//2+j, N//2+k] = 1 # (n/cm^3)
-	density = np.where(source > 0, 0, 1000) # (mg/cm^3)
+	# source = np.zeros((N, N, N))
+	# for i in [-1, 0, 1]:
+	# 	for j in [-1, 0, 1]:
+	# 		for k in [-1, 0, 1]:
+	# 			if i**2 + j**2 + k**2 < 3:
+	# 				source[N//2+i, N//2+j, N//2+k] = 1 # (n/cm^3)
+	# density = np.where(source > 0, 0, 1000) # (mg/cm^3)
+
+	images = [
+		np.array([
+			[[1, 1, 1],
+			 [1, 1, 1],
+			 [1, 1, 1]],
+			[[0, 0, 0],
+			 [0, 1, 0],
+			 [0, 0, 0]],
+		]),
+		np.array([
+			[[1, 1, 1],
+			 [1, 1, 1],
+			 [1, 1, 1]],
+			[[0, 0, 0],
+			 [0, 1, 0],
+			 [0, 0, 0]],
+		]),
+		np.array([
+			[[1, 1, 1],
+			 [1, 1, 1],
+			 [1, 1, 1]],
+			[[0, 0, 0],
+			 [0, 1, 0],
+			 [0, 0, 0]],
+		]),
+	] # (2H/srad/bin)
+	# assert np.shape(images) == (3, M, N, N), f"{np.shape(images)} =/= {(3, M, N, N)}"
+
+	source, density = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight)
+	print(source)
+	print()
+	print(density)
 
 	images = synthesize_images(source, density, x, y, z, np.linspace(0, Э_max, 7), ξ, υ, lines_of_sight)
 	for i in range(images[0].shape[0]):
 		plt.figure()
-		plt.pcolormesh(x, y, images[0][i,:,:])#, vmin=0, vmax=np.max(images))
+		plt.pcolormesh(x, y, images[0][i,:,:], vmin=0, vmax=np.max(images))
 		plt.axis('square')
 		plt.colorbar()
 		plt.show()
-
-	# images = [
-	# 	np.array([
-	# 		[[1, 1, 1],
-	# 		 [1, 1, 1],
-	# 		 [1, 1, 1]],
-	# 		[[0, 0, 0],
-	# 		 [0, 1, 0],
-	# 		 [0, 0, 0]],
-	# 	]),
-	# 	np.array([
-	# 		[[1, 1, 1],
-	# 		 [1, 1, 1],
-	# 		 [1, 1, 1]],
-	# 		[[0, 0, 0],
-	# 		 [0, 1, 0],
-	# 		 [0, 0, 0]],
-	# 	]),
-	# 	np.array([
-	# 		[[1, 1, 1],
-	# 		 [1, 1, 1],
-	# 		 [1, 1, 1]],
-	# 		[[0, 0, 0],
-	# 		 [0, 1, 0],
-	# 		 [0, 0, 0]],
-	# 	]),
-	# ] # (2H/srad/bin)
-	# assert np.shape(images) == (3, M, N, N), f"{np.shape(images)} =/= {(3, M, N, N)}"
