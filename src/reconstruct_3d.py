@@ -239,10 +239,11 @@ if __name__ == '__main__':
 			images[l,h,:,:] = np.where(
 				r_center <= 80*(M-h)/M, 1e4, 0) # (2H/srad/bin)
 
-	for image in images[0]:
+	for i in range(images.shape[1]):
 		plt.figure()
-		plt.pcolormesh(x, y, image, vmin=0, vmax=np.max(images))
-		plt.axis('square')
+		plt.pcolormesh(x, y, images[0,i,:,:], vmin=0, vmax=np.max(images))
+		plt.axis('square')	
+		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
 		plt.colorbar()
 		plt.show()
 
@@ -252,9 +253,10 @@ if __name__ == '__main__':
 	print(density)
 
 	images = synthesize_images(source, density, x, y, z, Э, ξ, υ, lines_of_sight)
-	for image in images[0]:
+	for i in range(images.shape[1]):
 		plt.figure()
-		plt.pcolormesh(x, y, image, vmin=0, vmax=np.max(images))
+		plt.pcolormesh(x, y, images[0,i,:,:], vmin=0, vmax=np.max(images))
 		plt.axis('square')
+		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
 		plt.colorbar()
 		plt.show()
