@@ -45,7 +45,7 @@ def digitize(x, bins):
 	assert len(bins.shape) == 1, bins.shape
 	if np.any(np.isnan(x) | (x > bins[-1]) | (x < bins[0])):
 		raise IndexError(f"{x} not in [{bins[0]}, {bins[-1]}]")
-	return np.minimum(int((x - bins[0])/(bins[1] - bins[0])), bins.size - 2)
+	return int((x - bins[0])/(bins[1] - bins[0]))
 
 
 def interp(x, x_ref, y_ref):
@@ -136,8 +136,6 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 								cosθ2 = Δζ**2/Δr2
 								ЭD = Э_max*cosθ2 # calculate the KOD birth energy
 								ЭV = range_down(ЭD, ρL[double_iD, double_jD, double_kD])
-								if ЭV <= Э[0] or ЭV > Э[-1]:
-									continue
 
 								ξD = np.sum(ξ_hat*rD) # do the local coordinates
 								υD = np.sum(υ_hat*rD)
@@ -148,16 +146,12 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 								jV = digitize(υD, υ)
 
 								Э_centers = (Э[:-1] + Э[1:])/2
-								if ЭV <= Э_centers[0]:
-									hV, dhV = 0, 0
-								elif ЭV >= Э_centers[-1]:
-									hV, dhV = len(Э_centers) - 1, 0
-								else:
-									hV = digitize(ЭV, Э_centers)
-									dhV = smooth_step((ЭV - Э_centers[hV])/(Э_centers[hV+1] - Э_centers[hV]))
+								hV = (ЭV - Э_centers[0])/(Э[1] - Э[0])
+								hV, dhV = int(hV), smooth_step(hV%1)
 								
-								image[hV,   iV, jV] += fluence*(1-dhV) # split the fluence up over two energy bins
-								if dhV > 0:
+								if hV >= 0 and hV < image.shape[0]:
+									image[hV,   iV, jV] += fluence*(1-dhV) # split the fluence up over two energy bins
+								if hV+1 >= 0 and hV+1 < image.shape[0]:
 									image[hV+1, iV, jV] += fluence*dhV
 		images.append(image)
 
@@ -201,11 +195,10 @@ def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight):
 		method='L-BFGS-B',
 		bounds=[(0, None)]*(2*N**3)
 	)
-	
 	source, density = opt.x.reshape((2, N, N, N))
+	# source, density = inicial_source, inicial_density
 
 	return source, density
-
 
 
 if __name__ == '__main__':
@@ -238,25 +231,25 @@ if __name__ == '__main__':
 
 	images = np.array([
 		[
-			[[1, 1, 1],
+			[[0, 1, 0],
 			 [1, 1, 1],
-			 [1, 1, 1]],
+			 [0, 1, 0]],
 			[[0, 0, 0],
 			 [0, 1, 0],
 			 [0, 0, 0]],
 		],
 		[
-			[[1, 1, 1],
+			[[0, 1, 0],
 			 [1, 1, 1],
-			 [1, 1, 1]],
+			 [0, 1, 0]],
 			[[0, 0, 0],
 			 [0, 1, 0],
 			 [0, 0, 0]],
 		],
 		[
-			[[1, 1, 1],
+			[[0, 1, 0],
 			 [1, 1, 1],
-			 [1, 1, 1]],
+			 [0, 1, 0]],
 			[[0, 0, 0],
 			 [0, 1, 0],
 			 [0, 0, 0]],
