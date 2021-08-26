@@ -38,7 +38,7 @@ def normalize(v):
 
 def smooth_step(x):
 	assert np.all(x >= 0) and np.all(x <= 1)
-	return (1 - np.cos(np.pi*x))/2
+	return -20*x**7 + 70*x**6 - 84*x**5 + 35*x**4
 
 
 def digitize(x, bins):
