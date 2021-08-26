@@ -9,6 +9,7 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.optimize as optimize
 
 
 def integrate(y, x):
@@ -33,6 +34,11 @@ dЭdρL = stopping_power[:,1] # (MeV/(mg/cm^2))
 
 def normalize(v):
 	return v/np.sqrt(np.sum(v**2))
+
+
+def smooth_step(x):
+	assert np.all(x >= 0) and np.all(x <= 1)
+	return (1 - np.cos(np.pi*x))/2
 
 
 def digitize(x, bins):
@@ -148,14 +154,14 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 									hV, dhV = len(Э_centers) - 1, 0
 								else:
 									hV = digitize(ЭV, Э_centers)
-									dhV = (ЭV - Э_centers[hV])/(Э_centers[hV+1] - Э_centers[hV])
+									dhV = smooth_step((ЭV - Э_centers[hV])/(Э_centers[hV+1] - Э_centers[hV]))
 								
-								image[hV,   iV, jV] += fluence*(1-dhV) # split the fluence up over two energy bins linearly
+								image[hV,   iV, jV] += fluence*(1-dhV) # split the fluence up over two energy bins
 								if dhV > 0:
 									image[hV+1, iV, jV] += fluence*dhV
 		images.append(image)
 
-	return images
+	return np.array(images)
 
 
 def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight):
@@ -181,22 +187,29 @@ def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight):
 	inicial_images = synthesize_images(inicial_source, inicial_density, x, y, z, Э, ξ, υ, lines_of_sight)
 	inicial_source *= np.sum(images)/np.sum(inicial_images) # adjust magnitude to approximately match
 	
-	# opt = optimize.minimize(objective,
-	# 	np.concatenate((inicial_source.ravel(), inicial_density.ravel())),
-	# 	method='L-BFGS-B',
-	# 	bounds=[(0, None)]*(2*N**3)
-	# )
-	# 
-	# source, density = opt.x.reshape((2, N, N, N))
+	# for image in inicial_images[0]:
+	# 	plt.figure()
+	# 	plt.pcolormesh(x, y, image, vmin=0, vmax=np.max(inicial_images))
+	# 	plt.axis('square')
+	# 	plt.colorbar()
+	# 	plt.show()
 
-	source, density = inicial_source, inicial_density
+	inicial_state = np.concatenate((inicial_source.ravel(), inicial_density.ravel()))
+
+	opt = optimize.minimize(objective,
+		inicial_state,
+		method='L-BFGS-B',
+		bounds=[(0, None)]*(2*N**3)
+	)
+	
+	source, density = opt.x.reshape((2, N, N, N))
 
 	return source, density
 
 
 
 if __name__ == '__main__':
-	N = 7 # spatial resolucion
+	N = 3 # spatial resolucion
 	M = 2 # energy resolucion
 
 	r_max = 110 # (μm)
@@ -223,43 +236,43 @@ if __name__ == '__main__':
 	# 				source[N//2+i, N//2+j, N//2+k] = 1 # (n/cm^3)
 	# density = np.where(source > 0, 0, 1000) # (mg/cm^3)
 
-	images = [
-		np.array([
+	images = np.array([
+		[
 			[[1, 1, 1],
 			 [1, 1, 1],
 			 [1, 1, 1]],
 			[[0, 0, 0],
 			 [0, 1, 0],
 			 [0, 0, 0]],
-		]),
-		np.array([
+		],
+		[
 			[[1, 1, 1],
 			 [1, 1, 1],
 			 [1, 1, 1]],
 			[[0, 0, 0],
 			 [0, 1, 0],
 			 [0, 0, 0]],
-		]),
-		np.array([
+		],
+		[
 			[[1, 1, 1],
 			 [1, 1, 1],
 			 [1, 1, 1]],
 			[[0, 0, 0],
 			 [0, 1, 0],
 			 [0, 0, 0]],
-		]),
-	] # (2H/srad/bin)
-	# assert np.shape(images) == (3, M, N, N), f"{np.shape(images)} =/= {(3, M, N, N)}"
+		],
+	]) # (2H/srad/bin)
+	assert np.shape(images) == (3, M, N, N), f"{np.shape(images)} =/= {(3, M, N, N)}"
 
 	source, density = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight)
 	print(source)
 	print()
 	print(density)
 
-	images = synthesize_images(source, density, x, y, z, np.linspace(0, Э_max, 7), ξ, υ, lines_of_sight)
-	for i in range(images[0].shape[0]):
+	images = synthesize_images(source, density, x, y, z, Э, ξ, υ, lines_of_sight)
+	for i in range(images.shape[1]):
 		plt.figure()
-		plt.pcolormesh(x, y, images[0][i,:,:], vmin=0, vmax=np.max(images))
+		plt.pcolormesh(x, y, images[0,i,:,:], vmin=0, vmax=np.max(images))
 		plt.axis('square')
 		plt.colorbar()
 		plt.show()
