@@ -20,7 +20,7 @@ def integrate(y, x):
 
 m_DT = 3.34e-21 + 5.01e-21 # (mg)
 
-Э_min, Э_max = 2, 12.5 # (MeV)
+Э_min, Э_kod, Э_max = 2, 12.5, 14 # (MeV)
 cross_seccions = np.loadtxt('../endf-6[58591].txt', skiprows=4)
 Э_cross = 14.1*4/9*(1 - cross_seccions[:,0]) # (MeV)
 σ_cross = .64e-28/1e-12/(4*np.pi)*2*cross_seccions[:,1] # (μm^2/srad)
@@ -134,7 +134,7 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 
 								Δr2 = np.sum(Δr**2) # compute the scattering probability
 								cosθ2 = Δζ**2/Δr2
-								ЭD = Э_max*cosθ2 # calculate the KOD birth energy
+								ЭD = Э_kod*cosθ2 # calculate the KOD birth energy
 								ЭV = range_down(ЭD, ρL[double_iD, double_jD, double_kD])
 
 								ξD = np.sum(ξ_hat*rD) # do the local coordinates
@@ -229,33 +229,22 @@ if __name__ == '__main__':
 	# 				source[N//2+i, N//2+j, N//2+k] = 1 # (n/cm^3)
 	# density = np.where(source > 0, 0, 1000) # (mg/cm^3)
 
-	images = np.array([
-		[
-			[[0, 1, 0],
-			 [1, 1, 1],
-			 [0, 1, 0]],
-			[[0, 0, 0],
-			 [0, 1, 0],
-			 [0, 0, 0]],
-		],
-		[
-			[[0, 1, 0],
-			 [1, 1, 1],
-			 [0, 1, 0]],
-			[[0, 0, 0],
-			 [0, 1, 0],
-			 [0, 0, 0]],
-		],
-		[
-			[[0, 1, 0],
-			 [1, 1, 1],
-			 [0, 1, 0]],
-			[[0, 0, 0],
-			 [0, 1, 0],
-			 [0, 0, 0]],
-		],
-	]) # (2H/srad/bin)
-	assert np.shape(images) == (3, M, N, N), f"{np.shape(images)} =/= {(3, M, N, N)}"
+	ξ_center = (ξ[:-1] + ξ[1:])/2
+	υ_center = (υ[:-1] + υ[1:])/2
+	ξ_center, υ_center = np.meshgrid(ξ_center, υ_center, indexing='ij')
+	r_center = np.sqrt(ξ_center**2 + υ_center**2)
+	images = np.zeros((3, M, N, N))
+	for l in range(3):
+		for h in range(M):
+			images[l,h,:,:] = np.where(
+				r_center <= 80*(M-h)/M, 1e4, 0) # (2H/srad/bin)
+
+	for image in images[0]:
+		plt.figure()
+		plt.pcolormesh(x, y, image, vmin=0, vmax=np.max(images))
+		plt.axis('square')
+		plt.colorbar()
+		plt.show()
 
 	source, density = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight)
 	print(source)
@@ -263,9 +252,9 @@ if __name__ == '__main__':
 	print(density)
 
 	images = synthesize_images(source, density, x, y, z, Э, ξ, υ, lines_of_sight)
-	for i in range(images.shape[1]):
+	for image in images[0]:
 		plt.figure()
-		plt.pcolormesh(x, y, images[0,i,:,:], vmin=0, vmax=np.max(images))
+		plt.pcolormesh(x, y, image, vmin=0, vmax=np.max(images))
 		plt.axis('square')
 		plt.colorbar()
 		plt.show()
