@@ -12,6 +12,7 @@ import numpy as np
 import scipy.optimize as optimize
 
 
+
 def integrate(y, x):
 	ydx = y*np.gradient(x)
 	cumsum = np.concatenate([[0], np.cumsum(ydx)])
@@ -158,7 +159,7 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 	return np.array(images)
 
 
-def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight):
+def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight, method='trf'):
 	""" generate the reactivity and density profiles that create these images """
 
 	def objective(state):
@@ -168,15 +169,27 @@ def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight):
 			state[N**3:].reshape((N, N, N)),
 			x, y, z, Э, ξ, υ, lines_of_sight,
 		)
-		return np.sum((synthetic - images)**2)
+		# plt.figure()
+		# plt.pcolormesh(synthetic[0,-2])
+		# plt.colorbar()
+		# plt.tight_layout()
+		# # plt.figure()
+		# # plt.pcolormesh((images[0,-2]))
+		# # plt.colorbar()
+		# # plt.tight_layout()
+		# plt.show()
+		if method in ['Nelder-Mead', 'L-BFGS-B', 'SLSQP']:
+			return np.sum((synthetic - images)**2)
+		else:
+			return (synthetic - images).ravel()
 
 	x_center = (x[:-1] + x[1:])/2
 	y_center = (y[:-1] + y[1:])/2
 	z_center = (z[:-1] + z[1:])/2
 	x_center, y_center, z_center = np.meshgrid(x_center, y_center, z_center, indexing='ij')
 	r_center = np.sqrt(x_center**2 + y_center**2 + z_center**2)
-	inicial_source = np.where(r_center <= 40, 1., 0.)
-	inicial_density = np.where((r_center > 40) & (r_center <= 100), 1000., 0.) # mg/cm^2
+	inicial_source = np.where(r_center <= 40, 1.0, 0.1)
+	inicial_density = np.where((r_center > 40) & (r_center <= 100), 1000., 100.) # mg/cm^2
 
 	inicial_images = synthesize_images(inicial_source, inicial_density, x, y, z, Э, ξ, υ, lines_of_sight)
 	inicial_source *= np.sum(images)/np.sum(inicial_images) # adjust magnitude to approximately match
@@ -190,11 +203,19 @@ def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight):
 
 	inicial_state = np.concatenate((inicial_source.ravel(), inicial_density.ravel()))
 
-	opt = optimize.minimize(objective,
-		inicial_state,
-		method='L-BFGS-B',
-		bounds=[(0, None)]*(2*N**3)
-	)
+	if method in ['Nelder-Mead', 'L-BFGS-B', 'SLSQP']:
+		opt = optimize.minimize(objective,
+			inicial_state,
+			method=method,
+			bounds=[(0, None)]*inicial_state.size,
+		)
+	else:
+		opt = optimize.least_squares(objective,
+			inicial_state,
+			method=method,
+			bounds=(0, np.inf),
+		)
+
 	source, density = opt.x.reshape((2, N, N, N))
 	# source, density = inicial_source, inicial_density
 
@@ -229,15 +250,15 @@ if __name__ == '__main__':
 	# 				source[N//2+i, N//2+j, N//2+k] = 1 # (n/cm^3)
 	# density = np.where(source > 0, 0, 1000) # (mg/cm^3)
 
-	ξ_center = (ξ[:-1] + ξ[1:])/2
-	υ_center = (υ[:-1] + υ[1:])/2
-	ξ_center, υ_center = np.meshgrid(ξ_center, υ_center, indexing='ij')
-	r_center = np.sqrt(ξ_center**2 + υ_center**2)
-	images = np.zeros((3, M, N, N))
-	for l in range(3):
-		for h in range(M):
-			images[l,h,:,:] = np.where(
-				r_center <= 80*(M-h)/M, 1e4, 0) # (2H/srad/bin)
+	x_center = (x[:-1] + x[1:])/2
+	y_center = (y[:-1] + y[1:])/2
+	z_center = (z[:-1] + z[1:])/2
+	x_center, y_center, z_center = np.meshgrid(x_center, y_center, z_center, indexing='ij')
+	r_center = np.sqrt(x_center**2 + y_center**2 + z_center**2)
+	true_source = np.exp(-r_center**2/(2*40**2))*1e13
+	true_density = np.exp(-r_center**4/(2*80**4))*1e3 # mg/cm^2
+
+	images = synthesize_images(true_source, true_density, x, y, z, Э, ξ, υ, lines_of_sight) # (2H/srad/bin)
 
 	for i in range(images.shape[1]):
 		plt.figure()
@@ -247,12 +268,13 @@ if __name__ == '__main__':
 		plt.colorbar()
 		plt.show()
 
-	source, density = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight)
-	print(source)
+	reconstructed_source, reconstructed_density = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight)
+	print(reconstructed_source)
 	print()
-	print(density)
+	print(reconstructed_density)
 
-	images = synthesize_images(source, density, x, y, z, Э, ξ, υ, lines_of_sight)
+	images = synthesize_images(reconstructed_source, reconstructed_density, x, y, z, Э, ξ, υ, lines_of_sight)
+
 	for i in range(images.shape[1]):
 		plt.figure()
 		plt.pcolormesh(x, y, images[0,i,:,:], vmin=0, vmax=np.max(images))
