@@ -75,9 +75,11 @@ def synthesize_images(reactivity, density, x, y, z, Э, ξ, υ, lines_of_sight):
 
 	images = []
 	for ζ_hat in lines_of_sight:
-		ξ_hat = normalize(np.cross([0, 0, 1], ζ_hat))
-		if any(np.isnan(ξ_hat)):
+		ξ_hat = np.cross([0, 0, 1], ζ_hat)
+		if all(ξ_hat == 0):
 			ξ_hat = np.array([1, 0, 0])
+		else:
+			ξ_hat = normalize(ξ_hat)
 		υ_hat = np.cross(ζ_hat, ξ_hat)
 
 		ρL = np.empty((2*(x.size-1), 2*(y.size-1), 2*(z.size-1)))
@@ -183,6 +185,7 @@ def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight, method='trf'
 		else:
 			return (synthetic - images).ravel()
 
+	print("establishing inicial condicion...")
 	x_center = (x[:-1] + x[1:])/2
 	y_center = (y[:-1] + y[1:])/2
 	z_center = (z[:-1] + z[1:])/2
@@ -194,15 +197,11 @@ def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight, method='trf'
 	inicial_images = synthesize_images(inicial_source, inicial_density, x, y, z, Э, ξ, υ, lines_of_sight)
 	inicial_source *= np.sum(images)/np.sum(inicial_images) # adjust magnitude to approximately match
 	
-	# for image in inicial_images[0]:
-	# 	plt.figure()
-	# 	plt.pcolormesh(x, y, image, vmin=0, vmax=np.max(inicial_images))
-	# 	plt.axis('square')
-	# 	plt.colorbar()
-	# 	plt.show()
+	# plot_images(Э, inicial_images)
 
 	inicial_state = np.concatenate((inicial_source.ravel(), inicial_density.ravel()))
 
+	print("beginning optimizacion...")
 	if method in ['Nelder-Mead', 'L-BFGS-B', 'SLSQP']:
 		opt = optimize.minimize(objective,
 			inicial_state,
@@ -215,6 +214,7 @@ def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight, method='trf'
 			method=method,
 			bounds=(0, np.inf),
 		)
+	print("done!")
 
 	source, density = opt.x.reshape((2, N, N, N))
 	# source, density = inicial_source, inicial_density
@@ -222,9 +222,20 @@ def reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight, method='trf'
 	return source, density
 
 
+def plot_images(Э, images):
+	for i in range(images.shape[1]):
+		plt.figure()
+		plt.pcolormesh(x, y, images[0,i,:,:], vmin=0, vmax=np.max(images))
+		plt.axis('square')
+		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
+		plt.colorbar()
+		plt.show()
+
+
 if __name__ == '__main__':
-	N = 3 # spatial resolucion
-	M = 2 # energy resolucion
+	N = 5 # spatial resolucion
+	M = 4 # energy resolucion
+	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
 	x = np.linspace(-r_max, r_max, N+1)
@@ -259,14 +270,7 @@ if __name__ == '__main__':
 	true_density = np.exp(-r_center**4/(2*80**4))*1e3 # mg/cm^2
 
 	images = synthesize_images(true_source, true_density, x, y, z, Э, ξ, υ, lines_of_sight) # (2H/srad/bin)
-
-	for i in range(images.shape[1]):
-		plt.figure()
-		plt.pcolormesh(x, y, images[0,i,:,:], vmin=0, vmax=np.max(images))
-		plt.axis('square')	
-		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
-		plt.colorbar()
-		plt.show()
+	plot_images(Э, images)
 
 	reconstructed_source, reconstructed_density = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_sight)
 	print(reconstructed_source)
@@ -274,11 +278,4 @@ if __name__ == '__main__':
 	print(reconstructed_density)
 
 	images = synthesize_images(reconstructed_source, reconstructed_density, x, y, z, Э, ξ, υ, lines_of_sight)
-
-	for i in range(images.shape[1]):
-		plt.figure()
-		plt.pcolormesh(x, y, images[0,i,:,:], vmin=0, vmax=np.max(images))
-		plt.axis('square')
-		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
-		plt.colorbar()
-		plt.show()
+	plot_images(Э, images)
