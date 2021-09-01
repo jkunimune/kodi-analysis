@@ -54,7 +54,7 @@ public class VoxelFit {
 	}
 
 	private static double smooth_step(double x) {
-		assert x >= 0 && x <= 1;
+		assert x >= 0 && x <= 1 : x;
 		return (((-20*x + 70)*x - 84)*x + 35)*Math.pow(x, 4);
 	}
 
@@ -65,7 +65,7 @@ public class VoxelFit {
 
 	private static double range(double Э, double ρL) {
 		double ρL_max = ρL_range.evaluate(Э);
-		return Э_in.evaluate(ρL_max - ρL);
+		return Math.max(0, Э_in.evaluate(ρL_max - ρL));
 	}
 
 	private static double[][][][] synthesize_images(
@@ -197,7 +197,7 @@ public class VoxelFit {
 									int jV = digitize(υV, υ);
 
 									double parcial_hV = (ЭV - Э_centers[0])/(Э[1] - Э[0]);
-									int hV = (int) parcial_hV;
+									int hV = (int)Math.floor(parcial_hV);
 									double dhV = smooth_step(parcial_hV - hV);
 
 									if (hV >= 0 && hV < image.length)
@@ -286,9 +286,13 @@ public class VoxelFit {
 
 		double[] lower = new double[inicial_state.length];
 		double[] upper = new double[inicial_state.length];
-		for (int i = 0; i < inicial_state.length; i ++)
+		double[] scale = new double[inicial_state.length];
+		for (int i = 0; i < inicial_state.length; i ++) {
+			lower[i] = 0;
 			upper[i] = Double.POSITIVE_INFINITY;
-		double[] optimal_state = Optimize.least_squares(residuals, inicial_state, lower, upper);
+			scale[i] = (i < inicial_state.length/2) ? total_yield/inicial_yield : 1e3;
+		}
+		double[] optimal_state = Optimize.least_squares(residuals, inicial_state, scale, lower, upper, 1e-5);
 
 		return ravel(optimal_state, 2, x.length - 1, y.length - 1, z.length - 1);
 	}
