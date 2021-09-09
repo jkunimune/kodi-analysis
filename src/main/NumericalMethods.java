@@ -211,11 +211,11 @@ public class NumericalMethods {
 	 */
 	public static double[] unimode(double[] x, double yL, double yR, double yPeak,
 			double xPeak, double std, double tilt, double fatten) {
-		final double y0 = yR, yS = (yL - yR), yG = yPeak - (yL + yR)/2;
+		final double yS = (yL - yR), yG = yPeak - (yL + yR)/2;
 		double[] y = new double[x.length];
 		for (int i = 0; i < x.length; i ++) {
 			double ξ = (x[i] - xPeak)/std;
-			y[i] = y0 + yS*erfc(ξ)/2 +
+			y[i] = yR + yS*erfc(ξ)/2 +
 					yG*Math.exp(-Math.pow(Math.abs(ξ), 4/fatten)/2)*erfc(-tilt*ξ);
 		}
 		return y;
@@ -826,11 +826,6 @@ public class NumericalMethods {
 	
 	/**
 	 * fit to a parabola and find the nth derivative.  x must be evenly spaced.
-	 * @param x
-	 * @param y
-	 * @param x0
-	 * @param Δx
-	 * @return
 	 */
 	public static Quantity derivative(double[] x, Quantity[] y, Quantity x0, double Δx, int n) {
 		double dx = x[1] - x[0];
@@ -1035,12 +1030,12 @@ public class NumericalMethods {
 	 * elements if they don't.
 	 */
 	public static void coercePositiveSemidefinite(double[][] A) {
-		for (int i = 0; i < A.length; i ++) {
-			if (A[i].length != A.length)
+		for (double[] doubles: A) {
+			if (doubles.length != A.length)
 				throw new IllegalArgumentException("this method only works with square matrices.");
-//			for (int j = 0; j < A[i].length; j ++)
-//				if (Double.isFinite(A[i][j]) && A[i][j] != A[j][i])
-//					throw new IllegalArgumentException("this method only works with symmetric matrices.");
+			//			for (int j = 0; j < A[i].length; j ++)
+			//				if (Double.isFinite(A[i][j]) && A[i][j] != A[j][i])
+			//					throw new IllegalArgumentException("this method only works with symmetric matrices.");
 		}
 
 		for (int i = 0; i < A.length; i ++)
@@ -1165,7 +1160,6 @@ public class NumericalMethods {
 	 * a poor person's pseudoinverse. It's like a regular inverse, but if a particular diagonal
 	 * value is zero, then it removes that dimension before inverting, and then puts NaNs back
 	 * in where they were.
-	 * @param arr
 	 */
 	public static double[][] pseudoinv(double[][] arr) {
 		int n = 0;

@@ -23,20 +23,110 @@
  */
 package main;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * a Vector that runs much faster when many of the things are zero.
+ */
 public class SparseVector extends Vector {
-	private static double[] constructor(int length, double... args) {
+	private final int length;
+	private final Map<Integer, Double> values;
+
+
+	public SparseVector(int length, double... args) {
 		if (args.length%2 != 0)
 			throw new IllegalArgumentException("the numerick arguments at the end are supposed to be pairs.");
-		double[] values = new double[length];
+		this.length = length;
+		this.values = new HashMap<>(args.length/2);
 		for (int i = 0; i < args.length/2; i ++) {
 			if (args[2*i] != (int)args[2*i] || args[2*i] < 0 || args[2*i] >= length)
 				throw new IllegalArgumentException("the first in each pair is supposed to be an index in bounds.");
-			values[(int)args[2*i]] = args[2*i+1];
+			if (args[2*i+1] == 0)
+				throw new IllegalArgumentException("why are you passing zeros?  you're missing the point of a sparse array!");
+			this.values.put((int)args[2*i], args[2*i+1]);
 		}
-		return values;
 	}
 
-	public SparseVector(int length, double... args) {
-		super(constructor(length, args));
+	public SparseVector(int length, Map<Integer, Double> values) {
+		this.length = length;
+		this.values = values;
+	}
+
+	@Override
+	public Vector plus(Vector that){
+		if (that instanceof SparseVector) { // if both are sparse
+			SparseVector thot = (SparseVector) that;
+			Map<Integer, Double> sum = new HashMap<>(
+				  this.values.size() + thot.values.size()); // do this efficiently
+			for (int i: this.values.keySet())
+				sum.put(i, this.get(i) + thot.get(i));
+			for (int i: thot.values.keySet())
+				if (!sum.containsKey(i))
+					sum.put(i, this.get(i) + thot.get(i));
+			return new SparseVector(length, sum);
+		}
+		else { // if the other is dense
+			return that.plus(this); // do it the simple way
+		}
+	}
+
+	@Override
+	public Vector times(double scalar) {
+		Map<Integer, Double> product = new HashMap<>(this.values.size());
+		for (int i: this.values.keySet())
+			product.put(i, this.values.get(i)*scalar);
+		return new SparseVector(length, product);
+	}
+
+	@Override
+	public double dot(Vector that) {
+		if (that instanceof SparseVector) { // if both are sparse
+			SparseVector thot = (SparseVector) that;
+			double product = 0;
+			for (int i: this.values.keySet())
+				if (thot.values.containsKey(i))
+					product += this.values.get(i) * thot.values.get(i);
+			return product;
+		}
+		else { // if the other is dense
+			return that.dot(this); // do it the simple way
+		}
+	}
+
+	@Override
+	public double sqr() {
+		double sum = 0;
+		for (int i: this.values.keySet())
+			sum += Math.pow(this.values.get(i), 2);
+		return sum;
+	}
+
+	@Override
+	public Set<Integer> nonzero() {
+		return this.values.keySet();
+	}
+
+	@Override
+	public int getN() {
+		return this.length;
+	}
+
+	@Override
+	public double get(int i) {
+		if (this.values.containsKey(i))
+			return this.values.get(i);
+		else
+			return 0;
+	}
+
+	@Override
+	public double[] getValues() {
+		System.err.println("Warning: you are converting a sparse vector to a plain double[].  i si an efficient e mas zar di an nia.");
+		double[] values = new double[this.length];
+		for (int i: this.values.keySet())
+			values[i] = this.values.get(i);
+		return values;
 	}
 }

@@ -42,7 +42,7 @@ public class Matrix {
 			for (int j = 0; j < this.getM(); j ++)
 				if (this.values[i][j] != 0 && v.get(j) != 0) // 0s override Infs and NaNs in this product
 					product[i] += this.values[i][j]*v.get(j);
-		return new Vector(product);
+		return new DenseVector(product);
 	}
 
 	public Matrix times(Matrix that) {

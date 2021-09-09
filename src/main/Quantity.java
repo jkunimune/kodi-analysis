@@ -24,8 +24,6 @@
 package main;
 
 
-import java.util.Arrays;
-
 /**
  * A value that tracks its gradient in parameter space for the purpose of error bar
  * determination.
@@ -36,7 +34,7 @@ public class Quantity {
 	public final Vector gradient;
 
 	public Quantity(double value, int n) {
-		this(value, new Vector(n));
+		this(value, new DenseVector(n));
 	}
 
 	public Quantity(double value, int i, int n) {
@@ -44,7 +42,7 @@ public class Quantity {
 	}
 
 	public Quantity(double value, double[] gradient) {
-		this(value, new Vector(gradient));
+		this(value, new DenseVector(gradient));
 	}
 
 	public Quantity(double value, Vector gradient) {

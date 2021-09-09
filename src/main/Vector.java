@@ -23,64 +23,31 @@
  */
 package main;
 
-import java.util.Arrays;
+import java.util.Set;
 
-public class Vector {
-	public static final Vector UNIT_I = new Vector(1, 0, 0);
-	public static final Vector UNIT_J = new Vector(0, 1, 0);
-	public static final Vector UNIT_K = new Vector(0, 0, 1);
-
-	private final double[] values;
-
-	public Vector(double... values) {
-		this.values = values;
-	}
-
-	public Vector plus(Vector that) {
-		double[] sum = new double[this.getN()];
-		for (int i = 0; i < this.getN(); i ++)
-			sum[i] = this.values[i] + that.values[i];
-		return new Vector(sum);
-	}
+public abstract class Vector {
+	public abstract Vector plus(Vector that);
 
 	public Vector minus(Vector that) {
 		return this.plus(that.times(-1));
 	}
 
-	public Vector times(double scalar) {
-		double[] product = new double[this.getN()];
-		for (int i = 0; i < this.getN(); i ++)
-			product[i] = this.values[i]*scalar;
-		return new Vector(product);
-	}
+	public abstract Vector times(double scalar);
 
 	public Vector cross(Vector that) {
 		if (this.getN() != 3 || that.getN() != 3)
 			throw new IllegalArgumentException("I don't kno how to do cross products in seven dimensions.");
 		double[] product = new double[this.getN()];
 		for (int i = 0; i < 3; i ++) {
-			product[i] += this.values[(i+1)%3]*that.values[(i+2)%3];
-			product[i] -= this.values[(i+2)%3]*that.values[(i+1)%3];
+			product[i] += this.get((i+1)%3)*that.get((i+2)%3);
+			product[i] -= this.get((i+2)%3)*that.get((i+1)%3);
 		}
-		return new Vector(product);
+		return new DenseVector(product);
 	}
 
-	public double dot(Vector that) {
-		if (this.getN() != that.getN())
-			throw new IllegalArgumentException("the dimensions don't match.");
-		double product = 0;
-		for (int i = 0; i < this.getN(); i ++)
-			if (this.values[i] != 0 && that.values[i] != 0)
-				product += this.values[i]*that.values[i];
-		return product;
-	}
+	public abstract double dot(Vector that);
 
-	public double sqr() {
-		double sum = 0;
-		for (double x : this.values)
-			sum += x*x;
-		return sum;
-	}
+	public abstract double sqr();
 
 	public boolean equals(Vector that) {
 		if (this.getN() != that.getN())
@@ -91,17 +58,13 @@ public class Vector {
 		return true;
 	}
 
-	public double get(int i) {
-		return this.values[i];
-	}
+	public abstract Set<Integer> nonzero();
 
-	public int getN() {
-		return values.length;
-	}
+	public abstract int getN();
 
-	public double[] getValues() {
-		return Arrays.copyOf(this.values, this.values.length);
-	}
+	public abstract double get(int i);
+
+	public abstract double[] getValues();
 
 	@Override
 	public String toString() {
@@ -111,9 +74,4 @@ public class Vector {
 		s.append(" ]");
 		return s.toString();
 	}
-
-	public static void main(String[] args) {
-		System.out.println(Vector.UNIT_I.cross(Vector.UNIT_J));
-	}
 }
-

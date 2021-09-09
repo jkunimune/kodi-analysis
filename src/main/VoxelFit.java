@@ -10,6 +10,10 @@ import java.util.function.Function;
 
 public class VoxelFit {
 
+	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
+	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
+	public static final Vector UNIT_K = new DenseVector(0, 0, 1);
+
 	private static final double m_DT = 3.34e-21 + 5.01e-21; // (mg)
 
 	private static final double Э_KOD = 12.45;
@@ -116,12 +120,12 @@ public class VoxelFit {
 		for (int h = 0; h < Э_centers.length; h ++)
 			Э_centers[h] = (Э[h] + Э[h+1])/2.;
 
-		Quantity[][][][] images = new Quantity[lines_of_sight.length][][][];
+		Quantity[][][][] images = new Quantity[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1];
 		for (int l = 0; l < lines_of_sight.length; l ++) {
 			Vector ζ_hat = lines_of_sight[l];
-			Vector ξ_hat = Vector.UNIT_K.cross(ζ_hat);
+			Vector ξ_hat = UNIT_K.cross(ζ_hat);
 			if (ξ_hat.sqr() == 0)
-				ξ_hat = Vector.UNIT_I;
+				ξ_hat = UNIT_I;
 			else
 				ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
 			Vector υ_hat = ζ_hat.cross(ξ_hat);
@@ -138,17 +142,17 @@ public class VoxelFit {
 						double dkD = 0.25 + double_kD%2*0.50;
 
 						Quantity ρL_ = material_per_layer[iD][jD][kD];
-						if (ζ_hat.equals(Vector.UNIT_I)) {
+						if (ζ_hat.equals(UNIT_I)) {
 							ρL_ = ρL_.times(1 - diD);
 							for (int i = iD + 1; i < x.length - 1; i++)
 								ρL_ = ρL_.plus(material_per_layer[i][jD][kD]);
 						}
-						else if (ζ_hat.equals(Vector.UNIT_J)) {
+						else if (ζ_hat.equals(UNIT_J)) {
 							ρL_ = ρL_.times(1 - djD);
 							for (int j = jD + 1; j < y.length - 1; j++)
 								ρL_ = ρL_.plus(material_per_layer[iD][j][kD]);
 						}
-						else if (ζ_hat.equals(Vector.UNIT_K)) {
+						else if (ζ_hat.equals(UNIT_K)) {
 							ρL_ = ρL_.times(1 - dkD);
 							for (int k = kD + 1; k < z.length - 1; k++)
 								ρL_ = ρL_.plus(material_per_layer[iD][jD][k]);
@@ -161,11 +165,8 @@ public class VoxelFit {
 				}
 			}
 
-			Quantity[][][] image = new Quantity[Э.length-1][ξ.length-1][υ.length-1];
-			for (int h = 0; h < Э.length - 1; h ++)
-				for (int i = 0; i < ξ.length - 1; i ++)
-					for (int j = 0; j < υ.length - 1; j ++)
-						image[h][i][j] = new Quantity(0, n);
+			double[][][] image = new double[Э.length-1][ξ.length-1][υ.length-1];
+			double[][][][] gradients = new double[Э.length-1][ξ.length-1][υ.length-1][n];
 
 			for (int iJ = 0; iJ < x.length - 1; iJ ++) {
 				double xJ = (x[iJ] + x[iJ+1])/2.;
@@ -177,7 +178,7 @@ public class VoxelFit {
 //						if (reactivity[iJ][jJ][kJ] == 0)
 //							continue;
 
-						Vector rJ = new Vector(xJ, yJ, zJ);
+						Vector rJ = new DenseVector(xJ, yJ, zJ);
 
 						for (int double_iD = 0; double_iD < ρL.length; double_iD++) {
 							int iD = double_iD/2;
@@ -192,10 +193,10 @@ public class VoxelFit {
 									double dkD = 0.25 + double_kD%2*0.50;
 									double zD = z[kD] + (z[1] - z[0])*dkD;
 
-//									if (density[iD][jD][kD] == 0)
-//										continue;
+									if (reactivity[iJ][jJ][kJ] == 0 && density[iD][jD][kD] == 0)
+										continue;
 
-									Vector rD = new Vector(xD, yD, zD);
+									Vector rD = new DenseVector(xD, yD, zD);
 
 									Vector Δr = rD.minus(rJ);
 									double Δζ = Δr.dot(ζ_hat);
@@ -220,13 +221,18 @@ public class VoxelFit {
 									int jV = digitize(υV, υ);
 
 									Quantity parcial_hV = ЭV.minus(Э_centers[0]).over(Э[1] - Э[0]);
-									int hV = (int)Math.floor(parcial_hV.value);
-									Quantity dhV = smooth_step(parcial_hV.minus(hV));
+									int hV0 = (int)Math.floor(parcial_hV.value);
+									Quantity dhV = smooth_step(parcial_hV.minus(hV0));
 
-									if (hV >= 0 && hV < image.length)
-										image[hV][iV][jV] = image[hV][iV][jV].minus(fluence.times(dhV.minus(1)));
-									if (hV+1 >= 0 && hV+1 < image.length)
-										image[hV+1][iV][jV] = image[hV+1][iV][jV].plus(fluence.times(dhV));
+									for (int ð = 0; ð <= 1; ð ++) { // finally, iterate over the two energy bins
+										int hV = hV0 + ð; // the bin index
+										if (hV >= 0 && hV < image.length) {
+											Quantity contribution = fluence.times(dhV.plus(ð - 1).abs()); // the amount of fluence going to that bin
+											image[hV][iV][jV] += contribution.value;
+											for (int k: contribution.gradient.nonzero())
+												gradients[hV][iV][jV][k] += contribution.gradient.get(k);
+										}
+									}
 								}
 							}
 						}
@@ -234,7 +240,10 @@ public class VoxelFit {
 				}
 			}
 
-			images[l] = image;
+			for (int h = 0; h < Э.length - 1; h ++)
+				for (int i = 0; i < ξ.length - 1; i ++)
+					for (int j = 0; j < υ.length - 1; j ++)
+						images[l][h][i][j] = new Quantity(image[h][i][j], gradients[h][i][j]);
 		}
 
 		return images;
@@ -367,7 +376,7 @@ public class VoxelFit {
 		double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
 		Vector[] lines_of_site = new Vector[basis.length];
 		for (int i = 0; i < basis.length; i ++)
-			lines_of_site[i] = new Vector(basis[i]);
+			lines_of_site[i] = new DenseVector(basis[i]);
 
 		double[] x = CSV.readColumn(new File("tmp/x.csv"));
 		double[] y = CSV.readColumn(new File("tmp/y.csv"));
