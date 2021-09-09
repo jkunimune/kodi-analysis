@@ -25,7 +25,6 @@ package main;
 
 import java.util.Arrays;
 import java.util.function.Function;
-import java.util.function.UnaryOperator;
 
 public class Optimize {
 
@@ -45,42 +44,43 @@ public class Optimize {
 	 *                  the gradients of the individual errors.
 	 * @return the parameters that minimize the sum of squared distances
 	 */
-	public static double[] least_squares(UnaryOperator<double[]> compute_residuals,
-										 double[] inicial_gess,
-										 double[] scale,
-										 double[] lower_bound,
-										 double[] upper_bound,
-										 double tolerance) {
+	public static double[] least_squares(
+		  Function<double[], double[]> compute_residuals,
+		  double[] inicial_gess,
+		  double[] scale,
+		  double[] lower_bound,
+		  double[] upper_bound,
+		  double tolerance) {
 		final double h = 1e-3;
 
-		Function<double[], double[][]> compute_jacobian = (double[] state) -> {
-			double[] y0 = compute_residuals.apply(state);
-			double[][] jacobian = new double[y0.length][state.length];
+		Function<double[], Vector_And_Matrix> compute_residuals_and_jacobian = (double[] state) -> {
+			double[] residuals = compute_residuals.apply(state);
+			double[][] jacobian = new double[residuals.length][state.length];
 			for (int j = 0; j < state.length; j ++) {
 				state[j] += scale[j]*h;
-				double[] y1 = compute_residuals.apply(state);
-				for (int i = 0; i < y0.length; i ++)
-					jacobian[i][j] = (y1[i] - y0[i])/(scale[j]*h);
+				double[] turb_residuals = compute_residuals.apply(state);
+				for (int i = 0; i < residuals.length; i ++)
+					jacobian[i][j] = (turb_residuals[i] - residuals[i])/(scale[j]*h);
 				state[j] -= scale[j]*h;
 			}
-			return jacobian;
+			return new Vector_And_Matrix(residuals, jacobian);
 		};
-		return least_squares(compute_residuals, compute_jacobian, inicial_gess, lower_bound, upper_bound, tolerance);
+		return least_squares(compute_residuals_and_jacobian, inicial_gess, lower_bound, upper_bound, tolerance);
 	}
 
-	public static double[] least_squares(UnaryOperator<double[]> compute_residuals,
-										 Function<double[], double[][]> compute_jacobian,
-										 double[] inicial_gess,
-										 double[] lower_bound,
-										 double[] upper_bound,
-										 double tolerance) {
+	public static double[] least_squares(
+		  Function<double[], Vector_And_Matrix> compute_residuals_and_jacobian,
+		  double[] inicial_gess,
+		  double[] lower_bound,
+		  double[] upper_bound,
+		  double tolerance) {
 		for (double l : lower_bound)
 			if (l != 0)
 				throw new IllegalArgumentException("I haven't implemented nonzero lower bounds.");
 		for (double u : upper_bound)
 			if (!Double.isInfinite(u))
 				throw new IllegalArgumentException("I haven't implemented upper bounds.");
-		return least_squares(compute_residuals, compute_jacobian, inicial_gess, tolerance);
+		return least_squares(compute_residuals_and_jacobian, inicial_gess, tolerance);
 	}
 
 	/**
@@ -89,35 +89,36 @@ public class Optimize {
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
 	 *     System". Journal of Research of the National Institute of Standards and Technology
 	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
-	 * @param compute_residuals the error of a single point given the state, along with any intermediate
-	 *             quantities that may be useful.  these will all be passd to grad as args.
-	 * @param compute_jacobian the Jacobian matrix where each row is the gradient
-	 *                          of one residual.
+	 * @param compute_residuals_and_jacobian returns an object containing two
+	 *                                       arrays: the error of each point
+	 *                                       given the state, along with the
+	 *                                       Jacobian matrix where each row is the
+	 *                                       gradient of one error.
 	 * @param inicial_gess the inicial gess for the optimal state
 	 * @param tolerance the maximum acceptable value of the components of the gradient of the
 	 *                  sum of squares, normalized by the norm of the errors and the norm of
 	 *                  the gradients of the individual errors.
 	 * @return the parameters that minimize the sum of squared distances
 	 */
-	public static double[] least_squares(UnaryOperator<double[]> compute_residuals,
-										 Function<double[], double[][]> compute_jacobian,
-										 double[] inicial_gess,
-										 double tolerance) {
+	public static double[] least_squares(
+		  Function<double[], Vector_And_Matrix> compute_residuals_and_jacobian,
+		  double[] inicial_gess,
+		  double tolerance) {
+
 		int iter = 0;
 		double[] state = Arrays.copyOf(inicial_gess, inicial_gess.length);
 		double λ = 4e-5;
 
+		Vector_And_Matrix residuals_and_jacobian = compute_residuals_and_jacobian.apply(state); // compute inicial distances and gradients
+		double[] residuals = residuals_and_jacobian.vector;
+		double[][] jacobian = residuals_and_jacobian.matrix;
+
 		double last_value = Double.POSITIVE_INFINITY;
 		double new_value = 0;
-		double[] residuals = compute_residuals.apply(state); // compute inicial distances
 		for (double d : residuals)
-			new_value += Math.pow(d, 2);
+			new_value += Math.pow(d, 2); // compute inicial chi^2
 
-		while (true) {
-			double[][] jacobian = compute_jacobian.apply(state); // compute gradients
-
-			if (is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance))
-				return state;
+		while (!is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance)) {
 			last_value = new_value;
 
 			Matrix d0 = new Matrix(residuals).trans(); // convert distances and gradients to matrices
@@ -136,12 +137,15 @@ public class Optimize {
 				for (int i = 0; i < state.length; i ++)
 					new_state[i] = state[i] - x.get(i, 0);
 
-				residuals = compute_residuals.apply(new_state); // recompute distances
+				residuals_and_jacobian = compute_residuals_and_jacobian.apply(new_state); // compute new distances and gradients
+				residuals = residuals_and_jacobian.vector;
+				jacobian = residuals_and_jacobian.matrix;
+
 				new_value = 0;
 				for (double d : residuals)
-					new_value += Math.pow(d, 2);
+					new_value += Math.pow(d, 2); // compute new chi^2
 
-				if (new_value <= last_value) {
+				if (new_value <= last_value) { // terminate the line search if reasonable
 					state = new_state;
 					break;
 				}
@@ -156,6 +160,8 @@ public class Optimize {
 			if (iter > 10000)
 				throw new RuntimeException("the maximum number of iteracions has not been reached");
 		}
+
+		return state;
 	}
 
 	private static boolean is_converged(double last_value, double new_value,
@@ -182,79 +188,38 @@ public class Optimize {
 	}
 
 
-	private static class Matrix {
-		private final double[][] values;
+	public static class Vector_And_Matrix {
+		public double[] vector;
+		public double[][] matrix;
 
-		public Matrix(double[][] values) {
-			this.values = values;
-		}
-
-		public Matrix(double[] values) {
-			this.values = new double[][] {values};
-		}
-
-		public Matrix inverse() {
-			return new Matrix(NumericalMethods.matinv(values));
-		}
-
-		public Matrix trans() {
-			double[][] values = new double[this.values[0].length][this.values.length];
-			for (int i = 0; i < values.length; i ++)
-				for (int j = 0; j < values[i].length; j ++)
-					values[i][j] = this.values[j][i];
-			return new Matrix(values);
-		}
-
-		public Matrix times(Matrix that) {
-			if (this.values[0].length != that.values.length)
-				throw new IllegalArgumentException("the array dimensions don't match");
-			double[][] values = new double[this.values.length][that.values[0].length];
-			for (int i = 0; i < values.length; i ++)
-				for (int j = 0; j < values[i].length; j ++)
-					for (int k = 0; k < that.values.length; k ++)
-						values[i][j] += this.values[i][k]*that.values[k][j];
-			return new Matrix(values);
-		}
-
-		public Matrix copy() {
-			double[][] values = new double[this.values.length][this.values[0].length];
-			for (int i = 0; i < values.length; i ++)
-				System.arraycopy(this.values[i], 0, values[i], 0, values[i].length);
-			return new Matrix(values);
-		}
-
-		public void set(int i, int j, double a) {
-			this.values[i][j] = a;
-		}
-
-		public double get(int i, int j) {
-			return this.values[i][j];
+		public Vector_And_Matrix(double[] vector, double[][] matrix) {
+			this.vector = vector;
+			this.matrix = matrix;
 		}
 	}
+
 
 
 	public static void main(String[] args) {
 		double[] x = {0, 1, 2, 3, 4, 5};
 		double[] y = {6, 4, 3, 2, 1.5, 1.25};
-		UnaryOperator<double[]> err = (double[] c) -> {
+		Function<double[], Vector_And_Matrix> err_and_grad = (double[] c) -> {
 			double[] dy = new double[x.length];
 			for (int i = 0; i < x.length; i ++)
 				dy[i] = c[0]*Math.exp(c[1]*x[i]) + c[2] - y[i];
-			return dy;
-		};
-		Function<double[], double[][]> grad = (double[] c) -> {
+
 			double[][] J = new double[x.length][c.length];
 			for (int i = 0; i < x.length; i ++) {
 				J[i][0] = Math.exp(c[1]*x[i]);
 				J[i][1] = x[i]*c[0]*Math.exp(c[1]*x[i]);
 				J[i][2] = 1;
 			}
-			return J;
+
+			return new Vector_And_Matrix(dy, J);
 		};
-		double[] c = least_squares(err,
-//								   grad,
+		double[] c = least_squares(err_and_grad,
 								   new double[] {1, -1, 0},
-								   new double[] {1, 1, 1},
+//								   new double[] {1, 1, 1},
 								   new double[] {0, 0, 0},
 								   new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
 								   1e-7);

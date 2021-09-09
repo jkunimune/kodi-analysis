@@ -38,7 +38,7 @@ def plot_images(Э, images):
 
 
 if __name__ == '__main__':
-	N = 5 # spatial resolucion
+	N = 7 # spatial resolucion
 	M = 4 # energy resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 

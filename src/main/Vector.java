@@ -23,6 +23,8 @@
  */
 package main;
 
+import java.util.Arrays;
+
 public class Vector {
 	public static final Vector UNIT_I = new Vector(1, 0, 0);
 	public static final Vector UNIT_J = new Vector(0, 1, 0);
@@ -96,6 +98,20 @@ public class Vector {
 	public int getN() {
 		return values.length;
 	}
+
+	public double[] getValues() {
+		return Arrays.copyOf(this.values, this.values.length);
+	}
+
+	@Override
+	public String toString() {
+		StringBuilder s = new StringBuilder("[");
+		for (int i = 0; i < this.getN(); i ++)
+			s.append(String.format("\n  %8.4g", this.get(i)));
+		s.append(" ]");
+		return s.toString();
+	}
+
 	public static void main(String[] args) {
 		System.out.println(Vector.UNIT_I.cross(Vector.UNIT_J));
 	}
