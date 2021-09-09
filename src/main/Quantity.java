@@ -34,7 +34,7 @@ public class Quantity {
 	public final Vector gradient;
 
 	public Quantity(double value, int n) {
-		this(value, new DenseVector(n));
+		this(value, new SparseVector(n));
 	}
 
 	public Quantity(double value, int i, int n) {

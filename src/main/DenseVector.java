@@ -30,10 +30,6 @@ import java.util.Set;
 public class DenseVector extends Vector {
 	private final double[] values;
 
-	public DenseVector(int n) {
-		this.values = new double[n];
-	}
-
 	public DenseVector(double... values) {
 		this.values = values;
 	}

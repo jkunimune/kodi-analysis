@@ -1,7 +1,6 @@
 package main;
 
 import main.NumericalMethods.DiscreteFunction;
-import main.Optimize.Vector_And_Matrix;
 
 import java.io.File;
 import java.io.IOException;
@@ -77,6 +76,8 @@ public class VoxelFit {
 	 * @param ξ the xi bin edges of the image
 	 * @param υ the ypsilon bin edges of the image
 	 * @param lines_of_sight the detector line of site direccions
+	 * @param calculate_derivatives whether to get first order differential
+	 *                              information (it takes longer that way)
 	 * @return the image in (#/srad/bin)
 	 */
 	private static Quantity[][][][] synthesize_images(
@@ -88,30 +89,33 @@ public class VoxelFit {
 		  double[] Э,
 		  double[] ξ,
 		  double[] υ,
-		  Vector[] lines_of_sight
+		  Vector[] lines_of_sight,
+		  boolean calculate_derivatives
 	) {
 		int n = (z.length - 1)*(y.length - 1)*(x.length - 1)*2;
+
 		double L_pixel = (x[1] - x[0])/1e4; // (cm)
 		double V_pixel = Math.pow(L_pixel, 3); // (cm^3)
+
+		double[][][][] raw_inputs = {reactivity, density};
+
 		Quantity[][][] reactions_per_bin = new Quantity[x.length - 1][y.length - 1][z.length - 1];
-		for (int i = 0; i < x.length - 1; i ++) {
-			for (int j = 0; j < y.length - 1; j++) {
-				for (int k = 0; k < z.length - 1; k++) {
-					int ijk = k + (z.length - 1)*(j + (y.length - 1)*(i));
-					Quantity input = new Quantity(reactivity[i][j][k], ijk, n);
-					reactions_per_bin[i][j][k] = input.times(V_pixel);
-				}
-			}
-		}
 		Quantity[][][] particles_per_bin = new Quantity[x.length - 1][y.length - 1][z.length - 1];
 		Quantity[][][] material_per_layer = new Quantity[x.length - 1][y.length - 1][z.length - 1];
 		for (int i = 0; i < x.length - 1; i ++) {
-			for (int j = 0; j < y.length - 1; j ++) {
-				for (int k = 0; k < z.length - 1; k ++) {
-					int ijk = k + (z.length - 1)*(j + (y.length - 1)*(i + (x.length - 1)));
-					Quantity input = new Quantity(density[i][j][k], ijk, n);
-					particles_per_bin[i][j][k] = input.over(m_DT).times(V_pixel);
-					material_per_layer[i][j][k] = input.times(L_pixel);
+			for (int j = 0; j < y.length - 1; j++) {
+				for (int k = 0; k < z.length - 1; k++) {
+					Quantity[] inputs = new Quantity[2];
+					for (int q = 0; q < 2; q ++) {
+						int ijk = k + (z.length - 1)*(j + (y.length - 1)*(i + (x.length - 1)*q));
+						if (calculate_derivatives)
+							inputs[q] = new Quantity(raw_inputs[q][i][j][k], ijk, n);
+						else
+							inputs[q] = new Quantity(raw_inputs[q][i][j][k], n);
+					}
+					reactions_per_bin[i][j][k] = inputs[0].times(V_pixel);
+					particles_per_bin[i][j][k] = inputs[1].over(m_DT).times(V_pixel);
+					material_per_layer[i][j][k] = inputs[1].times(L_pixel);
 				}
 			}
 		}
@@ -306,22 +310,30 @@ public class VoxelFit {
 
 
 	private static double[][][][] reconstruct_images(double[][][][] images, double[] x, double[] y, double[] z, double[] Э, double[] ξ, double[] υ, Vector[] lines_of_sight) {
-		Function<double[], Vector_And_Matrix> residuals_and_gradients = (double[] state) -> {
+		Function<double[], double[]> residuals = (double[] state) -> {
 			double[][][][] state_3d = ravel(state, 2, x.length - 1, y.length - 1, z.length - 1);
-			Quantity[][][][] synthetic = synthesize_images(state_3d[0], state_3d[1], x, y, z, Э, ξ, υ, lines_of_sight);
-			double[][][][] residuals = new double[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1];
-			double[][][][][] gradients = new double[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1][2*(x.length - 1)*(y.length - 1)*(z.length - 1)];
-			for (int l = 0; l < lines_of_sight.length; l ++) {
-				for (int h = 0; h < Э.length - 1; h++) {
-					for (int i = 0; i < ξ.length - 1; i++) {
-						for (int j = 0; j < υ.length - 1; j++) {
-							residuals[l][h][i][j] = synthetic[l][h][i][j].value - images[l][h][i][j];
-							gradients[l][h][i][j] = synthetic[l][h][i][j].gradient.getValues();
-						}
-					}
-				}
-			}
-			return new Vector_And_Matrix(unravel(residuals), unravel(gradients));
+			double[][][][] synthetic = extract_values(
+				  synthesize_images(state_3d[0], state_3d[1], x, y, z, Э, ξ, υ, lines_of_sight, false));
+			double[][][][] output = new double[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1];
+			for (int l = 0; l < lines_of_sight.length; l ++)
+				for (int h = 0; h < Э.length - 1; h++)
+					for (int i = 0; i < ξ.length - 1; i++)
+						for (int j = 0; j < υ.length - 1; j++)
+							output[l][h][i][j] = synthetic[l][h][i][j] - images[l][h][i][j];
+			return unravel(output);
+		};
+
+		Function<double[], double[][]> gradients = (double[] state) -> {
+			double[][][][] state_3d = ravel(state, 2, x.length - 1, y.length - 1, z.length - 1);
+			Quantity[][][][] synthetic =
+				  synthesize_images(state_3d[0], state_3d[1], x, y, z, Э, ξ, υ, lines_of_sight, true);
+			double[][][][][] output = new double[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1][2*(x.length - 1)*(y.length - 1)*(z.length - 1)];
+			for (int l = 0; l < lines_of_sight.length; l ++)
+				for (int h = 0; h < Э.length - 1; h++)
+					for (int i = 0; i < ξ.length - 1; i++)
+						for (int j = 0; j < υ.length - 1; j++)
+							output[l][h][i][j] = synthetic[l][h][i][j].gradient.getValues();
+			return unravel(output);
 		};
 
 		double[][][][] inicial_state_3d = new double[2][x.length - 1][y.length - 1][z.length - 1];
@@ -340,7 +352,7 @@ public class VoxelFit {
 		}
 
 		double[][][][] inicial_images = extract_values(
-			  synthesize_images(inicial_state_3d[0], inicial_state_3d[1], x, y, z, Э, ξ, υ, lines_of_sight));
+			  synthesize_images(inicial_state_3d[0], inicial_state_3d[1], x, y, z, Э, ξ, υ, lines_of_sight, false));
 		double total_yield = NumericalMethods.sum(images);
 		double inicial_yield = NumericalMethods.sum(inicial_images);
 		for (int i = 0; i < x.length - 1; i ++)
@@ -359,7 +371,8 @@ public class VoxelFit {
 //			scale[i] = (i < inicial_state.length/2) ? total_yield/inicial_yield : 1e3;
 		}
 		double[] optimal_state = Optimize.least_squares(
-			  residuals_and_gradients,
+			  residuals,
+			  gradients,
 			  inicial_state,
 			  lower, upper,
 			  1e-5);
@@ -387,13 +400,13 @@ public class VoxelFit {
 
 		double[][][][] anser = ravel(CSV.readColumn(new File("tmp/morphology.csv")), 2, x.length - 1, y.length - 1, z.length - 1);
 
-		double[][][][] images = extract_values(synthesize_images(anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site));
+		double[][][][] images = extract_values(synthesize_images(anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site, false));
 
 		CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
 
 		anser = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_site);
 
-		images = extract_values(synthesize_images(anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site));
+		images = extract_values(synthesize_images(anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site, false));
 
 		CSV.writeColumn(unravel(anser), new File("tmp/morphology-recon.csv"));
 		CSV.writeColumn(unravel(images), new File("tmp/images-recon.csv"));

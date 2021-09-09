@@ -30,7 +30,7 @@ public class Optimize {
 
 	/**
 	 * find a local minimum of the funccion f(state; points) = Σ dist(point[i], state)^2,
-	 * using the Levengerg-Marquardt formula as defined in
+	 * using the Levenberg-Marquardt formula as defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
 	 *     System". Journal of Research of the National Institute of Standards and Technology
 	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
@@ -53,7 +53,7 @@ public class Optimize {
 		  double tolerance) {
 		final double h = 1e-3;
 
-		Function<double[], Vector_And_Matrix> compute_residuals_and_jacobian = (double[] state) -> {
+		Function<double[], double[][]> compute_jacobian = (double[] state) -> {
 			double[] residuals = compute_residuals.apply(state);
 			double[][] jacobian = new double[residuals.length][state.length];
 			for (int j = 0; j < state.length; j ++) {
@@ -63,13 +63,14 @@ public class Optimize {
 					jacobian[i][j] = (turb_residuals[i] - residuals[i])/(scale[j]*h);
 				state[j] -= scale[j]*h;
 			}
-			return new Vector_And_Matrix(residuals, jacobian);
+			return jacobian;
 		};
-		return least_squares(compute_residuals_and_jacobian, inicial_gess, lower_bound, upper_bound, tolerance);
+		return least_squares(compute_residuals, compute_jacobian, inicial_gess, lower_bound, upper_bound, tolerance);
 	}
 
 	public static double[] least_squares(
-		  Function<double[], Vector_And_Matrix> compute_residuals_and_jacobian,
+		  Function<double[], double[]> compute_residuals,
+		  Function<double[], double[][]> compute_jacobian,
 		  double[] inicial_gess,
 		  double[] lower_bound,
 		  double[] upper_bound,
@@ -80,20 +81,18 @@ public class Optimize {
 		for (double u : upper_bound)
 			if (!Double.isInfinite(u))
 				throw new IllegalArgumentException("I haven't implemented upper bounds.");
-		return least_squares(compute_residuals_and_jacobian, inicial_gess, tolerance);
+		return least_squares(compute_residuals, compute_jacobian, inicial_gess, tolerance);
 	}
 
 	/**
 	 * find a local minimum of the funccion f(state; points) = Σ dist(point[i], state)^2,
-	 * using the Levengerg-Marquardt formula as defined in
+	 * using the Levenberg-Marquardt formula as defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
 	 *     System". Journal of Research of the National Institute of Standards and Technology
 	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
-	 * @param compute_residuals_and_jacobian returns an object containing two
-	 *                                       arrays: the error of each point
-	 *                                       given the state, along with the
-	 *                                       Jacobian matrix where each row is the
-	 *                                       gradient of one error.
+	 * @param compute_residuals returns the error of each point given the state
+	 * @param compute_jacobian returns the Jacobian matrix where each row is the
+	 *                         gradient of the error at one point
 	 * @param inicial_gess the inicial gess for the optimal state
 	 * @param tolerance the maximum acceptable value of the components of the gradient of the
 	 *                  sum of squares, normalized by the norm of the errors and the norm of
@@ -101,7 +100,8 @@ public class Optimize {
 	 * @return the parameters that minimize the sum of squared distances
 	 */
 	public static double[] least_squares(
-		  Function<double[], Vector_And_Matrix> compute_residuals_and_jacobian,
+		  Function<double[], double[]> compute_residuals,
+		  Function<double[], double[][]> compute_jacobian,
 		  double[] inicial_gess,
 		  double tolerance) {
 
@@ -109,16 +109,19 @@ public class Optimize {
 		double[] state = Arrays.copyOf(inicial_gess, inicial_gess.length);
 		double λ = 4e-5;
 
-		Vector_And_Matrix residuals_and_jacobian = compute_residuals_and_jacobian.apply(state); // compute inicial distances and gradients
-		double[] residuals = residuals_and_jacobian.vector;
-		double[][] jacobian = residuals_and_jacobian.matrix;
+		double[] residuals = compute_residuals.apply(state); // compute inicial distances
 
 		double last_value = Double.POSITIVE_INFINITY;
 		double new_value = 0;
 		for (double d : residuals)
 			new_value += Math.pow(d, 2); // compute inicial chi^2
 
-		while (!is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance)) {
+		while (true) {
+			double[][] jacobian = compute_jacobian.apply(state); // take the gradients
+
+			if (is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance))
+				return state;
+
 			last_value = new_value;
 
 			Matrix d0 = new Matrix(residuals).trans(); // convert distances and gradients to matrices
@@ -137,9 +140,7 @@ public class Optimize {
 				for (int i = 0; i < state.length; i ++)
 					new_state[i] = state[i] - x.get(i, 0);
 
-				residuals_and_jacobian = compute_residuals_and_jacobian.apply(new_state); // compute new distances and gradients
-				residuals = residuals_and_jacobian.vector;
-				jacobian = residuals_and_jacobian.matrix;
+				residuals = compute_residuals.apply(new_state); // compute new distances and gradients
 
 				new_value = 0;
 				for (double d : residuals)
@@ -160,8 +161,6 @@ public class Optimize {
 			if (iter > 10000)
 				throw new RuntimeException("the maximum number of iteracions has not been reached");
 		}
-
-		return state;
 	}
 
 	private static boolean is_converged(double last_value, double new_value,
@@ -188,36 +187,28 @@ public class Optimize {
 	}
 
 
-	public static class Vector_And_Matrix {
-		public double[] vector;
-		public double[][] matrix;
-
-		public Vector_And_Matrix(double[] vector, double[][] matrix) {
-			this.vector = vector;
-			this.matrix = matrix;
-		}
-	}
-
-
-
 	public static void main(String[] args) {
 		double[] x = {0, 1, 2, 3, 4, 5};
 		double[] y = {6, 4, 3, 2, 1.5, 1.25};
-		Function<double[], Vector_And_Matrix> err_and_grad = (double[] c) -> {
-			double[] dy = new double[x.length];
-			for (int i = 0; i < x.length; i ++)
-				dy[i] = c[0]*Math.exp(c[1]*x[i]) + c[2] - y[i];
 
+		Function<double[], double[]> err = (double[] c) -> {
+			double[] dy = new double[x.length];
+			for (int i = 0; i < x.length; i++)
+				dy[i] = c[0]*Math.exp(c[1]*x[i]) + c[2] - y[i];
+			return dy;
+		};
+
+		Function<double[], double[][]> grad = (double[] c) -> {
 			double[][] J = new double[x.length][c.length];
 			for (int i = 0; i < x.length; i ++) {
 				J[i][0] = Math.exp(c[1]*x[i]);
 				J[i][1] = x[i]*c[0]*Math.exp(c[1]*x[i]);
 				J[i][2] = 1;
 			}
-
-			return new Vector_And_Matrix(dy, J);
+			return J;
 		};
-		double[] c = least_squares(err_and_grad,
+
+		double[] c = least_squares(err, grad,
 								   new double[] {1, -1, 0},
 //								   new double[] {1, 1, 1},
 								   new double[] {0, 0, 0},
