@@ -12,7 +12,20 @@ import numpy as np
 import scipy.optimize as optimize
 import os
 import subprocess
+import datetime
 
+plt.rcParams["legend.framealpha"] = 1
+plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
+
+
+
+m_DT = 3.34e-21 + 5.01e-21 # (mg)
+
+Э_min, Э_kod, Э_max = 2, 12.5, 13 # (MeV)
+
+
+def bin_centers(x):
+	return (x[1:] + x[:-1])/2
 
 
 def integrate(y, x):
@@ -21,25 +34,41 @@ def integrate(y, x):
 	return (cumsum[:-1] + cumsum[1:] - cumsum[1])/2
 
 
-m_DT = 3.34e-21 + 5.01e-21 # (mg)
+def plot_source(x, y, z, source, density):
+	x, y, z = bin_centers(x), bin_centers(y), bin_centers(z)
+	ax = plt.figure().add_subplot(projection='3d')
+	ax.set_box_aspect([1,1,1])
 
-Э_min, Э_kod, Э_max = 2, 12.5, 14 # (MeV)
+	for thing, contour_plot, cmap in [(density, ax.contour, 'Reds'), (source, ax.contour, 'Blues')]:
+		levels = np.linspace(0.17, 1.00, 5)*thing.max()
+		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
+			offset=0, zdir='z', levels=levels, cmap=cmap)
+		contour_plot(np.meshgrid(x, z, indexing='ij')[0], thing[:, len(y)//2, :], np.meshgrid(x, z, indexing='ij')[1],
+			offset=0, zdir='y', levels=levels, cmap=cmap)
+		contour_plot(thing[len(x)//2, :, :], *np.meshgrid(y, z, indexing='ij'),
+			offset=0, zdir='x', levels=levels, cmap=cmap)
+
+	ax.set_xlim(-100, 100)
+	ax.set_ylim(-100, 100)
+	ax.set_zlim(-100, 100)
+	plt.tight_layout()
+	plt.show()
 
 
-
-def plot_images(Э, images):
+def plot_images(Э, ξ, υ, images):
 	for i in range(images.shape[1]):
 		plt.figure()
-		plt.pcolormesh(x, y, images[0,i,:,:], vmin=0)#, vmax=np.max(images))
+		plt.pcolormesh(ξ, υ, images[0,i,:,:], vmin=0)#, vmax=np.max(images))
 		plt.axis('square')
 		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
 		plt.colorbar()
+		plt.tight_layout()
 		plt.show()
 
 
 if __name__ == '__main__':
-	N = 7 # spatial resolucion
-	M = 4 # energy resolucion
+	N = 15 # spatial resolucion
+	M = 5 # energy resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
@@ -58,13 +87,10 @@ if __name__ == '__main__':
 		[0, 0, 1],
 	]) # ()
 
-	x_center = (x[:-1] + x[1:])/2
-	y_center = (y[:-1] + y[1:])/2
-	z_center = (z[:-1] + z[1:])/2
+	x_center, y_center, z_center = bin_centers(x), bin_centers(y), bin_centers(z)
 	x_center, y_center, z_center = np.meshgrid(x_center, y_center, z_center, indexing='ij')
-	r_center = np.sqrt(x_center**2 + y_center**2 + z_center**2)
-	tru_source = np.where(r_center <= 40, 1e15, 0) # (reactions/cm^3)
-	tru_density = np.where((r_center > 40) & (r_center <= 80), 1e3, 0) # (mg/cm^3)
+	tru_source = np.where(np.sqrt(x_center**2 + y_center**2 + 2*z_center**2) <= 40, 1e15, 0) # (reactions/cm^3)
+	tru_density = np.where(np.sqrt(2*x_center**2 + 2*y_center**2 + z_center**2) <= 80, 50, 0) # (g/cm^3)
 
 	os.chdir("..")
 
@@ -77,17 +103,21 @@ if __name__ == '__main__':
 	np.savetxt("tmp/ypsilon.csv", υ)
 	np.savetxt("tmp/morphology.csv", np.ravel([tru_source, tru_density]))
 
-	completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
-	if completed_process.returncode > 0:
-		raise ValueError(completed_process.stderr)
+	print(f"Starting reconstruccion at {datetime.datetime.now()}")
+	# completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
+	# if completed_process.returncode > 0:
+	# 	raise ValueError(completed_process.stderr)
+	print(f"Completed reconstruccion at {datetime.datetime.now()}")
 
 	tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, N, N))
 	images = np.loadtxt("tmp/images-recon.csv").reshape((lines_of_sight.shape[0], M, N, N))
 	source, density = np.loadtxt("tmp/morphology-recon.csv").reshape((2, N, N, N))
 
-	print(tru_source)
-	print(source)
+	print(np.sum(tru_source < 0), np.sum(tru_source == 0), np.sum(tru_source > 0))
+	print(np.sum(source < 0), np.sum(source == 0), np.sum(source > 0))
 
-	plot_images(Э, tru_images)
+	plot_images(Э, ξ, υ, tru_images)
+	plot_images(Э, ξ, υ, images)
 
-	plot_images(Э, images)
+	plot_source(x, y, z, tru_source, tru_density)
+	plot_source(x, y, z, source, density)

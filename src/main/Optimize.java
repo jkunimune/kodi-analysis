@@ -115,8 +115,11 @@ public class Optimize {
 		double new_value = 0;
 		for (double d : residuals)
 			new_value += Math.pow(d, 2); // compute inicial chi^2
+//		System.out.println(Arrays.toString(state));
+		System.out.println(new_value);
 
 		while (true) {
+			System.out.println("Computing jacobian.");
 			double[][] jacobian = compute_jacobian.apply(state); // take the gradients
 
 			if (is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance))
@@ -128,6 +131,8 @@ public class Optimize {
 			Matrix J0 = new Matrix(jacobian);
 			Matrix U = J0.trans().times(J0); // and do some linear algebra
 			Matrix v = J0.trans().times(d0);
+
+			System.out.println("Beginning line search.");
 
 			while (true) {
 				Matrix H = U.copy(); // estimate Hessian
@@ -145,6 +150,8 @@ public class Optimize {
 				new_value = 0;
 				for (double d : residuals)
 					new_value += Math.pow(d, 2); // compute new chi^2
+//				System.out.println(Arrays.toString(state));
+				System.out.println(new_value);
 
 				if (new_value <= last_value) { // terminate the line search if reasonable
 					state = new_state;
@@ -154,6 +161,8 @@ public class Optimize {
 				if (λ > 1e64) // check iterations
 					throw new RuntimeException("the line search did not converge");
 			}
+
+			System.out.println("Completed line search.");
 
 			λ *= 4e-4; // decrement the line search parameter
 

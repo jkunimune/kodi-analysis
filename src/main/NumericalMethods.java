@@ -460,7 +460,17 @@ public class NumericalMethods {
 						s += x;
 		return s;
 	}
-	
+
+	public static Quantity sum(Quantity[][][][] arr) {
+		Quantity s = new Quantity(0, arr[0][0][0][0].getN());
+		for (Quantity[][][] mat: arr)
+			for (Quantity[][] lvl: mat)
+				for (Quantity[] row: lvl)
+					for (Quantity x: row)
+						s = s.plus(x);
+		return s;
+	}
+
 	public static double mean(double[] arr) {
 		return sum(arr)/arr.length;
 	}
