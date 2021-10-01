@@ -23,6 +23,7 @@
  */
 package main;
 
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Random;
 
@@ -912,6 +913,86 @@ public class NumericalMethods {
 		return collum;
 	}
 
+	/**
+	 * @param active an array of whether each value is important
+	 * @param full an array about only some of whose values we care
+	 * @return an array whose length is the number of true elements in active, and
+	 * whose elements are the elements of full that correspond to the true values
+	 */
+	public static double[] where(boolean[] active, double[] full) {
+		int reduced_length = 0;
+		for (int i = 0; i < full.length; i ++)
+			if (active[i])
+				reduced_length += 1;
+
+		double[] reduced = new double[reduced_length];
+		int j = 0;
+		for (int i = 0; i < full.length; i ++) {
+			if (active[i]) {
+				reduced[j] = full[i];
+				j ++;
+			}
+		}
+		return reduced;
+	}
+
+	/**
+	 * @param active_rows an array of whether each row is important
+	 * @param active_cols an array of whether each column is important
+	 * @param full an array about only some of whose values we care
+	 * @return an array whose length is the number of true elements in active, and
+	 * whose elements are the elements of full that correspond to the true values
+	 */
+	public static double[][] where(boolean[] active_rows, boolean[] active_cols, double[][] full) {
+		int reduced_hite = 0;
+		for (int i = 0; i < full.length; i ++)
+			if (active_rows[i])
+				reduced_hite += 1;
+		int reduced_width = 0;
+		for (int k = 0; k < full[0].length; k ++)
+			if (active_cols[k])
+				reduced_width += 1;
+
+		double[][] reduced = new double[reduced_hite][reduced_width];
+		int j = 0;
+		for (int i = 0; i < full.length; i ++) {
+			if (active_rows[i]) {
+				int l = 0;
+				for (int k = 0; k < full[i].length; k ++) {
+					if (active_cols[k]) {
+						reduced[j][l] = full[i][k];
+						l ++;
+					}
+				}
+				j ++;
+			}
+		}
+		return reduced;
+	}
+
+	/**
+	 * @param active an array of whether each value should be replaced
+	 * @param base an array of default values
+	 * @param reduced the values to replace with, in order
+	 * @return an array whose elements corresponding to true in active are taken
+	 * from reduced, maintaining order, and whose elements corresponding to false
+	 * in active are taken from reduced, maintaining order.
+	 */
+	public static double[] insert(boolean[] active, double[] base, double[] reduced) {
+		double[] full = new double[active.length];
+		int j = 0;
+		for (int i = 0; i < full.length; i ++) {
+			if (active[i]) {
+				full[i] = reduced[j];
+				j ++;
+			}
+			else {
+				full[i] = base[i];
+			}
+		}
+		return full;
+	}
+
 
 	/**
 	 * coerce x into the range [min, max]
@@ -1178,23 +1259,10 @@ public class NumericalMethods {
 			useful[i] = (Double.isFinite(arr[i][i]) && arr[i][i] != 0);
 			if (useful[i])  n ++;
 		}
-		double[][] a = new double[n][n];
-		int k = 0;
-		for (int i = 0; i < arr.length; i ++) {
-			if (useful[i]) {
-				int l = 0;
-				for (int j = 0; j < arr[i].length; j ++) {
-					if (useful[j]) {
-						a[k][l] = arr[i][j];
-						l ++;
-					}
-				}
-				k ++;
-			}
-		}
+		double[][] a = where(useful, useful, arr);
 		double[][] b = matinv(a);
 		double[][] c = new double[arr.length][arr.length];
-		k = 0;
+		int k = 0;
 		for (int i = 0; i < arr.length; i ++) {
 			if (useful[i]) {
 				int l = 0;
@@ -1557,15 +1625,23 @@ public class NumericalMethods {
 
 	
 	public static void main(String[] args) {
-		double[][] cov = {{1, 0}, {0, 1}};
-		Quantity x = new Quantity(5, new double[] {1, 0});
-		Quantity y = new Quantity(12, new double[] {0, 1});
-		System.out.println(x.toString(cov));
-		System.out.println(y.toString(cov));
-		System.out.println(x.plus(y).toString(cov));
-		System.out.println(x.minus(y).toString(cov));
-		System.out.println(x.times(y).toString(cov));
-		System.out.println(x.over(y).toString(cov));
-		System.out.println(x.mod(4).toString(cov));
+//		double[][] cov = {{1, 0}, {0, 1}};
+//		Quantity x = new Quantity(5, new double[] {1, 0});
+//		Quantity y = new Quantity(12, new double[] {0, 1});
+//		System.out.println(x.toString(cov));
+//		System.out.println(y.toString(cov));
+//		System.out.println(x.plus(y).toString(cov));
+//		System.out.println(x.minus(y).toString(cov));
+//		System.out.println(x.times(y).toString(cov));
+//		System.out.println(x.over(y).toString(cov));
+//		System.out.println(x.mod(4).toString(cov));
+
+		double[][] test = {
+			  {0, 1, 3, 4},
+			  {2, 5, 6, 7},
+			  {8, 9, 4, 2},
+			  {9, 3, 1, 7},
+		};
+		System.out.println(Arrays.deepToString(where(new boolean[] {true, false, true, true}, new boolean[] {false, true, true, false}, test)));
 	}
 }

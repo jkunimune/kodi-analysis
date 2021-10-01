@@ -10,6 +10,7 @@ import java.util.function.Function;
 public class VoxelFit {
 
 	public static final int MAX_MODE = 2;
+	public static final int DEGREES_OF_FREE = (MAX_MODE + 1)*(MAX_MODE + 1);
 	public static final double CORE_DENSITY_GESS = 2; // g/cm^3
 	public static final double SHELL_DENSITY_GESS = 10; // g/cm^3
 	public static final double CORE_RADIUS_GESS = 50;
@@ -145,6 +146,8 @@ public class VoxelFit {
 		  double[] x,
 		  double[] y,
 		  double[] z) {
+		if (core_reactivity.isNaN() || core_density.isNaN() || shell_density.isNaN())
+			throw new IllegalArgumentException("nan");
 		if (core_radius.length != shell_radius.length || shell_radius.length != shell_thickness.length)
 			throw new IllegalArgumentException("I haven't accounted for differing resolucions because I don't want to do so.");
 		int dof = core_radius.length;
@@ -480,13 +483,13 @@ public class VoxelFit {
 			return unravel(output);
 		};
 
-		double[] inicial_state = new double[3 + (MAX_MODE+1)*(MAX_MODE+1)*3];
+		double[] inicial_state = new double[3 + DEGREES_OF_FREE*3];
 		inicial_state[0] = 1;
 		inicial_state[1] = CORE_DENSITY_GESS;
 		inicial_state[2] = SHELL_DENSITY_GESS;
 		inicial_state[3] = CORE_RADIUS_GESS;
-		inicial_state[3 + (MAX_MODE+1)*(MAX_MODE+1)] = SHELL_RADIUS_GESS;
-		inicial_state[3 + (MAX_MODE+1)*(MAX_MODE+1)*2] = SHELL_THICKNESS_GESS;
+		inicial_state[3 + DEGREES_OF_FREE] = SHELL_RADIUS_GESS;
+		inicial_state[3 + DEGREES_OF_FREE*2] = SHELL_THICKNESS_GESS;
 		Quantity[][][][] inicial_state_3d = interpret_state(inicial_state, x, y, z, false);
 		Quantity[][][][] inicial_images = synthesize_images(inicial_state_3d[0], inicial_state_3d[1], x, y, z, Э, ξ, υ, lines_of_sight);
 		double total_yield = NumericalMethods.sum(images);
@@ -495,20 +498,39 @@ public class VoxelFit {
 
 		System.out.println(Arrays.toString(inicial_state));
 
-		double[] lower = new double[inicial_state.length];
-		double[] upper = new double[inicial_state.length];
+//		double[] lower = new double[inicial_state.length];
+//		double[] upper = new double[inicial_state.length];
 //		double[] scale = new double[inicial_state.length];
+		boolean[] hot_spot = new boolean[inicial_state.length];
+		boolean[] dense_fuel = new boolean[inicial_state.length];
 		for (int i = 0; i < inicial_state.length; i ++) {
-			lower[i] = 0;
-			upper[i] = Double.POSITIVE_INFINITY;
+//			lower[i] = 0;
+//			upper[i] = Double.POSITIVE_INFINITY;
 //			scale[i] = (i < inicial_state.length/2) ? total_yield/inicial_yield : 1e3;
+			hot_spot[i] = i < 2 || (i >= 3 && i < 3 + DEGREES_OF_FREE);
+			dense_fuel[i] = !hot_spot[i];
 		}
-		double[] optimal_state = Optimize.least_squares(
+		double[] optimal_state;
+//		optimal_state = inicial_state;
+		optimal_state = Optimize.least_squares( // start by optimizing the hot spot
 			  residuals,
 			  gradients,
 			  inicial_state,
-			  lower, upper,
+//			  lower, upper,
+			  hot_spot,
 			  1e-5);
+		optimal_state = Optimize.least_squares( // then optimize the cold fuel
+			  residuals,
+			  gradients,
+			  optimal_state,
+			  dense_fuel,
+			  1e-5);
+		optimal_state = Optimize.least_squares( // then do a pass at the hole thing
+			  residuals,
+			  gradients,
+			  optimal_state,
+			  1e-5);
+
 
 		System.out.println(Arrays.toString(optimal_state));
 

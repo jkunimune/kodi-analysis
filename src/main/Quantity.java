@@ -139,6 +139,10 @@ public class Quantity {
 		return new Quantity(this.value%divisor, this.gradient);
 	}
 
+	public boolean isNaN() {
+		return Double.isNaN(this.value);
+	}
+
 	/**
 	 * @return the number of variables upon which this depends
 	 */

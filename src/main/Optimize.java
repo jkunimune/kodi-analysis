@@ -94,6 +94,67 @@ public class Optimize {
 	 * @param compute_jacobian returns the Jacobian matrix where each row is the
 	 *                         gradient of the error at one point
 	 * @param inicial_gess the inicial gess for the optimal state
+	 * @param active whether each dimension should be allowd to change or not (in
+	 *               case you want to optimize the system one part at a time)
+	 * @param tolerance the maximum acceptable value of the components of the gradient of the
+	 *                  sum of squares, normalized by the norm of the errors and the norm of
+	 *                  the gradients of the individual errors.
+	 * @return the parameters that minimize the sum of squared distances
+	 */
+	public static double[] least_squares(
+		  Function<double[], double[]> compute_residuals,
+		  Function<double[], double[][]> compute_jacobian,
+		  double[] inicial_gess, boolean[] active,
+		  double tolerance) {
+
+		double[][] inicial_jacobian = compute_jacobian.apply(inicial_gess); // to start off, you must look for any irrelevant residuals
+		boolean[] relevant = new boolean[inicial_jacobian.length];
+		for (int i = 0; i < relevant.length; i ++) { // for each residual
+			relevant[i] = false;
+			for (int j = 0; j < active.length; j ++) { // see if it has any nonzero gradients
+				if (active[j] && inicial_jacobian[i][j] != 0) { // in active dofs
+					relevant[i] = true; // then it is relevant
+					break;
+				}
+			}
+		}
+
+		Function<double[], double[]> reduced_residuals = (double[] reduced_state) ->
+			  NumericalMethods.where(
+			  	  relevant,
+				  compute_residuals.apply(NumericalMethods.insert(
+				  	  active,
+					  inicial_gess,
+					  reduced_state)));
+
+		Function<double[], double[][]> reduced_jacobian = (double[] reduced_state) ->
+			  NumericalMethods.where(
+			  	    relevant, active,
+				    compute_jacobian.apply(NumericalMethods.insert(
+						  active,
+						  inicial_gess,
+						  reduced_state)));
+
+		double[] reduced_inicial = NumericalMethods.where(active, inicial_gess);
+
+		double[] anser = least_squares(reduced_residuals,
+									   reduced_jacobian,
+									   reduced_inicial,
+									   tolerance);
+
+		return NumericalMethods.insert(active, inicial_gess, anser);
+	}
+
+	/**
+	 * find a local minimum of the funccion f(state; points) = Σ dist(point[i], state)^2,
+	 * using the Levenberg-Marquardt formula as defined in
+	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
+	 *     System". Journal of Research of the National Institute of Standards and Technology
+	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
+	 * @param compute_residuals returns the error of each point given the state
+	 * @param compute_jacobian returns the Jacobian matrix where each row is the
+	 *                         gradient of the error at one point
+	 * @param inicial_gess the inicial gess for the optimal state
 	 * @param tolerance the maximum acceptable value of the components of the gradient of the
 	 *                  sum of squares, normalized by the norm of the errors and the norm of
 	 *                  the gradients of the individual errors.
@@ -115,11 +176,10 @@ public class Optimize {
 		double new_value = 0;
 		for (double d : residuals)
 			new_value += Math.pow(d, 2); // compute inicial chi^2
-//		System.out.println(Arrays.toString(state));
+//		System.out.println("state: "+Arrays.toString(state));
 		System.out.println(new_value);
 
 		while (true) {
-			System.out.println("Computing jacobian.");
 			double[][] jacobian = compute_jacobian.apply(state); // take the gradients
 
 			if (is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance))
@@ -150,7 +210,7 @@ public class Optimize {
 				new_value = 0;
 				for (double d : residuals)
 					new_value += Math.pow(d, 2); // compute new chi^2
-//				System.out.println(Arrays.toString(state));
+//				System.out.println("state: "+Arrays.toString(new_state));
 				System.out.println(new_value);
 
 				if (new_value <= last_value) { // terminate the line search if reasonable
