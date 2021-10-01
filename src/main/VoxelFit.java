@@ -78,10 +78,10 @@ public class VoxelFit {
 		for (int l = 0; l < n; l ++) {
 			harmonics[l] = new double[2*l + 1];
 			for (int m = -l; m <= l; m ++) {
-				if (m < 0)
-					harmonics[l][l+m] = NumericalMethods.legendre(Math.abs(m), cosθ)*Math.sin(m*ɸ);
+				if (m >= 0)
+					harmonics[l][l+m] = NumericalMethods.legendre(l, m, cosθ)*Math.cos(m*ɸ);
 				else
-					harmonics[l][l+m] = NumericalMethods.legendre(Math.abs(m), cosθ)*Math.cos(m*ɸ);
+					harmonics[l][l+m] = NumericalMethods.legendre(l, -m, cosθ)*Math.sin(m*ɸ);
 			}
 		}
 		return harmonics;

@@ -1262,34 +1262,82 @@ public class NumericalMethods {
 	}
 	
 	/**
-	 * Legendre polynomial of degree n
-	 * @param n the order of the polynomial
+	 * Legendre polynomial of degree l
+	 * @param l the degree of the polynomial
 	 * @param z the cosine of the angle at which this is evaluated
 	 * @return P_l(z)
 	 */
-	public static double legendre(int n, double z) {
-		if (n == 0)
-			return 1;
-		else if (n == 1)
-			return z;
-		else if (n == 2)
-			return (3*z*z - 1)/2.;
-		else if (n == 3)
-			return (5*z*z - 3)*z/2.;
-		else if (n == 4)
-			return ((35*z*z - 30)*z*z + 3)/8.;
-		else if (n == 5)
-			return ((63*z*z - 70)*z*z + 15)*z/8.;
-		else if (n == 6)
-			return (((231*z*z - 315)*z*z + 105)*z*z - 5)/16.;
-		else if (n == 7)
-			return (((429*z*z - 693)*z*z + 315)*z*z - 35)*z/16.;
-		else if (n == 8)
-			return ((((6435*z*z - 12012)*z*z + 6930)*z*z - 1260)*z*z + 35)/128.;
-		else if (n == 9)
-			return ((((12155*z*z - 25740)*z*z + 18018)*z*z - 4620)*z*z + 315)*z/128.;
-		else
-			throw new IllegalArgumentException("I don't know Legendre polynomials that high.");
+	public static double legendre(int l, double z) {
+		return legendre(l, 0, z);
+	}
+
+	/**
+	 * associated Legendre polynomial of degree l
+	 * @param l the degree of the function
+	 * @param m the order of the function
+	 * @param x the cosine of the angle at which this is evaluated
+	 * @return P_l^m(z)
+	 */
+	public static double legendre(int l, int m, double x) {
+		if (Math.abs(m) > l)
+			throw new IllegalArgumentException("|m| must not exceed l, but |"+m+"| > "+l);
+
+		double x2 = x*x; // get some simple calculacions done out front
+		double y2 = 1 - x2;
+		double y = (m%2 == 1) ? Math.sqrt(y2) : Double.NaN; // but avoid taking a square root if you can avoid it
+
+		if (m == 0) {
+			if (l == 0)
+				return 1;
+			else if (l == 1)
+				return x;
+			else if (l == 2)
+				return (3*x2 - 1)/2.;
+			else if (l == 3)
+				return (5*x2 - 3)*x/2.;
+			else if (l == 4)
+				return ((35*x2 - 30)*x2 + 3)/8.;
+			else if (l == 5)
+				return ((63*x2 - 70)*x2 + 15)*x/8.;
+			else if (l == 6)
+				return (((231*x2 - 315)*x2 + 105)*x2 - 5)/16.;
+			else if (l == 7)
+				return (((429*x2 - 693)*x2 + 315)*x2 - 35)*x/16.;
+			else if (l == 8)
+				return ((((6435*x2 - 12012)*x2 + 6930)*x2 - 1260)*x2 + 35)/128.;
+			else if (l == 9)
+				return ((((12155*x2 - 25740)*x2 + 18018)*x2 - 4620)*x2 + 315)*x/128.;
+		}
+		else if (m == 1) {
+			if (l == 1)
+				return -y;
+			else if (l == 2)
+				return -3*y*x;
+			else if (l == 3)
+				return -3*y*(5*x2 - 1)/2.;
+			else if (l == 4)
+				return -5*y*(7*x2 - 3)*x/2.;
+		}
+		else if (m == 2) {
+			if (l == 2)
+				return 3*y2;
+			else if (l == 3)
+				return 15*y2*x;
+			else if (l == 4)
+				return 15*y2*(7*x2 - 1)/2.;
+		}
+		else if (m == 3) {
+			if (l == 3)
+				return -15*y*y2;
+			else if (l == 4)
+				return -105*y*y2*x;
+		}
+		else if (m == 4) {
+			if (l == 4)
+				return 105*y2*y2;
+		}
+
+		throw new IllegalArgumentException("I don't know Legendre polynomials that high (_"+l+"^"+m+").");
 	}
 
 	/**
