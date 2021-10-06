@@ -77,7 +77,7 @@ if __name__ == '__main__':
 	z = np.linspace(-r_max, r_max, N+1)
 	Э = np.linspace(Э_min, Э_max, M+1)
 
-	H = N#np.ceil(N*np.sqrt(3))
+	H = np.ceil(N*1.8)#min(50, N)#np.ceil(N/np.sqrt(3)))
 	ξ = np.linspace(-H/N*r_max, H/N*r_max, N+1)
 	υ = np.linspace(-H/N*r_max, H/N*r_max, N+1)
 
@@ -104,9 +104,9 @@ if __name__ == '__main__':
 	np.savetxt("tmp/morphology.csv", np.ravel([tru_source, tru_density]))
 
 	print(f"Starting reconstruccion at {datetime.datetime.now()}")
-	# completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
-	# if completed_process.returncode > 0:
-	# 	raise ValueError(completed_process.stderr)
+	completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
+	if completed_process.returncode > 0:
+		raise ValueError(completed_process.stderr)
 	print(f"Completed reconstruccion at {datetime.datetime.now()}")
 
 	tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, N, N))

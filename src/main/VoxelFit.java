@@ -5,10 +5,12 @@ import main.NumericalMethods.DiscreteFunction;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Random;
 import java.util.function.Function;
 
 public class VoxelFit {
 
+	public static final int NUM_PARTICLES = 100000000;
 	public static final int MAX_MODE = 2;
 	public static final int DEGREES_OF_FREE = (MAX_MODE + 1)*(MAX_MODE + 1);
 	public static final double CORE_DENSITY_GESS = 2; // g/cm^3
@@ -219,6 +221,19 @@ public class VoxelFit {
 	}
 
 
+	/**
+	 * calculate the image pixel fluences with respect to the inputs
+	 * @param reactivity the reactivity voxel values in (#/cm^3)
+	 * @param density the density voxel values in (g/cm^3)
+	 * @param x the x bin edges (μm)
+	 * @param y the y bin edges (μm)
+	 * @param z the z bin edges (μm)
+	 * @param Э the energy bin edges (MeV)
+	 * @param ξ the xi bin edges of the image
+	 * @param υ the ypsilon bin edges of the image
+	 * @param lines_of_sight the detector line of site direccions
+	 * @return the image in (#/srad/bin)
+	 */
 	private static double[][][][] synthesize_images(
 		  double[][][] reactivity,
 		  double[][][] density,
@@ -229,6 +244,7 @@ public class VoxelFit {
 		  double[] ξ,
 		  double[] υ,
 		  Vector[] lines_of_sight) {
+
 		Quantity[][][] reactivity_q = new Quantity[reactivity.length][reactivity[0].length][reactivity[0][0].length];
 		Quantity[][][] density_q = new Quantity[density.length][density[0].length][density[0][0].length];
 		for (int i = 0; i < reactivity.length; i ++) {
@@ -307,37 +323,25 @@ public class VoxelFit {
 				ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
 			Vector υ_hat = ζ_hat.cross(ξ_hat);
 
-			Quantity[][][] ρL = new Quantity[2*(x.length - 1)][2*(y.length - 1)][2*(z.length - 1)];
-			for (int double_iD = 0; double_iD < ρL.length; double_iD++) { // this part is kind of inefficient, but it is not the slowest step
-				int iD = double_iD/2;
-				double diD = 0.25 + double_iD%2*0.50;
-				for (int double_jD = 0; double_jD < ρL[iD].length; double_jD++) {
-					int jD = double_jD/2;
-					double djD = 0.25 + double_jD%2*0.50;
-					for (int double_kD = 0; double_kD < ρL[iD][jD].length; double_kD++) {
-						int kD = double_kD/2;
-						double dkD = 0.25 + double_kD%2*0.50;
+			Quantity[][][] ρL_mat = new Quantity[x.length - 1][y.length - 1][z.length - 1];
+			for (int iD = ρL_mat.length - 1; iD >= 0; iD --) { // this part is kind of inefficient, but it is not the slowest step
+				for (int jD = ρL_mat[iD].length - 1; jD >= 0; jD --) {
+					for (int kD = ρL_mat[iD][jD].length - 1; kD >= 0; kD --) {
+						int iR = iD, jR = jD, kR = kD;
 
-						Quantity ρL_ = material_per_layer[iD][jD][kD];
-						if (ζ_hat.equals(UNIT_I)) {
-							ρL_ = ρL_.times(1 - diD);
-							for (int i = iD + 1; i < x.length - 1; i++)
-								ρL_ = ρL_.plus(material_per_layer[i][jD][kD]);
-						}
-						else if (ζ_hat.equals(UNIT_J)) {
-							ρL_ = ρL_.times(1 - djD);
-							for (int j = jD + 1; j < y.length - 1; j++)
-								ρL_ = ρL_.plus(material_per_layer[iD][j][kD]);
-						}
-						else if (ζ_hat.equals(UNIT_K)) {
-							ρL_ = ρL_.times(1 - dkD);
-							for (int k = kD + 1; k < z.length - 1; k++)
-								ρL_ = ρL_.plus(material_per_layer[iD][jD][k]);
-						}
-						else {
+						if (ζ_hat.equals(UNIT_I))
+							iR = iD + 1;
+						else if (ζ_hat.equals(UNIT_J))
+							jR = jD + 1;
+						else if (ζ_hat.equals(UNIT_K))
+							kR = kD + 1;
+						else
 							throw new IllegalArgumentException("I haven't implemented actual path integracion yet");
-						}
-						ρL[double_iD][double_jD][double_kD] = ρL_; // (mg/cm^2)
+
+						if (iR >= ρL_mat.length || jR >= ρL_mat[iR].length || kR >= ρL_mat[iR][jR].length)
+							ρL_mat[iD][jD][kD] = new Quantity(0, material_per_layer[iD][jD][kD].getN());
+						else
+							ρL_mat[iD][jD][kD] = ρL_mat[iR][jR][kR].plus(material_per_layer[iR][jR][kR]); // (mg/cm^2)
 					}
 				}
 			}
@@ -345,74 +349,80 @@ public class VoxelFit {
 			double[][][] image = new double[Э.length-1][ξ.length-1][υ.length-1];
 			double[][][][] gradients = new double[Э.length-1][ξ.length-1][υ.length-1][reactivity[0][0][0].getN()];
 
-			for (int iJ = 0; iJ < x.length - 1; iJ ++) {
-				double xJ = (x[iJ] + x[iJ+1])/2.;
-				for (int jJ = 0; jJ < y.length - 1; jJ ++) {
-					double yJ = (y[jJ] + y[jJ+1])/2.;
-					for (int kJ = 0; kJ < z.length - 1; kJ ++) {
-						double zJ = (z[kJ] + z[kJ+1])/2.;
+			double factor = Math.pow((x.length - 1.)*(y.length - 1.)*(z.length - 1.), 2)/NUM_PARTICLES; // the correccion factor due to the fact that this isn’t a real integral
 
-						if (reactivity[iJ][jJ][kJ].value == 0)
-							continue;
+			Random rng = new Random(0);
+			for (int r = 0; r < NUM_PARTICLES; r ++) { // integrate all Monte-Carlo-like
 
-						Vector rJ = new DenseVector(xJ, yJ, zJ);
+				double iJ = rng.nextDouble()*(x.length - 1); // sample uniformly (this is necessary to have smooth gradients)
+				double jJ = rng.nextDouble()*(y.length - 1);
+				double kJ = rng.nextDouble()*(z.length - 1);
+				double iD = rng.nextDouble()*(x.length - 1);
+				double jD = rng.nextDouble()*(y.length - 1);
+				double kD = rng.nextDouble()*(z.length - 1);
 
-						for (int double_iD = 0; double_iD < ρL.length; double_iD++) {
-							int iD = double_iD/2;
-							double diD = 0.25 + double_iD%2*0.50;
-							double xD = x[iD] + (x[1] - x[0])*diD;
-							for (int double_jD = 0; double_jD < ρL[iD].length; double_jD++) {
-								int jD = double_jD/2;
-								double djD = 0.25 + double_jD%2*0.50;
-								double yD = y[jD] + (y[1] - y[0])*djD;
-								for (int double_kD = 0; double_kD < ρL[iD][jD].length; double_kD++) {
-									int kD = double_kD/2;
-									double dkD = 0.25 + double_kD%2*0.50;
-									double zD = z[kD] + (z[1] - z[0])*dkD;
+				Vector rJ = new DenseVector(
+					  NumericalMethods.interp(x, iJ),
+					  NumericalMethods.interp(y, jJ),
+					  NumericalMethods.interp(z, kJ));
+				Vector rD = new DenseVector(
+					  NumericalMethods.interp(x, iD),
+					  NumericalMethods.interp(y, jD),
+					  NumericalMethods.interp(z, kD));
 
-									if (density[iD][jD][kD].value == 0)
-										continue;
+				Quantity num_reactions = reactions_per_bin[(int)iJ][(int)jJ][(int)kJ];
+				if (num_reactions.value == 0)
+					continue; // because of the way the funccions are set up, if the value is 0, the gradient should be 0 too
 
-									Vector rD = new DenseVector(xD, yD, zD);
+				Quantity num_particles = particles_per_bin[(int)iD][(int)jD][(int)kD]; // TODO use better interpolacion
+				if (num_particles.value == 0)
+					continue;
 
-									Vector Δr = rD.minus(rJ);
-									double Δζ = Δr.dot(ζ_hat);
-									if (Δζ <= 0)
-										continue;
+				Vector Δr = rD.minus(rJ);
+				double Δζ = Δr.dot(ζ_hat);
+				if (Δζ <= 0) { // make sure the scatter is physickly possible
+					continue;
+				}
 
-									Quantity particles_per_sector = particles_per_bin[iD][jD][kD].over(8); // TODO: I could use better interpolacion here
-									double Δr2 = Δr.sqr();
-									double cosθ2 = Δζ*Δζ/Δr2;
-									double ЭD = Э_KOD*cosθ2;
-									Quantity ЭV = range(ЭD, ρL[double_iD][double_jD][double_kD]);
+				Quantity ρL_cel = material_per_layer[(int)iD][(int)jD][(int)kD];
+				if (ζ_hat.equals(UNIT_I))
+					ρL_cel = ρL_cel.times(1 - iD%1);
+				else if (ζ_hat.equals(UNIT_J))
+					ρL_cel = ρL_cel.times(1 - jD%1);
+				else if (ζ_hat.equals(UNIT_K))
+					ρL_cel = ρL_cel.times(1 - kD%1);
+				else
+					throw new IllegalArgumentException("I haven't implemented actual path integracion yet");
+				Quantity ρL = ρL_mat[(int)iD][(int)jD][(int)kD].plus(ρL_cel);
 
-									double ξV = ξ_hat.dot(rD);
-									double υV = υ_hat.dot(rD);
+				double Δr2 = Δr.sqr();
+				double cosθ2 = Δζ*Δζ/Δr2;
+				double ЭD = Э_KOD*cosθ2;
+				Quantity ЭV = range(ЭD, ρL);
 
-									double σ = σ_nD.evaluate(ЭD);
-									Quantity fluence =
-										  reactions_per_bin[iJ][jJ][kJ].times(
-												particles_per_sector).times(
-												σ/(4*Math.PI*Δr2)); // (H2/srad/bin^2)
-									int iV = digitize(ξV, ξ);
-									int jV = digitize(υV, υ);
+				double ξV = ξ_hat.dot(rD);
+				double υV = υ_hat.dot(rD);
 
-									Quantity parcial_hV = ЭV.minus(Э_centers[0]).over(Э[1] - Э[0]);
-									int hV0 = (int)Math.floor(parcial_hV.value);
-									Quantity dhV = smooth_step(parcial_hV.minus(hV0));
+				double σ = σ_nD.evaluate(ЭD);
+				Quantity fluence =
+					  num_reactions.times(
+							num_particles).times(
+							σ/(4*Math.PI*Δr2)).times(
+						    factor); // (H2/srad/bin^2)
+				int iV = digitize(ξV, ξ);
+				int jV = digitize(υV, υ);
 
-									for (int ð = 0; ð <= 1; ð ++) { // finally, iterate over the two energy bins
-										int hV = hV0 + ð; // the bin index
-										if (hV >= 0 && hV < image.length) {
-											Quantity contribution = fluence.times(dhV.plus(ð - 1).abs()); // the amount of fluence going to that bin
-											image[hV][iV][jV] += contribution.value;
-											for (int k: contribution.gradient.nonzero())
-												gradients[hV][iV][jV][k] += contribution.gradient.get(k);
-										}
-									}
-								}
-							}
-						}
+				Quantity parcial_hV = ЭV.minus(Э_centers[0]).over(Э[1] - Э[0]);
+				int hV0 = (int)Math.floor(parcial_hV.value);
+				Quantity dhV = smooth_step(parcial_hV.minus(hV0));
+
+				for (int ð = 0; ð <= 1; ð ++) { // finally, iterate over the two energy bins
+					int hV = hV0 + ð; // the bin index
+					if (hV >= 0 && hV < image.length) {
+						Quantity contribution = fluence.times(dhV.plus(ð - 1).abs()); // the amount of fluence going to that bin
+						image[hV][iV][jV] += contribution.value;
+						for (int k: contribution.gradient.nonzero())
+							gradients[hV][iV][jV][k] += contribution.gradient.get(k);
 					}
 				}
 			}
