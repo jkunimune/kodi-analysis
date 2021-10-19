@@ -279,10 +279,10 @@ public class NumericalMethods {
 	public static Quantity moment(int n, double[] x, Quantity[] y, double a, double b) {
 		if (x.length != y.length+1)
 			throw new IllegalArgumentException("Array lengths do not correspond.");
-		Quantity N = (n > 0) ? moment(0, x, y, a, b) : new Quantity(1, y[0].getN());
-		Quantity μ = (n > 1) ? moment(1, x, y, a, b) : new Quantity(0, y[0].getN());
-		Quantity σ = (n > 2) ? moment(2, x, y, a, b).sqrt() : new Quantity(1, y[0].getN());
-		Quantity sum = new Quantity(0, y[0].getN());
+		Quantity N = (n > 0) ? moment(0, x, y, a, b) : new Quantity(1, y[0].getDofs());
+		Quantity μ = (n > 1) ? moment(1, x, y, a, b) : new Quantity(0, y[0].getDofs());
+		Quantity σ = (n > 2) ? moment(2, x, y, a, b).sqrt() : new Quantity(1, y[0].getDofs());
+		Quantity sum = new Quantity(0, y[0].getDofs());
 		for (int i = 0; i < y.length; i ++) {
 			double xL = Math.max(a, x[i]); // define the bounds of this integrand bin, which might not be the bounds of the datum bin
 			double xR = Math.min(b, x[i+1]);
@@ -363,8 +363,8 @@ public class NumericalMethods {
 	public static Quantity average(Quantity[] y, Quantity[] f, int left, int rite) {
 		if (y.length != f.length)
 			throw new IllegalArgumentException("The array lengths don't match.");
-		Quantity p0 = new Quantity(0, y[0].getN());
-		Quantity p1 = new Quantity(0, y[0].getN());
+		Quantity p0 = new Quantity(0, y[0].getDofs());
+		Quantity p1 = new Quantity(0, y[0].getDofs());
 		for (int i = left; i < rite; i ++) {
 			p0 = p0.plus(f[i]);
 			p1 = p1.plus(f[i].times(y[i]));
@@ -463,12 +463,30 @@ public class NumericalMethods {
 	}
 
 	public static Quantity sum(Quantity[][][][] arr) {
-		Quantity s = new Quantity(0, arr[0][0][0][0].getN());
+		Quantity s = new Quantity(0, arr[0][0][0][0].getDofs());
 		for (Quantity[][][] mat: arr)
 			for (Quantity[][] lvl: mat)
 				for (Quantity[] row: lvl)
 					for (Quantity x: row)
 						s = s.plus(x);
+		return s;
+	}
+
+	/**
+	 * cumulatively sum the array
+	 * @param arr an array of values to sum
+	 * @param normalize whether to divide the output by sum(arr)
+	 * @return an array s such that s[i] = the sum of the first i elements
+	 */
+	public static Quantity[] cumsum(Quantity[] arr, boolean normalize) {
+		Quantity[] s = new Quantity[arr.length + 1];
+		s[0] = new Quantity(0, arr[0].getDofs());
+		for (int i = 0; i < arr.length; i ++)
+			s[i+1] = s[i].plus(arr[i]);
+		if (normalize) {
+			for (int i = 0; i <= arr.length; i ++)
+				s[i] = s[i].over(s[arr.length]);
+		}
 		return s;
 	}
 
@@ -650,7 +668,7 @@ public class NumericalMethods {
 			if (i == -1 || x[j].value > x[i].value)
 				i = j;
 		if (i <= left || i >= right-1)
-			return new Quantity(i, x[i].getN());
+			return new Quantity(i, x[i].getDofs());
 		Quantity dxdi = (x[i+1].minus(x[i-1])).over(2);
 		Quantity d2xdi2 = (x[i+1]).plus(x[i].times(-2)).plus(x[i-1]);
 		assert d2xdi2.value < 0;
@@ -689,7 +707,7 @@ public class NumericalMethods {
 		try {
 			return interp(x, quadargmax(Math.max(0, left), Math.min(x.length, right), y));
 		} catch (IndexOutOfBoundsException e) { // y is empty or all NaN
-			return new Quantity(-1, y[0].getN());
+			return new Quantity(-1, y[0].getDofs());
 		}
 	}
 	
@@ -720,10 +738,10 @@ public class NumericalMethods {
 	 * @return x[i], more or less
 	 */
 	public static Quantity interp(double[] x, Quantity i) {
-		if (i.value < 0 || i.value > x.length-1)
-			throw new IndexOutOfBoundsException("Even partial indices have limits: "+i);
-		int i0 = Math.max(0, Math.min(x.length-2, (int) i.value));
-		return i.minus(i0).times(x[i0+1]).minus(i.minus(i0+1).times(x[i0]));
+		Quantity[] x_q = new Quantity[x.length];
+		for (int j = 0; j < x_q.length; j ++)
+			x_q[j] = new Quantity(x[j], i.getDofs());
+		return interp(x_q, i);
 	}
 	
 	/**
@@ -738,6 +756,21 @@ public class NumericalMethods {
 		int i0 = Math.max(0, Math.min(x.length-2, (int) i.value));
 		return i.minus(i0).times(x[i0+1]).minus(i.minus(i0+1).times(x[i0]));
 	}
+
+	public static Quantity interp(double x0, Quantity[] x, double[] y) {
+		Quantity x0_q = new Quantity(x0, x[0].getDofs());
+		Quantity[] y_q = new Quantity[y.length];
+		for (int i = 0; i < y_q.length; i ++)
+			y_q[i] = new Quantity(y[i], x0_q.getDofs());
+		return interp(x0_q, x, y_q);
+	}
+
+	public static Quantity interp(Quantity x0, double[] x, Quantity[] y) {
+		Quantity[] x_q = new Quantity[x.length];
+		for (int i = 0; i < x_q.length; i ++)
+			x_q[i] = new Quantity(x[i], x0.getDofs());
+		return interp(x0, x_q, y);
+	}
 	
 	/**
 	 * interpolate the value onto the given array.
@@ -746,18 +779,54 @@ public class NumericalMethods {
 	 * @param y the array of values
 	 * @return y(x0), more or less
 	 */
-	public static Quantity interp(Quantity x0, double[] x, Quantity[] y) {
-		if (x0.value < x[0] || x0.value > x[x.length-1])
+	public static Quantity interp(Quantity x0, Quantity[] x, Quantity[] y) {
+		if (x0.value < x[0].value || x0.value > x[x.length-1].value)
 			throw new IndexOutOfBoundsException("Nope. Not doing extrapolation: "+x0);
-		int l = 0, r = x.length;
+		int l = 0, r = x.length - 1;
 		while (r - l > 1) {
 			int m = (l + r)/2;
-			if (x0.value < x[m])
+			if (x0.value < x[m].value)
 				r = m;
 			else
 				l = m;
 		}
-		return y[l].times(x0.minus(x[r]).over(x[l] - x[r])).plus(y[r].times(x0.minus(x[l]).over(x[r] - x[l])));
+		return y[l].times(x0.minus(x[r]).over(x[l].minus(x[r]))).plus(y[r].times(x0.minus(x[l]).over(x[r].minus(x[l]))));
+	}
+
+	public static Quantity interp3d(Quantity[][][] values, double i, double j, double k, boolean smooth) {
+		int N = values[0][0][0].getDofs();
+		return interp3d(values, new Quantity(i, N), new Quantity(j, N), new Quantity(k, N), smooth);
+	}
+
+	public static Quantity interp3d(Quantity[][][] values, Quantity i, Quantity j, Quantity k, boolean smooth) {
+		if (
+			  (i.value < 0 || i.value > values.length - 1) ||
+			  (j.value < 0 || j.value > values[0].length - 1) ||
+			  (k.value < 0 || k.value > values[0][0].length - 1))
+			throw new ArrayIndexOutOfBoundsException(i.value+", "+j.value+", "+k.value+" out of bounds for "+values.length+"x"+values[0].length+"x"+values[0][0].length);
+		if (i.isNaN() || j.isNaN() || k.isNaN())
+			throw new IllegalArgumentException("is this a joke to you");
+
+		int i0 = Math.min((int)i.value, values.length - 1);
+		int j0 = Math.min((int)j.value, values[i0].length - 1);
+		int k0 = Math.min((int)k.value, values[i0][j0].length - 1);
+		Quantity ci0, cj0, ck0;
+		if (smooth) {
+			ci0 = smooth_step(i.minus(i0).minus(1).abs());
+			cj0 = smooth_step(j.minus(j0).minus(1).abs());
+			ck0 = smooth_step(k.minus(k0).minus(1).abs());
+		}
+		else {
+			ci0 = i.minus(i0).minus(1);
+			cj0 = j.minus(j0).minus(1);
+			ck0 = k.minus(k0).minus(1);
+		}
+		Quantity value = new Quantity(0, i.getDofs());
+		for (int di = 0; di <= 1; di ++)
+			for (int dj = 0; dj <= 1; dj ++)
+				for (int dk = 0; dk <= 1; dk ++)
+					value = value.plus(values[i0+di][j0+dj][k0+dk].times(ci0.minus(di).abs()).times(cj0.minus(dj).abs()).times(ck0.minus(dk).abs()));
+		return value;
 	}
 	
 	/**
@@ -843,15 +912,15 @@ public class NumericalMethods {
 		Quantity[] weights = new Quantity[x.length];
 		for (int i = 0; i < x.length; i ++) {
 			if (x[i] <= x0.minus(Δx/2 + dx/2).value)
-				weights[i] = new Quantity(0, x0.getN());
+				weights[i] = new Quantity(0, x0.getDofs());
 			else if (x[i] <= x0.minus(Δx/2 - dx/2).value)
 				weights[i] = x0.minus(Δx/2 + dx/2).minus(x[i]).over(-dx);
 			else if (x[i] <= x0.plus(Δx/2 - dx/2).value)
-				weights[i] = new Quantity(1, x0.getN());
+				weights[i] = new Quantity(1, x0.getDofs());
 			else if (x[i] <= x0.plus(Δx/2 + dx/2).value)
 				weights[i] = x0.plus(Δx/2 + dx/2).minus(x[i]).over(dx);
 			else
-				weights[i] = new Quantity(0, x0.getN());
+				weights[i] = new Quantity(0, x0.getDofs());
 		}
 //		for (int i = 0; i < x.length; i ++)
 //			System.out.print(weights[i].value+", ");
@@ -860,7 +929,7 @@ public class NumericalMethods {
 		double[] xMoments = new double[5];
 		Quantity[] yMoments = new Quantity[3];
 		for (int j = 0; j < 3; j ++)
-				yMoments[j] = new Quantity(0, x0.getN());
+				yMoments[j] = new Quantity(0, x0.getDofs());
 		for (int i = 0; i < x.length; i ++) {
 			if (weights[i].value > 0) {
 				for (int j = 0; j < 5; j ++)
@@ -944,6 +1013,7 @@ public class NumericalMethods {
 	 * whose elements are the elements of full that correspond to the true values
 	 */
 	public static double[][] where(boolean[] active_rows, boolean[] active_cols, double[][] full) {
+		assert active_rows.length == full.length && active_cols.length == full[0].length: active_rows.length+", "+active_cols.length+", "+full.length+"x"+full[0].length;
 		int reduced_hite = 0;
 		for (int i = 0; i < full.length; i ++)
 			if (active_rows[i])
@@ -1076,7 +1146,12 @@ public class NumericalMethods {
 			if (j >= 0 && j < arr[i].length)
 				arr[i][j] += val;
 	}
-	
+
+	public static Quantity smooth_step(Quantity x) {
+		assert x.value >= 0 && x.value <= 1 : x;
+		return x.pow(4).times(x.times(x.times(x.times(-20).plus(70)).plus(-84)).plus(35));
+	}
+
 	/**
 	 * extract the values from an array of Quantities
 	 * @return the value of each Quantity in the same order as before
@@ -1253,12 +1328,9 @@ public class NumericalMethods {
 	 * in where they were.
 	 */
 	public static double[][] pseudoinv(double[][] arr) {
-		int n = 0;
 		boolean[] useful = new boolean[arr.length];
-		for (int i = 0; i < arr.length; i ++) {
+		for (int i = 0; i < arr.length; i ++)
 			useful[i] = (Double.isFinite(arr[i][i]) && arr[i][i] != 0);
-			if (useful[i])  n ++;
-		}
 		double[][] a = where(useful, useful, arr);
 		double[][] b = matinv(a);
 		double[][] c = new double[arr.length][arr.length];
@@ -1335,7 +1407,7 @@ public class NumericalMethods {
 	 * @param z the cosine of the angle at which this is evaluated
 	 * @return P_l(z)
 	 */
-	public static double legendre(int l, double z) {
+	public static Quantity legendre(int l, Quantity z) {
 		return legendre(l, 0, z);
 	}
 
@@ -1346,63 +1418,53 @@ public class NumericalMethods {
 	 * @param x the cosine of the angle at which this is evaluated
 	 * @return P_l^m(z)
 	 */
-	public static double legendre(int l, int m, double x) {
+	public static Quantity legendre(int l, int m, Quantity x) {
 		if (Math.abs(m) > l)
 			throw new IllegalArgumentException("|m| must not exceed l, but |"+m+"| > "+l);
 
-		double x2 = x*x; // get some simple calculacions done out front
-		double y2 = 1 - x2;
-		double y = (m%2 == 1) ? Math.sqrt(y2) : Double.NaN; // but avoid taking a square root if you can avoid it
+		Quantity x2 = x.pow(2); // get some simple calculacions done out front
+		Quantity y2 = x2.minus(1).times(-1);
+		Quantity y = (m%2 == 1) ? y2.sqrt() : new Quantity(Double.NaN, x.getDofs()); // but avoid taking a square root if you can avoid it
 
 		if (m == 0) {
 			if (l == 0)
-				return 1;
+				return new Quantity(1, x.getDofs());
 			else if (l == 1)
 				return x;
 			else if (l == 2)
-				return (3*x2 - 1)/2.;
+				return x2.times(3).minus(1).over(2);
 			else if (l == 3)
-				return (5*x2 - 3)*x/2.;
+				return x2.times(5).minus(3).times(x).over(2);
 			else if (l == 4)
-				return ((35*x2 - 30)*x2 + 3)/8.;
-			else if (l == 5)
-				return ((63*x2 - 70)*x2 + 15)*x/8.;
-			else if (l == 6)
-				return (((231*x2 - 315)*x2 + 105)*x2 - 5)/16.;
-			else if (l == 7)
-				return (((429*x2 - 693)*x2 + 315)*x2 - 35)*x/16.;
-			else if (l == 8)
-				return ((((6435*x2 - 12012)*x2 + 6930)*x2 - 1260)*x2 + 35)/128.;
-			else if (l == 9)
-				return ((((12155*x2 - 25740)*x2 + 18018)*x2 - 4620)*x2 + 315)*x/128.;
+				return x2.times(35).minus(30).times(x2).plus(3).over(8);
 		}
 		else if (m == 1) {
 			if (l == 1)
-				return -y;
+				return y.times(-1);
 			else if (l == 2)
-				return -3*y*x;
+				return x.times(y).times(-3);
 			else if (l == 3)
-				return -3*y*(5*x2 - 1)/2.;
+				return x2.times(5).minus(1).times(y).times(-3/2.);
 			else if (l == 4)
-				return -5*y*(7*x2 - 3)*x/2.;
+				return x2.times(7).minus(3).times(x).times(y).times(-5/2.);
 		}
 		else if (m == 2) {
 			if (l == 2)
-				return 3*y2;
+				return y2.times(3);
 			else if (l == 3)
-				return 15*y2*x;
+				return x.times(y2).times(15);
 			else if (l == 4)
-				return 15*y2*(7*x2 - 1)/2.;
+				return x2.times(7).minus(1).times(y2).times(15/2.);
 		}
 		else if (m == 3) {
 			if (l == 3)
-				return -15*y*y2;
+				return y.pow(3).times(-15);
 			else if (l == 4)
-				return -105*y*y2*x;
+				return x.times(y.pow(3)).times(-105);
 		}
 		else if (m == 4) {
 			if (l == 4)
-				return 105*y2*y2;
+				return y2.pow(2).times(105);
 		}
 
 		throw new IllegalArgumentException("I don't know Legendre polynomials that high (_"+l+"^"+m+").");

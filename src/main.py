@@ -15,19 +15,20 @@ import segnal as mysignal
 from reconstruct_2d import reconstruct, get_relative_aperture_positions
 
 plt.rcParams["legend.framealpha"] = 1
-plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
+plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
 
 
 e_in_bounds = 2
 
 SKIP_RECONSTRUCTION = False
 SHOW_PLOTS = False
-SHOW_OFFSET = True
+SHOW_OFFSET = False
 
-OBJECT_SIZE = 200e-4
+OBJECT_SIZE = 200e-4 # (cm)
 RESOLUTION = 5e-4
 EXPANSION_FACTOR = 1.20
 PLOT_CONTOUR = .25
+PLOT_RADIUS = 80 # (μm)
 APERTURE_CONFIGURATION = 'hex'
 CHARGE_FITTING = 'all'
 MAX_NUM_PIXELS = 200
@@ -149,7 +150,7 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	plt.figure() # plot the reconstructed source image
 	plt.locator_params(steps=[1, 2, 5, 10])
 	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=CMAP[cut_name], vmin=0, rasterized=True)
-	# plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[PLOT_CONTOUR*np.max(Z)], colors='w', linestyle='dashed')
+	plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[PLOT_CONTOUR*np.max(Z)], colors='w', linestyle='dashed')
 	# T = np.linspace(0, 2*np.pi, 144)
 	# R = p0 + p2*np.cos(2*(T - θ2))
 	# plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
@@ -164,7 +165,7 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 		plt.title(f"{e_min:.1f} – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
-	plt.axis([-100, 100, -100, 100])
+	plt.axis([-PLOT_RADIUS, PLOT_RADIUS, -PLOT_RADIUS, PLOT_RADIUS])
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.{filetype}")
@@ -209,7 +210,7 @@ def plot_overlaid_contors(xR_bins, yR_bins, NR, xB_bins, yB_bins, NB, projected_
 			z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
 			verticalalignment='top', transform=plt.gca().transAxes)
 	plt.axis('square')
-	plt.axis([-150, 150, -150, 150])
+	plt.axis([-PLOT_RADIUS, PLOT_RADIUS, -PLOT_RADIUS, PLOT_RADIUS])
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.title("TIM {} on shot {}".format(data[TIM], data[SHOT]))

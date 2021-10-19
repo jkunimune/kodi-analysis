@@ -20,6 +20,13 @@ from electric_field_model import get_analytic_brightness
 warnings.filterwarnings("ignore")
 
 
+SHOW_RAW_DATA = False
+SHOW_CROPD_DATA = False
+SHOW_POINT_SPREAD_FUNCCION = False
+SHOW_INICIAL_RESIDUALS = False
+SHOW_1D_FIT_PROCESS = False
+SHOW_2D_FIT_PROCESS = False
+
 MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
@@ -304,15 +311,16 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		cuts = [('synth', [0, 100])]
 	else:
 		# cuts = [('all', [0, 100])] # [MeV] (pre-filtering)
-		cuts = [('hi', [9, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
-		# cuts = [('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
+		# cuts = [('hi', [9, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
+		# cuts = [('7', [11, 100]), ('6', [10, 11]), ('5', [9, 10]), ('4', [8, 9]), ('3', [6, 8]), ('2', [4, 6]), ('1', [2, 4]), ('0', [0, 2])]
+		cuts = [('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
 		# cuts = [('all', [0, 100]), ('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
 
 	outputs = []
 	for cut_name, e_in_bounds in cuts: # iterate over the cuts
 		e_out_bounds = get_E_out(1, 2, e_in_bounds, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
 		e_in_bounds = get_E_in(1, 2, e_out_bounds, ['Ta'], 16) # convert back to exclude particles that are ranged out
-		d_bounds = diameter.D(e_out_bounds, τ=etch_time)[::-1] # convert to diameters
+		d_bounds = diameter.D(e_out_bounds, τ=etch_time, m=2)[::-1] # convert to diameters
 		if np.isnan(d_bounds[1]):
 			d_bounds[1] = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
 
@@ -343,7 +351,16 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		else:
 			x0, y0 = (0, 0)
 
+		if np.sum(NC > 0) < 4:
+			print("  Not enuff tracks found in this cut.")
+			continue
+
 		save_as_hdf5(f'{output_filename}-{cut_name}-raw', x=xC_bins, y=yC_bins, z=NC)
+
+		if SHOW_RAW_DATA:
+			plt.pcolormesh(xC_bins, yC_bins, NC)
+			plt.tight_layout()
+			plt.show()
 
 		hullC = convex_hull(XC, YC, NC) # compute the convex hull for future uce
 
@@ -392,7 +409,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			print(f"  {simple_fit(opt.x, *args, plot=show_plots)}")
 			print(f"  {opt}")
 
-		δ_eff = δ + 4*Q/e_in_bounds[0]
+		δ_eff = δ + 1*Q/e_in_bounds[0]
 
 		if mode == 'hist':
 			xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, binsI+1), np.linspace(y0 - r_img, y0 + r_img, binsI+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
@@ -422,6 +439,11 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 
 		save_as_hdf5(f'{output_filename}-{cut_name}-projection', x=xI_bins, y=yI_bins, z=NI)
 
+		if SHOW_CROPD_DATA:
+			plt.pcolormesh(xI_bins, yI_bins, NI)
+			plt.tight_layout()
+			plt.show()
+
 		binsK = xI.size - 2*int(δ0/dxI) # now make the kernel (from here on, it's the same in both modes)
 		if binsK%2 == 0: # make sure the kernel is odd
 			binsK += 1
@@ -450,15 +472,16 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		except MemoryError:
 			print("  WARN: could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
 
-		# plt.figure()
-		# plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
-		# plt.axis('square')
-		# plt.title("Point spread function")
-		# plt.figure()
-		# plt.pcolormesh(xI_bins, yI_bins, np.where(data_bins, reach, np.nan))
-		# plt.axis('square')
-		# plt.title("Maximum convolution")
-		# plt.show()
+		if SHOW_POINT_SPREAD_FUNCCION:
+			plt.figure()
+			plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
+			plt.axis('square')
+			plt.title("Point spread function")
+			plt.figure()
+			plt.pcolormesh(xI_bins, yI_bins, np.where(data_bins, reach, np.nan))
+			plt.axis('square')
+			plt.title("Maximum convolution")
+			plt.show()
 
 		print(
 			f"  n = {np.sum(NI[data_bins]):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
@@ -473,7 +496,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			where=data_bins,
 			illegal=np.logical_not(source_bins),
 			verbose=verbose,
-			show_plots=True) # deconvolve!
+			show_plots=False) # deconvolve!
 
 		print(f"  χ^2/n = {χ2_red}")
 		if χ2_red >= 1.5: # throw it away if it looks unreasonable

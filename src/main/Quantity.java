@@ -51,9 +51,9 @@ public class Quantity {
 	}
 
 	public double variance(double[][] covariance) {
-		if (this.getN() == 0)
+		if (this.getDofs() == 0)
 			return 0;
-		if (covariance.length != this.getN() || covariance[0].length != this.getN())
+		if (covariance.length != this.getDofs() || covariance[0].length != this.getDofs())
 			throw new IllegalArgumentException("this covariance matrix doesn't go with this Quantity");
 
 		double variance = this.gradient.dot(new Matrix(covariance).times(this.gradient));
@@ -128,6 +128,21 @@ public class Quantity {
 							this.gradient.times(1/this.value));
 	}
 
+	public Quantity sin() {
+		return new Quantity(Math.sin(this.value),
+							this.gradient.times(Math.cos(this.value)));
+	}
+
+	public Quantity cos() {
+		return new Quantity(Math.cos(this.value),
+							this.gradient.times(-Math.sin(this.value)));
+	}
+
+	public Quantity atan() {
+		return new Quantity(Math.atan(this.value),
+							this.gradient.times(1/(1 + this.value*this.value)));
+	}
+
 	public Quantity abs() {
 		if (this.value < 0)
 			return this.times(-1);
@@ -146,8 +161,8 @@ public class Quantity {
 	/**
 	 * @return the number of variables upon which this depends
 	 */
-	public int getN() {
-		return this.gradient.getN();
+	public int getDofs() {
+		return this.gradient.getLength();
 	}
 
 	public String toString(double[][] covariance) {
@@ -158,4 +173,5 @@ public class Quantity {
 	public String toString() {
 		return "Quantity(" + this.value + ", " + this.gradient + ")";
 	}
+
 }

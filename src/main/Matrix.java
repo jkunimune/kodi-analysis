@@ -35,7 +35,7 @@ public class Matrix {
 	}
 
 	public Vector times(Vector v) {
-		if (v.getN() != this.getM())
+		if (v.getLength() != this.getM())
 			throw new IllegalArgumentException("the dimensions don't match.");
 		double[] product = new double[this.getN()];
 		for (int i = 0; i < this.getN(); i ++)

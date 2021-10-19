@@ -109,7 +109,7 @@ public class SparseVector extends Vector {
 	}
 
 	@Override
-	public int getN() {
+	public int getLength() {
 		return this.length;
 	}
 

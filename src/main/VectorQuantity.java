@@ -23,55 +23,58 @@
  */
 package main;
 
-import java.util.Set;
+import java.util.Arrays;
 
-public abstract class Vector {
-	public abstract Vector plus(Vector that);
+public class VectorQuantity {
+	private final Quantity[] values;
 
-	public Vector minus(Vector that) {
+	public VectorQuantity(Quantity... values) {
+		this.values = values;
+	}
+
+	public VectorQuantity plus(VectorQuantity that) {
+		Quantity[] sum = new Quantity[this.getLength()];
+		for (int i = 0; i < this.getLength(); i ++)
+			sum[i] = this.get(i).plus(that.get(i));
+		return new VectorQuantity(sum);
+	}
+
+	public VectorQuantity minus(VectorQuantity that) {
 		return this.plus(that.times(-1));
 	}
 
-	public abstract Vector times(double scalar);
-
-	public Vector cross(Vector that) {
-		if (this.getLength() != 3 || that.getLength() != 3)
-			throw new IllegalArgumentException("I don't kno how to do cross products in seven dimensions.");
-		double[] product = new double[this.getLength()];
-		for (int i = 0; i < 3; i ++) {
-			product[i] += this.get((i+1)%3)*that.get((i+2)%3);
-			product[i] -= this.get((i+2)%3)*that.get((i+1)%3);
-		}
-		return new DenseVector(product);
+	public VectorQuantity times(double scalar) {
+		Quantity[] product = new Quantity[this.getLength()];
+		for (int i = 0; i < this.getLength(); i ++)
+			product[i] = this.get(i).times(scalar);
+		return new VectorQuantity(product);
 	}
 
-	public abstract double dot(Vector that);
-
-	public abstract double sqr();
-
-	public boolean equals(Vector that) {
+	public Quantity dot(Vector that) {
 		if (this.getLength() != that.getLength())
-			return false;
+			throw new IllegalArgumentException("the dimensions don't match.");
+		Quantity product = new Quantity(0, this.getDofs());
 		for (int i = 0; i < this.getLength(); i ++)
-			if (this.get(i) != that.get(i))
-				return false;
-		return true;
+			product = product.plus(this.get(i).times(that.get(i)));
+		return product;
 	}
 
-	public abstract Set<Integer> nonzero();
+	public Quantity sqr() {
+		Quantity sum = new Quantity(0, this.values[0].getDofs());
+		for (Quantity x: this.values)
+			sum = sum.plus(x.pow(2));
+		return sum;
+	}
 
-	public abstract int getLength();
+	public Quantity get(int i) {
+		return this.values[i];
+	}
 
-	public abstract double get(int i);
+	public int getLength() {
+		return this.values.length;
+	}
 
-	public abstract double[] getValues();
-
-	@Override
-	public String toString() {
-		StringBuilder s = new StringBuilder("[");
-		for (int i = 0; i < this.getLength(); i ++)
-			s.append(String.format("\n  %8.4g", this.get(i)));
-		s.append(" ]");
-		return s.toString();
+	public int getDofs() {
+		return this.values[0].getDofs();
 	}
 }

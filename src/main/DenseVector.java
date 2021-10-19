@@ -36,26 +36,26 @@ public class DenseVector extends Vector {
 
 	@Override
 	public Vector plus(Vector that) {
-		double[] sum = new double[this.getN()];
-		for (int i = 0; i < this.getN(); i ++)
+		double[] sum = new double[this.getLength()];
+		for (int i = 0; i < this.getLength(); i ++)
 			sum[i] = this.values[i] + that.get(i);
 		return new DenseVector(sum);
 	}
 
 	@Override
 	public Vector times(double scalar) {
-		double[] product = new double[this.getN()];
-		for (int i = 0; i < this.getN(); i ++)
+		double[] product = new double[this.getLength()];
+		for (int i = 0; i < this.getLength(); i ++)
 			product[i] = this.values[i]*scalar;
 		return new DenseVector(product);
 	}
 
 	@Override
 	public double dot(Vector that) {
-		if (this.getN() != that.getN())
+		if (this.getLength() != that.getLength())
 			throw new IllegalArgumentException("the dimensions don't match.");
 		double product = 0;
-		for (int i = 0; i < this.getN(); i ++)
+		for (int i = 0; i < this.getLength(); i ++)
 			if (this.values[i] != 0 && that.get(i) != 0)
 				product += this.values[i]*that.get(i);
 		return product;
@@ -72,8 +72,8 @@ public class DenseVector extends Vector {
 	@Override
 	public Set<Integer> nonzero() {
 		System.err.println("you are scanning a dense vector to find its nonzero components.  i si an efficient e mas zar di an nia.");
-		Set<Integer> output = new HashSet<>(this.getN());
-		for (int i = 0; i < this.getN(); i ++)
+		Set<Integer> output = new HashSet<>(this.getLength());
+		for (int i = 0; i < this.getLength(); i ++)
 			if (this.get(i) != 0)
 				output.add(i);
 		return output;
@@ -85,7 +85,7 @@ public class DenseVector extends Vector {
 	}
 
 	@Override
-	public int getN() {
+	public int getLength() {
 		return values.length;
 	}
 

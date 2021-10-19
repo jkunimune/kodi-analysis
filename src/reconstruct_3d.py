@@ -15,7 +15,7 @@ import subprocess
 import datetime
 
 plt.rcParams["legend.framealpha"] = 1
-plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
+plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
 
 
 
@@ -35,23 +35,33 @@ def integrate(y, x):
 
 
 def plot_source(x, y, z, source, density):
-	x, y, z = bin_centers(x), bin_centers(y), bin_centers(z)
 	ax = plt.figure().add_subplot(projection='3d')
 	ax.set_box_aspect([1,1,1])
 
 	for thing, contour_plot, cmap in [(density, ax.contour, 'Reds'), (source, ax.contour, 'Blues')]:
-		levels = np.linspace(0.17, 1.00, 5)*thing.max()
+		levels = np.linspace(0.17, 1.00, 7)*thing.max()
 		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
-			offset=0, zdir='z', levels=levels, cmap=cmap)
+			offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 		contour_plot(np.meshgrid(x, z, indexing='ij')[0], thing[:, len(y)//2, :], np.meshgrid(x, z, indexing='ij')[1],
-			offset=0, zdir='y', levels=levels, cmap=cmap)
+			offset=0, zdir='y', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 		contour_plot(thing[len(x)//2, :, :], *np.meshgrid(y, z, indexing='ij'),
-			offset=0, zdir='x', levels=levels, cmap=cmap)
+			offset=0, zdir='x', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 
 	ax.set_xlim(-100, 100)
 	ax.set_ylim(-100, 100)
 	ax.set_zlim(-100, 100)
 	plt.tight_layout()
+
+	plt.figure()
+	thing = np.sum(density, axis=0).T
+	plt.contourf(y, z, thing, levels=np.linspace(0.00, 1.00, 7)*thing.max(), cmap='Reds')
+	thing = np.sum(source, axis=0).T
+	plt.contourf(y, z, thing, levels=np.linspace(0.17, 1.00, 7)*thing.max(), cmap='Blues')
+	plt.xlabel("y (cm)")
+	plt.ylabel("z (cm)")
+	plt.colorbar()
+	plt.axis('square')
+
 	plt.show()
 
 
@@ -67,8 +77,9 @@ def plot_images(Э, ξ, υ, images):
 
 
 if __name__ == '__main__':
-	N = 15 # spatial resolucion
-	M = 5 # energy resolucion
+	N = 15 # model spatial resolucion
+	M = 5 # image energy resolucion
+	H = 15#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
@@ -77,9 +88,9 @@ if __name__ == '__main__':
 	z = np.linspace(-r_max, r_max, N+1)
 	Э = np.linspace(Э_min, Э_max, M+1)
 
-	H = np.ceil(N*1.8)#min(50, N)#np.ceil(N/np.sqrt(3)))
-	ξ = np.linspace(-H/N*r_max, H/N*r_max, N+1)
-	υ = np.linspace(-H/N*r_max, H/N*r_max, N+1)
+	# r_max *= np.sqrt(3)
+	ξ = np.linspace(-r_max, r_max, H+1)
+	υ = np.linspace(-r_max, r_max, H+1)
 
 	lines_of_sight = np.array([
 		[1, 0, 0],
@@ -87,10 +98,11 @@ if __name__ == '__main__':
 		[0, 0, 1],
 	]) # ()
 
-	x_center, y_center, z_center = bin_centers(x), bin_centers(y), bin_centers(z)
-	x_center, y_center, z_center = np.meshgrid(x_center, y_center, z_center, indexing='ij')
-	tru_source = np.where(np.sqrt(x_center**2 + y_center**2 + 2*z_center**2) <= 40, 1e15, 0) # (reactions/cm^3)
-	tru_density = np.where(np.sqrt(2*x_center**2 + 2*y_center**2 + z_center**2) <= 80, 50, 0) # (g/cm^3)
+	X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+	tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
+	tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
+	# tru_source = np.where(X**2 + Y**2 + Z**2 == 0, 1e15, 0)
+	# tru_density = np.where(X**2 + Y**2 + Z**2 == 0, 50, 0)
 
 	os.chdir("..")
 
@@ -103,15 +115,15 @@ if __name__ == '__main__':
 	np.savetxt("tmp/ypsilon.csv", υ)
 	np.savetxt("tmp/morphology.csv", np.ravel([tru_source, tru_density]))
 
-	print(f"Starting reconstruccion at {datetime.datetime.now()}")
+	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 	completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
 	if completed_process.returncode > 0:
 		raise ValueError(completed_process.stderr)
-	print(f"Completed reconstruccion at {datetime.datetime.now()}")
+	print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 
-	tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, N, N))
-	images = np.loadtxt("tmp/images-recon.csv").reshape((lines_of_sight.shape[0], M, N, N))
-	source, density = np.loadtxt("tmp/morphology-recon.csv").reshape((2, N, N, N))
+	tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H))
+	images = np.loadtxt("tmp/images-recon.csv").reshape((lines_of_sight.shape[0], M, H, H))
+	source, density = np.loadtxt("tmp/morphology-recon.csv").reshape((2, N+1, N+1, N+1))
 
 	print(np.sum(tru_source < 0), np.sum(tru_source == 0), np.sum(tru_source > 0))
 	print(np.sum(source < 0), np.sum(source == 0), np.sum(source > 0))
