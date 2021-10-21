@@ -11,7 +11,7 @@ import matplotlib.gridspec as gridspec
 from cmap import GREYS
 
 
-SMOOTHING = 50 # entropy weight
+SMOOTHING = 100 # entropy weight
 
 
 def linregress(x, y, weights=None):
@@ -39,7 +39,10 @@ def covariance_from_harmonics(p0, p1, θ1, p2, θ2):
 
 def harmonics_from_covariance(Σ, μ):
 	""" convert a covariance matrix to a circular harmonick representacion of its conture """
-	eigval, eigvec = np.linalg.eig(Σ)
+	try:
+		eigval, eigvec = np.linalg.eig(Σ)
+	except np.linalg.LinAlgError:
+		return np.nan, (np.nan, np.nan), (np.nan, np.nan)
 	i1, i2 = np.argmax(eigval), np.argmin(eigval)
 	a, b = np.sqrt(eigval[i1]), np.sqrt(eigval[i2])
 	p0 = (a + b)/2
@@ -66,8 +69,9 @@ def fit_ellipse(x, y, f, contour):
 		return np.array([[μxx, μxy], [μxy, μyy]]), np.array([μx, μy])
 
 	else:
-		contour_paths = measure
 		contour_paths = measure.find_contours(f, contour*f.max())
+		if len(contour_paths) == 0:
+			return np.full((2,2), np.nan), np.full(2, np.nan)
 		contour_path = max(contour_paths, key=len)
 		x_contour = np.interp(contour_path[:,0], np.arange(x.size), x)
 		y_contour = np.interp(contour_path[:,1], np.arange(y.size), y)

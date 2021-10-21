@@ -1,3 +1,4 @@
+import logging
 import matplotlib.pyplot as plt
 import numpy as np
 import numdifftools as nd
@@ -200,7 +201,7 @@ def minimize_repeated_nelder_mead(fun, x0, args, simplex_size, **kwargs):
 			**kwargs,
 		)
 		if not opt.success:
-			print(f"  WARN: could not find good fit because {opt.message}")
+			logging.warning(f"  could not find good fit because {opt.message}")
 			opt.x = x0
 			return opt
 
@@ -312,26 +313,26 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 	else:
 		# cuts = [('all', [0, 100])] # [MeV] (pre-filtering)
 		# cuts = [('hi', [9, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
-		# cuts = [('7', [11, 100]), ('6', [10, 11]), ('5', [9, 10]), ('4', [8, 9]), ('3', [6, 8]), ('2', [4, 6]), ('1', [2, 4]), ('0', [0, 2])]
-		cuts = [('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
+		cuts = [('7', [11, 100]), ('6', [10, 11]), ('5', [9, 10]), ('4', [8, 9]), ('3', [6, 8]), ('2', [4, 6]), ('1', [2, 4]), ('0', [0, 2])]
+		# cuts = [('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
 		# cuts = [('all', [0, 100]), ('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
 
 	outputs = []
 	for cut_name, e_in_bounds in cuts: # iterate over the cuts
 		e_out_bounds = get_E_out(1, 2, e_in_bounds, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
 		e_in_bounds = get_E_in(1, 2, e_out_bounds, ['Ta'], 16) # convert back to exclude particles that are ranged out
-		d_bounds = diameter.D(e_out_bounds, τ=etch_time, m=2)[::-1] # convert to diameters
+		d_bounds = diameter.D(e_out_bounds, τ=etch_time, a=2, z=1)[::-1] # convert to diameters
 		if np.isnan(d_bounds[1]):
 			d_bounds[1] = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
 
 		if mode == 'hist': # if we still need to tally the histogram
 
-			print(f"d in [{d_bounds[0]:5.2f}, {d_bounds[1]:5.2f}] μm")
+			logging.info(f"d in [{d_bounds[0]:5.2f}, {d_bounds[1]:5.2f}] μm")
 			track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 			track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 
 			if len(track_x) <= 0:
-				print("  No tracks found in this cut.")
+				logging.info("  No tracks found in this cut.")
 				continue
 
 			if aperture_charge_fitting == 'all':
@@ -352,7 +353,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			x0, y0 = (0, 0)
 
 		if np.sum(NC > 0) < 4:
-			print("  Not enuff tracks found in this cut.")
+			logging.info("  Not enuff tracks found in this cut.")
 			continue
 
 		save_as_hdf5(f'{output_filename}-{cut_name}-raw', x=xC_bins, y=yC_bins, z=NC)
@@ -370,12 +371,12 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		bounds = [(None,None), (None,None), (0,None), (0,None)]
 		args = (r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds, aperture_configuration)
 		if Q is None: # decide whether to fit the electrick feeld
-			print("  fitting electrick feeld")
+			logging.info("  fitting electrick feeld")
 			gess.append(.15)
 			step.append(.10)
 			bounds.append((0, None))
 		else: # or not
-			print(f"  setting electrick feeld to {Q}")
+			logging.info(f"  setting electrick feeld to {Q}")
 			args = (Q, *args)
 
 		opt = minimize_repeated_nelder_mead(
@@ -405,11 +406,12 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		except np.linalg.LinAlgError:
 			dx0, dy0, dδ, dQ = 0, 0, 0, 0
 
-		if verbose:
-			print(f"  {simple_fit(opt.x, *args, plot=show_plots)}")
-			print(f"  {opt}")
+		logging.debug(f"  {simple_fit(opt.x, *args, plot=show_plots)}")
+		logging.debug(f"  {opt}")
 
-		δ_eff = δ + 1*Q/e_in_bounds[0]
+		# x0, y0, δ, Q, dx0, dy0, dδ, dQ = 0, 0, .01, .1, 0, 0, 0, 0
+
+		δ_eff = δ + 4*Q/e_in_bounds[0]
 
 		if mode == 'hist':
 			xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, binsI+1), np.linspace(y0 - r_img, y0 + r_img, binsI+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
@@ -466,11 +468,14 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		reach = pysignal.convolve2d(source_bins, penumbral_kernel, mode='full')
 		penumbra_low = .005*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
 		penumbra_hih = .99*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
-		data_bins = (np.hypot(XI - x0, YI - y0) <= r_img) & np.isfinite(NI) & (reach > penumbra_low) & (reach < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
+		data_bins = (np.hypot(XI - x0, YI - y0) <= r_img) & np.isfinite(NI) & \
+				(reach > penumbra_low) & (reach < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
+		# data_bins = np.full(XI.shape, True)
+
 		try:
 			data_bins &= convex_hull(XI, YI, NI) # crop it at the convex hull where counts go to zero
 		except MemoryError:
-			print("  WARN: could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
+			logging.warning("  could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
 
 		if SHOW_POINT_SPREAD_FUNCCION:
 			plt.figure()
@@ -483,11 +488,11 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			plt.title("Maximum convolution")
 			plt.show()
 
-		print(
+		logging.info(
 			f"  n = {np.sum(NI[data_bins]):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
 			f"δ = {δ/M/1e-4:.2f} ± {dδ/M/1e-4:.2f} μm, Q = {Q:.3f} ± {dQ:.3f} cm*MeV, M = {M:.2f}")
 		if δ_eff/δ > 1.1:
-			print(f"  Charging artificially increased source size by {(δ_eff - δ)/M/1e-4:.3f} μm (a {δ_eff/δ:.3f}× change!)")
+			logging.info(f"  Charging artificially increased source size by {(δ_eff - δ)/M/1e-4:.3f} μm (a {δ_eff/δ:.3f}× change!)")
 
 		B, χ2_red = mysignal.gelfgat_deconvolve2d(
 			NI,
@@ -498,9 +503,11 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			verbose=verbose,
 			show_plots=False) # deconvolve!
 
-		print(f"  χ^2/n = {χ2_red}")
+		# B, χ2_red = np.ones(XS.shape), 0
+
+		logging.info(f"  χ^2/n = {χ2_red}")
 		if χ2_red >= 1.5: # throw it away if it looks unreasonable
-			print("  Could not find adequate fit")
+			logging.info("  Could not find adequate fit")
 			continue
 		B = np.maximum(0, B) # we know this must be nonnegative
 
@@ -509,15 +516,14 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		real = source_bins
 		cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
 		(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
-		print(f"  XXX {mouth/1e-4:.1f}")
+		logging.debug(f"  XXX {mouth/1e-4:.1f}")
 
 		save_as_hdf5(f'{output_filename}-{cut_name}-reconstruction', x=xS_bins, y=yS_bins, z=B)
 
 		p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(
 			xS, yS, B, contour=CONTOUR) # compute the three number summary
-		print(f"  P0 = {p0/1e-4:.2f} μm")
-		print(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
-
+		logging.info(f"  P0 = {p0/1e-4:.2f} μm")
+		logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 		image_layers.append(B/B.max())
 		X_layers.append(XS)

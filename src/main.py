@@ -1,14 +1,15 @@
 # main.py - do the thing.  I'll update the name when I think of something more descriptive.
 
-import numpy as np
+import logging
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import CenteredNorm, ListedColormap, LinearSegmentedColormap, LogNorm
-import pandas as pd
+import numpy as np
 import os
+import pandas as pd
 import time
 
-from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
+from cmap import REDS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, GREYS, COFFEE
 from coordinate import tim_coordinates, project
 from hdf5_util import load_hdf5
 import segnal as mysignal
@@ -50,7 +51,8 @@ R_FLOW = 'Flow (km/s)'
 Θ_FLOW = 'Flow theta (deg)'
 Φ_FLOW = 'Flow phi (deg)'
 
-CMAP = {'all': GREYS, 'lo': REDS, 'md': GREENS, 'hi': BLUES, 'xray': VIOLETS, 'synth': GREYS}
+CMAP = {'all': GREYS, 'lo': REDS, 'md': GREENS, 'hi': BLUES, 'xray': VIOLETS, 'synth': GREYS,
+		'0': GREYS, '1': REDS, '2': ORANGES, '3': YELLOWS, '4': GREENS, '5': CYANS, '6': BLUES, '7': VIOLETS}
 
 
 def center_of_mass(x_bins, y_bins, N):
@@ -167,6 +169,7 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	plt.ylabel("y (μm)")
 	plt.axis([-PLOT_RADIUS, PLOT_RADIUS, -PLOT_RADIUS, PLOT_RADIUS])
 	plt.tight_layout()
+	logging.info(f"saving {OUTPUT_FOLDER}{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.png")
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.{filetype}")
 
@@ -187,21 +190,25 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	return p0, (p2, θ2)
 
 
-def plot_overlaid_contors(xR_bins, yR_bins, NR, xB_bins, yB_bins, NB, projected_offset, projected_flow, data):
-	XR, YR = np.meshgrid((xR_bins[:-1] + xR_bins[1:])/2, (yR_bins[:-1] + yR_bins[1:])/2, indexing='ij')
-	XB, YB = np.meshgrid((xB_bins[:-1] + xB_bins[1:])/2, (yB_bins[:-1] + yB_bins[1:])/2, indexing='ij')
-	x0 = XB[np.unravel_index(np.argmax(NB), NB.shape)]
-	y0 = YB[np.unravel_index(np.argmax(NB), NB.shape)]
+def plot_overlaid_contors(reconstructions, projected_offset, projected_flow, data):
+	for i, (x_bins, y_bins, N, cmap) in enumerate(reconstructions): # convert the x and y bin edges to pixel centers
+		x, y = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
+		X, Y = np.meshgrid(x, y, indexing='ij')
+		reconstructions[i][0:2] = X, Y
+		if i == int(len(reconstructions)*3/4):
+			x0 = X[np.unravel_index(np.argmax(N), N.shape)] # calculate the centroid of the highest energy bin
+			y0 = Y[np.unravel_index(np.argmax(N), N.shape)]
 
 	x_off, y_off, z_off = projected_offset
 	x_flo, y_flo, z_flo = projected_flow
 
 	plt.figure()
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
-	plt.contourf((XR - x0)/1e-4, (YR - y0)/1e-4, NR/NR.max(), levels=[PLOT_CONTOUR, 1], colors=['#FF5555'])
-	plt.contourf((XB - x0)/1e-4, (YB - y0)/1e-4, NB/NB.max(), levels=[PLOT_CONTOUR, 1], colors=['#5555FF'])
-	# if xray is not None:
-	# 	plt.contour(XX, YX, xray, levels=[PLOT_CONTOUR], colors=['#550055BB'])
+	for X, Y, N, cmap in reconstructions:
+		if len(reconstructions) > 3:
+			plt.contour((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[PLOT_CONTOUR], colors=[cmap.colors[-1]])
+		else:
+			plt.contourf((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[PLOT_CONTOUR, 1], colors=[cmap.colors[-1]])
 	if SHOW_OFFSET:
 		plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 		plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
@@ -215,6 +222,7 @@ def plot_overlaid_contors(xR_bins, yR_bins, NR, xB_bins, yB_bins, NB, projected_
 	plt.ylabel("y (μm)")
 	plt.title("TIM {} on shot {}".format(data[TIM], data[SHOT]))
 	plt.tight_layout()
+	print(f"saving as {OUTPUT_FOLDER}{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction.png")
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction.{filetype}")
 
@@ -222,8 +230,17 @@ def plot_overlaid_contors(xR_bins, yR_bins, NR, xB_bins, yB_bins, NB, projected_
 
 
 if __name__ == '__main__':
+	logging.basicConfig(
+		level=logging.INFO,
+		format="{asctime:s} |{levelname:4.4s}| {message:s}", style='{',
+		datefmt="%m-%d %H:%M",
+		handlers=[
+			logging.FileHandler(OUTPUT_FOLDER+"log.txt", encoding='utf-8'),
+			logging.StreamHandler(),
+		]
+	)
 	try:
-		results = pd.read_csv(OUTPUT_FOLDER+"/summary.csv", dtype={'shot': str}) # start by reading the existing data or creating a new file
+		results = pd.read_csv(OUTPUT_FOLDER+"summary.csv", dtype={'shot': str}) # start by reading the existing data or creating a new file
 	except IOError:
 		results = pd.DataFrame(data={"shot": ['placeholder'], "tim": [0], "energy_cut": ['placeholder']}) # be explicit that shots can be str, but usually look like int
 
@@ -235,10 +252,11 @@ if __name__ == '__main__':
 					and	str(data[SHOT]) in fname and ('tim'+str(data[TIM]) in fname.lower() or 'tim' not in fname.lower()) \
 					and data[ETCH_TIME].replace(' ','') in fname:
 				input_filename = fname
-				print("\nBeginning reconstruction for TIM {} on shot {}".format(data[TIM], data[SHOT]))
+				print()
+				logging.info("Beginning reconstruction for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 				break
 		if input_filename is None:
-			print("  Could not find text file for TIM {} on shot {}".format(data[TIM], data[SHOT]))
+			logging.info("  Could not find text file for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 			continue
 
 		else:
@@ -264,6 +282,7 @@ if __name__ == '__main__':
 
 				results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM])] # clear any previous versions of this reconstruccion
 				for result in reconstruction:
+					logging.info(f"a reconstruccion was completed: {result}")
 					results = results.append( # and save the new ones to the dataframe
 						dict(
 							shot=data[SHOT],
@@ -274,8 +293,13 @@ if __name__ == '__main__':
 						ignore_index=True)
 				results = results[results.shot != 'placeholder']
 
+			else:
+				logging.info('"completed" the reconstruccion ;)')
+
 			images_on_this_los = (results.shot == data[SHOT]) & (results.tim == data[TIM])
-			for i, result in results[images_on_this_los].iterrows():
+			logging.info("in total we have:")
+			logging.info(results[images_on_this_los])
+			for i, result in results[images_on_this_los].iterrows(): # plot the reconstruccion in each energy cut
 				if result.energy_cut != 'xray':
 					cut = result.energy_cut
 					xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
@@ -292,33 +316,44 @@ if __name__ == '__main__':
 					x_bins, y_bins, B = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstruction')
 					plot_reconstruction(x_bins, y_bins, B, result.energy_min, result.energy_max, result.energy_cut, data)
 			
-			resultR = results[images_on_this_los & (results.energy_cut == 'lo')]
-			resultB = results[images_on_this_los & (results.energy_cut == 'hi')]
-			if resultR.shape[0] >= 1 and resultB.shape[0] >= 1:
-				xR_bins, yR_bins, NR = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-lo-reconstruction')
-				xB_bins, yB_bins, NB = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-hi-reconstruction')
+			for cut_set in [['0', '1', '2', '3', '4', '5', '6', '7'], ['lo', 'hi']]: # create the nested plots
+				filenames = []
+				for cut_name in cut_set:
+					results_in_this_cut = results[images_on_this_los & (results.energy_cut == cut_name)]
+					if results_in_this_cut.shape[0] >= 1:
+						filenames.append((f"{OUTPUT_FOLDER}{output_filename}-{cut_name}-reconstruction", CMAP[cut_name]))
+				if len(filenames) >= len(cut_set)*3/4:
+					print(f"creating the nested plot with the {cut_set} cut set")
+					reconstructions = []
+					for filename, cmap in filenames:
+						reconstructions.append([*load_hdf5(filename), cmap])
 
-				dx, dy = center_of_mass(xB_bins, yB_bins, NB) - center_of_mass(xR_bins, yR_bins, NR)
-				print(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
-				results.offset_magnitude[images_on_this_los] = np.hypot(dx, dy)/1e-4
-				results.offset_angle[images_on_this_los] = np.degrees(np.arctan2(dy, dx))
+					dxL, dyL = center_of_mass(*reconstructions[0][:3])
+					dxH, dyH = center_of_mass(*reconstructions[-1][:3])
+					dx, dy = dxH - dxL, dyH - dyL
+					logging.info(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
+					results.offset_magnitude[images_on_this_los] = np.hypot(dx, dy)/1e-4
+					results.offset_angle[images_on_this_los] = np.degrees(np.arctan2(dy, dx))
 
-				basis = tim_coordinates(data[TIM])
-		
-				plot_overlaid_contors(
-					xR_bins, yR_bins, NR,
-					xB_bins, yB_bins, NB,
-					project(float(data[R_OFFSET]), float(data[Θ_OFFSET]), float(data[Φ_OFFSET]), basis)*1e-4, # cm
-					project(float(data[R_FLOW]), float(data[Θ_FLOW]), float(data[Φ_FLOW]), basis)*1e-4, # cm/ns
-					data
-				)
+					basis = tim_coordinates(data[TIM])
+			
+					plot_overlaid_contors(
+						reconstructions,
+						project(float(data[R_OFFSET]), float(data[Θ_OFFSET]), float(data[Φ_OFFSET]), basis)*1e-4, # cm
+						project(float(data[R_FLOW]), float(data[Θ_FLOW]), float(data[Φ_FLOW]), basis)*1e-4, # cm/ns
+						data
+					)
+
+					break
+				else:
+					print(f"we didn't have what I need for the {cut_set} cut set")
 
 			try:
 				xray = np.loadtxt(INPUT_FOLDER+'KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T
 			except (ValueError, OSError):
 				xray = None
 			if xray is not None:
-				print("x-ray image")
+				logging.info("x-ray image")
 				xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
 				p0, (p2, θ2) = plot_reconstruction(xX_bins, yX_bins, xray, None, None, "xray", data)
 				results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM]) | (results.energy_cut != 'xray')] # clear any previous versions of this reconstruccion
