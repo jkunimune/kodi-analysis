@@ -429,7 +429,7 @@ public class VoxelFit {
 				Quantity jD = random_indices[1][1];
 				Quantity kD = random_indices[1][2];
 
-				Quantity n2σvτJ = NumericalMethods.interp3d(density, iJ, jJ, kJ, true);
+				Quantity n2σvτJ = NumericalMethods.interp3d(reactivity, iJ, jJ, kJ, true);
 				if (n2σvτJ.value == 0)
 					continue; // because of the way the funccions are set up, if the value is 0, the gradient should be 0 too
 
