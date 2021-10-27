@@ -21,7 +21,7 @@ plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
 
 m_DT = 3.34e-21 + 5.01e-21 # (mg)
 
-Э_min, Э_kod, Э_max = 2, 12.5, 13 # (MeV)
+Э_min, Э_kod, Э_max = 3, 12.5, 13 # (MeV)
 
 
 def bin_centers(x):
@@ -77,17 +77,18 @@ def plot_images(Э, ξ, υ, images):
 
 
 if __name__ == '__main__':
-	N = 15 # model spatial resolucion
-	M = 5 # image energy resolucion
-	H = 15#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
+	N = 21 # model spatial resolucion
+	M = 4 # image energy resolucion
+	H = 21#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
 	x = np.linspace(-r_max, r_max, N+1)
 	y = np.linspace(-r_max, r_max, N+1)
 	z = np.linspace(-r_max, r_max, N+1)
-	Э = np.linspace(Э_min, Э_max, M+1)
 
+	Э = np.linspace(Э_min, Э_max, M+1)
+	print(Э)
 	# r_max *= np.sqrt(3)
 	ξ = np.linspace(-r_max, r_max, H+1)
 	υ = np.linspace(-r_max, r_max, H+1)

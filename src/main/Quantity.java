@@ -83,11 +83,15 @@ public class Quantity {
 	}
 
 	public Quantity minus(double constant) {
-		return new Quantity(this.value - constant, this.gradient);
+		return this.plus(-constant);
 	}
 
 	public Quantity minus(Quantity that) {
 		return this.plus(that.times(-1));
+	}
+
+	public Quantity subtractedFrom(double constant) {
+		return this.minus(constant).times(-1);
 	}
 
 	public Quantity times(double constant) {

@@ -7,6 +7,11 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Random;
 import java.util.function.Function;
+import java.util.logging.FileHandler;
+import java.util.logging.Formatter;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 public class VoxelFit {
 
@@ -309,7 +314,7 @@ public class VoxelFit {
 		  double[] υ,
 		  Vector[] lines_of_sight
 	) {
-		final int N = reactivity[0][0][0].getDofs();
+		final int dofs = reactivity[0][0][0].getDofs();
 
 		double L_pixel = (x[1] - x[0])/1e4; // (cm)
 		double dL = Math.max(L_pixel, 1e-4); // (cm)
@@ -343,6 +348,7 @@ public class VoxelFit {
 		for (int j = 0; j < υ_centers.length; j ++)
 			υ_centers[j] = (υ[j] + υ[j+1])/2.;
 
+//		System.out.print("[");
 		Quantity[][][][] images = new Quantity[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1];
 		for (int l = 0; l < lines_of_sight.length; l ++) {
 			Vector ζ_hat = lines_of_sight[l];
@@ -377,14 +383,14 @@ public class VoxelFit {
 //			}
 
 			double[][][] image = new double[Э.length-1][ξ.length-1][υ.length-1];
-			double[][][][] gradients = new double[Э.length-1][ξ.length-1][υ.length-1][N];
+			double[][][][] gradients = new double[Э.length-1][ξ.length-1][υ.length-1][dofs];
 
 			Quantity[][][][] sampling_things = {reactivity, density}; // do some summing to prepare for the random sampling
 			Quantity[][][] cdf = new Quantity[sampling_things.length][3][];
 			for (int q = 0; q < 2; q ++) {
-				Quantity[] pdf_x = quantity_array(x.length - 1, N);
-				Quantity[] pdf_y = quantity_array(y.length - 1, N);
-				Quantity[] pdf_z = quantity_array(z.length - 1, N);
+				Quantity[] pdf_x = quantity_array(x.length - 1, dofs);
+				Quantity[] pdf_y = quantity_array(y.length - 1, dofs);
+				Quantity[] pdf_z = quantity_array(z.length - 1, dofs);
 				for (int i = 0; i < x.length - 1; i ++) {
 					for (int j = 0; j < y.length - 1; j ++) {
 						for (int k = 0; k < z.length - 1; k ++) {
@@ -399,12 +405,21 @@ public class VoxelFit {
 				cdf[q][1] = NumericalMethods.cumsum(pdf_y, true);
 				cdf[q][2] = NumericalMethods.cumsum(pdf_z, true);
 			}
+			SplineFunction[][] sampler = new SplineFunction[sampling_things.length][3];
+			for (int q = 0; q < sampler.length; q ++) {
+				for (int λ = 0; λ < sampler[q].length; λ ++) {
+					double[] index = new double[cdf[q][λ].length];
+					for (int i = 0; i < index.length; i ++)
+						index[i] = i;
+					sampler[q][λ] = new SplineFunction(cdf[q][λ], index);
+				}
+			}
 
 			Random rng = new Random(0);
 			for (int r = 0; r < NUM_PARTICLES; r ++) { // integrate all Monte-Carlo-like
 
 //				Quantity factor = yield.over(number).over(NUM_PARTICLES); // the correccion factor due to the fact that this isn’t a real integral
-				Quantity dV2 = new Quantity(1./NUM_PARTICLES, N); // the effective differential 6D-volume being sampled (cm^3)
+				Quantity dV2 = new Quantity(1./NUM_PARTICLES, dofs); // the effective differential 6D-volume being sampled (cm^3)
 
 				Quantity[][] random_indices = new Quantity[2][3]; // generate the random KOD
 				for (int q = 0; q < random_indices.length; q ++) {
@@ -414,14 +429,15 @@ public class VoxelFit {
 						else if (λ == 1) coord = y;
 						else if (λ == 2) coord = z;
 						else throw new IllegalArgumentException("waaaaaa "+λ);
-						double[] index = new double[coord.length];
-						for (int j = 0; j < index.length; j ++)
-							index[j] = j;
-						random_indices[q][λ] = NumericalMethods.interp(
-							  rng.nextDouble(), cdf[q][λ], index); // sample according to these cumulative sums you did
-						int i = (int)random_indices[q][λ].value;
-						Quantity dudx = cdf[q][λ][i+1].minus(cdf[q][λ][i]).over(coord[i+1] - coord[i]);
-						dV2 = dV2.over(dudx); // adjust the correction to account for the sampling bias
+						double u = rng.nextDouble();
+						random_indices[q][λ] = sampler[q][λ].evaluate(u); // sample according to these cumulative sums you did
+						if (random_indices[q][λ].value < 0)
+							random_indices[q][λ] = new Quantity(0, dofs); // occasionally the spline will put them out of bounds, so just fix that
+						else if (random_indices[q][λ].value > coord.length - 1)
+							random_indices[q][λ] = new Quantity(coord.length - 1, dofs);
+						Quantity didu = sampler[q][λ].derivative(u);
+						Quantity dxdu = didu.times(coord[1] - coord[0]);
+						dV2 = dV2.times(dxdu); // adjust the correction to account for the sampling bias
 					}
 				}
 				Quantity iJ = random_indices[0][0];
@@ -431,11 +447,14 @@ public class VoxelFit {
 				Quantity jD = random_indices[1][1];
 				Quantity kD = random_indices[1][2];
 
-				Quantity n2σvτJ = NumericalMethods.interp3d(reactivity, iJ, jJ, kJ, true);
+//				if (l == 0 && r < 3)
+//					System.out.printf("%.4f, ", iJ.value);
+
+				Quantity n2σvτJ = new Quantity(1, dofs);//NumericalMethods.interp3d(reactivity, iJ, jJ, kJ, true);
 				if (n2σvτJ.value == 0)
 					continue; // because of the way the funccions are set up, if the value is 0, the gradient should be 0 too
 
-				Quantity ρD = NumericalMethods.interp3d(density, iD, jD, kD, true); // (g/cm^3)
+				Quantity ρD = new Quantity(1, dofs);//NumericalMethods.interp3d(density, iD, jD, kD, true); // (g/cm^3)
 				if (ρD.value == 0)
 					continue;
 
@@ -454,12 +473,12 @@ public class VoxelFit {
 				if (Δζ.value <= 0) // make sure the scatter is physickly possible
 					continue;
 
-				Quantity ρL = new Quantity(0, N);
+				Quantity ρL = new Quantity(0, dofs);
 				Quantity i_here = iD;
 				Quantity j_here = jD;
 				Quantity k_here = kD;
 				Quantity ρ_here = ρD;
-				while (ρ_here.value > 0) {
+				while (true) {
 					ρL = ρL.plus(ρ_here.times(dL));
 					i_here = i_here.plus(ζ_hat.get(0)*step);
 					j_here = j_here.plus(ζ_hat.get(1)*step);
@@ -467,7 +486,7 @@ public class VoxelFit {
 					try {
 						ρ_here = NumericalMethods.interp3d(density, i_here, j_here, k_here, true); // (g/cm^3)
 					} catch (IndexOutOfBoundsException e) {
-						ρ_here = new Quantity(0, N);
+						break;
 					}
 				}
 
@@ -506,6 +525,7 @@ public class VoxelFit {
 					}
 				}
 			}
+
 
 			for (int h = 0; h < image.length; h ++)
 				for (int i = 0; i < image[h].length; i ++)
