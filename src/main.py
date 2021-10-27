@@ -169,7 +169,6 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	plt.ylabel("y (μm)")
 	plt.axis([-PLOT_RADIUS, PLOT_RADIUS, -PLOT_RADIUS, PLOT_RADIUS])
 	plt.tight_layout()
-	logging.info(f"saving {OUTPUT_FOLDER}{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.png")
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.{filetype}")
 
@@ -222,7 +221,6 @@ def plot_overlaid_contors(reconstructions, projected_offset, projected_flow, dat
 	plt.ylabel("y (μm)")
 	plt.title("TIM {} on shot {}".format(data[TIM], data[SHOT]))
 	plt.tight_layout()
-	print(f"saving as {OUTPUT_FOLDER}{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction.png")
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction.{filetype}")
 
@@ -282,7 +280,6 @@ if __name__ == '__main__':
 
 				results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM])] # clear any previous versions of this reconstruccion
 				for result in reconstruction:
-					logging.info(f"a reconstruccion was completed: {result}")
 					results = results.append( # and save the new ones to the dataframe
 						dict(
 							shot=data[SHOT],
@@ -293,12 +290,7 @@ if __name__ == '__main__':
 						ignore_index=True)
 				results = results[results.shot != 'placeholder']
 
-			else:
-				logging.info('"completed" the reconstruccion ;)')
-
 			images_on_this_los = (results.shot == data[SHOT]) & (results.tim == data[TIM])
-			logging.info("in total we have:")
-			logging.info(results[images_on_this_los])
 			for i, result in results[images_on_this_los].iterrows(): # plot the reconstruccion in each energy cut
 				if result.energy_cut != 'xray':
 					cut = result.energy_cut
@@ -323,7 +315,6 @@ if __name__ == '__main__':
 					if results_in_this_cut.shape[0] >= 1:
 						filenames.append((f"{OUTPUT_FOLDER}{output_filename}-{cut_name}-reconstruction", CMAP[cut_name]))
 				if len(filenames) >= len(cut_set)*3/4:
-					print(f"creating the nested plot with the {cut_set} cut set")
 					reconstructions = []
 					for filename, cmap in filenames:
 						reconstructions.append([*load_hdf5(filename), cmap])
@@ -345,8 +336,6 @@ if __name__ == '__main__':
 					)
 
 					break
-				else:
-					print(f"we didn't have what I need for the {cut_set} cut set")
 
 			try:
 				xray = np.loadtxt(INPUT_FOLDER+'KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T

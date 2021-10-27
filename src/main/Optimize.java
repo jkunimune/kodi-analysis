@@ -25,6 +25,7 @@ package main;
 
 import java.util.Arrays;
 import java.util.function.Function;
+import java.util.logging.Logger;
 
 public class Optimize {
 
@@ -50,7 +51,8 @@ public class Optimize {
 		  double[] scale,
 		  double[] lower_bound,
 		  double[] upper_bound,
-		  double tolerance) {
+		  double tolerance,
+		  Logger logger) {
 		final double h = 1e-3;
 
 		Function<double[], double[][]> compute_jacobian = (double[] state) -> {
@@ -65,7 +67,7 @@ public class Optimize {
 			}
 			return jacobian;
 		};
-		return least_squares(compute_residuals, compute_jacobian, inicial_gess, lower_bound, upper_bound, tolerance);
+		return least_squares(compute_residuals, compute_jacobian, inicial_gess, lower_bound, upper_bound, tolerance, logger);
 	}
 
 	public static double[] least_squares(
@@ -74,14 +76,15 @@ public class Optimize {
 		  double[] inicial_gess,
 		  double[] lower_bound,
 		  double[] upper_bound,
-		  double tolerance) {
+		  double tolerance,
+		  Logger logger) {
 		for (double l : lower_bound)
 			if (l != 0)
 				throw new IllegalArgumentException("I haven't implemented nonzero lower bounds.");
 		for (double u : upper_bound)
 			if (!Double.isInfinite(u))
 				throw new IllegalArgumentException("I haven't implemented upper bounds.");
-		return least_squares(compute_residuals, compute_jacobian, inicial_gess, tolerance);
+		return least_squares(compute_residuals, compute_jacobian, inicial_gess, tolerance, logger);
 	}
 
 	/**
@@ -105,7 +108,7 @@ public class Optimize {
 		  Function<double[], double[]> compute_residuals,
 		  Function<double[], double[][]> compute_jacobian,
 		  double[] inicial_gess, boolean[] active,
-		  double tolerance) {
+		  double tolerance, Logger logger) {
 
 		double[][] inicial_jacobian = compute_jacobian.apply(inicial_gess); // to start off, you must look for any irrelevant residuals
 		boolean[] relevant = new boolean[inicial_jacobian.length];
@@ -140,7 +143,8 @@ public class Optimize {
 		double[] anser = least_squares(reduced_residuals,
 									   reduced_jacobian,
 									   reduced_inicial,
-									   tolerance);
+									   tolerance,
+									   logger);
 
 		return NumericalMethods.insert(active, inicial_gess, anser);
 	}
@@ -164,7 +168,8 @@ public class Optimize {
 		  Function<double[], double[]> compute_residuals,
 		  Function<double[], double[][]> compute_jacobian,
 		  double[] inicial_gess,
-		  double tolerance) {
+		  double tolerance,
+		  Logger logger) {
 
 		int iter = 0;
 		double[] state = Arrays.copyOf(inicial_gess, inicial_gess.length);
@@ -177,10 +182,32 @@ public class Optimize {
 		for (double d : residuals)
 			new_value += Math.pow(d, 2); // compute inicial chi^2
 //		System.out.println("state: "+Arrays.toString(state));
-		System.out.println(new_value);
+		if (logger != null) logger.info("inicial value: "+new_value);
 
 		while (true) {
 			double[][] jacobian = compute_jacobian.apply(state); // take the gradients
+
+//			double[] direction = new double[state.length];
+//			for (int i = 0; i < state.length; i ++) {
+//				direction[i] = 2*Math.random() - 1;
+//			}
+////			double slope = 0;
+//			for (int j = 0; j < state.length; j ++)
+//				for (int i = 0; i < residuals.length; i ++)
+//					slope += 2*residuals[i]*jacobian[i][j]*direction[j];
+//			System.out.println("[");
+//			for (double d = 0; d < 1; d += 0.01) {
+//				double[] probe_x = new double[direction.length];
+//				for (int i = 0; i < state.length; i ++)
+//					probe_x[i] = state[i] + d*direction[i];
+//				double[] probe_residuals = compute_residuals.apply(probe_x);
+//				double probe_value = 0;
+//				for (double r: probe_residuals)
+//					probe_value += r*r;
+//				System.out.printf("%f, %.8g],\n", d, probe_value);
+//			}
+//			System.out.println("]");
+//			System.out.println(slope);
 
 			if (is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance))
 				return state;
@@ -192,7 +219,7 @@ public class Optimize {
 			Matrix U = J0.trans().times(J0); // and do some linear algebra
 			Matrix v = J0.trans().times(d0);
 
-			System.out.println("Beginning line search.");
+			if (logger != null) logger.info("Beginning line search.");
 
 			while (true) {
 				Matrix H = U.copy(); // estimate Hessian
@@ -211,7 +238,7 @@ public class Optimize {
 				for (double d : residuals)
 					new_value += Math.pow(d, 2); // compute new chi^2
 //				System.out.println("state: "+Arrays.toString(new_state));
-				System.out.println(new_value);
+				if (logger != null) logger.info("updated value: "+new_value);
 
 				if (new_value <= last_value) { // terminate the line search if reasonable
 					state = new_state;
@@ -222,7 +249,7 @@ public class Optimize {
 					throw new RuntimeException("the line search did not converge");
 			}
 
-			System.out.println("Completed line search.");
+			if (logger != null) logger.info("Completed line search.");
 
 			λ *= 4e-4; // decrement the line search parameter
 
@@ -282,7 +309,8 @@ public class Optimize {
 //								   new double[] {1, 1, 1},
 								   new double[] {0, 0, 0},
 								   new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
-								   1e-7);
+								   1e-7,
+								   null);
 		System.out.println("y = "+c[0]+" exp("+c[1]+"x) + "+c[2]);
 	}
 

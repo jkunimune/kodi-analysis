@@ -484,6 +484,7 @@ public class NumericalMethods {
 		for (int i = 0; i < arr.length; i ++)
 			s[i+1] = s[i].plus(arr[i]);
 		if (normalize) {
+			if (s[arr.length].value == 0) throw new IllegalArgumentException("Divide by zero");
 			for (int i = 0; i <= arr.length; i ++)
 				s[i] = s[i].over(s[arr.length]);
 		}
@@ -817,9 +818,9 @@ public class NumericalMethods {
 			ck0 = smooth_step(k.minus(k0).minus(1).abs());
 		}
 		else {
-			ci0 = i.minus(i0).minus(1);
-			cj0 = j.minus(j0).minus(1);
-			ck0 = k.minus(k0).minus(1);
+			ci0 = i.minus(i0).minus(1).abs();
+			cj0 = j.minus(j0).minus(1).abs();
+			ck0 = k.minus(k0).minus(1).abs();
 		}
 		Quantity value = new Quantity(0, i.getDofs());
 		for (int di = 0; di <= 1; di ++)
@@ -1687,6 +1688,24 @@ public class NumericalMethods {
 
 	
 	public static void main(String[] args) {
+		int n = 6;
+		Quantity[][][] test = new Quantity[n][n][n];
+		for (int i = 0; i < n; i ++)
+			for (int j = 0; j < n; j ++)
+				for (int k = 0; k < n; k ++)
+					test[i][j][k] = new Quantity(Math.random(), 0);
+		double i = 2.5;
+		double j = 2.5;
+		double k = 2.5;
+		double theta = Math.acos(2*Math.random()-1);
+		double phi = 2*Math.PI*Math.random();
+		double[] d = {Math.sin(theta)*Math.cos(phi), Math.sin(theta)*Math.sin(phi), Math.cos(theta)};
+		for (int t = 0; t < 100; t ++) {
+			i += d[0]*.025;
+			j += d[1]*.025;
+			k += d[2]*.025;
+			System.out.printf("%.4f,\n", interp3d(test, i, j, k, false).value);
+		}
 //		double[][] cov = {{1, 0}, {0, 1}};
 //		Quantity x = new Quantity(5, new double[] {1, 0});
 //		Quantity y = new Quantity(12, new double[] {0, 1});
@@ -1697,13 +1716,5 @@ public class NumericalMethods {
 //		System.out.println(x.times(y).toString(cov));
 //		System.out.println(x.over(y).toString(cov));
 //		System.out.println(x.mod(4).toString(cov));
-
-		double[][] test = {
-			  {0, 1, 3, 4},
-			  {2, 5, 6, 7},
-			  {8, 9, 4, 2},
-			  {9, 3, 1, 7},
-		};
-		System.out.println(Arrays.deepToString(where(new boolean[] {true, false, true, true}, new boolean[] {false, true, true, false}, test)));
 	}
 }

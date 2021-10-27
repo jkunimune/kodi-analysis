@@ -23,8 +23,6 @@
  */
 package main;
 
-import java.util.Arrays;
-
 public class VectorQuantity {
 	private final Quantity[] values;
 

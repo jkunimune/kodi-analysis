@@ -58,6 +58,8 @@ public class VoxelFit {
 		ρL_range = dЭdρL.antiderivative().inv().indexed(50);
 	}
 
+	private static final Logger logger = Logger.getLogger("root");
+
 	private static Quantity range(Quantity Э, Quantity ρL) {
 		Quantity ρL_max = ρL_range.evaluate(Э);
 		return Э_in.evaluate(ρL.minus(ρL_max).times(-1));
@@ -583,7 +585,7 @@ public class VoxelFit {
 		Quantity inicial_yield = NumericalMethods.sum(inicial_images);
 		inicial_state[0] *= total_yield/inicial_yield.value; // adjust magnitude to match the observed yield
 
-		System.out.println(Arrays.toString(inicial_state));
+		logger.info(Arrays.toString(inicial_state));
 
 //		double[] lower = new double[inicial_state.length];
 //		double[] upper = new double[inicial_state.length];
@@ -605,7 +607,7 @@ public class VoxelFit {
 			  inicial_state,
 //			  lower, upper,
 			  hot_spot,
-			  1e-5);
+			  1e-5, logger);
 //		optimal_state = Optimize.least_squares( // then optimize the cold fuel
 //			  residuals,
 //			  gradients,
@@ -616,9 +618,9 @@ public class VoxelFit {
 			  residuals,
 			  gradients,
 			  optimal_state,
-			  1e-5);
+			  1e-5, logger);
 
-		System.out.println(Arrays.toString(optimal_state));
+		logger.info(Arrays.toString(optimal_state));
 
 		Quantity[][][][] output_q = interpret_state(optimal_state, x, y, z, false);
 		double[][][][] output = new double[2][x.length][y.length][z.length];
@@ -631,11 +633,36 @@ public class VoxelFit {
 		return output;
 	}
 
+	private static Formatter newFormatter(String format) {
+		return new SimpleFormatter() {
+			public String format(LogRecord record) {
+				return String.format(format,
+									 record.getMillis(),
+									 record.getLevel(),
+									 record.getMessage(),
+									 (record.getThrown() != null) ? record.getThrown() : "");
+			}
+		};
+	}
+
 	public static void main(String[] args) throws IOException {
-//		for (int i = 0; i <= 36; i ++) {
+		logger.getHandlers()[0].setFormatter(
+			  newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
+		try {
+			FileHandler handler = new FileHandler("results/3d.log");
+			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
+			logger.addHandler(new FileHandler("results/3d.log"));
+		} catch (IOException e) {
+			e.printStackTrace();
+			System.exit(1);
+		}
+
+		//		for (int i = 0; i <= 36; i ++) {
 //			Quantity q = new Quantity(i/36., 0, 1);
 //			System.out.println(smooth_step(q));
 //		}
+
+		logger.info("starting...");
 
 		double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
 		Vector[] lines_of_site = new Vector[basis.length];
