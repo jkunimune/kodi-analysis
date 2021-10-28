@@ -450,11 +450,11 @@ public class VoxelFit {
 //				if (l == 0 && r < 3)
 //					System.out.printf("%.4f, ", iJ.value);
 
-				Quantity n2σvτJ = new Quantity(1, dofs);//NumericalMethods.interp3d(reactivity, iJ, jJ, kJ, true);
+				Quantity n2σvτJ = NumericalMethods.interp3d(reactivity, iJ, jJ, kJ, true);
 				if (n2σvτJ.value == 0)
 					continue; // because of the way the funccions are set up, if the value is 0, the gradient should be 0 too
 
-				Quantity ρD = new Quantity(1, dofs);//NumericalMethods.interp3d(density, iD, jD, kD, true); // (g/cm^3)
+				Quantity ρD = NumericalMethods.interp3d(density, iD, jD, kD, true); // (g/cm^3)
 				if (ρD.value == 0)
 					continue;
 
