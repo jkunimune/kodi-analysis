@@ -666,12 +666,11 @@ public class VoxelFit {
 	}
 
 	public static void main(String[] args) throws IOException {
-		logger.getHandlers()[0].setFormatter(
-			  newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
+		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
 		try {
 			FileHandler handler = new FileHandler("results/3d.log");
 			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
-			logger.addHandler(new FileHandler("results/3d.log"));
+			logger.addHandler(handler);
 		} catch (IOException e) {
 			e.printStackTrace();
 			System.exit(1);
