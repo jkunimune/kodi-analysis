@@ -24,7 +24,7 @@ public class VoxelFit {
 	public static final double SHELL_THICKNESS_GESS = 50;
 
 	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
-//	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
+	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
 	public static final Vector UNIT_K = new DenseVector(0, 0, 1);
 
 	private static final double m_DT = 3.34e-24 + 5.01e-24; // (g)
@@ -65,8 +65,8 @@ public class VoxelFit {
 
 	private static final Logger logger = Logger.getLogger("root");
 
-	private static Quantity range(Quantity Э, Quantity ρL) {
-		Quantity ρL_max = ρL_range.evaluate(Э);
+	private static Quantity range(double Э, Quantity ρL) {
+		double ρL_max = ρL_range.evaluate(Э);
 		return Э_in.evaluate(ρL.minus(ρL_max).times(-1));
 	}
 
@@ -115,6 +115,17 @@ public class VoxelFit {
 	}
 
 
+	/**
+	 * take a state vector, break it up into the actual quantities they represent,
+	 * and generate the morphology for them
+	 * @param state the state vector
+	 * @param x the x bins to use
+	 * @param y the y bins to use
+	 * @param z the z bins to use
+	 * @param calculate_derivatives whether to calculate the jacobian of the
+	 *                              morphology or just the values
+	 * @return the morphology corresponding to this state vector
+	 */
 	private static Quantity[][][][] interpret_state(
 		  double[] state, double[] x, double[] y, double[] z,
 		  boolean calculate_derivatives) {
@@ -196,6 +207,7 @@ public class VoxelFit {
 						Quantity z_rel = coefs[n][1][2].plus(z[k]);
 						Quantity[][] harmonics = spherical_harmonics(
 							  x_rel, y_rel, z_rel, core_radius.length); // compute the spherical harmonicks
+						Quantity r = x_rel.pow(2).plus(y_rel.pow(2)).plus(z_rel.pow(2)).sqrt();
 						Quantity r_thresh = new Quantity(0, N);
 						for (int l = 0; l < harmonics.length; l ++) // sum up the basis funccions
 							if (l != 1) // but skip P1
@@ -206,7 +218,6 @@ public class VoxelFit {
 							r_thresh = r_thresh.over(r_start).minus(1.1).over(0.1).exp().times(0.1).plus(1).times(r_start);
 //							System.out.printf("%.3f\n", r_thresh.value);
 						}
-						Quantity r = x_rel.pow(2).plus(y_rel.pow(2)).plus(z_rel.pow(2)).sqrt();
 						if (r.value < r_thresh.value) {
 							ρ = r.minus(r_start).over(r_thresh.minus(r_start)).plus(n); // normalize radius to [0, 1) or [1, 2)
 							break;
@@ -231,10 +242,15 @@ public class VoxelFit {
 						density[i][j][k] = new Quantity(0, N);
 					}
 				}
+				System.out.print("],\n");
 			}
+			System.out.print("],\n");
 		}
+		System.out.println("])");
+		System.out.println(Arrays.toString(coefs[0][1]));
+		System.out.println(Arrays.toString(coefs[0][2]));
 
-//		int bestI = 0, bestJ = 0, bestK = 0;
+		//		int bestI = 0, bestJ = 0, bestK = 0;
 //		for (int i = 0; i < x.length; i ++)
 //			for (int j = 0; j < y.length)
 
@@ -317,8 +333,8 @@ public class VoxelFit {
 		final int dofs = reactivity[0][0][0].getDofs();
 
 		double L_pixel = (x[1] - x[0])/1e4; // (cm)
-		double dL = Math.max(L_pixel, 1e-4); // (cm)
-		double step = dL/L_pixel;
+		double V_voxel = Math.pow(L_pixel, 3);
+		double dV2 = V_voxel*V_voxel/8;
 
 //		Quantity yield = new Quantity(0, N); // do some tallying
 //		Quantity mass = new Quantity(0, N);
@@ -341,12 +357,6 @@ public class VoxelFit {
 		double[] Э_centers = new double[Э.length-1];
 		for (int h = 0; h < Э_centers.length; h ++)
 			Э_centers[h] = (Э[h] + Э[h+1])/2.;
-		double[] ξ_centers = new double[υ.length-1];
-		for (int j = 0; j < ξ_centers.length; j ++)
-			ξ_centers[j] = (ξ[j] + ξ[j+1])/2.;
-		double[] υ_centers = new double[υ.length-1];
-		for (int j = 0; j < υ_centers.length; j ++)
-			υ_centers[j] = (υ[j] + υ[j+1])/2.;
 
 //		System.out.print("[");
 		Quantity[][][][] images = new Quantity[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1];
@@ -359,167 +369,101 @@ public class VoxelFit {
 				ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
 			Vector υ_hat = ζ_hat.cross(ξ_hat);
 
-//			Quantity[][][] ρL_mat = new Quantity[x.length - 1][y.length - 1][z.length - 1];
-//			for (int iD = ρL_mat.length - 1; iD >= 0; iD --) { // this part is kind of inefficient, but it is not the slowest step // TODO: does it still make sense to have this here?
-//				for (int jD = ρL_mat[iD].length - 1; jD >= 0; jD --) {
-//					for (int kD = ρL_mat[iD][jD].length - 1; kD >= 0; kD --) {
-//						int iR = iD, jR = jD, kR = kD;
-//
-//						if (ζ_hat.equals(UNIT_I))
-//							iR = iD + 1;
-//						else if (ζ_hat.equals(UNIT_J))
-//							jR = jD + 1;
-//						else if (ζ_hat.equals(UNIT_K))
-//							kR = kD + 1;
-//						else
-//							throw new IllegalArgumentException("I haven't implemented actual path integracion yet");
-//
-//						if (iR >= ρL_mat.length || jR >= ρL_mat[iR].length || kR >= ρL_mat[iR][jR].length)
-//							ρL_mat[iD][jD][kD] = new Quantity(0, N);
-//						else
-//							ρL_mat[iD][jD][kD] = ρL_mat[iR][jR][kR].plus(material_per_layer[iR][jR][kR]); // (mg/cm^2)
-//					}
-//				}
-//			}
+			Quantity[][][] ρL_mat = new Quantity[x.length - 1][y.length - 1][z.length - 1];
+			for (int iD = ρL_mat.length - 1; iD >= 0; iD --) { // this part is kind of inefficient, but it is not the slowest step // TODO: does it still make sense to have this here?
+				for (int jD = ρL_mat[iD].length - 1; jD >= 0; jD --) {
+					for (int kD = ρL_mat[iD][jD].length - 1; kD >= 0; kD --) {
+						int iR = iD, jR = jD, kR = kD;
+
+						if (ζ_hat.equals(UNIT_I))
+							iR = iD + 1;
+						else if (ζ_hat.equals(UNIT_J))
+							jR = jD + 1;
+						else if (ζ_hat.equals(UNIT_K))
+							kR = kD + 1;
+						else
+							throw new IllegalArgumentException("I haven't implemented actual path integracion yet");
+
+						if (iR >= ρL_mat.length || jR >= ρL_mat[iR].length || kR >= ρL_mat[iR][jR].length)
+							ρL_mat[iD][jD][kD] = new Quantity(0, dofs);
+						else
+							ρL_mat[iD][jD][kD] = ρL_mat[iR][jR][kR].plus(density[iR][jR][kR].times(L_pixel)); // (mg/cm^2)
+					}
+				}
+			}
 
 			double[][][] image = new double[Э.length-1][ξ.length-1][υ.length-1];
 			double[][][][] gradients = new double[Э.length-1][ξ.length-1][υ.length-1][dofs];
 
-			Quantity[][][][] sampling_things = {reactivity, density}; // do some summing to prepare for the random sampling
-			Quantity[][][] cdf = new Quantity[sampling_things.length][3][];
-			for (int q = 0; q < 2; q ++) {
-				Quantity[] pdf_x = quantity_array(x.length - 1, dofs);
-				Quantity[] pdf_y = quantity_array(y.length - 1, dofs);
-				Quantity[] pdf_z = quantity_array(z.length - 1, dofs);
-				for (int i = 0; i < x.length - 1; i ++) {
-					for (int j = 0; j < y.length - 1; j ++) {
-						for (int k = 0; k < z.length - 1; k ++) {
-							Quantity sample = NumericalMethods.interp3d(sampling_things[q], i+.5, j+0.5, k+0.5, false);
-							pdf_x[i] = pdf_x[i].plus(sample);
-							pdf_y[j] = pdf_y[j].plus(sample);
-							pdf_z[k] = pdf_z[k].plus(sample);
-						}
-					}
-				}
-				cdf[q][0] = NumericalMethods.cumsum(pdf_x, true);
-				cdf[q][1] = NumericalMethods.cumsum(pdf_y, true);
-				cdf[q][2] = NumericalMethods.cumsum(pdf_z, true);
-			}
-			SplineFunction[][] sampler = new SplineFunction[sampling_things.length][3];
-			for (int q = 0; q < sampler.length; q ++) {
-				for (int λ = 0; λ < sampler[q].length; λ ++) {
-					double[] index = new double[cdf[q][λ].length];
-					for (int i = 0; i < index.length; i ++)
-						index[i] = i;
-					sampler[q][λ] = new SplineFunction(cdf[q][λ], index);
-				}
-			}
+			for (int iJ = 0; iJ < x.length - 1; iJ ++) { // integrate brute-force
+				for (int jJ = 0; jJ < y.length - 1; jJ ++) {
+					for (int kJ = 0; kJ < z.length - 1; kJ ++) {
 
-			Random rng = new Random(0);
-			for (int r = 0; r < NUM_PARTICLES; r ++) { // integrate all Monte-Carlo-like
+						Quantity n2σvτJ = NumericalMethods.interp3d(reactivity, iJ, jJ, kJ, true);
+						if (n2σvτJ.value == 0)
+							continue; // because of the way the funccions are set up, if the value is 0, the gradient should be 0 too
 
-//				Quantity factor = yield.over(number).over(NUM_PARTICLES); // the correccion factor due to the fact that this isn’t a real integral
-				Quantity dV2 = new Quantity(1./NUM_PARTICLES, dofs); // the effective differential 6D-volume being sampled (cm^3)
+						for (double iD = 0.25; iD < x.length - 1; iD += 0.5) {
+							for (double jD = 0.25; jD < y.length - 1; jD += 0.5) {
+								for (double kD = 0.25; kD < z.length - 1; kD += 0.5) {
 
-				Quantity[][] random_indices = new Quantity[2][3]; // generate the random KOD
-				for (int q = 0; q < random_indices.length; q ++) {
-					for (int λ = 0; λ < random_indices[q].length; λ ++) {
-						double[] coord;
-						if (λ == 0) coord = x;
-						else if (λ == 1) coord = y;
-						else if (λ == 2) coord = z;
-						else throw new IllegalArgumentException("waaaaaa "+λ);
-						double u = rng.nextDouble();
-						random_indices[q][λ] = sampler[q][λ].evaluate(u); // sample according to these cumulative sums you did
-						if (random_indices[q][λ].value < 0)
-							random_indices[q][λ] = new Quantity(0, dofs); // occasionally the spline will put them out of bounds, so just fix that
-						else if (random_indices[q][λ].value > coord.length - 1)
-							random_indices[q][λ] = new Quantity(coord.length - 1, dofs);
-						Quantity didu = sampler[q][λ].derivative(u);
-						Quantity dxdu = didu.times(coord[1] - coord[0]);
-						dV2 = dV2.times(dxdu); // adjust the correction to account for the sampling bias
-					}
-				}
-				Quantity iJ = random_indices[0][0];
-				Quantity jJ = random_indices[0][1];
-				Quantity kJ = random_indices[0][2];
-				Quantity iD = random_indices[1][0];
-				Quantity jD = random_indices[1][1];
-				Quantity kD = random_indices[1][2];
+									Quantity ρD = NumericalMethods.interp3d(density, iD, jD, kD, true); // (g/cm^3)
+									if (ρD.value == 0)
+										continue;
 
-//				if (l == 0 && r < 3)
-//					System.out.printf("%.4f, ", iJ.value);
+									Quantity nD = ρD.over(m_DT); // (cm^-3)
 
-				Quantity n2σvτJ = NumericalMethods.interp3d(reactivity, iJ, jJ, kJ, true);
-				if (n2σvτJ.value == 0)
-					continue; // because of the way the funccions are set up, if the value is 0, the gradient should be 0 too
+									Vector rJ = new DenseVector(
+										  x[iJ],
+										  y[jJ],
+										  z[kJ]);
+									Vector rD = new DenseVector(
+										  NumericalMethods.interp(x, iD),
+										  NumericalMethods.interp(y, jD),
+										  NumericalMethods.interp(z, kD));
 
-				Quantity ρD = NumericalMethods.interp3d(density, iD, jD, kD, true); // (g/cm^3)
-				if (ρD.value == 0)
-					continue;
+									double Δζ = rD.minus(rJ).dot(ζ_hat);
+									if (Δζ <= 0) // make sure the scatter is physickly possible
+										continue;
 
-				Quantity nD = ρD.over(m_DT); // (cm^-3)
+									Quantity ρL = density[(int)iD][(int)jD][(int)kD].times(L_pixel); // compute the ρL using the prepared matrix
+									if (ζ_hat.equals(UNIT_I))
+										ρL = ρL.times(1 - iD%1);
+									else if (ζ_hat.equals(UNIT_J))
+										ρL = ρL.times(1 - jD%1);
+									else if (ζ_hat.equals(UNIT_K))
+										ρL = ρL.times(1 - kD%1);
+									else
+										throw new Error("I assume this has been caut before now");
+									ρL = ρL.plus(ρL_mat[(int)iD][(int)jD][(int)kD]);
 
-				VectorQuantity rJ = new VectorQuantity(
-					  NumericalMethods.interp(x, iJ),
-					  NumericalMethods.interp(y, jJ),
-					  NumericalMethods.interp(z, kJ));
-				VectorQuantity rD = new VectorQuantity(
-					  NumericalMethods.interp(x, iD),
-					  NumericalMethods.interp(y, jD),
-					  NumericalMethods.interp(z, kD));
+									double Δr2 = (rD.minus(rJ)).sqr();
+									double cosθ2 = Math.pow(Δζ, 2)/Δr2;
+									double ЭD = Э_KOD*cosθ2;
+									Quantity ЭV = range(ЭD, ρL);
 
-				Quantity Δζ = rD.minus(rJ).dot(ζ_hat);
-				if (Δζ.value <= 0) // make sure the scatter is physickly possible
-					continue;
+									double ξV = rD.dot(ξ_hat);
+									double υV = rD.dot(υ_hat);
 
-				Quantity ρL = new Quantity(0, dofs);
-				Quantity i_here = iD;
-				Quantity j_here = jD;
-				Quantity k_here = kD;
-				Quantity ρ_here = ρD;
-				while (true) {
-					ρL = ρL.plus(ρ_here.times(dL));
-					i_here = i_here.plus(ζ_hat.get(0)*step);
-					j_here = j_here.plus(ζ_hat.get(1)*step);
-					k_here = k_here.plus(ζ_hat.get(2)*step);
-					try {
-						ρ_here = NumericalMethods.interp3d(density, i_here, j_here, k_here, true); // (g/cm^3)
-					} catch (IndexOutOfBoundsException e) {
-						break;
-					}
-				}
+									double σ = σ_nD.evaluate(ЭD);
+									Quantity fluence =
+										  n2σvτJ.times(nD).times(σ/(4*Math.PI*Δr2)*dV2); // (H2/srad/bin^2)
 
-				Quantity Δr2 = (rD.minus(rJ)).sqr();
-				Quantity cosθ2 = Δζ.pow(2).over(Δr2);
-				Quantity ЭD = cosθ2.times(Э_KOD);
-				Quantity ЭV = range(ЭD, ρL);
+									Quantity parcial_hV = ЭV.minus(Э_centers[0]).over(Э[1] - Э[0]);
+									int iV = NumericalMethods.bin(ξV, ξ);
+									int jV = NumericalMethods.bin(υV, υ);
 
-				Quantity ξV = rD.dot(ξ_hat);
-				Quantity υV = rD.dot(υ_hat);
-
-				Quantity σ = σ_nD.evaluate(ЭD);
-				Quantity fluence =
-					  n2σvτJ.times(nD).times(σ.over(Δr2.times(4*Math.PI))).times(dV2); // (H2/srad/bin^2)
-
-				Quantity parcial_hV = ЭV.minus(Э_centers[0]).over(Э[1] - Э[0]);
-				Quantity parcial_iV = ξV.minus(ξ_centers[0]).over(ξ[1] - ξ[0]);
-				Quantity parcial_jV = υV.minus(υ_centers[0]).over(υ[1] - υ[0]);
-
-				for (int dh = 0; dh <= 1; dh ++) { // finally, iterate over the two energy bins
-					int hV = (int)Math.floor(parcial_hV.value) + dh; // the bin index
-					Quantity ch = parcial_hV.minus(hV).abs().times(-1).plus(1); // the bin weit
-					for (int di = 0; di <= 1; di ++) {
-						int iV = (int)Math.floor(parcial_iV.value) + di;
-						Quantity ci = parcial_iV.minus(iV).abs().times(-1).plus(1);
-						for (int dj = 0; dj <= 1; dj ++) {
-							int jV = (int)Math.floor(parcial_jV.value) + dj;
-							Quantity cj = parcial_jV.minus(jV).abs().times(-1).plus(1);
-							if (hV >= 0 && hV < image.length && iV >= 0 && iV < ξ.length-1 && jV >= 0 && jV < υ.length-1) {
-								Quantity contribution = fluence.times(ch).times(ci).times(cj); // the amount of fluence going to that bin
-								image[hV][iV][jV] += contribution.value;
-								for (int k: contribution.gradient.nonzero())
-									gradients[hV][iV][jV][k] += contribution.gradient.get(k);
+									for (int dh = 0; dh <= 1; dh++) { // finally, iterate over the two energy bins
+										int hV = (int) Math.floor(parcial_hV.value) + dh; // the bin index
+										Quantity ch = parcial_hV.minus(hV).abs().times(-1).plus(1); // the bin weit
+										if (hV >= 0 && hV < image.length) {
+											Quantity contribution = fluence.times(ch); // the amount of fluence going to that bin
+											image[hV][iV][jV] += contribution.value;
+											for (int k: contribution.gradient.nonzero())
+												gradients[hV][iV][jV][k] += contribution.gradient.get(k);
+										}
+									}
+								}
 							}
 						}
 					}
@@ -644,12 +588,11 @@ public class VoxelFit {
 
 		Quantity[][][][] output_q = interpret_state(optimal_state, x, y, z, false);
 		double[][][][] output = new double[2][x.length][y.length][z.length];
-		for (int q = 0; q < 2; q ++) {
+		for (int q = 0; q < 2; q ++)
 			for (int i = 0; i < x.length; i ++)
 				for (int j = 0; j < y.length; j ++)
 					for (int k = 0; k < z.length; k ++)
 						output[q][i][j][k] = output_q[q][i][j][k].value;
-		}
 		return output;
 	}
 
@@ -666,55 +609,80 @@ public class VoxelFit {
 	}
 
 	public static void main(String[] args) throws IOException {
-		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
-		try {
-			FileHandler handler = new FileHandler("results/3d.log");
-			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
-			logger.addHandler(handler);
-		} catch (IOException e) {
-			e.printStackTrace();
-			System.exit(1);
-		}
+				double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
+				Vector[] lines_of_site = new Vector[basis.length];
+				for (int i = 0; i < basis.length; i ++)
+					lines_of_site[i] = new DenseVector(basis[i]);
 
-		//		for (int i = 0; i <= 36; i ++) {
-//			Quantity q = new Quantity(i/36., 0, 1);
-//			System.out.println(smooth_step(q));
-//		}
-
-		logger.info("starting...");
-
-		double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
-		Vector[] lines_of_site = new Vector[basis.length];
-		for (int i = 0; i < basis.length; i ++)
-			lines_of_site[i] = new DenseVector(basis[i]);
-
-		double[] x = CSV.readColumn(new File("tmp/x.csv"));
-		double[] y = CSV.readColumn(new File("tmp/y.csv"));
-		double[] z = CSV.readColumn(new File("tmp/z.csv"));
-		double[] Э = CSV.readColumn(new File("tmp/energy.csv"));
-		double[] ξ = CSV.readColumn(new File("tmp/xye.csv"));
-		double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv"));
-
-		double[] anser_as_colum = CSV.readColumn(new File("tmp/morphology.csv")); // should be in #/cm^3 and g/cm^3
+				double[] x = CSV.readColumn(new File("tmp/x.csv"));
+				double[] y = CSV.readColumn(new File("tmp/y.csv"));
+				double[] z = CSV.readColumn(new File("tmp/z.csv"));
+				double[] Э = CSV.readColumn(new File("tmp/energy.csv"));
+				double[] ξ = CSV.readColumn(new File("tmp/xye.csv"));
+				double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv"));
+		Quantity[][][][] anser_q = interpret_state(new double[] {
+			  5.278589975843547E14, 12.007314757429222, 7.084372892630458, 35.59686315358958, -21.783175014103705, -3.201225106079366, 7.255062086671728, 2.1245921165603256, 0.5265707825343426, 1.8053891742789945, 3.6661307431913057, -0.1511108255370655, 71.08569093970966, 23.59532861543232, 0.6359240549135924, -7.518837090047964, -4.936516305352159, -0.32159953489910176, 22.121439294933506, -10.935585085260287, 3.590143654373427
+		}, x, y, z, false);
 		double[][][][] anser = new double[2][x.length][y.length][z.length];
 		for (int q = 0; q < 2; q ++)
 			for (int i = 0; i < x.length; i ++)
 				for (int j = 0; j < y.length; j ++)
-					System.arraycopy(
-						  anser_as_colum, ((q*x.length + i)*y.length + j)*z.length,
-						  anser[q][i][j], 0, z.length);
-
+					for (int k = 0; k < z.length; k ++)
+						anser[q][i][j][k] = anser_q[q][i][j][k].value;
 		double[][][][] images = synthesize_images(
-			  anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site);
-
-		CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
-
-		anser = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_site);
-
-		images = synthesize_images(
 			  anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site);
 
 		CSV.writeColumn(unravel(anser), new File("tmp/morphology-recon.csv"));
 		CSV.writeColumn(unravel(images), new File("tmp/images-recon.csv"));
+//		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
+//		try {
+//			FileHandler handler = new FileHandler("results/3d.log");
+//			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
+//			logger.addHandler(handler);
+//		} catch (IOException e) {
+//			e.printStackTrace();
+//			System.exit(1);
+//		}
+//
+//		//		for (int i = 0; i <= 36; i ++) {
+////			Quantity q = new Quantity(i/36., 0, 1);
+////			System.out.println(smooth_step(q));
+////		}
+//
+//		logger.info("starting...");
+//
+//		double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
+//		Vector[] lines_of_site = new Vector[basis.length];
+//		for (int i = 0; i < basis.length; i ++)
+//			lines_of_site[i] = new DenseVector(basis[i]);
+//
+//		double[] x = CSV.readColumn(new File("tmp/x.csv"));
+//		double[] y = CSV.readColumn(new File("tmp/y.csv"));
+//		double[] z = CSV.readColumn(new File("tmp/z.csv"));
+//		double[] Э = CSV.readColumn(new File("tmp/energy.csv"));
+//		double[] ξ = CSV.readColumn(new File("tmp/xye.csv"));
+//		double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv"));
+//
+//		double[] anser_as_colum = CSV.readColumn(new File("tmp/morphology.csv")); // should be in #/cm^3 and g/cm^3
+//		double[][][][] anser = new double[2][x.length][y.length][z.length];
+//		for (int q = 0; q < 2; q ++)
+//			for (int i = 0; i < x.length; i ++)
+//				for (int j = 0; j < y.length; j ++)
+//					System.arraycopy(
+//						  anser_as_colum, ((q*x.length + i)*y.length + j)*z.length,
+//						  anser[q][i][j], 0, z.length);
+//
+//		double[][][][] images = synthesize_images(
+//			  anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site);
+//
+//		CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
+//
+//		anser = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_site);
+//
+//		images = synthesize_images(
+//			  anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site);
+//
+//		CSV.writeColumn(unravel(anser), new File("tmp/morphology-recon.csv"));
+//		CSV.writeColumn(unravel(images), new File("tmp/images-recon.csv"));
 	}
 }
