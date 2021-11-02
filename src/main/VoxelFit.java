@@ -5,7 +5,6 @@ import main.NumericalMethods.DiscreteFunction;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Random;
 import java.util.function.Function;
 import java.util.logging.FileHandler;
 import java.util.logging.Formatter;
@@ -15,13 +14,13 @@ import java.util.logging.SimpleFormatter;
 
 public class VoxelFit {
 
-	public static final int NUM_PARTICLES = 500000;
 	public static final int MAX_MODE = 2;
 	public static final int DEGREES_OF_FREE = (MAX_MODE + 1)*(MAX_MODE + 1);
 	public static final double CORE_DENSITY_GESS = 2; // g/cm^3
 	public static final double SHELL_DENSITY_GESS = 10; // g/cm^3
 	public static final double CORE_RADIUS_GESS = 40;
 	public static final double SHELL_THICKNESS_GESS = 50;
+	public static final double SMALL_DISTANCE = 10; // μm
 
 	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
 	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
@@ -186,69 +185,71 @@ public class VoxelFit {
 			throw new IllegalArgumentException("nan");
 		if (core_radius.length != shell_thickness.length)
 			throw new IllegalArgumentException("I haven't accounted for differing resolucions because I don't want to do so.");
-		int dof = core_radius.length;
-		int N = 3 + 2*dof*dof;
+		int orders = core_radius.length;
+		int dofs = 3 + 2*orders*orders;
 
 		Quantity[][][] reactivity = new Quantity[x.length][y.length][z.length];
 		Quantity[][][] density = new Quantity[x.length][y.length][z.length];
-		Quantity[][][] coefs = {core_radius, shell_thickness}; // put together coefficient arrays for the two radii
-		for (int l = 0; l < coefs[0].length; l ++)
-			for (int m = -l; m <= l; m ++)
-				coefs[1][l][l+m] = core_radius[l][l+m].plus(shell_thickness[l][l+m]); // be warnd that this is not a clean copy, but we don't need shell_thickness after this, so it should be fine
+
+		Quantity[][][] coefs = new Quantity[3][][]; // put together coefficient arrays for the critical surfaces
+		coefs[0] = new Quantity[][] {{new Quantity(0, dofs)}, core_radius[1]}; // the zeroth surface is the center of the hot spot
+		coefs[1] = new Quantity[orders][]; // the oneth surface is the hot spot edge
+		for (int l = 0; l < coefs[1].length; l ++)
+			coefs[1][l] = Arrays.copyOf(core_radius[l], core_radius[l].length);
+		coefs[2] = new Quantity[orders][]; // and the twoth surface is the shell edge
+		for (int l = 0; l < coefs[2].length; l ++) {
+			coefs[2][l] = new Quantity[2*l + 1];
+			for (int m = -l; m <= l; m++)
+				coefs[2][l][l + m] = core_radius[l][l + m].plus(shell_thickness[l][l + m]); // be warnd that this is not a clean copy, but we don't need shell_thickness after this, so it should be fine
+		}
 
 		for (int i = 0; i < x.length; i ++) {
 			for (int j = 0; j < y.length; j ++) {
 				for (int k = 0; k < z.length; k ++) {
-					Quantity ρ = new Quantity(Double.POSITIVE_INFINITY, N); // compute the normalized radius
-					Quantity r_start = new Quantity(0, N);
+					Quantity p = new Quantity(Double.POSITIVE_INFINITY, dofs); // find the normalized radial posicion
+					Quantity[] ρ = new Quantity[coefs.length]; // the calculation uses three reference surfaces
 					for (int n = 0; n < coefs.length; n ++) { // iterate thru the various radial posicions to get a normalized radius
-						Quantity x_rel = coefs[n][1][0].plus(x[i]);
+						Quantity x_rel = coefs[n][1][0].plus(x[i]); // turn the p1 coefficients into an origin
 						Quantity y_rel = coefs[n][1][1].plus(y[j]);
 						Quantity z_rel = coefs[n][1][2].plus(z[k]);
 						Quantity[][] harmonics = spherical_harmonics(
-							  x_rel, y_rel, z_rel, core_radius.length); // compute the spherical harmonicks
-						Quantity r = x_rel.pow(2).plus(y_rel.pow(2)).plus(z_rel.pow(2)).sqrt();
-						Quantity r_thresh = new Quantity(0, N);
-						for (int l = 0; l < harmonics.length; l ++) // sum up the basis funccions
-							if (l != 1) // but skip P1
-								for (int m = -l; m <= l; m ++)
-									r_thresh = r_thresh.plus(coefs[n][l][l + m].times(harmonics[l][l + m]));
-						if (r_start.value > 0 && r_thresh.value/r_start.value < 1.1) { // force each shell to be bigger than the next
-//							System.out.printf("to make it bigger than %.3f, I'm expanding %.3f to ", r_start.value, r_thresh.value);
-							r_thresh = r_thresh.over(r_start).minus(1.1).over(0.1).exp().times(0.1).plus(1).times(r_start);
-//							System.out.printf("%.3f\n", r_thresh.value);
+							  x_rel, y_rel, z_rel, coefs[n].length); // compute the spherical harmonicks
+						ρ[n] = x_rel.pow(2).plus(y_rel.pow(2)).plus(z_rel.pow(2)).sqrt();
+						for (int l = 0; l < harmonics.length; l++) // sum up the basis funccions
+							if (l != 1) // skipping P1
+								for (int m = -l; m <= l; m++)
+									ρ[n] = ρ[n].minus(coefs[n][l][l + m].times(harmonics[l][l + m]));
+						if (n > 0 && ρ[n].value > ρ[n - 1].value - 10) { // force each shell to be bigger than the next
+							System.out.printf("to make it less than %.3f, I'm expanding %.3f to ", ρ[n - 1].value, ρ[n].value);
+							ρ[n] = ρ[n].minus(ρ[n - 1]).over(SMALL_DISTANCE).log().plus(1).times(SMALL_DISTANCE).plus(ρ[n - 1]);
+							System.out.printf("%.3f\n", ρ[n].value);
 						}
-						if (r.value < r_thresh.value) {
-							ρ = r.minus(r_start).over(r_thresh.minus(r_start)).plus(n); // normalize radius to [0, 1) or [1, 2)
+						if (ρ[n].value < 0) { // if we are inside a surface
+							assert n > 0 : n;
+							p = ρ[n-1].times(n).minus(ρ[n].times(n-1)).over(ρ[n-1].minus(ρ[n]));
 							break;
 						}
-						r_start = r_thresh;
 					}
 
-					if (ρ.value <= 1) {
+					if (p.value <= 1) {
 						reactivity[i][j][k] = core_reactivity; // in the hotspot, keep things constant
 						density[i][j][k] = core_density;
 					}
-					else if (ρ.value <= 1.5) { // in the shel, do this swoopy stuff
-						reactivity[i][j][k] = core_reactivity.times(NumericalMethods.smooth_step(ρ.minus(1.5).over(-0.5)));
-						density[i][j][k] = shell_density.minus(core_density).times(NumericalMethods.smooth_step(ρ.minus(1).over(0.5))).plus(core_density);
+					else if (p.value <= 1.5) { // in the shel, do this swoopy stuff
+						reactivity[i][j][k] = core_reactivity.times(NumericalMethods.smooth_step(p.minus(1.5).over(-0.5)));
+						density[i][j][k] = shell_density.minus(core_density).times(NumericalMethods.smooth_step(p.minus(1).over(0.5))).plus(core_density); // TODO the core should probably expand to the edge of he shell...?
 					}
-					else if (ρ.value <= 2) {
-						reactivity[i][j][k] = new Quantity(0, N);
-						density[i][j][k] = shell_density.times(NumericalMethods.smooth_step(ρ.minus(2).over(-0.5)));
+					else if (p.value <= 2) {
+						reactivity[i][j][k] = new Quantity(0, dofs);
+						density[i][j][k] = shell_density.times(NumericalMethods.smooth_step(p.minus(2).over(-0.5)));
 					}
 					else {
-						reactivity[i][j][k] = new Quantity(0, N);
-						density[i][j][k] = new Quantity(0, N);
+						reactivity[i][j][k] = new Quantity(0, dofs);
+						density[i][j][k] = new Quantity(0, dofs);
 					}
 				}
-				System.out.print("],\n");
 			}
-			System.out.print("],\n");
 		}
-		System.out.println("])");
-		System.out.println(Arrays.toString(coefs[0][1]));
-		System.out.println(Arrays.toString(coefs[0][2]));
 
 		//		int bestI = 0, bestJ = 0, bestK = 0;
 //		for (int i = 0; i < x.length; i ++)
@@ -609,80 +610,81 @@ public class VoxelFit {
 	}
 
 	public static void main(String[] args) throws IOException {
-				double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
-				Vector[] lines_of_site = new Vector[basis.length];
-				for (int i = 0; i < basis.length; i ++)
-					lines_of_site[i] = new DenseVector(basis[i]);
-
-				double[] x = CSV.readColumn(new File("tmp/x.csv"));
-				double[] y = CSV.readColumn(new File("tmp/y.csv"));
-				double[] z = CSV.readColumn(new File("tmp/z.csv"));
-				double[] Э = CSV.readColumn(new File("tmp/energy.csv"));
-				double[] ξ = CSV.readColumn(new File("tmp/xye.csv"));
-				double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv"));
-		Quantity[][][][] anser_q = interpret_state(new double[] {
-			  5.278589975843547E14, 12.007314757429222, 7.084372892630458, 35.59686315358958, -21.783175014103705, -3.201225106079366, 7.255062086671728, 2.1245921165603256, 0.5265707825343426, 1.8053891742789945, 3.6661307431913057, -0.1511108255370655, 71.08569093970966, 23.59532861543232, 0.6359240549135924, -7.518837090047964, -4.936516305352159, -0.32159953489910176, 22.121439294933506, -10.935585085260287, 3.590143654373427
-		}, x, y, z, false);
-		double[][][][] anser = new double[2][x.length][y.length][z.length];
-		for (int q = 0; q < 2; q ++)
-			for (int i = 0; i < x.length; i ++)
-				for (int j = 0; j < y.length; j ++)
-					for (int k = 0; k < z.length; k ++)
-						anser[q][i][j][k] = anser_q[q][i][j][k].value;
-		double[][][][] images = synthesize_images(
-			  anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site);
-
-		CSV.writeColumn(unravel(anser), new File("tmp/morphology-recon.csv"));
-		CSV.writeColumn(unravel(images), new File("tmp/images-recon.csv"));
-//		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
-//		try {
-//			FileHandler handler = new FileHandler("results/3d.log");
-//			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
-//			logger.addHandler(handler);
-//		} catch (IOException e) {
-//			e.printStackTrace();
-//			System.exit(1);
-//		}
+//				double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
+//				Vector[] lines_of_site = new Vector[basis.length];
+//				for (int i = 0; i < basis.length; i ++)
+//					lines_of_site[i] = new DenseVector(basis[i]);
 //
-//		//		for (int i = 0; i <= 36; i ++) {
-////			Quantity q = new Quantity(i/36., 0, 1);
-////			System.out.println(smooth_step(q));
-////		}
-//
-//		logger.info("starting...");
-//
-//		double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
-//		Vector[] lines_of_site = new Vector[basis.length];
-//		for (int i = 0; i < basis.length; i ++)
-//			lines_of_site[i] = new DenseVector(basis[i]);
-//
-//		double[] x = CSV.readColumn(new File("tmp/x.csv"));
-//		double[] y = CSV.readColumn(new File("tmp/y.csv"));
-//		double[] z = CSV.readColumn(new File("tmp/z.csv"));
-//		double[] Э = CSV.readColumn(new File("tmp/energy.csv"));
-//		double[] ξ = CSV.readColumn(new File("tmp/xye.csv"));
-//		double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv"));
-//
-//		double[] anser_as_colum = CSV.readColumn(new File("tmp/morphology.csv")); // should be in #/cm^3 and g/cm^3
+//				double[] x = CSV.readColumn(new File("tmp/x.csv"));
+//				double[] y = CSV.readColumn(new File("tmp/y.csv"));
+//				double[] z = CSV.readColumn(new File("tmp/z.csv"));
+//				double[] Э = CSV.readColumn(new File("tmp/energy.csv"));
+//				double[] ξ = CSV.readColumn(new File("tmp/xye.csv"));
+//				double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv"));
+//		Quantity[][][][] anser_q = interpret_state(new double[] {
+//			  5.278589975843547E14, 12.007314757429222, 7.084372892630458, 35.59686315358958, -21.783175014103705, -3.201225106079366, 7.255062086671728, 2.1245921165603256, 0.5265707825343426, 1.8053891742789945, 3.6661307431913057, -0.1511108255370655, 71.08569093970966, 23.59532861543232, 0.6359240549135924, -7.518837090047964, -4.936516305352159, -0.32159953489910176, 22.121439294933506, -10.935585085260287, 3.590143654373427
+//		}, x, y, z, false);
 //		double[][][][] anser = new double[2][x.length][y.length][z.length];
 //		for (int q = 0; q < 2; q ++)
 //			for (int i = 0; i < x.length; i ++)
 //				for (int j = 0; j < y.length; j ++)
-//					System.arraycopy(
-//						  anser_as_colum, ((q*x.length + i)*y.length + j)*z.length,
-//						  anser[q][i][j], 0, z.length);
-//
+//					for (int k = 0; k < z.length; k ++)
+//						anser[q][i][j][k] = anser_q[q][i][j][k].value;
 //		double[][][][] images = synthesize_images(
-//			  anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site);
-//
-//		CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
-//
-//		anser = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_site);
-//
-//		images = synthesize_images(
 //			  anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site);
 //
 //		CSV.writeColumn(unravel(anser), new File("tmp/morphology-recon.csv"));
 //		CSV.writeColumn(unravel(images), new File("tmp/images-recon.csv"));
+
+		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
+		try {
+			FileHandler handler = new FileHandler("results/3d.log");
+			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
+			logger.addHandler(handler);
+		} catch (IOException e) {
+			e.printStackTrace();
+			System.exit(1);
+		}
+
+		//		for (int i = 0; i <= 36; i ++) {
+//			Quantity q = new Quantity(i/36., 0, 1);
+//			System.out.println(smooth_step(q));
+//		}
+
+		logger.info("starting...");
+
+		double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
+		Vector[] lines_of_site = new Vector[basis.length];
+		for (int i = 0; i < basis.length; i ++)
+			lines_of_site[i] = new DenseVector(basis[i]);
+
+		double[] x = CSV.readColumn(new File("tmp/x.csv"));
+		double[] y = CSV.readColumn(new File("tmp/y.csv"));
+		double[] z = CSV.readColumn(new File("tmp/z.csv"));
+		double[] Э = CSV.readColumn(new File("tmp/energy.csv"));
+		double[] ξ = CSV.readColumn(new File("tmp/xye.csv"));
+		double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv"));
+
+		double[] anser_as_colum = CSV.readColumn(new File("tmp/morphology.csv")); // should be in #/cm^3 and g/cm^3
+		double[][][][] anser = new double[2][x.length][y.length][z.length];
+		for (int q = 0; q < 2; q ++)
+			for (int i = 0; i < x.length; i ++)
+				for (int j = 0; j < y.length; j ++)
+					System.arraycopy(
+						  anser_as_colum, ((q*x.length + i)*y.length + j)*z.length,
+						  anser[q][i][j], 0, z.length);
+
+		double[][][][] images = synthesize_images(
+			  anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site);
+
+		CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
+
+		anser = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_site);
+
+		images = synthesize_images(
+			  anser[0], anser[1], x, y, z, Э, ξ, υ, lines_of_site);
+
+		CSV.writeColumn(unravel(anser), new File("tmp/morphology-recon.csv"));
+		CSV.writeColumn(unravel(images), new File("tmp/images-recon.csv"));
 	}
 }

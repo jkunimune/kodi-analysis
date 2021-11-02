@@ -39,7 +39,7 @@ def plot_source(x, y, z, source, density):
 	ax.set_box_aspect([1,1,1])
 
 	for thing, contour_plot, cmap in [(density, ax.contour, 'Reds'), (source, ax.contour, 'Blues')]:
-		levels = np.linspace(0.17, 1.00, 7)*thing.max()
+		levels = np.linspace(0.17, 1.00, 4)*thing.max()
 		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
 			offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 		contour_plot(np.meshgrid(x, z, indexing='ij')[0], thing[:, len(y)//2, :], np.meshgrid(x, z, indexing='ij')[1],
@@ -53,14 +53,15 @@ def plot_source(x, y, z, source, density):
 	plt.tight_layout()
 
 	plt.figure()
-	thing = np.sum(density, axis=0).T
-	plt.contourf(y, z, thing, levels=np.linspace(0.00, 1.00, 7)*thing.max(), cmap='Reds')
-	thing = np.sum(source, axis=0).T
-	plt.contourf(y, z, thing, levels=np.linspace(0.17, 1.00, 7)*thing.max(), cmap='Blues')
+	thing = density[len(x)//2,:,:]
+	plt.contourf(y, z, thing.T, cmap='Reds', levels=np.linspace(0.00, 1.00, 7)*thing.max())
+	thing = source[len(x)//2,:,:]
+	plt.contourf(y, z, thing.T, cmap='Blues', levels=np.linspace(0.17, 1.00, 7)*thing.max())
 	plt.xlabel("y (cm)")
 	plt.ylabel("z (cm)")
-	plt.colorbar()
+	# plt.colorbar()
 	plt.axis('square')
+	plt.tight_layout()
 
 	plt.show()
 
@@ -68,7 +69,7 @@ def plot_source(x, y, z, source, density):
 def plot_images(Э, ξ, υ, images):
 	for i in range(images.shape[1]):
 		plt.figure()
-		plt.pcolormesh(ξ, υ, images[0,i,:,:], vmin=0)#, vmax=np.max(images))
+		plt.pcolormesh(ξ, υ, images[0,i,:,:].T, vmin=0)#, vmax=np.max(images))
 		plt.axis('square')
 		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
 		plt.colorbar()
@@ -77,9 +78,9 @@ def plot_images(Э, ξ, υ, images):
 
 
 if __name__ == '__main__':
-	N = 21 # model spatial resolucion
+	N = 15 # model spatial resolucion
 	M = 4 # image energy resolucion
-	H = 21#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
+	H = 15#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
@@ -100,10 +101,10 @@ if __name__ == '__main__':
 	]) # ()
 
 	X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
-	tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
-	tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
-	# tru_source = np.where(X**2 + Y**2 + Z**2 == 0, 1e15, 0)
-	# tru_density = np.where(X**2 + Y**2 + Z**2 == 0, 50, 0)
+	# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
+	# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
+	tru_source = 1e15*np.exp(-(X**2 + (Y - 20)**2 + 2*Z**2)/(2*30**2))
+	tru_density = 50*np.exp(-(2*X**2 + 2*Y**2 + Z**2)/(2*50**2)) * (1 - tru_source/tru_source.max())
 
 	os.chdir("..")
 
@@ -117,14 +118,18 @@ if __name__ == '__main__':
 	np.savetxt("tmp/morphology.csv", np.ravel([tru_source, tru_density]))
 
 	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-	completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
-	if completed_process.returncode > 0:
-		raise ValueError(completed_process.stderr)
+	# completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
+	# if completed_process.returncode > 0:
+	# 	raise ValueError(completed_process.stderr)
 	print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+
+	plot_source(x, y, z, tru_source, tru_density)
 
 	tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H))
 	images = np.loadtxt("tmp/images-recon.csv").reshape((lines_of_sight.shape[0], M, H, H))
 	source, density = np.loadtxt("tmp/morphology-recon.csv").reshape((2, N+1, N+1, N+1))
+
+	plot_source(x, y, z, source, density)
 
 	print(np.sum(tru_source < 0), np.sum(tru_source == 0), np.sum(tru_source > 0))
 	print(np.sum(source < 0), np.sum(source == 0), np.sum(source > 0))
@@ -132,5 +137,3 @@ if __name__ == '__main__':
 	plot_images(Э, ξ, υ, tru_images)
 	plot_images(Э, ξ, υ, images)
 
-	plot_source(x, y, z, tru_source, tru_density)
-	plot_source(x, y, z, source, density)

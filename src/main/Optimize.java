@@ -251,7 +251,7 @@ public class Optimize {
 
 			if (logger != null) logger.info("Completed line search.");
 
-			λ *= 4e-4; // decrement the line search parameter
+			λ *= 4e-5; // decrement the line search parameter XXX
 
 			iter += 1; // check iteracions
 			if (iter > 10000)
