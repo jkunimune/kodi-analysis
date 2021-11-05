@@ -794,6 +794,10 @@ public class NumericalMethods {
 		return y[l].times(x0.minus(x[r]).over(x[l].minus(x[r]))).plus(y[r].times(x0.minus(x[l]).over(x[r].minus(x[l]))));
 	}
 
+	public static Quantity interp3d(Quantity[][][] values, Vector index, boolean smooth) {
+		return interp3d(values, index.get(0), index.get(1), index.get(2), smooth);
+	}
+
 	public static Quantity interp3d(Quantity[][][] values, double i, double j, double k, boolean smooth) {
 		int N = values[0][0][0].getDofs();
 		return interp3d(values, new Quantity(i, N), new Quantity(j, N), new Quantity(k, N), smooth);
@@ -1630,7 +1634,7 @@ public class NumericalMethods {
 		}
 		
 		/**
-		 * return the antiderivative of this, with some arbitrary vertical shift applied.
+		 * return the antiderivative of this, shifted so the zeroth value is 0
 		 * @return the antiderivative.
 		 */
 		public DiscreteFunction antiderivative() {
