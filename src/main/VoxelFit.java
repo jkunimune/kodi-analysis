@@ -221,7 +221,7 @@ public class VoxelFit {
 									ρ[n] = ρ[n].minus(coefs[n][l][l + m].times(harmonics[l][l + m]));
 						if (n > 0 && ρ[n].value > ρ[n - 1].value - 10) { // force each shell to be bigger than the next
 							System.out.printf("to make it less than %.3f, I'm expanding %.3f to ", ρ[n - 1].value, ρ[n].value);
-							ρ[n] = ρ[n].minus(ρ[n - 1]).over(SMALL_DISTANCE).log().plus(1).times(SMALL_DISTANCE).plus(ρ[n - 1]);
+							ρ[n] = ρ[n].minus(ρ[n - 1]).over(-SMALL_DISTANCE).minus(1).exp().times(-SMALL_DISTANCE).plus(ρ[n - 1]);
 							System.out.printf("%.3f\n", ρ[n].value);
 						}
 						if (ρ[n].value < 0) { // if we are inside a surface
