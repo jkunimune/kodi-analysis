@@ -78,9 +78,9 @@ def plot_images(Э, ξ, υ, images):
 
 
 if __name__ == '__main__':
-	N = 15 # model spatial resolucion
+	N = 7 # model spatial resolucion
 	M = 4 # image energy resolucion
-	H = 15#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
+	H = 7#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
@@ -103,8 +103,11 @@ if __name__ == '__main__':
 	X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 	# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 	# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
-	tru_source = 1e15*np.exp(-(X**2 + (Y - 20)**2 + 2*Z**2)/(2*30**2))
-	tru_density = 50*np.exp(-(2*X**2 + 2*Y**2 + Z**2)/(2*50**2)) * (1 - tru_source/tru_source.max())
+	tru_temperature = 6*np.exp(-(np.sqrt(X**2 + (Y - 20)**2 + 2*Z**2)/50)**4/2)
+	tru_density = 10000*np.exp(-(np.sqrt(2*X**2 + 2*Y**2 + Z**2)/70)**4/2) * (1 - 0.9*(tru_temperature/tru_temperature.max()**2))
+	tru_σv = 9.1e-22*np.exp(-0.572*abs(np.log(tru_temperature/64.2))**2.13)
+	tru_number_density = np.where(X**2 + (Y - 20)**2 + 2*Z**2 < 50**2, 1/4*tru_density/(5*1.66e-27), 0)
+	tru_production = tru_number_density**2*tru_σv*100e-9
 
 	os.chdir("..")
 
@@ -115,7 +118,7 @@ if __name__ == '__main__':
 	np.savetxt("tmp/energy.csv", Э)
 	np.savetxt("tmp/xye.csv", ξ)
 	np.savetxt("tmp/ypsilon.csv", υ)
-	np.savetxt("tmp/morphology.csv", np.ravel([tru_source, tru_density]))
+	np.savetxt("tmp/morphology.csv", np.ravel([tru_production, tru_temperature, tru_density]))
 
 	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 	# completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
@@ -123,16 +126,16 @@ if __name__ == '__main__':
 	# 	raise ValueError(completed_process.stderr)
 	print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 
-	plot_source(x, y, z, tru_source, tru_density)
+	plot_source(x, y, z, tru_production, tru_density)
 
 	tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H))
 	images = np.loadtxt("tmp/images-recon.csv").reshape((lines_of_sight.shape[0], M, H, H))
-	source, density = np.loadtxt("tmp/morphology-recon.csv").reshape((2, N+1, N+1, N+1))
+	production, temperature, density = np.loadtxt("tmp/morphology-recon.csv").reshape((3, N+1, N+1, N+1))
 
-	plot_source(x, y, z, source, density)
+	plot_source(x, y, z, production, density)
 
-	print(np.sum(tru_source < 0), np.sum(tru_source == 0), np.sum(tru_source > 0))
-	print(np.sum(source < 0), np.sum(source == 0), np.sum(source > 0))
+	print(np.sum(tru_temperature < 0), np.sum(tru_temperature == 0), np.sum(tru_temperature > 0))
+	print(np.sum(temperature < 0), np.sum(temperature == 0), np.sum(temperature > 0))
 
 	plot_images(Э, ξ, υ, tru_images)
 	plot_images(Э, ξ, υ, images)
