@@ -233,7 +233,7 @@ if __name__ == '__main__':
 		format="{asctime:s} |{levelname:4.4s}| {message:s}", style='{',
 		datefmt="%m-%d %H:%M",
 		handlers=[
-			logging.FileHandler(OUTPUT_FOLDER+"log.txt", encoding='utf-8'),
+			logging.FileHandler(OUTPUT_FOLDER+"out-2d.log", encoding='utf-8'),
 			logging.StreamHandler(),
 		]
 	)

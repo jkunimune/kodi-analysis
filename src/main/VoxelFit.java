@@ -18,8 +18,8 @@ public class VoxelFit {
 	public static final int DEGREES_OF_FREE = (MAX_MODE + 1)*(MAX_MODE + 1);
 	public static final double CORE_TEMPERATURE_GESS = 4; // (keV)
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
-	public static final double CORE_DENSITY_GESS = 2_000; // (g/L)
-	public static final double SHELL_DENSITY_GESS = 10_000; // (g/L)
+	public static final double CORE_DENSITY_GESS = 100; // (g/L)
+	public static final double SHELL_DENSITY_GESS = 1_000; // (g/L)
 	public static final double CORE_RADIUS_GESS = 40;
 	public static final double SHELL_THICKNESS_GESS = 50;
 	public static final double SMALL_DISTANCE = 10; // (μm)
@@ -125,7 +125,7 @@ public class VoxelFit {
 									   r0.get(1)/dx + (y.length-1)/2.,
 									   r0.get(2)/dx + (z.length-1)/2.);
 		index = index.plus(ζ.times(1/2.));
-		Quantity T, ρ = null;
+		Quantity T, ρ;
 		Quantity Э = new Quantity(Э0, temperature_field[0][0][0].getDofs());
 		while (true) {
 			if (Э.value < 2*Э_bins[0] - Э_bins[1] || Э.value <= 0) // stop if it ranges out
@@ -455,9 +455,9 @@ public class VoxelFit {
 			double[][][] image = new double[Э.length-1][ξ.length-1][υ.length-1];
 			double[][][][] gradients = new double[Э.length-1][ξ.length-1][υ.length-1][dofs];
 
-			for (int iJ = 0; iJ < x.length - 1; iJ ++) { // integrate brute-force
-				for (int jJ = 0; jJ < y.length - 1; jJ ++) {
-					for (int kJ = 0; kJ < z.length - 1; kJ ++) {
+			for (int iJ = 0; iJ < x.length; iJ ++) { // integrate brute-force
+				for (int jJ = 0; jJ < y.length; jJ ++) {
+					for (int kJ = 0; kJ < z.length; kJ ++) {
 
 						Quantity n2σvτJ = NumericalMethods.interp3d(production, iJ, jJ, kJ, false);
 						if (n2σvτJ.value == 0)
@@ -574,7 +574,8 @@ public class VoxelFit {
 	 */
 	private static double[][][][] reconstruct_images(
 		  double[][][][] images, double[] x, double[] y, double[] z,
-		  double[] Э, double[] ξ, double[] υ, Vector[] lines_of_sight) {
+		  double[] Э, double[] ξ, double[] υ, Vector[] lines_of_sight,
+		  String[] args) {
 		Function<double[], double[]> residuals = (double[] state) -> {
 			Quantity[][][][] morphology = interpret_state(state, x, y, z, false);
 			Quantity[][][][] synthetic = synthesize_images(
@@ -608,6 +609,14 @@ public class VoxelFit {
 			return unravel(output);
 		};
 
+		Function<double[], Double> error = (double[] state) -> {
+			double[] ds = residuals.apply(state);
+			double sum = 0;
+			for (double d: ds)
+				sum += d*d;
+			return sum;
+		};
+
 		double[] inicial_state = new double[4 + DEGREES_OF_FREE*2];
 		inicial_state[0] = CORE_TEMPERATURE_GESS;
 		inicial_state[1] = SHELL_TEMPERATURE_GESS;
@@ -616,42 +625,59 @@ public class VoxelFit {
 		inicial_state[4] = CORE_RADIUS_GESS;
 		inicial_state[4 + DEGREES_OF_FREE] = SHELL_THICKNESS_GESS;
 
-		logger.info(Arrays.toString(inicial_state));
+		VoxelFit.logger.info(Arrays.toString(inicial_state));
 
-//		double[] lower = new double[inicial_state.length];
-//		double[] upper = new double[inicial_state.length];
-//		double[] scale = new double[inicial_state.length];
+		double[] lower = new double[inicial_state.length];
+		double[] upper = new double[inicial_state.length];
+		double[] scale = new double[inicial_state.length];
 		boolean[] hot_spot = new boolean[inicial_state.length];
 //		boolean[] dense_fuel = new boolean[inicial_state.length];
 		for (int i = 0; i < inicial_state.length; i ++) {
-//			lower[i] = 0;
-//			upper[i] = Double.POSITIVE_INFINITY;
-//			scale[i] = (i < inicial_state.length/2) ? total_yield/inicial_yield : 1e3;
+			lower[i] = (i < 4) ? 0 : Double.NEGATIVE_INFINITY;
+			upper[i] = Double.POSITIVE_INFINITY;
+			scale[i] = (i < 2) ? 8 : (i < 4) ? 3_000 : 50;
 			hot_spot[i] = i == 0 || i == 1 || (i >= 4 && i < 4 + DEGREES_OF_FREE);
 //			dense_fuel[i] = !hot_spot[i];
 		}
 		double[] optimal_state;
-//		optimal_state = inicial_state;
-		optimal_state = Optimize.least_squares( // start by optimizing the hot spot
-			  residuals,
-			  gradients,
-			  inicial_state,
-//			  lower, upper,
-			  hot_spot,
-			  1e-5, logger);
+		optimal_state = inicial_state;
+//		optimal_state = Optimize.least_squares( // start by optimizing the hot spot
+//			  residuals,
+//			  gradients,
+//			  inicial_state,
+////			  lower, upper,
+//			  hot_spot,
+//			  1e-5, logger);
 //		optimal_state = Optimize.least_squares( // then optimize the cold fuel
 //			  residuals,
 //			  gradients,
 //			  optimal_state,
 //			  dense_fuel,
 //			  1e-5);
-		optimal_state = Optimize.least_squares( // then do a pass at the hole thing
-			  residuals,
-			  gradients,
-			  optimal_state,
-			  1e-5, logger);
+//		optimal_state = Optimize.least_squares( // then do a pass at the hole thing
+//			  residuals,
+//			  gradients,
+//			  optimal_state,
+//			  1e-5, logger);
 
-		logger.info(Arrays.toString(optimal_state));
+		if (args.length != 5)
+			throw new IllegalArgumentException("need five arguments but got "+Arrays.toString(args));
+		VoxelFit.logger.info(String.format("iterations: %s, pop. size: %s N, CR: %s, λ: %s, ɑ: %s", (Object[]) args));
+		optimal_state = Optimize.differential_evolution(
+			  error,
+			  optimal_state,
+			  scale,
+			  lower,
+			  upper,
+			  Integer.parseInt(args[0]),
+			  Integer.parseInt(args[1])*scale.length,
+			  Double.parseDouble(args[2]),
+			  Double.parseDouble(args[3]),
+			  Double.parseDouble(args[4]),
+			  VoxelFit.logger
+		);
+
+		VoxelFit.logger.info(Arrays.toString(optimal_state));
 
 		Quantity[][][][] output_q = interpret_state(optimal_state, x, y, z, false);
 		double[][][][] output = new double[output_q.length][x.length][y.length][z.length];
@@ -704,7 +730,9 @@ public class VoxelFit {
 
 		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
 		try {
-			FileHandler handler = new FileHandler("results/3d.log");
+			FileHandler handler = new FileHandler(
+				  String.format("results/out-3d-%2$s-%3$s-%4$s-%5$s.log", (Object[]) args),
+				  true);
 			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM:%1$tS | %2$s | %3$s%4$s%n"));
 			logger.addHandler(handler);
 		} catch (IOException e) {
@@ -745,7 +773,7 @@ public class VoxelFit {
 
 		CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
 
-		anser = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_site); // reconstruct the morphology
+		anser = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_site, args); // reconstruct the morphology
 
 		images = synthesize_images(
 			  anser[0], anser[1], anser[2], x, y, z, Э, ξ, υ, lines_of_site); // get the reconstructed morphologie's images

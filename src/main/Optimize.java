@@ -237,7 +237,6 @@ public class Optimize {
 				new_value = 0;
 				for (double d : residuals)
 					new_value += Math.pow(d, 2); // compute new chi^2
-//				System.out.println("state: "+Arrays.toString(new_state));
 				if (logger != null) logger.info("updated value: "+new_value);
 
 				if (new_value <= last_value) { // terminate the line search if reasonable
@@ -250,6 +249,7 @@ public class Optimize {
 			}
 
 			if (logger != null) logger.info("Completed line search.");
+			if (logger != null) logger.info("state: "+Arrays.toString(state));
 
 			λ *= 4e-5; // decrement the line search parameter XXX
 
@@ -283,6 +283,132 @@ public class Optimize {
 	}
 
 
+	public static double[] differential_evolution(
+		  Function<double[], Double> objective,
+		  double[] inicial_gess,
+		  double[] scale,
+		  double[] lower,
+		  double[] upper,
+		  int max_iterations,
+		  Logger logger) {
+		return differential_evolution(
+			  objective, inicial_gess, scale, lower, upper, max_iterations,
+			  inicial_gess.length*10,
+			  0.7,
+			  0.3,
+			  0.0,
+			  logger);
+	}
+
+	/**
+	 * find a local minimum of the objective function,
+	 * using the differential evolution formula as defined in
+	 *     R. Storn, "On the usage of differential evolucion for funccion
+	 *     optimizacion," Proceedings of North Militarylandian Fuzzy Informacion
+	 *     Processing, 1996, pp. 519-523, doi: 10.1109/NAFIPS.1996.534789.
+	 * @param objective returns the error of each state
+	 * @param inicial_gess the inicial gess for the optimal state
+	 * @param scale the amount of variation on each dimension for the initial
+	 *              ensemble
+	 * @param lower the lower bounds
+	 * @param upper the upper bounds
+	 * @param max_iterations the amount of time to run the thing
+	 * @param population_size the number of states to have at any given time
+	 * @return the parameters that minimize the sum of squared distances
+	 */
+	public static double[] differential_evolution(
+		  Function<double[], Double> objective,
+		  double[] inicial_gess,
+		  double[] scale,
+		  double[] lower,
+		  double[] upper,
+		  int max_iterations,
+		  int population_size,
+		  double crossover_probability,
+		  double differential_weit,
+		  double greediness,
+		  Logger logger) {
+		if (inicial_gess.length != scale.length || scale.length != lower.length || lower.length != upper.length)
+			throw new IllegalArgumentException("my lengths don't match my lengths don't match I'm out in public and my lengths don't match");
+		int dimensionality = inicial_gess.length;
+
+		double[][] candidates = new double[population_size][dimensionality];
+		double[] scores = new double[population_size];
+		int best = -1;
+		for (int i = 0; i < population_size; i ++) {
+			for (int j = 0; j < dimensionality; j++)
+				candidates[i][j] = inicial_gess[j] + (2*Math.random() - 1)*scale[j];
+			flip_in_bounds(candidates[i], lower, upper);
+			scores[i] = objective.apply(candidates[i]);
+			if (best == -1 || scores[i] < scores[best])
+				best = i;
+		}
+
+		int iterations = 0;
+		while (true) {
+			int changes = 0;
+			for (int i = 0; i < population_size; i ++) {
+				int a = random_index(population_size, i);
+				int b = random_index(population_size, i, a);
+				int c = random_index(population_size, i, a, b);
+				int r = random_index(dimensionality);
+				double[] new_candidate = new double[dimensionality];
+				for (int j = 0; j < dimensionality; j ++) {
+					if (j == r || Math.random() < crossover_probability)
+						new_candidate[j] = candidates[a][j] +
+							  greediness*(candidates[best][j] - candidates[a][j]) +
+							  differential_weit*(candidates[b][j] - candidates[c][j]);
+					else
+						new_candidate[j] = candidates[i][j];
+				}
+				flip_in_bounds(new_candidate, lower, upper);
+				double new_score = objective.apply(new_candidate);
+//				if (i == best) {
+//					System.out.println("a = "+Arrays.toString(candidates[a]));
+//					System.out.println("b = "+Arrays.toString(candidates[b]));
+//					System.out.println("c = "+Arrays.toString(candidates[c]));
+//					System.out.println("* = "+Arrays.toString(candidates[best]));
+//					System.out.println("r = "+Arrays.toString(new_candidate));
+//					System.out.println("this changes the score from "+scores[best]+" to "+new_score);
+//				}
+				if (new_score <= scores[i]) {
+					candidates[i] = new_candidate;
+					scores[i] = new_score;
+					if (new_score < scores[best])
+						best = i;
+					changes += 1;
+				}
+			}
+			if (logger != null) logger.info(
+				  String.format("Changed %03d/%03d candidates.  new best is %.8g.",
+								changes, population_size, scores[best]));
+			iterations ++;
+			if (iterations >= max_iterations)
+				return candidates[best];
+		}
+	}
+
+	private static int random_index(int max, int... excluding) {
+		Arrays.sort(excluding);
+		int i = (int)(Math.random()*(max - excluding.length));
+		for (int excluded: excluding)
+			if (i >= excluded)
+				i ++;
+		return i;
+	}
+
+	private static void flip_in_bounds(double[] x, double[] lower, double[] upper) {
+		for (int i = 0; i < x.length; i ++) {
+			if (x[i] < lower[i])
+				x[i] = 2*lower[i] - x[i];
+			if (x[i] > upper[i])
+				x[i] = 2*upper[i] - x[i];
+			if (x[i] < lower[i])
+				throw new IllegalArgumentException("why would you make the inicial variacion scale larger than the system bounds??");
+		}
+	}
+
+
 	public static void main(String[] args) {
 		double[] x = {0, 1, 2, 3, 4, 5};
 		double[] y = {6, 4, 3, 2, 1.5, 1.25};
@@ -304,13 +430,28 @@ public class Optimize {
 			return J;
 		};
 
-		double[] c = least_squares(err, grad,
-								   new double[] {1, -1, 0},
-//								   new double[] {1, 1, 1},
-								   new double[] {0, 0, 0},
-								   new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
-								   1e-7,
-								   null);
+//		double[] c = least_squares(err, grad,
+//								   new double[] {1, -1, 0},
+////								   new double[] {1, 1, 1},
+//								   new double[] {0, 0, 0},
+//								   new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
+//								   1e-7,
+//								   null);
+		double[] c = differential_evolution(
+			  (state) -> {
+				double[] ds = err.apply(state);
+				double sum = 0;
+				for (double d: ds)
+				  	sum += d*d;
+				return sum;
+			  },
+			  new double[] {1, -1, 0},
+			  new double[] {2, 2, 2},
+			  new double[] {0, Double.NEGATIVE_INFINITY, 0},
+			  new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
+			  10,
+			  null
+		);
 		System.out.println("y = "+c[0]+" exp("+c[1]+"x) + "+c[2]);
 	}
 

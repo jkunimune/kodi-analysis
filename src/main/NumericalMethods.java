@@ -812,9 +812,9 @@ public class NumericalMethods {
 		if (i.isNaN() || j.isNaN() || k.isNaN())
 			throw new IllegalArgumentException("is this a joke to you");
 
-		int i0 = Math.min((int)i.value, values.length - 1);
-		int j0 = Math.min((int)j.value, values[i0].length - 1);
-		int k0 = Math.min((int)k.value, values[i0][j0].length - 1);
+		int i0 = Math.min((int)i.value, values.length - 2);
+		int j0 = Math.min((int)j.value, values[i0].length - 2);
+		int k0 = Math.min((int)k.value, values[i0][j0].length - 2);
 		Quantity ci0, cj0, ck0;
 		if (smooth) {
 			ci0 = smooth_step(i.minus(i0).minus(1).abs());
