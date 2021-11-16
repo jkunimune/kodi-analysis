@@ -620,10 +620,10 @@ public class VoxelFit {
 			return sum;
 		};
 
-		VoxelFit.logger.info(String.format("reconstructing images of size %d×%d×%d×%d",
+		VoxelFit.logger.info(String.format("reconstructing images of size %dx%dx%dx%d",
 										   images.length, images[0].length,
 										   images[0][0].length, images[0][0][0].length));
-		VoxelFit.logger.info(String.format("using 3d basis of size %d×%d×%d",
+		VoxelFit.logger.info(String.format("using 3d basis of size %dx%dx%d",
 										   x.length - 1, y.length - 1, z.length - 1));
 
 		double[] inicial_state = new double[4 + DEGREES_OF_FREE*2];
