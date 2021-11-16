@@ -327,7 +327,7 @@ public class VoxelFit {
 					else if (p.value <= 1.5) { // in the shel, do this swoopy stuff
 						temperature[i][j][k] = core_temperature.minus(shell_temperature).times(NumericalMethods.smooth_step(p.minus(1.5).over(-0.5))).plus(shell_temperature);
 						density[i][j][k] = shell_density.minus(core_density).times(NumericalMethods.smooth_step(p.minus(1).over(0.5))).plus(core_density);
-						reagent_fraction = NumericalMethods.smooth_step(p.minus(1.5).over(-0.5)).times(4.);
+						reagent_fraction = NumericalMethods.smooth_step(p.minus(1.5).over(-0.5));
 					}
 					else if (p.value <= 2) {
 						temperature[i][j][k] = shell_temperature;
@@ -503,7 +503,10 @@ public class VoxelFit {
 									int iV = NumericalMethods.bin(ξV, ξ);
 									int jV = NumericalMethods.bin(υV, υ);
 
-									for (int dh = 0; dh <= 1; dh++) { // finally, iterate over the two energy bins
+									if (parcial_hV.value > Э_centers.length - 1) // prevent hi-energy deuterons from leaving the bin
+										parcial_hV = new Quantity(Э_centers.length - 1, dofs);
+
+									for (int dh = 0; dh <= 1; dh ++) { // finally, iterate over the two energy bins
 										int hV = (int) Math.floor(parcial_hV.value) + dh; // the bin index
 										Quantity ch = parcial_hV.minus(hV).abs().times(-1).plus(1); // the bin weit
 										if (hV >= 0 && hV < image.length) {
@@ -575,7 +578,7 @@ public class VoxelFit {
 	private static double[][][][] reconstruct_images(
 		  double[][][][] images, double[] x, double[] y, double[] z,
 		  double[] Э, double[] ξ, double[] υ, Vector[] lines_of_sight,
-		  String[] args) {
+		  String[] args) throws InterruptedException {
 		Function<double[], double[]> residuals = (double[] state) -> {
 			Quantity[][][][] morphology = interpret_state(state, x, y, z, false);
 			Quantity[][][][] synthetic = synthesize_images(
@@ -617,6 +620,12 @@ public class VoxelFit {
 			return sum;
 		};
 
+		VoxelFit.logger.info(String.format("reconstructing images of size %d×%d×%d×%d",
+										   images.length, images[0].length,
+										   images[0][0].length, images[0][0][0].length));
+		VoxelFit.logger.info(String.format("using 3d basis of size %d×%d×%d",
+										   x.length - 1, y.length - 1, z.length - 1));
+
 		double[] inicial_state = new double[4 + DEGREES_OF_FREE*2];
 		inicial_state[0] = CORE_TEMPERATURE_GESS;
 		inicial_state[1] = SHELL_TEMPERATURE_GESS;
@@ -624,8 +633,6 @@ public class VoxelFit {
 		inicial_state[3] = SHELL_DENSITY_GESS;
 		inicial_state[4] = CORE_RADIUS_GESS;
 		inicial_state[4 + DEGREES_OF_FREE] = SHELL_THICKNESS_GESS;
-
-		VoxelFit.logger.info(Arrays.toString(inicial_state));
 
 		double[] lower = new double[inicial_state.length];
 		double[] upper = new double[inicial_state.length];
@@ -660,9 +667,8 @@ public class VoxelFit {
 //			  optimal_state,
 //			  1e-5, logger);
 
-		if (args.length != 5)
+		if (args.length != 6)
 			throw new IllegalArgumentException("need five arguments but got "+Arrays.toString(args));
-		VoxelFit.logger.info(String.format("iterations: %s, pop. size: %s N, CR: %s, λ: %s, ɑ: %s", (Object[]) args));
 		optimal_state = Optimize.differential_evolution(
 			  error,
 			  optimal_state,
@@ -670,10 +676,11 @@ public class VoxelFit {
 			  lower,
 			  upper,
 			  Integer.parseInt(args[0]),
-			  Integer.parseInt(args[1])*scale.length,
-			  Double.parseDouble(args[2]),
+			  Integer.parseInt(args[1]),
+			  Integer.parseInt(args[2])*scale.length,
 			  Double.parseDouble(args[3]),
 			  Double.parseDouble(args[4]),
+			  Double.parseDouble(args[5]),
 			  VoxelFit.logger
 		);
 
@@ -701,7 +708,7 @@ public class VoxelFit {
 		};
 	}
 
-	public static void main(String[] args) throws IOException {
+	public static void main(String[] args) throws IOException, InterruptedException {
 //				double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
 //				Vector[] lines_of_site = new Vector[basis.length];
 //				for (int i = 0; i < basis.length; i ++)

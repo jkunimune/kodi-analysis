@@ -103,10 +103,10 @@ if __name__ == '__main__':
 	X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 	# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 	# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
-	tru_temperature = 6*np.exp(-(np.sqrt(X**2 + (Y - 20)**2 + 2*Z**2)/50)**4/2)
-	tru_density = 10000*np.exp(-(np.sqrt(2*X**2 + 2*Y**2 + Z**2)/70)**4/2) * (1 - 0.9*(tru_temperature/tru_temperature.max()**2))
+	tru_temperature = 6*np.exp(-(np.sqrt(X**2 + (Y - 20)**2 + 2.5*Z**2)/75)**4/2)
+	tru_density = 10000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*Y**2 + Z**2)/75)**4/2) * (1 - 0.9*(tru_temperature/tru_temperature.max()**2))
 	tru_σv = 9.1e-22*np.exp(-0.572*abs(np.log(tru_temperature/64.2))**2.13)
-	tru_number_density = np.where(X**2 + (Y - 20)**2 + 2*Z**2 < 50**2, 1/4*tru_density/(5*1.66e-27), 0)
+	tru_number_density = np.where(X**2 + (Y - 20)**2 + 2.5*Z**2 < 75**2, 1/4*tru_density/(5*1.66e-27), 0)
 	tru_production = tru_number_density**2*tru_σv*100e-9
 
 	os.chdir("..")

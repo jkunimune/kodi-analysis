@@ -290,9 +290,10 @@ public class Optimize {
 		  double[] lower,
 		  double[] upper,
 		  int max_iterations,
-		  Logger logger) {
+		  Logger logger) throws InterruptedException {
 		return differential_evolution(
 			  objective, inicial_gess, scale, lower, upper, max_iterations,
+			  1,
 			  inicial_gess.length*10,
 			  0.7,
 			  0.3,
@@ -323,20 +324,30 @@ public class Optimize {
 		  double[] lower,
 		  double[] upper,
 		  int max_iterations,
+		  int num_threads,
 		  int population_size,
 		  double crossover_probability,
 		  double differential_weit,
 		  double greediness,
-		  Logger logger) {
+		  Logger logger) throws InterruptedException {
 		if (inicial_gess.length != scale.length || scale.length != lower.length || lower.length != upper.length)
 			throw new IllegalArgumentException("my lengths don't match my lengths don't match I'm out in public and my lengths don't match");
 		int dimensionality = inicial_gess.length;
+
+		if (logger != null) {
+			logger.info(Arrays.toString(inicial_gess));
+			logger.info(
+				  String.format("iterations: %d, threads: %d, pop. size: %d, CR: %f, λ: %f, ɑ: %f",
+								max_iterations, num_threads,
+								population_size, crossover_probability,
+								differential_weit, greediness));
+		}
 
 		double[][] candidates = new double[population_size][dimensionality];
 		double[] scores = new double[population_size];
 		int best = -1;
 		for (int i = 0; i < population_size; i ++) {
-			for (int j = 0; j < dimensionality; j++)
+			for (int j = 0; j < dimensionality; j ++)
 				candidates[i][j] = inicial_gess[j] + (2*Math.random() - 1)*scale[j];
 			flip_in_bounds(candidates[i], lower, upper);
 			scores[i] = objective.apply(candidates[i]);
@@ -346,43 +357,67 @@ public class Optimize {
 
 		int iterations = 0;
 		while (true) {
-			int changes = 0;
-			for (int i = 0; i < population_size; i ++) {
-				int a = random_index(population_size, i);
-				int b = random_index(population_size, i, a);
-				int c = random_index(population_size, i, a, b);
-				int r = random_index(dimensionality);
-				double[] new_candidate = new double[dimensionality];
-				for (int j = 0; j < dimensionality; j ++) {
-					if (j == r || Math.random() < crossover_probability)
-						new_candidate[j] = candidates[a][j] +
-							  greediness*(candidates[best][j] - candidates[a][j]) +
-							  differential_weit*(candidates[b][j] - candidates[c][j]);
-					else
-						new_candidate[j] = candidates[i][j];
-				}
-				flip_in_bounds(new_candidate, lower, upper);
-				double new_score = objective.apply(new_candidate);
-//				if (i == best) {
-//					System.out.println("a = "+Arrays.toString(candidates[a]));
-//					System.out.println("b = "+Arrays.toString(candidates[b]));
-//					System.out.println("c = "+Arrays.toString(candidates[c]));
-//					System.out.println("* = "+Arrays.toString(candidates[best]));
-//					System.out.println("r = "+Arrays.toString(new_candidate));
-//					System.out.println("this changes the score from "+scores[best]+" to "+new_score);
-//				}
-				if (new_score <= scores[i]) {
-					candidates[i] = new_candidate;
-					scores[i] = new_score;
-					if (new_score < scores[best])
-						best = i;
-					changes += 1;
-				}
+			int[] changes = {0};
+			Thread[] threads = new Thread[num_threads];
+			for (int t = 0; t < num_threads; t++) {
+				final int T = t;
+				final int BEST = best;
+				threads[t] = new Thread(() -> {
+					for (int i = T; i < population_size; i += num_threads) {
+						int a = random_index(population_size, i); // some peeple use the same index for i and a, but I find that this works better
+						int b = random_index(population_size, i, a);
+						int c = random_index(population_size, i, a, b);
+						int r = random_index(dimensionality);
+
+						double[] state_i = candidates[i];
+						double[] state_a = candidates[a];
+						double[] state_b = candidates[b];
+						double[] state_c = candidates[c];
+						double[] best_state = candidates[BEST];
+
+						double[] new_candidate = new double[dimensionality];
+						for (int j = 0; j < dimensionality; j ++) {
+							if (j == r || Math.random() < crossover_probability)
+								new_candidate[j] = state_a[j] +
+									  greediness*(best_state[j] - state_a[j]) +
+									  differential_weit*(state_b[j] - state_c[j]);
+							else
+								new_candidate[j] = state_i[j];
+						}
+						flip_in_bounds(new_candidate, lower, upper);
+						double new_score = objective.apply(new_candidate);
+						//				if (i == best) {
+						//					System.out.println("a = "+Arrays.toString(candidates[a]));
+						//					System.out.println("b = "+Arrays.toString(candidates[b]));
+						//					System.out.println("c = "+Arrays.toString(candidates[c]));
+						//					System.out.println("* = "+Arrays.toString(candidates[best]));
+						//					System.out.println("r = "+Arrays.toString(new_candidate));
+						//					System.out.println("this changes the score from "+scores[best]+" to "+new_score);
+						//				}
+						if (new_score <= scores[i]) {
+							candidates[i] = new_candidate;
+							scores[i] = new_score;
+							changes[0] += 1;
+						}
+					}
+				});
+				threads[t].start();
 			}
-			if (logger != null) logger.info(
-				  String.format("Changed %03d/%03d candidates.  new best is %.8g.",
-								changes, population_size, scores[best]));
-			iterations ++;
+
+			for (int t = 0; t < num_threads; t ++)
+				threads[t].join();
+
+			for (int i = 0; i < population_size; i ++) // update the best variable
+				if (scores[i] < scores[best])
+					best = i;
+
+			if (logger != null)
+				logger.info(
+					  String.format("Changed %03d/%03d candidates.  new best is %.8g.",
+									changes[0], population_size, scores[best]));
+			iterations++;
+			if (logger != null && iterations > 1 && (max_iterations - iterations)%10 == 0)
+				logger.info(Arrays.toString(candidates[best]));
 			if (iterations >= max_iterations)
 				return candidates[best];
 		}
@@ -409,7 +444,7 @@ public class Optimize {
 	}
 
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws InterruptedException {
 		double[] x = {0, 1, 2, 3, 4, 5};
 		double[] y = {6, 4, 3, 2, 1.5, 1.25};
 
