@@ -684,6 +684,9 @@ public class VoxelFit {
 			  VoxelFit.logger
 		);
 
+//		optimal_state = new double[] {5.160376493496888, 1.6828820757999405, 2748.9024694177224, 2145.8928956418636, 11.604213455496183, -10.00459127558168, 25.755051116129877, 50.324967527056124, 15.280811134884543, -36.1318399203114, 15.74803624245463, -4.984238553588599, -5.595587914745606, 82.96798677834089, 0.004591236125528397, -15.517465692063746, 1.067949264683827, -40.52820506228498, -30.032757027496533, 17.508998573027043, -48.084154473613744, 22.732809296769137};
+
+
 		VoxelFit.logger.info(Arrays.toString(optimal_state));
 
 		Quantity[][][][] output_q = interpret_state(optimal_state, x, y, z, false);
@@ -737,8 +740,13 @@ public class VoxelFit {
 
 		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
 		try {
+			String filename;
+			if (args.length == 5)
+				filename = String.format("results/out-3d-%2$s-%3$s-%4$s-%5$s.log", (Object[]) args);
+			else
+				filename = "results/out-3d.log";
 			FileHandler handler = new FileHandler(
-				  String.format("results/out-3d-%2$s-%3$s-%4$s-%5$s.log", (Object[]) args),
+				  filename,
 				  true);
 			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM:%1$tS | %2$s | %3$s%4$s%n"));
 			logger.addHandler(handler);

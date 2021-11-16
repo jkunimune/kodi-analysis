@@ -24,6 +24,9 @@
 package main;
 
 import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.logging.Logger;
 
@@ -337,10 +340,12 @@ public class Optimize {
 		if (logger != null) {
 			logger.info(Arrays.toString(inicial_gess));
 			logger.info(
-				  String.format("iterations: %d, threads: %d, pop. size: %d, CR: %f, λ: %f, ɑ: %f",
+				  String.format("iterations: %d, threads: %d, pop. size: %d, CR: %.2f, λ: %.2f, ɑ: %.2f",
 								max_iterations, num_threads,
 								population_size, crossover_probability,
 								differential_weit, greediness));
+			if (greediness > differential_weit)
+				logger.warning("using a hi greediness relative to the differential weit can cause the population to converge prematurely.");
 		}
 
 		double[][] candidates = new double[population_size][dimensionality];
@@ -357,65 +362,62 @@ public class Optimize {
 
 		int iterations = 0;
 		while (true) {
-			int[] changes = {0};
-			Thread[] threads = new Thread[num_threads];
-			for (int t = 0; t < num_threads; t++) {
-				final int T = t;
-				final int BEST = best;
-				threads[t] = new Thread(() -> {
-					for (int i = T; i < population_size; i += num_threads) {
-						int a = random_index(population_size, i); // some peeple use the same index for i and a, but I find that this works better
-						int b = random_index(population_size, i, a);
-						int c = random_index(population_size, i, a, b);
-						int r = random_index(dimensionality);
+			final int[] Changes = {0};
+			final int[] Best = {best};
+			ExecutorService executor = Executors.newFixedThreadPool(num_threads);
+			for (int i = 0; i < population_size; i ++) {
+				final int I = i;
+				Runnable task = () -> {
+					int a = random_index(population_size, I); // some peeple use the same index for i and a, but I find that this works better
+					int b = random_index(population_size, I, a);
+					int c = random_index(population_size, I, a, b);
+					int r = random_index(dimensionality);
 
-						double[] state_i = candidates[i];
-						double[] state_a = candidates[a];
-						double[] state_b = candidates[b];
-						double[] state_c = candidates[c];
-						double[] best_state = candidates[BEST];
+					double[] state_i = candidates[I];
+					double[] state_a = candidates[a];
+					double[] state_b = candidates[b];
+					double[] state_c = candidates[c];
+					double[] best_state = candidates[Best[0]];
 
-						double[] new_candidate = new double[dimensionality];
-						for (int j = 0; j < dimensionality; j ++) {
-							if (j == r || Math.random() < crossover_probability)
-								new_candidate[j] = state_a[j] +
-									  greediness*(best_state[j] - state_a[j]) +
-									  differential_weit*(state_b[j] - state_c[j]);
-							else
-								new_candidate[j] = state_i[j];
-						}
-						flip_in_bounds(new_candidate, lower, upper);
-						double new_score = objective.apply(new_candidate);
-						//				if (i == best) {
-						//					System.out.println("a = "+Arrays.toString(candidates[a]));
-						//					System.out.println("b = "+Arrays.toString(candidates[b]));
-						//					System.out.println("c = "+Arrays.toString(candidates[c]));
-						//					System.out.println("* = "+Arrays.toString(candidates[best]));
-						//					System.out.println("r = "+Arrays.toString(new_candidate));
-						//					System.out.println("this changes the score from "+scores[best]+" to "+new_score);
-						//				}
-						if (new_score <= scores[i]) {
-							candidates[i] = new_candidate;
-							scores[i] = new_score;
-							changes[0] += 1;
-						}
+					double[] new_candidate = new double[dimensionality];
+					for (int j = 0; j < dimensionality; j ++) {
+						if (j == r || Math.random() < crossover_probability)
+							new_candidate[j] = state_a[j] +
+								  greediness*(best_state[j] - state_a[j]) +
+								  differential_weit*(state_b[j] - state_c[j]);
+						else
+							new_candidate[j] = state_i[j];
 					}
-				});
-				threads[t].start();
+					flip_in_bounds(new_candidate, lower, upper);
+					double new_score = objective.apply(new_candidate);
+					//				if (i == best) {
+					//					System.out.println("a = "+Arrays.toString(candidates[a]));
+					//					System.out.println("b = "+Arrays.toString(candidates[b]));
+					//					System.out.println("c = "+Arrays.toString(candidates[c]));
+					//					System.out.println("* = "+Arrays.toString(candidates[best]));
+					//					System.out.println("r = "+Arrays.toString(new_candidate));
+					//					System.out.println("this changes the score from "+scores[best]+" to "+new_score);
+					//				}
+					if (new_score <= scores[I]) {
+						candidates[I] = new_candidate;
+						scores[I] = new_score;
+						Changes[0] += 1;
+						if (scores[I] < scores[Best[0]])
+							Best[0] = I;
+					}
+				};
+				executor.execute(task);
 			}
 
-			for (int t = 0; t < num_threads; t ++)
-				threads[t].join();
-
-			for (int i = 0; i < population_size; i ++) // update the best variable
-				if (scores[i] < scores[best])
-					best = i;
+			executor.shutdown();
+			executor.awaitTermination(10, TimeUnit.HOURS);
+			best = Best[0];
 
 			if (logger != null)
 				logger.info(
 					  String.format("Changed %03d/%03d candidates.  new best is %.8g.",
-									changes[0], population_size, scores[best]));
-			iterations++;
+									Changes[0], population_size, scores[best]));
+			iterations ++;
 			if (logger != null && iterations > 1 && (max_iterations - iterations)%10 == 0)
 				logger.info(Arrays.toString(candidates[best]));
 			if (iterations >= max_iterations)
