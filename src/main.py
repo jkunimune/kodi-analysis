@@ -135,6 +135,7 @@ def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 	plt.tight_layout()
 	for filetype in ['png', 'eps']:
 		plt.savefig(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout.{filetype}')
+		print(f"saving {OUTPUT_FOLDER}{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout.{filetype}")
 
 	if SHOW_PLOTS:
 		plt.show()
@@ -257,104 +258,105 @@ if __name__ == '__main__':
 			logging.info("  Could not find text file for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 			continue
 
-		else:
-			output_filename = f"{data[SHOT]}-tim{data[TIM]}"
+		output_filename = f"{data[SHOT]}-tim{data[TIM]}"
 
-			if not SKIP_RECONSTRUCTION:
-				reconstruction = reconstruct( # perform the 2d reconstruccion
-					input_filename  = INPUT_FOLDER+input_filename,
-					output_filename = OUTPUT_FOLDER+output_filename,
-					rA = data[APERTURE_RADIUS]/1.e4,
-					sA = data[APERTURE_SPACING]/1.e4,
-					L  = data[APERTURE_DISTANCE],
-					M  = data[MAGNIFICATION],
-					rotation  = np.radians(data[ROTATION]),
-					etch_time = float(data[ETCH_TIME].strip(' h')),
-					aperture_configuration = APERTURE_CONFIGURATION,
-					aperture_charge_fitting = CHARGE_FITTING,
-					object_size = OBJECT_SIZE,
-					resolution = RESOLUTION,
-					expansion_factor = EXPANSION_FACTOR,
-					show_plots=False,
-				)
+		if not SKIP_RECONSTRUCTION:
+			reconstruction = reconstruct( # perform the 2d reconstruccion
+				input_filename  = INPUT_FOLDER+input_filename,
+				output_filename = OUTPUT_FOLDER+output_filename,
+				rA = data[APERTURE_RADIUS]/1.e4,
+				sA = data[APERTURE_SPACING]/1.e4,
+				L  = data[APERTURE_DISTANCE],
+				M  = data[MAGNIFICATION],
+				rotation  = np.radians(data[ROTATION]),
+				etch_time = float(data[ETCH_TIME].strip(' h')),
+				aperture_configuration = APERTURE_CONFIGURATION,
+				aperture_charge_fitting = CHARGE_FITTING,
+				object_size = OBJECT_SIZE,
+				resolution = RESOLUTION,
+				expansion_factor = EXPANSION_FACTOR,
+				show_plots=False,
+			)
 
-				results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM])] # clear any previous versions of this reconstruccion
-				for result in reconstruction:
-					results = results.append( # and save the new ones to the dataframe
-						dict(
-							shot=data[SHOT],
-							tim=data[TIM],
-							offset_magnitude=np.nan,
-							offset_angle=np.nan,
-							**result),
-						ignore_index=True)
-				results = results[results.shot != 'placeholder']
-
-			images_on_this_los = (results.shot == data[SHOT]) & (results.tim == data[TIM])
-			for i, result in results[images_on_this_los].iterrows(): # plot the reconstruccion in each energy cut
-				if result.energy_cut != 'xray':
-					cut = result.energy_cut
-					xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
-					xI_bins, yI_bins, NI = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-projection')
-					plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
-						data=data, **result)
-
-					try:
-						rI, r1, r2, zI, z1, z2 = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-radial')
-						plot_radial_data(rI, zI, r1, z1, r2, z2, data=data, **result)
-					except IOError:
-						pass
-
-					x_bins, y_bins, B = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstruction')
-					plot_reconstruction(x_bins, y_bins, B, result.energy_min, result.energy_max, result.energy_cut, data)
-			
-			for cut_set in [['0', '1', '2', '3', '4', '5', '6', '7'], ['lo', 'hi']]: # create the nested plots
-				filenames = []
-				for cut_name in cut_set:
-					results_in_this_cut = results[images_on_this_los & (results.energy_cut == cut_name)]
-					if results_in_this_cut.shape[0] >= 1:
-						filenames.append((f"{OUTPUT_FOLDER}{output_filename}-{cut_name}-reconstruction", CMAP[cut_name]))
-				if len(filenames) >= len(cut_set)*3/4:
-					reconstructions = []
-					for filename, cmap in filenames:
-						reconstructions.append([*load_hdf5(filename), cmap])
-
-					dxL, dyL = center_of_mass(*reconstructions[0][:3])
-					dxH, dyH = center_of_mass(*reconstructions[-1][:3])
-					dx, dy = dxH - dxL, dyH - dyL
-					logging.info(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
-					results.offset_magnitude[images_on_this_los] = np.hypot(dx, dy)/1e-4
-					results.offset_angle[images_on_this_los] = np.degrees(np.arctan2(dy, dx))
-
-					basis = tim_coordinates(data[TIM])
-			
-					plot_overlaid_contors(
-						reconstructions,
-						project(float(data[R_OFFSET]), float(data[Θ_OFFSET]), float(data[Φ_OFFSET]), basis)*1e-4, # cm
-						project(float(data[R_FLOW]), float(data[Θ_FLOW]), float(data[Φ_FLOW]), basis)*1e-4, # cm/ns
-						data
-					)
-
-					break
-
-			try:
-				xray = np.loadtxt(INPUT_FOLDER+'KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T
-			except (ValueError, OSError):
-				xray = None
-			if xray is not None:
-				logging.info("x-ray image")
-				xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
-				p0, (p2, θ2) = plot_reconstruction(xX_bins, yX_bins, xray, None, None, "xray", data)
-				results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM]) | (results.energy_cut != 'xray')] # clear any previous versions of this reconstruccion
+			results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM])] # clear any previous versions of this reconstruccion
+			for result in reconstruction:
 				results = results.append( # and save the new ones to the dataframe
 					dict(
 						shot=data[SHOT],
 						tim=data[TIM],
-						energy_cut='xray',
-						P0_magnitude=p0/1e-4,
-						P2_magnitude=p2/1e-4,
-						P2_angle=θ2),
+						offset_magnitude=np.nan,
+						offset_angle=np.nan,
+						**result),
 					ignore_index=True)
+			results = results[results.shot != 'placeholder']
 
-			results = results.sort_values(['shot', 'tim', 'energy_min', 'energy_max'], ascending=[True, True, True, False])
-			results.to_csv(OUTPUT_FOLDER+"/summary.csv", index=False) # save the results to disk
+		logging.info("  Updating plots for TIM {} on shot {}".format(data[TIM], data[SHOT]))
+
+		images_on_this_los = (results.shot == data[SHOT]) & (results.tim == data[TIM])
+		for i, result in results[images_on_this_los].iterrows(): # plot the reconstruccion in each energy cut
+			if result.energy_cut != 'xray':
+				cut = result.energy_cut
+				xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
+				xI_bins, yI_bins, NI = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-projection')
+				plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
+					data=data, **result)
+
+				try:
+					rI, r1, r2, zI, z1, z2 = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-radial')
+					plot_radial_data(rI, zI, r1, z1, r2, z2, data=data, **result)
+				except IOError:
+					pass
+
+				x_bins, y_bins, B = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstruction')
+				plot_reconstruction(x_bins, y_bins, B, result.energy_min, result.energy_max, result.energy_cut, data)
+		
+		for cut_set in [['0', '1', '2', '3', '4', '5', '6', '7'], ['lo', 'hi']]: # create the nested plots
+			filenames = []
+			for cut_name in cut_set:
+				results_in_this_cut = results[images_on_this_los & (results.energy_cut == cut_name)]
+				if results_in_this_cut.shape[0] >= 1:
+					filenames.append((f"{OUTPUT_FOLDER}{output_filename}-{cut_name}-reconstruction", CMAP[cut_name]))
+			if len(filenames) >= len(cut_set)*3/4:
+				reconstructions = []
+				for filename, cmap in filenames:
+					reconstructions.append([*load_hdf5(filename), cmap])
+
+				dxL, dyL = center_of_mass(*reconstructions[0][:3])
+				dxH, dyH = center_of_mass(*reconstructions[-1][:3])
+				dx, dy = dxH - dxL, dyH - dyL
+				logging.info(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
+				results.offset_magnitude[images_on_this_los] = np.hypot(dx, dy)/1e-4
+				results.offset_angle[images_on_this_los] = np.degrees(np.arctan2(dy, dx))
+
+				basis = tim_coordinates(data[TIM])
+		
+				plot_overlaid_contors(
+					reconstructions,
+					project(float(data[R_OFFSET]), float(data[Θ_OFFSET]), float(data[Φ_OFFSET]), basis)*1e-4, # cm
+					project(float(data[R_FLOW]), float(data[Θ_FLOW]), float(data[Φ_FLOW]), basis)*1e-4, # cm/ns
+					data
+				)
+
+				break
+
+		try:
+			xray = np.loadtxt(INPUT_FOLDER+'KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T
+		except (ValueError, OSError):
+			xray = None
+		if xray is not None:
+			logging.info("x-ray image")
+			xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
+			p0, (p2, θ2) = plot_reconstruction(xX_bins, yX_bins, xray, None, None, "xray", data)
+			results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM]) | (results.energy_cut != 'xray')] # clear any previous versions of this reconstruccion
+			results = results.append( # and save the new ones to the dataframe
+				dict(
+					shot=data[SHOT],
+					tim=data[TIM],
+					energy_cut='xray',
+					P0_magnitude=p0/1e-4,
+					P2_magnitude=p2/1e-4,
+					P2_angle=θ2),
+				ignore_index=True)
+
+		results = results.sort_values(['shot', 'tim', 'energy_min', 'energy_max'], ascending=[True, True, True, False])
+		results.to_csv(OUTPUT_FOLDER+"/summary.csv", index=False) # save the results to disk

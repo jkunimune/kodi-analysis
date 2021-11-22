@@ -190,27 +190,27 @@ public class Optimize {
 		while (true) {
 			double[][] jacobian = compute_jacobian.apply(state); // take the gradients
 
-//			double[] direction = new double[state.length];
-//			for (int i = 0; i < state.length; i ++) {
-//				direction[i] = 2*Math.random() - 1;
-//			}
-////			double slope = 0;
-//			for (int j = 0; j < state.length; j ++)
-//				for (int i = 0; i < residuals.length; i ++)
-//					slope += 2*residuals[i]*jacobian[i][j]*direction[j];
-//			System.out.println("[");
-//			for (double d = 0; d < 1; d += 0.01) {
-//				double[] probe_x = new double[direction.length];
-//				for (int i = 0; i < state.length; i ++)
-//					probe_x[i] = state[i] + d*direction[i];
-//				double[] probe_residuals = compute_residuals.apply(probe_x);
-//				double probe_value = 0;
-//				for (double r: probe_residuals)
-//					probe_value += r*r;
-//				System.out.printf("%f, %.8g],\n", d, probe_value);
-//			}
-//			System.out.println("]");
-//			System.out.println(slope);
+			double[] direction = new double[state.length];
+			for (int i = 0; i < state.length; i ++) {
+				direction[i] = 2*Math.random() - 1;
+			}
+			double slope = 0;
+			for (int j = 0; j < state.length; j ++)
+				for (int i = 0; i < residuals.length; i ++)
+					slope += 2*residuals[i]*jacobian[i][j]*direction[j];
+			System.out.println("[");
+			for (double d = 0; d < 1; d += 0.01) {
+				double[] probe_x = new double[direction.length];
+				for (int i = 0; i < state.length; i ++)
+					probe_x[i] = state[i] + d*direction[i];
+				double[] probe_residuals = compute_residuals.apply(probe_x);
+				double probe_value = 0;
+				for (double r: probe_residuals)
+					probe_value += r*r;
+				System.out.printf("%f, %.8g],\n", d, probe_value);
+			}
+			System.out.println("]");
+			System.out.println(slope);
 
 			if (is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance))
 				return state;
@@ -293,7 +293,8 @@ public class Optimize {
 		  double[] lower,
 		  double[] upper,
 		  int max_iterations,
-		  Logger logger) throws InterruptedException {
+		  Logger logger
+	) throws InterruptedException {
 		return differential_evolution(
 			  objective, inicial_gess, scale, lower, upper, max_iterations,
 			  1,
@@ -301,6 +302,30 @@ public class Optimize {
 			  0.7,
 			  0.3,
 			  0.0,
+			  logger);
+	}
+
+	public static double[] differential_evolution(
+		  Function<double[], Double> objective,
+		  double[] inicial_gess,
+		  double[] scale,
+		  double[] lower,
+		  double[] upper,
+		  int max_iterations,
+		  int num_threads,
+		  int population_size,
+		  double crossover_probability,
+		  double differential_weit,
+		  double greediness,
+		  Logger logger
+	) throws InterruptedException {
+		boolean[] active = new boolean[scale.length];
+		Arrays.fill(active, true);
+		return differential_evolution(
+			  objective, inicial_gess, scale, lower, upper,
+			  active, max_iterations, num_threads,
+			  population_size, crossover_probability,
+			  differential_weit, greediness,
 			  logger);
 	}
 
@@ -326,13 +351,15 @@ public class Optimize {
 		  double[] scale,
 		  double[] lower,
 		  double[] upper,
+		  boolean[] active,
 		  int max_iterations,
 		  int num_threads,
 		  int population_size,
 		  double crossover_probability,
 		  double differential_weit,
 		  double greediness,
-		  Logger logger) throws InterruptedException {
+		  Logger logger
+	) throws InterruptedException {
 		if (inicial_gess.length != scale.length || scale.length != lower.length || lower.length != upper.length)
 			throw new IllegalArgumentException("my lengths don't match my lengths don't match I'm out in public and my lengths don't match");
 		int dimensionality = inicial_gess.length;
@@ -348,48 +375,66 @@ public class Optimize {
 				logger.warning("using a hi greediness relative to the differential weit can cause the population to converge prematurely.");
 		}
 
-		double[][] candidates = new double[population_size][dimensionality];
+		double[][] candidates = new double[population_size][];
 		double[] scores = new double[population_size];
-		int best = -1;
-		for (int i = 0; i < population_size; i ++) {
-			for (int j = 0; j < dimensionality; j ++)
-				candidates[i][j] = inicial_gess[j] + (2*Math.random() - 1)*scale[j];
-			flip_in_bounds(candidates[i], lower, upper);
-			scores[i] = objective.apply(candidates[i]);
-			if (best == -1 || scores[i] < scores[best])
-				best = i;
-		}
+		Arrays.fill(scores, Double.POSITIVE_INFINITY);
+		int best = 0;
+//		for (int i = 0; i < population_size; i ++) {
+//			for (int j = 0; j < dimensionality; j ++) {
+//				if (i > 0 && active[j])
+//					candidates[i][j] = inicial_gess[j] + (2*Math.random() - 1)*scale[j]; // randomly scatter the inicial state across the area of interest
+//				else
+//					candidates[i][j] = inicial_gess[j]; // but keep the 0th member and the inactive coordinates at the inicial gess
+//			}
+//			flip_in_bounds(candidates[i], lower, upper);
+//			scores[i] = objective.apply(candidates[i]);
+//			if (best == -1 || scores[i] < scores[best])
+//				best = i;
+//		}
 
 		int iterations = 0;
 		while (true) {
 			final int[] Changes = {0};
 			final int[] Best = {best};
 			ExecutorService executor = Executors.newFixedThreadPool(num_threads);
-			for (int i = 0; i < population_size; i ++) {
+			for (int i = 0; i < population_size; i ++) { // for each candidate in the populacion
 				final int I = i;
+				double[] new_candidate = new double[dimensionality];
 				Runnable task = () -> {
-					int a = random_index(population_size, I); // some peeple use the same index for i and a, but I find that this works better
-					int b = random_index(population_size, I, a);
-					int c = random_index(population_size, I, a, b);
-					int r = random_index(dimensionality);
-
-					double[] state_i = candidates[I];
-					double[] state_a = candidates[a];
-					double[] state_b = candidates[b];
-					double[] state_c = candidates[c];
-					double[] best_state = candidates[Best[0]];
-
-					double[] new_candidate = new double[dimensionality];
-					for (int j = 0; j < dimensionality; j ++) {
-						if (j == r || Math.random() < crossover_probability)
-							new_candidate[j] = state_a[j] +
-								  greediness*(best_state[j] - state_a[j]) +
-								  differential_weit*(state_b[j] - state_c[j]);
-						else
-							new_candidate[j] = state_i[j];
+					if (candidates[I] == null) { // if we have yet to inicialize anything here
+						for (int j = 0; j < dimensionality; j ++) { // make something up
+							if (I > 0 && active[j])
+								new_candidate[j] = inicial_gess[j] + (2*Math.random() - 1)*scale[j]; // randomly scatter the inicial state across the area of interest
+							else
+								new_candidate[j] = inicial_gess[j]; // but keep the 0th member and the inactive coordinates at the inicial gess
+						}
 					}
-					flip_in_bounds(new_candidate, lower, upper);
-					double new_score = objective.apply(new_candidate);
+					else { // otherwise
+						int a = random_index(population_size, I); // some peeple use the same index for i and a, but I find that this works better
+						int b = random_index(population_size, I, a);
+						int c = random_index(population_size, I, a, b);
+						int r = -1;
+						while (r < 0 || !active[r]) // remember to choose one active dimension to garanteed-replace
+							r = random_index(dimensionality);
+
+						double[] state_i = candidates[I];
+						double[] state_a = candidates[a];
+						double[] state_b = candidates[b];
+						double[] state_c = candidates[c];
+						double[] best_state = candidates[Best[0]];
+
+						for (int j = 0; j < dimensionality; j++) {
+							if (active[j] && (j == r || Math.random() < crossover_probability))
+								new_candidate[j] = state_a[j] +
+									  greediness*(best_state[j] - state_a[j]) +
+									  differential_weit*(state_b[j] - state_c[j]);
+							else
+								new_candidate[j] = state_i[j];
+						}
+					}
+
+					flip_in_bounds(new_candidate, lower, upper); // put it in bounds
+					double new_score = objective.apply(new_candidate); // and calculate the score
 					//				if (i == best) {
 					//					System.out.println("a = "+Arrays.toString(candidates[a]));
 					//					System.out.println("b = "+Arrays.toString(candidates[b]));
@@ -418,7 +463,7 @@ public class Optimize {
 					  String.format("Changed %03d/%03d candidates.  new best is %.8g.",
 									Changes[0], population_size, scores[best]));
 			iterations ++;
-			if (logger != null && iterations > 1 && (max_iterations - iterations)%10 == 0)
+			if (logger != null && (max_iterations - iterations)%10 == 0)
 				logger.info(Arrays.toString(candidates[best]));
 			if (iterations >= max_iterations)
 				return candidates[best];

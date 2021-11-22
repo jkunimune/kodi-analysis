@@ -78,9 +78,9 @@ def plot_images(Э, ξ, υ, images):
 
 
 if __name__ == '__main__':
-	N = 7 # model spatial resolucion
+	N = 11 # model spatial resolucion
 	M = 4 # image energy resolucion
-	H = 7#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
+	H = 11#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
@@ -104,7 +104,7 @@ if __name__ == '__main__':
 	# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 	# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
 	tru_temperature = 6*np.exp(-(np.sqrt(X**2 + (Y - 20)**2 + 2.5*Z**2)/75)**4/2)
-	tru_density = 10000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*Y**2 + Z**2)/75)**4/2) * (1 - 0.9*(tru_temperature/tru_temperature.max()**2))
+	tru_density = 10000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*Y**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_temperature/tru_temperature.max())**2)
 	tru_σv = 9.1e-22*np.exp(-0.572*abs(np.log(tru_temperature/64.2))**2.13)
 	tru_number_density = np.where(X**2 + (Y - 20)**2 + 2.5*Z**2 < 75**2, 1/4*tru_density/(5*1.66e-27), 0)
 	tru_production = tru_number_density**2*tru_σv*100e-9
@@ -120,6 +120,7 @@ if __name__ == '__main__':
 	np.savetxt("tmp/ypsilon.csv", υ)
 	np.savetxt("tmp/morphology.csv", np.ravel([tru_production, tru_temperature, tru_density]))
 
+	# tru_production, tru_temperature, tru_density = np.loadtxt("tmp/morphology - copia.csv").reshape((3, N+1, N+1, N+1))
 	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 	# completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
 	# if completed_process.returncode > 0:

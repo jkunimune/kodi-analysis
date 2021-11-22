@@ -579,6 +579,9 @@ public class VoxelFit {
 		  double[][][][] images, double[] x, double[] y, double[] z,
 		  double[] Э, double[] ξ, double[] υ, Vector[] lines_of_sight,
 		  String[] args) throws InterruptedException {
+
+		boolean[] ignore_all_but_the_top_bin = {false};
+
 		Function<double[], double[]> residuals = (double[] state) -> {
 			Quantity[][][][] morphology = interpret_state(state, x, y, z, false);
 			Quantity[][][][] synthetic = synthesize_images(
@@ -642,7 +645,7 @@ public class VoxelFit {
 		for (int i = 0; i < inicial_state.length; i ++) {
 			lower[i] = (i < 4) ? 0 : Double.NEGATIVE_INFINITY;
 			upper[i] = Double.POSITIVE_INFINITY;
-			scale[i] = (i < 2) ? 8 : (i < 4) ? 3_000 : 50;
+			scale[i] = (i < 2) ? 8 : (i < 4) ? 3_000 : (i == 4 || i == 4 + DEGREES_OF_FREE) ? 50 : 20;
 			hot_spot[i] = i == 0 || i == 1 || (i >= 4 && i < 4 + DEGREES_OF_FREE);
 //			dense_fuel[i] = !hot_spot[i];
 		}
@@ -669,6 +672,23 @@ public class VoxelFit {
 
 		if (args.length != 6)
 			throw new IllegalArgumentException("need five arguments but got "+Arrays.toString(args));
+		ignore_all_but_the_top_bin[0] = true;
+		optimal_state = Optimize.differential_evolution(
+			  error,
+			  optimal_state,
+			  scale,
+			  lower,
+			  upper,
+			  hot_spot,
+			  Integer.parseInt(args[0]),
+			  Integer.parseInt(args[1]),
+			  Integer.parseInt(args[2])*scale.length,
+			  Double.parseDouble(args[3]),
+			  Double.parseDouble(args[4]),
+			  Double.parseDouble(args[5]),
+			  VoxelFit.logger
+		);
+		ignore_all_but_the_top_bin[0] = false;
 		optimal_state = Optimize.differential_evolution(
 			  error,
 			  optimal_state,
@@ -684,7 +704,7 @@ public class VoxelFit {
 			  VoxelFit.logger
 		);
 
-//		optimal_state = new double[] {5.160376493496888, 1.6828820757999405, 2748.9024694177224, 2145.8928956418636, 11.604213455496183, -10.00459127558168, 25.755051116129877, 50.324967527056124, 15.280811134884543, -36.1318399203114, 15.74803624245463, -4.984238553588599, -5.595587914745606, 82.96798677834089, 0.004591236125528397, -15.517465692063746, 1.067949264683827, -40.52820506228498, -30.032757027496533, 17.508998573027043, -48.084154473613744, 22.732809296769137};
+//		optimal_state = new double[] {9.273959811456912, 5.518470453527778, 3379.6315006764044, 2806.8227418006895, 57.312484849617846, -6.354991720528519, -4.890995459201385, -3.172402766914786, -0.9751284235695912, 3.4976336757066027, 2.2772950205449227, -3.1253109776152197, 9.154319177700158, 26.323061614764356, 3.856299934741362, -4.591693972906754, 7.565448970711607, 1.4394580467414047, 1.6703579440004832, 1.320842480963671, 1.946330732423208, -21.184329431207065};
 
 
 		VoxelFit.logger.info(Arrays.toString(optimal_state));
@@ -741,8 +761,8 @@ public class VoxelFit {
 		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM | %2$s | %3$s%4$s%n"));
 		try {
 			String filename;
-			if (args.length == 5)
-				filename = String.format("results/out-3d-%2$s-%3$s-%4$s-%5$s.log", (Object[]) args);
+			if (args.length == 6)
+				filename = String.format("results/out-3d-%3$s-%4$s-%5$s-%6$s.log", (Object[]) args);
 			else
 				filename = "results/out-3d.log";
 			FileHandler handler = new FileHandler(

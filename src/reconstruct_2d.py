@@ -312,8 +312,8 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		cuts = [('synth', [0, 100])]
 	else:
 		# cuts = [('all', [0, 100])] # [MeV] (pre-filtering)
-		# cuts = [('hi', [9, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
-		cuts = [('7', [11, 100]), ('6', [10, 11]), ('5', [9, 10]), ('4', [8, 9]), ('3', [6, 8]), ('2', [4, 6]), ('1', [2, 4]), ('0', [0, 2])]
+		cuts = [('hi', [9, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
+		# cuts = [('7', [11, 100]), ('6', [10, 11]), ('5', [9, 10]), ('4', [8, 9]), ('3', [6, 8]), ('2', [4, 6]), ('1', [2, 4]), ('0', [0, 2])]
 		# cuts = [('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
 		# cuts = [('all', [0, 100]), ('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
 
@@ -411,7 +411,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 
 		# x0, y0, δ, Q, dx0, dy0, dδ, dQ = 0, 0, .01, .1, 0, 0, 0, 0
 
-		δ_eff = δ + 4*Q/e_in_bounds[0]
+		δ_eff = δ + 2.0*Q/e_in_bounds[0]
 
 		if mode == 'hist':
 			xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, binsI+1), np.linspace(y0 - r_img, y0 + r_img, binsI+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
