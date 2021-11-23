@@ -23,7 +23,6 @@
  */
 package main;
 
-import java.util.Arrays;
 import java.util.Locale;
 import java.util.Random;
 
@@ -798,6 +797,10 @@ public class NumericalMethods {
 		return interp3d(values, index.get(0), index.get(1), index.get(2), smooth);
 	}
 
+	public static double interp3d(double[][][] values, Vector index, boolean smooth) {
+		return interp3d(values, index.get(0), index.get(1), index.get(2), smooth);
+	}
+
 	public static Quantity interp3d(Quantity[][][] values, double i, double j, double k, boolean smooth) {
 		int N = values[0][0][0].getDofs();
 		return interp3d(values, new Quantity(i, N), new Quantity(j, N), new Quantity(k, N), smooth);
@@ -831,6 +834,40 @@ public class NumericalMethods {
 			for (int dj = 0; dj <= 1; dj ++)
 				for (int dk = 0; dk <= 1; dk ++)
 					value = value.plus(values[i0+di][j0+dj][k0+dk].times(ci0.minus(di).abs()).times(cj0.minus(dj).abs()).times(ck0.minus(dk).abs()));
+		return value;
+	}
+
+	public static double interp3d(double[][][] values, double i, double j, double k, boolean smooth) {
+		if (
+			  (i < 0 || i > values.length - 1) ||
+					(j < 0 || j > values[0].length - 1) ||
+					(k < 0 || k > values[0][0].length - 1))
+			throw new ArrayIndexOutOfBoundsException(i+", "+j+", "+k+" out of bounds for "+values.length+"x"+values[0].length+"x"+values[0][0].length);
+		if (Double.isNaN(i) || Double.isNaN(j) || Double.isNaN(k))
+			throw new IllegalArgumentException("is this a joke to you");
+
+		int i0 = Math.min((int)i, values.length - 2);
+		int j0 = Math.min((int)j, values[i0].length - 2);
+		int k0 = Math.min((int)k, values[i0][j0].length - 2);
+		double ci0, cj0, ck0;
+		if (smooth) {
+			ci0 = smooth_step(1 - (i - i0));
+			cj0 = smooth_step(1 - (j - j0));
+			ck0 = smooth_step(1 - (k - k0));
+		}
+		else {
+			ci0 = 1 - (i - i0);
+			cj0 = 1 - (j - j0);
+			ck0 = 1 - (k - k0);
+		}
+		double value = 0;
+		for (int di = 0; di <= 1; di ++)
+			for (int dj = 0; dj <= 1; dj ++)
+				for (int dk = 0; dk <= 1; dk ++)
+					value += values[i0+di][j0+dj][k0+dk] *
+						  Math.abs(ci0 - di) *
+						  Math.abs(cj0 - dj) *
+						  Math.abs(ck0 - dk);
 		return value;
 	}
 	
@@ -1152,6 +1189,11 @@ public class NumericalMethods {
 				arr[i][j] += val;
 	}
 
+	public static double smooth_step(double x) {
+		assert x >= 0 && x <= 1;
+		return (((-20*x + 70)*x - 84)*x + 35)*Math.pow(x, 4);
+	}
+
 	public static Quantity smooth_step(Quantity x) {
 		assert x.value >= 0 && x.value <= 1 : x;
 		return x.pow(4).times(x.times(x.times(x.times(-20).plus(70)).plus(-84)).plus(35));
@@ -1412,7 +1454,7 @@ public class NumericalMethods {
 	 * @param z the cosine of the angle at which this is evaluated
 	 * @return P_l(z)
 	 */
-	public static Quantity legendre(int l, Quantity z) {
+	public static double legendre(int l, double z) {
 		return legendre(l, 0, z);
 	}
 
@@ -1423,53 +1465,63 @@ public class NumericalMethods {
 	 * @param x the cosine of the angle at which this is evaluated
 	 * @return P_l^m(z)
 	 */
-	public static Quantity legendre(int l, int m, Quantity x) {
+	public static double legendre(int l, int m, double x) {
 		if (Math.abs(m) > l)
 			throw new IllegalArgumentException("|m| must not exceed l, but |"+m+"| > "+l);
 
-		Quantity x2 = x.pow(2); // get some simple calculacions done out front
-		Quantity y2 = x2.minus(1).times(-1);
-		Quantity y = (m%2 == 1) ? y2.sqrt() : new Quantity(Double.NaN, x.getDofs()); // but avoid taking a square root if you can avoid it
+		double x2 = Math.pow(x, 2); // get some simple calculacions done out front
+		double y2 = 1 - x2;
+		double y = (m%2 == 1) ? Math.sqrt(y2) : Double.NaN; // but avoid taking a square root if you can avoid it
 
 		if (m == 0) {
 			if (l == 0)
-				return new Quantity(1, x.getDofs());
+				return 1;
 			else if (l == 1)
 				return x;
 			else if (l == 2)
-				return x2.times(3).minus(1).over(2);
+				return (3*x2 - 1)/2.;
 			else if (l == 3)
-				return x2.times(5).minus(3).times(x).over(2);
+				return (5*x2 - 3)*x/2.;
 			else if (l == 4)
-				return x2.times(35).minus(30).times(x2).plus(3).over(8);
+				return ((35*x2 - 30)*x2 + 3)/8.;
+			else if (l == 5)
+				return ((63*x2 - 70)*x2 + 15)*x/8.;
+			else if (l == 6)
+				return (((231*x2 - 315)*x2 + 105)*x2 - 5)/16.;
+			else if (l == 7)
+				return (((429*x2 - 693)*x2 + 315)*x2 - 35)*x/16.;
+			else if (l == 8)
+				return ((((6435*x2 - 12012)*x2 + 6930)*x2 - 1260)*x2 + 35)/128.;
+			else if (l == 9)
+				return ((((12155*x2 - 25740)*x2 + 18018)*x2 - 4620)*x2 + 315)*x/128.;
 		}
 		else if (m == 1) {
 			if (l == 1)
-				return y.times(-1);
+				return -y;
 			else if (l == 2)
-				return x.times(y).times(-3);
+				return -3*y*x;
 			else if (l == 3)
-				return x2.times(5).minus(1).times(y).times(-3/2.);
+				return -3*y*(5*x2 - 1)/2.;
 			else if (l == 4)
-				return x2.times(7).minus(3).times(x).times(y).times(-5/2.);
+				return -5*y*(7*x2 - 3)*x/2.;
 		}
 		else if (m == 2) {
 			if (l == 2)
-				return y2.times(3);
+				return 3*y2;
 			else if (l == 3)
-				return x.times(y2).times(15);
+				return 15*y2*x;
 			else if (l == 4)
-				return x2.times(7).minus(1).times(y2).times(15/2.);
+				return 15*y2*(7*x2 - 1)/2.;
 		}
 		else if (m == 3) {
 			if (l == 3)
-				return y.pow(3).times(-15);
+				return -15*y*y2;
 			else if (l == 4)
-				return x.times(y.pow(3)).times(-105);
+				return -105*y*y2*x;
 		}
 		else if (m == 4) {
 			if (l == 4)
-				return y2.pow(2).times(105);
+				return 105*y2*y2;
 		}
 
 		throw new IllegalArgumentException("I don't know Legendre polynomials that high (_"+l+"^"+m+").");
