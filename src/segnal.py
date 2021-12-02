@@ -27,7 +27,7 @@ def linregress(x, y, weights=None):
 
 
 def covariance_from_harmonics(p0, p1, θ1, p2, θ2):
-	""" convert a circular harmonick representacion of a conture to a covariance matrix """
+	""" convert a circular harmonic representation of a conture to a covariance matrix """
 	return (
 		np.matmul(np.matmul(
 			np.array([[np.cos(θ2), -np.sin(θ2)], [np.sin(θ2), np.cos(θ2)]]),
@@ -38,7 +38,7 @@ def covariance_from_harmonics(p0, p1, θ1, p2, θ2):
 
 
 def harmonics_from_covariance(Σ, μ):
-	""" convert a covariance matrix to a circular harmonick representacion of its conture """
+	""" convert a covariance matrix to a circular harmonic representation of its conture """
 	try:
 		eigval, eigvec = np.linalg.eig(Σ)
 	except np.linalg.LinAlgError:
@@ -54,7 +54,7 @@ def harmonics_from_covariance(Σ, μ):
 
 
 def fit_ellipse(x, y, f, contour):
-	""" fit an ellipse to the given image, and represent that ellipse as a simmetrick matrix """
+	""" fit an ellipse to the given image, and represent that ellipse as a symmetric matrix """
 	assert len(x.shape) == len(y.shape) and len(x.shape) == 1
 	X, Y = np.meshgrid(x, y, indexing='ij') # f should be indexd in the ij convencion
 

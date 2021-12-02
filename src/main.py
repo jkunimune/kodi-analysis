@@ -56,6 +56,7 @@ CMAP = {'all': GREYS, 'lo': REDS, 'md': GREENS, 'hi': BLUES, 'xray': VIOLETS, 's
 
 
 def center_of_mass(x_bins, y_bins, N):
+	""" get the center of mass of a 2d histogram """
 	return np.array([
 		np.average((x_bins[:-1] + x_bins[1:])/2, weights=N.sum(axis=1)),
 		np.average((y_bins[:-1] + y_bins[1:])/2, weights=N.sum(axis=0))])
@@ -293,7 +294,7 @@ if __name__ == '__main__':
 		logging.info("  Updating plots for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 
 		images_on_this_los = (results.shot == data[SHOT]) & (results.tim == data[TIM])
-		for i, result in results[images_on_this_los].iterrows(): # plot the reconstruccion in each energy cut
+		for i, result in results[images_on_this_los].iterrows(): # plot the reconstruction in each energy cut
 			if result.energy_cut != 'xray':
 				cut = result.energy_cut
 				xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
@@ -347,7 +348,7 @@ if __name__ == '__main__':
 			logging.info("x-ray image")
 			xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
 			p0, (p2, θ2) = plot_reconstruction(xX_bins, yX_bins, xray, None, None, "xray", data)
-			results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM]) | (results.energy_cut != 'xray')] # clear any previous versions of this reconstruccion
+			results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM]) | (results.energy_cut != 'xray')] # clear any previous versions of this reconstruction
 			results = results.append( # and save the new ones to the dataframe
 				dict(
 					shot=data[SHOT],

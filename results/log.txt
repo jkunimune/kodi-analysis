@@ -1,0 +1,1742 @@
+2021-10-20 11:56:51,705 | INFO   | 
+Beginning reconstruction for TIM 2 on shot 95520
+2021-10-20 11:56:54,272 | INFO   | Note: NumExpr detected 12 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
+2021-10-20 11:56:54,273 | INFO   | NumExpr defaulting to 8 threads.
+2021-10-20 11:56:54,964 | INFO   |   fitting electrick feeld
+2021-10-20 12:04:56,077 |INFO  | Beginning reconstruction for TIM 2 on shot 95520
+2021-10-20 12:04:58,634 |INFO  | Note: NumExpr detected 12 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
+2021-10-20 12:04:58,634 |INFO  | NumExpr defaulting to 8 threads.
+2021-10-20 12:04:59,348 |INFO  |   fitting electrick feeld
+2021-10-20 12:05:30,181 |INFO  | Beginning reconstruction for TIM 2 on shot 95520
+2021-10-20 12:05:33,250 |INFO  |   fitting electrick feeld
+2021-10-20 12:09:33,249 |INFO  | Beginning reconstruction for TIM 2 on shot 95520
+2021-10-20 12:09:35,846 |INFO  | d in [ 0.80,  1.58] μm
+2021-10-20 12:09:36,317 |INFO  |   fitting electrick feeld
+2021-10-20 12:09:36,728 |INFO  |   n = 3898, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 0.00 ± 0.00 μm, Q = 0.000 ± 0.000 cm*MeV, M = 13.92
+2021-10-20 12:09:36,728 |INFO  |   χ^2/n = 0
+2021-10-20 12:11:37,799 |INFO  | Beginning reconstruction for TIM 2 on shot 95520
+2021-10-20 12:11:40,416 |INFO  | d in [ 0.80,  1.58] μm
+2021-10-20 12:11:40,886 |INFO  |   fitting electrick feeld
+2021-10-20 12:11:41,278 |INFO  |   n = 3898, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 0.00 ± 0.00 μm, Q = 0.000 ± 0.000 cm*MeV, M = 13.92
+2021-10-20 12:11:41,279 |INFO  |   χ^2/n = 0
+10-20 12:16 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-20 12:16 |INFO| d in [ 0.80,  1.58] μm
+10-20 12:16 |INFO|   fitting electrick feeld
+10-20 12:16 |INFO|   n = 3898, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 0.00 ± 0.00 μm, Q = 0.000 ± 0.000 cm*MeV, M = 13.92
+10-20 12:16 |INFO|   χ^2/n = 0
+10-20 12:16 |INFO|   P0 = nan μm
+10-20 12:16 |INFO|   P2 = nan μm = nan%, θ = nan°
+10-20 12:17 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-20 12:17 |INFO| d in [ 0.80,  1.58] μm
+10-20 12:17 |INFO|   fitting electrick feeld
+10-20 12:18 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-20 12:18 |INFO| d in [ 0.80,  1.58] μm
+10-20 12:18 |INFO|   fitting electrick feeld
+10-20 12:18 |INFO|   n = 3898, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 7.18 ± 0.00 μm, Q = 0.100 ± 0.000 cm*MeV, M = 13.92
+10-20 12:18 |INFO|   Charging artificially increased source size by 6.531 μm (a 1.909× change!)
+10-20 12:18 |INFO|   χ^2/n = 0
+10-20 12:18 |INFO|   P0 = nan μm
+10-20 12:18 |INFO|   P2 = nan μm = nan%, θ = nan°
+10-20 12:18 |INFO| d in [ 1.58,  1.81] μm
+10-20 12:18 |INFO|   fitting electrick feeld
+10-20 12:18 |INFO|   n = 6.306e+04, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 7.18 ± 0.00 μm, Q = 0.100 ± 0.000 cm*MeV, M = 13.92
+10-20 12:18 |INFO|   Charging artificially increased source size by 7.184 μm (a 2.000× change!)
+10-20 12:18 |INFO|   χ^2/n = 0
+10-20 12:18 |INFO|   P0 = nan μm
+10-20 12:18 |INFO|   P2 = nan μm = nan%, θ = nan°
+10-20 12:18 |INFO| d in [ 1.81,  2.03] μm
+10-20 12:18 |INFO|   fitting electrick feeld
+10-20 12:18 |INFO|   n = 7.068e+04, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 7.18 ± 0.00 μm, Q = 0.100 ± 0.000 cm*MeV, M = 13.92
+10-20 12:18 |INFO|   Charging artificially increased source size by 7.982 μm (a 2.111× change!)
+10-20 12:18 |INFO|   χ^2/n = 0
+10-20 12:18 |INFO|   P0 = nan μm
+10-20 12:18 |INFO|   P2 = nan μm = nan%, θ = nan°
+10-20 12:18 |INFO| d in [ 2.03,  2.31] μm
+10-20 12:18 |INFO|   fitting electrick feeld
+10-20 12:18 |INFO|   n = 7.068e+04, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 7.18 ± 0.00 μm, Q = 0.100 ± 0.000 cm*MeV, M = 13.92
+10-20 12:18 |INFO|   Charging artificially increased source size by 8.980 μm (a 2.250× change!)
+10-20 12:18 |INFO|   χ^2/n = 0
+10-20 12:18 |INFO|   P0 = nan μm
+10-20 12:18 |INFO|   P2 = nan μm = nan%, θ = nan°
+10-20 12:18 |INFO| d in [ 2.31,  3.14] μm
+10-20 12:18 |INFO|   fitting electrick feeld
+10-20 12:18 |INFO|   n = 1.996e+05, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 7.18 ± 0.00 μm, Q = 0.100 ± 0.000 cm*MeV, M = 13.92
+10-20 12:18 |INFO|   Charging artificially increased source size by 11.973 μm (a 2.667× change!)
+10-20 12:18 |INFO|   χ^2/n = 0
+10-20 12:18 |INFO|   P0 = nan μm
+10-20 12:18 |INFO|   P2 = nan μm = nan%, θ = nan°
+10-20 12:18 |INFO| d in [ 3.14,  5.23] μm
+10-20 12:22 |INFO|   fitting electrick feeld
+10-20 12:22 |INFO|   n = 3.534e+05, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 7.18 ± 0.00 μm, Q = 0.100 ± 0.000 cm*MeV, M = 13.92
+10-20 12:22 |INFO|   Charging artificially increased source size by 17.960 μm (a 3.500× change!)
+10-20 12:22 |INFO|   χ^2/n = 0
+10-20 12:22 |INFO|   P0 = nan μm
+10-20 12:22 |INFO|   P2 = nan μm = nan%, θ = nan°
+10-20 12:22 |INFO| d in [ 5.23,   inf] μm
+10-20 12:22 |INFO|   fitting electrick feeld
+10-20 12:22 |INFO|   n = 1.999e+05, (x0, y0) = (0.000, 0.000) ± 0.000 cm, δ = 7.18 ± 0.00 μm, Q = 0.100 ± 0.000 cm*MeV, M = 13.92
+10-20 12:22 |INFO|   Charging artificially increased source size by 29.436 μm (a 5.097× change!)
+10-20 12:22 |INFO|   χ^2/n = 0
+10-20 12:22 |INFO|   P0 = nan μm
+10-20 12:22 |INFO|   P2 = nan μm = nan%, θ = nan°
+10-20 12:22 |INFO| d in [  nan,   inf] μm
+10-20 12:22 |INFO|   No tracks found in this cut.
+10-20 12:22 |INFO| a reconstruccion was completed: Shot number               95520
+TIM                           2
+L1                         4.21
+Magnification             13.92
+Aperture Radius             998
+Aperture Separation           0
+Rotation                    225
+Filtering                 16 Ta
+Etch time                   2 h
+Offset (um)                39.9
+Offset theta (deg)         80.3
+Offset phi (deg)           28.9
+Flow (km/s)            57.13408
+Flow theta (deg)       102.8962
+Flow phi (deg)          56.3785
+Name: 0, dtype: object
+10-20 12:22 |INFO| a reconstruccion was completed: Shot number               95520
+TIM                           2
+L1                         4.21
+Magnification             13.92
+Aperture Radius             998
+Aperture Separation           0
+Rotation                    225
+Filtering                 16 Ta
+Etch time                   2 h
+Offset (um)                39.9
+Offset theta (deg)         80.3
+Offset phi (deg)           28.9
+Flow (km/s)            57.13408
+Flow theta (deg)       102.8962
+Flow phi (deg)          56.3785
+Name: 0, dtype: object
+10-20 12:22 |INFO| a reconstruccion was completed: Shot number               95520
+TIM                           2
+L1                         4.21
+Magnification             13.92
+Aperture Radius             998
+Aperture Separation           0
+Rotation                    225
+Filtering                 16 Ta
+Etch time                   2 h
+Offset (um)                39.9
+Offset theta (deg)         80.3
+Offset phi (deg)           28.9
+Flow (km/s)            57.13408
+Flow theta (deg)       102.8962
+Flow phi (deg)          56.3785
+Name: 0, dtype: object
+10-20 12:22 |INFO| a reconstruccion was completed: Shot number               95520
+TIM                           2
+L1                         4.21
+Magnification             13.92
+Aperture Radius             998
+Aperture Separation           0
+Rotation                    225
+Filtering                 16 Ta
+Etch time                   2 h
+Offset (um)                39.9
+Offset theta (deg)         80.3
+Offset phi (deg)           28.9
+Flow (km/s)            57.13408
+Flow theta (deg)       102.8962
+Flow phi (deg)          56.3785
+Name: 0, dtype: object
+10-20 12:22 |INFO| a reconstruccion was completed: Shot number               95520
+TIM                           2
+L1                         4.21
+Magnification             13.92
+Aperture Radius             998
+Aperture Separation           0
+Rotation                    225
+Filtering                 16 Ta
+Etch time                   2 h
+Offset (um)                39.9
+Offset theta (deg)         80.3
+Offset phi (deg)           28.9
+Flow (km/s)            57.13408
+Flow theta (deg)       102.8962
+Flow phi (deg)          56.3785
+Name: 0, dtype: object
+10-20 12:22 |INFO| a reconstruccion was completed: Shot number               95520
+TIM                           2
+L1                         4.21
+Magnification             13.92
+Aperture Radius             998
+Aperture Separation           0
+Rotation                    225
+Filtering                 16 Ta
+Etch time                   2 h
+Offset (um)                39.9
+Offset theta (deg)         80.3
+Offset phi (deg)           28.9
+Flow (km/s)            57.13408
+Flow theta (deg)       102.8962
+Flow phi (deg)          56.3785
+Name: 0, dtype: object
+10-20 12:22 |INFO| a reconstruccion was completed: Shot number               95520
+TIM                           2
+L1                         4.21
+Magnification             13.92
+Aperture Radius             998
+Aperture Separation           0
+Rotation                    225
+Filtering                 16 Ta
+Etch time                   2 h
+Offset (um)                39.9
+Offset theta (deg)         80.3
+Offset phi (deg)           28.9
+Flow (km/s)            57.13408
+Flow theta (deg)       102.8962
+Flow phi (deg)          56.3785
+Name: 0, dtype: object
+10-20 12:24 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-20 12:24 |INFO| d in [ 0.80,  1.58] μm
+10-20 12:24 |INFO|   fitting electrick feeld
+10-20 12:30 |INFO|   n = 2761, (x0, y0) = (-0.023, -0.054) ± 0.011 cm, δ = 67.19 ± 11.30 μm, Q = 0.235 ± 0.061 cm*MeV, M = 13.92
+10-20 12:30 |INFO|   Charging artificially increased source size by 15.379 μm (a 1.229× change!)
+10-20 12:51 |INFO|   χ^2/n = 1.007922731454031
+10-20 12:51 |INFO|   P0 = 2.47 μm
+10-20 12:51 |INFO|   P2 = 1.24 μm = 50.0%, θ = -86.4°
+10-20 12:51 |INFO| d in [ 1.58,  1.81] μm
+10-20 12:51 |INFO|   fitting electrick feeld
+10-20 12:57 |INFO|   n = 5.035e+04, (x0, y0) = (-0.026, -0.049) ± 0.002 cm, δ = 46.54 ± 3.03 μm, Q = 0.258 ± 0.009 cm*MeV, M = 13.92
+10-20 12:57 |INFO|   Charging artificially increased source size by 18.556 μm (a 1.399× change!)
+10-20 13:14 |INFO|   χ^2/n = 1.023853298987358
+10-20 13:14 |INFO|   P0 = 17.62 μm
+10-20 13:14 |INFO|   P2 = 2.12 μm = 12.0%, θ = 10.7°
+10-20 13:14 |INFO| d in [ 1.81,  2.03] μm
+10-20 13:14 |INFO|   fitting electrick feeld
+10-20 13:21 |INFO|   n = 5.876e+04, (x0, y0) = (-0.043, -0.065) ± 0.003 cm, δ = 50.19 ± 3.00 μm, Q = 0.293 ± 0.007 cm*MeV, M = 13.92
+10-20 13:21 |INFO|   Charging artificially increased source size by 23.417 μm (a 1.467× change!)
+10-20 13:37 |INFO|   χ^2/n = 1.0223328404486431
+10-20 13:37 |INFO|   P0 = 22.33 μm
+10-20 13:37 |INFO|   P2 = 1.10 μm = 4.9%, θ = 39.7°
+10-20 13:37 |INFO| d in [ 2.03,  2.31] μm
+10-20 13:37 |INFO|   fitting electrick feeld
+10-20 13:42 |INFO|   n = 5.921e+04, (x0, y0) = (-0.054, -0.072) ± 0.003 cm, δ = 59.46 ± nan μm, Q = 0.293 ± nan cm*MeV, M = 13.92
+10-20 13:42 |INFO|   Charging artificially increased source size by 26.281 μm (a 1.442× change!)
+10-20 13:53 |INFO|   χ^2/n = 1.0106511951328194
+10-20 13:53 |INFO|   P0 = 31.89 μm
+10-20 13:53 |INFO|   P2 = 4.74 μm = 14.9%, θ = 7.5°
+10-20 13:53 |INFO| d in [ 2.31,  3.14] μm
+10-20 13:53 |INFO|   fitting electrick feeld
+10-20 14:30 |INFO|   n = 1.667e+05, (x0, y0) = (-0.032, -0.062) ± 0.002 cm, δ = 69.18 ± 2.92 μm, Q = 0.233 ± 0.006 cm*MeV, M = 13.92
+10-20 14:30 |INFO|   Charging artificially increased source size by 27.946 μm (a 1.404× change!)
+10-20 14:42 |INFO|   χ^2/n = 1.0129840330847288
+10-20 14:42 |INFO|   P0 = 33.07 μm
+10-20 14:42 |INFO|   P2 = 0.82 μm = 2.5%, θ = -114.9°
+10-20 14:42 |INFO| d in [ 3.14,  5.23] μm
+10-20 14:45 |INFO|   fitting electrick feeld
+10-20 14:52 |INFO|   n = 2.947e+05, (x0, y0) = (-0.039, -0.068) ± 0.001 cm, δ = 64.82 ± 2.35 μm, Q = 0.183 ± 0.003 cm*MeV, M = 13.92
+10-20 14:52 |INFO|   Charging artificially increased source size by 32.812 μm (a 1.506× change!)
+10-20 15:05 |INFO|   χ^2/n = 1.014330059802515
+10-20 15:05 |INFO|   P0 = 31.88 μm
+10-20 15:05 |INFO|   P2 = 0.55 μm = 1.7%, θ = 3.8°
+10-20 15:05 |INFO| d in [ 5.23,   inf] μm
+10-20 15:06 |INFO|   fitting electrick feeld
+10-20 15:12 |INFO|   n = 1.756e+05, (x0, y0) = (-0.080, -0.093) ± 0.003 cm, δ = 9.19 ± 1.01 μm, Q = 0.261 ± 0.004 cm*MeV, M = 13.92
+10-20 15:12 |INFO|   Charging artificially increased source size by 76.774 μm (a 9.356× change!)
+10-20 15:23 |INFO|   χ^2/n = 0.9973102831737596
+10-20 15:23 |INFO|   P0 = 60.47 μm
+10-20 15:23 |INFO|   P2 = 5.56 μm = 9.2%, θ = 34.2°
+10-20 15:23 |INFO| d in [  nan,   inf] μm
+10-20 15:23 |INFO|   No tracks found in this cut.
+10-20 15:23 |INFO| a reconstruccion was completed: {'energy_cut': '7', 'energy_min': 11.000000000000002, 'energy_max': 20.0, 'x0': -0.02280985592103785, 'dx0': 0.007251430452519476, 'y0': -0.05387852925799662, 'dy0': 0.007623621530562973, 'δ': 67.19090628463032, 'dδ': 11.3022346475591, 'Q': 0.23548940342782104, 'dQ': 0.06063869566933545, 'M': 13.92, 'dM': 0, 'P0_magnitude': 2.4721510402741265, 'dP0_magnitude': 0.41584245080761584, 'P2_magnitude': 1.2361158318959538, 'P2_angle': -86.4485670321624}
+10-20 15:23 |INFO| a reconstruccion was completed: {'energy_cut': '6', 'energy_min': 10.000000000000002, 'energy_max': 11.000000000000002, 'x0': -0.025593607803592, 'dx0': 0.0017354607070408387, 'y0': -0.04916313901066577, 'dy0': 0.0016294526393275598, 'δ': 46.5407821917525, 'dδ': 3.0283368944220084, 'Q': 0.258298640084507, 'dQ': 0.008749168094005002, 'M': 13.92, 'dM': 0, 'P0_magnitude': 17.622606096684606, 'dP0_magnitude': 1.146675790677051, 'P2_magnitude': 2.117094578884059, 'P2_angle': 10.7016155113735}
+10-20 15:23 |INFO| a reconstruccion was completed: {'energy_cut': '5', 'energy_min': 9.000000000000002, 'energy_max': 10.000000000000002, 'x0': -0.04259146105616944, 'dx0': 0.0018088917408259678, 'y0': -0.06466951238364971, 'dy0': 0.00176606508088127, 'δ': 50.190326341529754, 'dδ': 2.996878157481712, 'Q': 0.29337230130063563, 'dQ': 0.007453858171291874, 'M': 13.92, 'dM': 0, 'P0_magnitude': 22.325156813414182, 'dP0_magnitude': 1.3330412390866266, 'P2_magnitude': 1.1010822079897375, 'P2_angle': 39.72296528633165}
+10-20 15:23 |INFO| a reconstruccion was completed: {'energy_cut': '4', 'energy_min': 8.000000000000002, 'energy_max': 9.000000000000002, 'x0': -0.0542416454541443, 'dx0': 0.0016527372544230085, 'y0': -0.07236762949945244, 'dy0': 0.0018873008391281788, 'δ': 59.456328196911706, 'dδ': nan, 'Q': 0.2926611235415761, 'dQ': nan, 'M': 13.92, 'dM': 0, 'P0_magnitude': 31.89402782518148, 'dP0_magnitude': nan, 'P2_magnitude': 4.737909561212325, 'P2_angle': 7.539468374820754}
+10-20 15:23 |INFO| a reconstruccion was completed: {'energy_cut': '3', 'energy_min': 5.999999999999998, 'energy_max': 8.000000000000002, 'x0': -0.03236168250243616, 'dx0': 0.001214833532189811, 'y0': -0.06165729437927714, 'dy0': 0.0012298452156962406, 'δ': 69.1816730310516, 'dδ': 2.9218805372369, 'Q': 0.2334014286620375, 'dQ': 0.006026138094502583, 'M': 13.92, 'dM': 0, 'P0_magnitude': 33.07250430911471, 'dP0_magnitude': 1.3968136707985148, 'P2_magnitude': 0.8218933559440652, 'P2_angle': -114.93674995329457}
+10-20 15:23 |INFO| a reconstruccion was completed: {'energy_cut': '2', 'energy_min': 3.9999999999999996, 'energy_max': 5.999999999999998, 'x0': -0.038799026617819865, 'dx0': 0.000979938054687524, 'y0': -0.06823886197273074, 'dy0': 0.0009646717878877986, 'δ': 64.82103230745122, 'dδ': 2.346284630256048, 'Q': 0.18269971017062872, 'dQ': 0.00328693161934795, 'M': 13.92, 'dM': 0, 'P0_magnitude': 31.88474295609889, 'dP0_magnitude': 1.154111245601994, 'P2_magnitude': 0.5466887744929606, 'P2_angle': 3.7563764408852838}
+10-20 15:23 |INFO| a reconstruccion was completed: {'energy_cut': '1', 'energy_min': 2.4405231071480946, 'energy_max': 3.9999999999999996, 'x0': -0.0800678094679394, 'dx0': 0.0023103123687209493, 'y0': -0.09342710340291288, 'dy0': 0.0021558830096041802, 'δ': 9.188241193471804, 'dδ': 1.0149188769396758, 'Q': 0.2608181621289206, 'dQ': 0.0039456839912066196, 'M': 13.92, 'dM': 0, 'P0_magnitude': 60.47408975097818, 'dP0_magnitude': 6.679874195903724, 'P2_magnitude': 5.564887530368021, 'P2_angle': 34.154704850531566}
+10-20 15:23 |INFO| in total we have:
+10-20 15:23 |INFO|      shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+85  95520    2          7  13.92      2.472151  ...           NaN               NaN -0.022810 -0.053879  67.190906
+86  95520    2          6  13.92     17.622606  ...           NaN               NaN -0.025594 -0.049163  46.540782
+87  95520    2          5  13.92     22.325157  ...           NaN               NaN -0.042591 -0.064670  50.190326
+88  95520    2          4  13.92     31.894028  ...           NaN               NaN -0.054242 -0.072368  59.456328
+89  95520    2          3  13.92     33.072504  ...           NaN               NaN -0.032362 -0.061657  69.181673
+90  95520    2          2  13.92     31.884743  ...           NaN               NaN -0.038799 -0.068239  64.821032
+91  95520    2          1  13.92     60.474090  ...           NaN               NaN -0.080068 -0.093427   9.188241
+
+[7 rows x 21 columns]
+10-20 15:23 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-20 15:23 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-20 15:23 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-20 15:23 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-20 15:23 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-20 15:23 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-20 15:23 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-20 15:23 |INFO| x-ray image
+10-20 15:23 |INFO| saving ../results/95520-tim2-xray-reconstruction.png
+10-20 15:23 |INFO| Beginning reconstruction for TIM 4 on shot 95520
+10-20 15:23 |INFO| d in [ 0.80,  1.58] μm
+10-20 15:23 |INFO|   fitting electrick feeld
+10-20 15:29 |INFO|   n = 215, (x0, y0) = (0.050, -0.089) ± 0.025 cm, δ = 26.73 ± 5.22 μm, Q = 0.186 ± 0.056 cm*MeV, M = 14.09
+10-20 15:29 |INFO|   Charging artificially increased source size by 11.974 μm (a 1.448× change!)
+10-20 16:24 |INFO|   χ^2/n = 0.888301958731441
+10-20 16:24 |INFO|   P0 = 1.42 μm
+10-20 16:24 |INFO|   P2 = 0.71 μm = 50.0%, θ = 0.0°
+10-20 16:24 |INFO| d in [ 1.58,  1.81] μm
+10-20 16:24 |INFO|   fitting electrick feeld
+10-20 16:34 |INFO|   n = 2.03e+04, (x0, y0) = (0.073, -0.140) ± 0.004 cm, δ = 37.50 ± 3.66 μm, Q = 0.214 ± 0.011 cm*MeV, M = 14.09
+10-20 16:34 |INFO|   Charging artificially increased source size by 15.201 μm (a 1.405× change!)
+10-20 16:50 |INFO|   χ^2/n = 1.0795347901826324
+10-21 08:40 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 08:40 |INFO| "completed" the reconstruccion ;)
+10-21 08:40 |INFO| in total we have:
+10-21 08:40 |INFO|     shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+0  95520    2          1  13.92     60.474090  ...           NaN               NaN -0.080068 -0.093427   9.188241
+1  95520    2          2  13.92     31.884743  ...           NaN               NaN -0.038799 -0.068239  64.821032
+2  95520    2          3  13.92     33.072504  ...           NaN               NaN -0.032362 -0.061657  69.181673
+3  95520    2          4  13.92     31.894028  ...           NaN               NaN -0.054242 -0.072368  59.456328
+4  95520    2          5  13.92     22.325157  ...           NaN               NaN -0.042591 -0.064670  50.190326
+5  95520    2          6  13.92     17.622606  ...           NaN               NaN -0.025594 -0.049163  46.540782
+6  95520    2          7  13.92      2.472151  ...           NaN               NaN -0.022810 -0.053879  67.190906
+7  95520    2       xray    NaN     38.366039  ...           NaN               NaN       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 08:40 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 08:40 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 08:40 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 08:40 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 08:40 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 08:41 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 08:41 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|     shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+0  95520    2          1  13.92     60.474090  ...           NaN               NaN -0.080068 -0.093427   9.188241
+1  95520    2          2  13.92     31.884743  ...           NaN               NaN -0.038799 -0.068239  64.821032
+2  95520    2          3  13.92     33.072504  ...           NaN               NaN -0.032362 -0.061657  69.181673
+3  95520    2          4  13.92     31.894028  ...           NaN               NaN -0.054242 -0.072368  59.456328
+4  95520    2          5  13.92     22.325157  ...           NaN               NaN -0.042591 -0.064670  50.190326
+5  95520    2          6  13.92     17.622606  ...           NaN               NaN -0.025594 -0.049163  46.540782
+6  95520    2          7  13.92      2.472151  ...           NaN               NaN -0.022810 -0.053879  67.190906
+7  95520    2       xray    NaN     38.366039  ...           NaN               NaN       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 08:48 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95520-tim2-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 4 on shot 95520
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|     shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+7  95520    4         lo  14.09     35.256752  ...   -135.815735         24.631054  0.098389 -0.116852  63.174217
+8  95520    4         hi  14.09     16.098258  ...   -135.815735         24.631054  0.072891 -0.139054  29.448241
+9  95520    4       xray    NaN     44.006390  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95520-tim4-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95520-tim4-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 24.6 μm, θ = -134.2
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95520-tim4-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 5 on shot 95520
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+10  95520    5         lo  14.1     28.052983  ...      8.391494         17.714971  0.012335  0.018735   3.650534
+11  95520    5         hi  14.1     15.865007  ...      8.391494         17.714971  0.027588  0.014714  18.438159
+12  95520    5       xray   NaN     45.534707  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95520-tim5-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95520-tim5-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 17.7 μm, θ = 81.6
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95520-tim5-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 2 on shot 95521
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+13  95521    2         lo  14.07     31.771563  ...     64.070198         68.071811 -0.151835 -0.030572  48.621465
+14  95521    2         hi  14.07     15.470082  ...     64.070198         68.071811 -0.109160  0.054745  43.610183
+15  95521    2       xray    NaN     35.482195  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95521-tim2-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95521-tim2-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 68.1 μm, θ = 25.9
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95521-tim2-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 4 on shot 95521
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+16  95521    4         lo  14.0     27.077382  ...    134.704544         11.427565 -0.042286 -0.092499  16.680117
+17  95521    4         hi  14.0     12.722452  ...    134.704544         11.427565 -0.053687 -0.082090  19.195478
+18  95521    4       xray   NaN     39.593243  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95521-tim4-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95521-tim4-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 11.4 μm, θ = -44.7
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95521-tim4-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 5 on shot 95521
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0           δ
+19  95521    5         lo  14.0     31.186048  ...     -9.782063         35.650448 -0.038364  0.029728  104.244513
+20  95521    5         hi  14.0     19.523045  ...     -9.782063         35.650448  0.008926  0.021090   51.038021
+
+[2 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95521-tim5-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95521-tim5-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 35.7 μm, θ = 99.8
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| Beginning reconstruction for TIM 2 on shot 95522
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+21  95522    2         lo  14.0     37.295299  ...    -49.947906           7.56719 -0.260198 -0.454872  82.079405
+22  95522    2         hi  14.0     10.284773  ...    -49.947906           7.56719 -0.254520 -0.463426  45.582662
+23  95522    2       xray   NaN     70.494100  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95522-tim2-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95522-tim2-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 7.6 μm, θ = 139.9
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95522-tim2-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 4 on shot 95522
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+24  95522    4         lo  14.0     37.231632  ...    162.735718         35.902131 -0.082985 -0.186792  57.688289
+25  95522    4         hi  14.0     19.932751  ...    162.735718         35.902131 -0.124151 -0.176301  36.506632
+26  95522    4       xray   NaN     62.159711  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95522-tim4-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95522-tim4-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 35.9 μm, θ = -72.7
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95522-tim4-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 5 on shot 95522
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0         δ
+27  95522    5         lo  14.0     30.861153  ...     20.050386         38.337095  0.059784  0.019967  7.262990
+28  95522    5         hi  14.0     22.939465  ...     20.050386         38.337095  0.107373  0.029980  7.503963
+29  95522    5       xray   NaN     81.757218  ...           NaN               NaN       NaN       NaN       NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95522-tim5-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95522-tim5-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 38.3 μm, θ = 69.9
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95522-tim5-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 2 on shot 95523
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+30  95523    2         lo  14.0     32.081355  ...     18.588478         35.112742 -0.270247  0.031456  72.637545
+31  95523    2         hi  14.0     26.231810  ...     18.588478         35.112742 -0.230643  0.050405  48.025407
+32  95523    2       xray   NaN     59.446749  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95523-tim2-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95523-tim2-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 35.1 μm, θ = 71.4
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95523-tim2-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 4 on shot 95523
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+33  95523    4         lo  14.0     43.060933  ...   -177.394226         41.231755 -0.138353 -0.037850  84.537295
+34  95523    4         hi  14.0     16.814373  ...   -177.394226         41.231755 -0.191737 -0.048875  19.506713
+35  95523    4       xray   NaN     67.958212  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95523-tim4-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95523-tim4-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 41.2 μm, θ = -92.6
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95523-tim4-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 5 on shot 95523
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0         δ
+36  95523    5         lo  14.0     37.781136  ...     74.794708           4.15167 -0.048168  0.005483  7.524887
+37  95523    5         hi  14.0     14.341538  ...     74.794708           4.15167 -0.047993  0.012111  0.764064
+38  95523    5       xray   NaN     73.228156  ...           NaN               NaN       NaN       NaN       NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95523-tim5-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95523-tim5-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 4.2 μm, θ = 15.2
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95523-tim5-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 2 on shot 95524
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+39  95524    2         lo  14.0     37.038895  ...     75.566368         84.720887 -0.132916 -0.017747  53.915725
+40  95524    2         hi  14.0     15.871290  ...     75.566368         84.720887 -0.107079  0.063974  11.685631
+41  95524    2       xray   NaN     93.961599  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95524-tim2-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95524-tim2-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 84.7 μm, θ = 14.4
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| x-ray image
+10-21 08:48 |INFO| saving ../results/95524-tim2-xray-reconstruction.png
+10-21 08:48 |INFO| Beginning reconstruction for TIM 4 on shot 95524
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+42  95524    4         lo  14.0     42.227595  ...      51.06496         27.894515 -0.159266 -0.192551  40.735235
+43  95524    4         hi  14.0      1.282877  ...      51.06496         27.894515 -0.146592 -0.185635   6.363465
+
+[2 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95524-tim4-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95524-tim4-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 27.9 μm, θ = 38.9
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| Beginning reconstruction for TIM 5 on shot 95524
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+44  95524    5         lo  14.0     34.244832  ...     -22.30452         34.064965  0.115011  0.083144  18.951570
+45  95524    5         hi  14.0     19.095447  ...     -22.30452         34.064965  0.162467  0.069008   4.119262
+
+[2 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/95524-tim5-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/95524-tim5-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 34.1 μm, θ = 112.3
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| Beginning reconstruction for TIM 2 on shot simulated shot 95520
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|                     shot  tim energy_cut     M  ...  offset_magnitude        x0        y0          δ
+60  simulated shot 95520    2         lo  14.0  ...          4.887089  0.003920 -0.003672  33.127575
+61  simulated shot 95520    2         hi  14.0  ...          4.887089  0.003553  0.002485  15.582710
+
+[2 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/simulated shot 95520-tim2-lo-reconstruction.png
+10-21 08:48 |INFO| saving ../results/simulated shot 95520-tim2-hi-reconstruction.png
+10-21 08:48 |INFO| Δ = 4.9 μm, θ = -7.7
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:48 |INFO| Beginning reconstruction for TIM 2 on shot simulated shot 95523
+10-21 08:48 |INFO| "completed" the reconstruccion ;)
+10-21 08:48 |INFO| in total we have:
+10-21 08:48 |INFO|                     shot  tim energy_cut     M  ...  offset_magnitude        x0        y0          δ
+64  simulated shot 95523    2         lo  14.0  ...          1.835296 -0.002485 -0.001270  50.988562
+65  simulated shot 95523    2         hi  14.0  ...          1.835296 -0.004451 -0.002115  27.793599
+
+[2 rows x 21 columns]
+10-21 08:48 |INFO| saving ../results/simulated shot 95523-tim2-lo-reconstruction.png
+10-21 08:55 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 08:55 |INFO| "completed" the reconstruccion ;)
+10-21 08:55 |INFO| in total we have:
+10-21 08:55 |INFO|     shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+0  95520    2          1  13.92     60.474090  ...      39.32402         46.826308 -0.080068 -0.093427   9.188241
+1  95520    2          2  13.92     31.884743  ...      39.32402         46.826308 -0.038799 -0.068239  64.821032
+2  95520    2          3  13.92     33.072504  ...      39.32402         46.826308 -0.032362 -0.061657  69.181673
+3  95520    2          4  13.92     31.894028  ...      39.32402         46.826308 -0.054242 -0.072368  59.456328
+4  95520    2          5  13.92     22.325157  ...      39.32402         46.826308 -0.042591 -0.064670  50.190326
+5  95520    2          6  13.92     17.622606  ...      39.32402         46.826308 -0.025594 -0.049163  46.540782
+6  95520    2          7  13.92      2.472151  ...      39.32402         46.826308 -0.022810 -0.053879  67.190906
+7  95520    2       xray    NaN     38.366039  ...           NaN               NaN       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 08:55 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 08:56 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 08:56 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 08:56 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 08:56 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 08:56 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 08:56 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 08:56 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |INFO| x-ray image
+10-21 08:56 |INFO| saving ../results/95520-tim2-xray-reconstruction.png
+10-21 08:56 |INFO| Beginning reconstruction for TIM 4 on shot 95521
+10-21 08:56 |INFO| "completed" the reconstruccion ;)
+10-21 08:56 |INFO| in total we have:
+10-21 08:56 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+16  95521    4         lo  14.0     27.077382  ...    134.704544         11.427565 -0.042286 -0.092499  16.680117
+17  95521    4         hi  14.0     12.722452  ...    134.704544         11.427565 -0.053687 -0.082090  19.195478
+18  95521    4       xray   NaN     39.593243  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:56 |INFO| saving ../results/95521-tim4-lo-reconstruction.png
+10-21 08:56 |INFO| saving ../results/95521-tim4-hi-reconstruction.png
+10-21 08:56 |INFO| Δ = 11.4 μm, θ = -44.7
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |INFO| x-ray image
+10-21 08:56 |INFO| saving ../results/95521-tim4-xray-reconstruction.png
+10-21 08:56 |INFO| Beginning reconstruction for TIM 5 on shot 95522
+10-21 08:56 |INFO| "completed" the reconstruccion ;)
+10-21 08:56 |INFO| in total we have:
+10-21 08:56 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0         δ
+27  95522    5         lo  14.0     30.861153  ...     20.050386         38.337095  0.059784  0.019967  7.262990
+28  95522    5         hi  14.0     22.939465  ...     20.050386         38.337095  0.107373  0.029980  7.503963
+29  95522    5       xray   NaN     81.757218  ...           NaN               NaN       NaN       NaN       NaN
+
+[3 rows x 21 columns]
+10-21 08:56 |INFO| saving ../results/95522-tim5-lo-reconstruction.png
+10-21 08:56 |INFO| saving ../results/95522-tim5-hi-reconstruction.png
+10-21 08:56 |INFO| Δ = 38.3 μm, θ = 69.9
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |INFO| x-ray image
+10-21 08:56 |INFO| saving ../results/95522-tim5-xray-reconstruction.png
+10-21 08:56 |INFO| Beginning reconstruction for TIM 2 on shot simulated shot 95520
+10-21 08:56 |INFO| "completed" the reconstruccion ;)
+10-21 08:56 |INFO| in total we have:
+10-21 08:56 |INFO|                     shot  tim energy_cut     M  ...  offset_magnitude        x0        y0          δ
+60  simulated shot 95520    2         lo  14.0  ...          4.887089  0.003920 -0.003672  33.127575
+61  simulated shot 95520    2         hi  14.0  ...          4.887089  0.003553  0.002485  15.582710
+
+[2 rows x 21 columns]
+10-21 08:56 |INFO| saving ../results/simulated shot 95520-tim2-lo-reconstruction.png
+10-21 08:56 |INFO| saving ../results/simulated shot 95520-tim2-hi-reconstruction.png
+10-21 08:56 |INFO| Δ = 4.9 μm, θ = -7.7
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |INFO| Beginning reconstruction for TIM 2 on shot simulated shot 95523
+10-21 08:56 |INFO| "completed" the reconstruccion ;)
+10-21 08:56 |INFO| in total we have:
+10-21 08:56 |INFO|                     shot  tim energy_cut     M  ...  offset_magnitude        x0        y0          δ
+64  simulated shot 95523    2         lo  14.0  ...          1.835296 -0.002485 -0.001270  50.988562
+65  simulated shot 95523    2         hi  14.0  ...          1.835296 -0.004451 -0.002115  27.793599
+
+[2 rows x 21 columns]
+10-21 08:56 |INFO| saving ../results/simulated shot 95523-tim2-lo-reconstruction.png
+10-21 08:56 |INFO| saving ../results/simulated shot 95523-tim2-hi-reconstruction.png
+10-21 08:56 |INFO| Δ = 1.8 μm, θ = -112.0
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:56 |INFO| Beginning reconstruction for TIM 2 on shot test0_square
+10-21 08:56 |INFO| "completed" the reconstruccion ;)
+10-21 08:56 |INFO| in total we have:
+10-21 08:56 |INFO|             shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+90  test0_square    2      synth  14.0     16.293617  ...           NaN               NaN -0.009151 -0.002896  41.620903
+
+[1 rows x 21 columns]
+10-21 08:56 |INFO| saving ../results/test0_square-tim2-synth-reconstruction.png
+10-21 08:56 |INFO| Beginning reconstruction for TIM 2 on shot test1_ring
+10-21 08:56 |INFO| "completed" the reconstruccion ;)
+10-21 08:56 |INFO| in total we have:
+10-21 08:56 |INFO| Empty DataFrame
+Columns: [shot, tim, energy_cut, M, P0_magnitude, P2_angle, P2_magnitude, Q, dM, dP0_magnitude, dQ, dx0, dy0, dδ, energy_max, energy_min, offset_angle, offset_magnitude, x0, y0, δ]
+Index: []
+10-21 08:56 |INFO| Beginning reconstruction for TIM 2 on shot test2_cross
+10-21 08:56 |INFO| "completed" the reconstruccion ;)
+10-21 08:56 |INFO| in total we have:
+10-21 08:56 |INFO|            shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0         δ
+91  test2_cross    2      synth  34.0     12.994838  ...           NaN               NaN  0.011343  0.004471  6.878764
+
+[1 rows x 21 columns]
+10-21 08:56 |INFO| saving ../results/test2_cross-tim2-synth-reconstruction.png
+10-21 08:56 |INFO| Beginning reconstruction for TIM 2 on shot test3_multigaussian
+10-21 08:56 |INFO| "completed" the reconstruccion ;)
+10-21 08:56 |INFO| in total we have:
+10-21 08:56 |INFO| Empty DataFrame
+Columns: [shot, tim, energy_cut, M, P0_magnitude, P2_angle, P2_magnitude, Q, dM, dP0_magnitude, dQ, dx0, dy0, dδ, energy_max, energy_min, offset_angle, offset_magnitude, x0, y0, δ]
+Index: []
+10-21 08:57 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 08:57 |INFO| "completed" the reconstruccion ;)
+10-21 08:57 |INFO| in total we have:
+10-21 08:57 |INFO|     shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+0  95520    2          1  13.92     60.474090  ...      39.32402         46.826308 -0.080068 -0.093427   9.188241
+1  95520    2          2  13.92     31.884743  ...      39.32402         46.826308 -0.038799 -0.068239  64.821032
+2  95520    2          3  13.92     33.072504  ...      39.32402         46.826308 -0.032362 -0.061657  69.181673
+3  95520    2          4  13.92     31.894028  ...      39.32402         46.826308 -0.054242 -0.072368  59.456328
+4  95520    2          5  13.92     22.325157  ...      39.32402         46.826308 -0.042591 -0.064670  50.190326
+5  95520    2          6  13.92     17.622606  ...      39.32402         46.826308 -0.025594 -0.049163  46.540782
+6  95520    2          7  13.92      2.472151  ...      39.32402         46.826308 -0.022810 -0.053879  67.190906
+7  95520    2       xray    NaN     38.366039  ...           NaN               NaN       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 08:57 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 08:57 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 08:57 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 08:57 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 08:57 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 08:57 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 08:57 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 08:57 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 08:58 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 08:58 |INFO| "completed" the reconstruccion ;)
+10-21 08:58 |INFO| in total we have:
+10-21 08:58 |INFO|     shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+0  95520    2          1  13.92     60.474090  ...      39.32402         46.826308 -0.080068 -0.093427   9.188241
+1  95520    2          2  13.92     31.884743  ...      39.32402         46.826308 -0.038799 -0.068239  64.821032
+2  95520    2          3  13.92     33.072504  ...      39.32402         46.826308 -0.032362 -0.061657  69.181673
+3  95520    2          4  13.92     31.894028  ...      39.32402         46.826308 -0.054242 -0.072368  59.456328
+4  95520    2          5  13.92     22.325157  ...      39.32402         46.826308 -0.042591 -0.064670  50.190326
+5  95520    2          6  13.92     17.622606  ...      39.32402         46.826308 -0.025594 -0.049163  46.540782
+6  95520    2          7  13.92      2.472151  ...      39.32402         46.826308 -0.022810 -0.053879  67.190906
+7  95520    2       xray    NaN     38.366039  ...           NaN               NaN       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 08:58 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 08:58 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 08:58 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 08:58 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 08:58 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 08:58 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 08:58 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 08:58 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |INFO| x-ray image
+10-21 08:58 |INFO| saving ../results/95520-tim2-xray-reconstruction.png
+10-21 08:58 |INFO| Beginning reconstruction for TIM 4 on shot 95521
+10-21 08:58 |INFO| "completed" the reconstruccion ;)
+10-21 08:58 |INFO| in total we have:
+10-21 08:58 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+16  95521    4         lo  14.0     27.077382  ...    134.704544         11.427565 -0.042286 -0.092499  16.680117
+17  95521    4         hi  14.0     12.722452  ...    134.704544         11.427565 -0.053687 -0.082090  19.195478
+18  95521    4       xray   NaN     39.593243  ...           NaN               NaN       NaN       NaN        NaN
+
+[3 rows x 21 columns]
+10-21 08:58 |INFO| saving ../results/95521-tim4-lo-reconstruction.png
+10-21 08:58 |INFO| saving ../results/95521-tim4-hi-reconstruction.png
+10-21 08:58 |INFO| Δ = 11.4 μm, θ = -44.7
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |INFO| x-ray image
+10-21 08:58 |INFO| saving ../results/95521-tim4-xray-reconstruction.png
+10-21 08:58 |INFO| Beginning reconstruction for TIM 5 on shot 95522
+10-21 08:58 |INFO| "completed" the reconstruccion ;)
+10-21 08:58 |INFO| in total we have:
+10-21 08:58 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0         δ
+27  95522    5         lo  14.0     30.861153  ...     20.050386         38.337095  0.059784  0.019967  7.262990
+28  95522    5         hi  14.0     22.939465  ...     20.050386         38.337095  0.107373  0.029980  7.503963
+29  95522    5       xray   NaN     81.757218  ...           NaN               NaN       NaN       NaN       NaN
+
+[3 rows x 21 columns]
+10-21 08:58 |INFO| saving ../results/95522-tim5-lo-reconstruction.png
+10-21 08:58 |INFO| saving ../results/95522-tim5-hi-reconstruction.png
+10-21 08:58 |INFO| Δ = 38.3 μm, θ = 69.9
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |INFO| x-ray image
+10-21 08:58 |INFO| saving ../results/95522-tim5-xray-reconstruction.png
+10-21 08:58 |INFO| Beginning reconstruction for TIM 2 on shot simulated shot 95520
+10-21 08:58 |INFO| "completed" the reconstruccion ;)
+10-21 08:58 |INFO| in total we have:
+10-21 08:58 |INFO|                     shot  tim energy_cut     M  ...  offset_magnitude        x0        y0          δ
+60  simulated shot 95520    2         lo  14.0  ...          4.887089  0.003920 -0.003672  33.127575
+61  simulated shot 95520    2         hi  14.0  ...          4.887089  0.003553  0.002485  15.582710
+
+[2 rows x 21 columns]
+10-21 08:58 |INFO| saving ../results/simulated shot 95520-tim2-lo-reconstruction.png
+10-21 08:58 |INFO| saving ../results/simulated shot 95520-tim2-hi-reconstruction.png
+10-21 08:58 |INFO| Δ = 4.9 μm, θ = -7.7
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |INFO| Beginning reconstruction for TIM 2 on shot simulated shot 95523
+10-21 08:58 |INFO| "completed" the reconstruccion ;)
+10-21 08:58 |INFO| in total we have:
+10-21 08:58 |INFO|                     shot  tim energy_cut     M  ...  offset_magnitude        x0        y0          δ
+64  simulated shot 95523    2         lo  14.0  ...          1.835296 -0.002485 -0.001270  50.988562
+65  simulated shot 95523    2         hi  14.0  ...          1.835296 -0.004451 -0.002115  27.793599
+
+[2 rows x 21 columns]
+10-21 08:58 |INFO| saving ../results/simulated shot 95523-tim2-lo-reconstruction.png
+10-21 08:58 |INFO| saving ../results/simulated shot 95523-tim2-hi-reconstruction.png
+10-21 08:58 |INFO| Δ = 1.8 μm, θ = -112.0
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |WARN| The PostScript backend does not support transparency; partially transparent artists will be rendered opaque.
+10-21 08:58 |INFO| Beginning reconstruction for TIM 2 on shot test0_square
+10-21 08:58 |INFO| "completed" the reconstruccion ;)
+10-21 08:58 |INFO| in total we have:
+10-21 08:58 |INFO|             shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+90  test0_square    2      synth  14.0     16.293617  ...           NaN               NaN -0.009151 -0.002896  41.620903
+
+[1 rows x 21 columns]
+10-21 08:58 |INFO| saving ../results/test0_square-tim2-synth-reconstruction.png
+10-21 08:58 |INFO| Beginning reconstruction for TIM 2 on shot test1_ring
+10-21 08:58 |INFO| "completed" the reconstruccion ;)
+10-21 08:58 |INFO| in total we have:
+10-21 08:58 |INFO| Empty DataFrame
+Columns: [shot, tim, energy_cut, M, P0_magnitude, P2_angle, P2_magnitude, Q, dM, dP0_magnitude, dQ, dx0, dy0, dδ, energy_max, energy_min, offset_angle, offset_magnitude, x0, y0, δ]
+Index: []
+10-21 08:58 |INFO| Beginning reconstruction for TIM 2 on shot test2_cross
+10-21 08:58 |INFO| "completed" the reconstruccion ;)
+10-21 08:58 |INFO| in total we have:
+10-21 08:58 |INFO|            shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0         δ
+91  test2_cross    2      synth  34.0     12.994838  ...           NaN               NaN  0.011343  0.004471  6.878764
+
+[1 rows x 21 columns]
+10-21 08:58 |INFO| saving ../results/test2_cross-tim2-synth-reconstruction.png
+10-21 08:58 |INFO| Beginning reconstruction for TIM 2 on shot test3_multigaussian
+10-21 08:58 |INFO| "completed" the reconstruccion ;)
+10-21 08:58 |INFO| in total we have:
+10-21 08:58 |INFO| Empty DataFrame
+Columns: [shot, tim, energy_cut, M, P0_magnitude, P2_angle, P2_magnitude, Q, dM, dP0_magnitude, dQ, dx0, dy0, dδ, energy_max, energy_min, offset_angle, offset_magnitude, x0, y0, δ]
+Index: []
+10-21 09:07 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 09:07 |INFO| "completed" the reconstruccion ;)
+10-21 09:07 |INFO| in total we have:
+10-21 09:07 |INFO|     shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+0  95520    2          1  13.92     60.474090  ...      39.32402         46.826308 -0.080068 -0.093427   9.188241
+1  95520    2          2  13.92     31.884743  ...      39.32402         46.826308 -0.038799 -0.068239  64.821032
+2  95520    2          3  13.92     33.072504  ...      39.32402         46.826308 -0.032362 -0.061657  69.181673
+3  95520    2          4  13.92     31.894028  ...      39.32402         46.826308 -0.054242 -0.072368  59.456328
+4  95520    2          5  13.92     22.325157  ...      39.32402         46.826308 -0.042591 -0.064670  50.190326
+5  95520    2          6  13.92     17.622606  ...      39.32402         46.826308 -0.025594 -0.049163  46.540782
+6  95520    2          7  13.92      2.472151  ...      39.32402         46.826308 -0.022810 -0.053879  67.190906
+7  95520    2       xray    NaN     38.366039  ...           NaN               NaN       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 09:07 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 09:07 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 09:07 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 09:07 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 09:07 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 09:07 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 09:07 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 09:07 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 09:07 |INFO| x-ray image
+10-21 09:07 |INFO| saving ../results/95520-tim2-xray-reconstruction.png
+10-21 09:08 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 09:08 |INFO| "completed" the reconstruccion ;)
+10-21 09:08 |INFO| in total we have:
+10-21 09:08 |INFO|     shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+0  95520    2          1  13.92     60.474090  ...      39.32402         46.826308 -0.080068 -0.093427   9.188241
+1  95520    2          2  13.92     31.884743  ...      39.32402         46.826308 -0.038799 -0.068239  64.821032
+2  95520    2          3  13.92     33.072504  ...      39.32402         46.826308 -0.032362 -0.061657  69.181673
+3  95520    2          4  13.92     31.894028  ...      39.32402         46.826308 -0.054242 -0.072368  59.456328
+4  95520    2          5  13.92     22.325157  ...      39.32402         46.826308 -0.042591 -0.064670  50.190326
+5  95520    2          6  13.92     17.622606  ...      39.32402         46.826308 -0.025594 -0.049163  46.540782
+6  95520    2          7  13.92      2.472151  ...      39.32402         46.826308 -0.022810 -0.053879  67.190906
+7  95520    2       xray    NaN     38.366039  ...           NaN               NaN       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 09:08 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 09:08 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 09:08 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 09:08 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 09:08 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 09:08 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 09:08 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 09:08 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 09:08 |INFO| x-ray image
+10-21 09:08 |INFO| saving ../results/95520-tim2-xray-reconstruction.png
+10-21 09:14 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 09:14 |INFO| "completed" the reconstruccion ;)
+10-21 09:14 |INFO| in total we have:
+10-21 09:14 |INFO|     shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+0  95520    2          1  13.92     60.474090  ...      39.32402         46.826308 -0.080068 -0.093427   9.188241
+1  95520    2          2  13.92     31.884743  ...      39.32402         46.826308 -0.038799 -0.068239  64.821032
+2  95520    2          3  13.92     33.072504  ...      39.32402         46.826308 -0.032362 -0.061657  69.181673
+3  95520    2          4  13.92     31.894028  ...      39.32402         46.826308 -0.054242 -0.072368  59.456328
+4  95520    2          5  13.92     22.325157  ...      39.32402         46.826308 -0.042591 -0.064670  50.190326
+5  95520    2          6  13.92     17.622606  ...      39.32402         46.826308 -0.025594 -0.049163  46.540782
+6  95520    2          7  13.92      2.472151  ...      39.32402         46.826308 -0.022810 -0.053879  67.190906
+7  95520    2       xray    NaN     38.366039  ...           NaN               NaN       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 09:14 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 09:14 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 09:14 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 09:14 |INFO| "completed" the reconstruccion ;)
+10-21 09:14 |INFO| in total we have:
+10-21 09:14 |INFO|     shot  tim energy_cut  ...        x0        y0          δ
+0  95520    2          1  ... -0.080068 -0.093427   9.188241
+1  95520    2          2  ... -0.038799 -0.068239  64.821032
+2  95520    2          3  ... -0.032362 -0.061657  69.181673
+3  95520    2          4  ... -0.054242 -0.072368  59.456328
+4  95520    2          5  ... -0.042591 -0.064670  50.190326
+5  95520    2          6  ... -0.025594 -0.049163  46.540782
+6  95520    2          7  ... -0.022810 -0.053879  67.190906
+7  95520    2       xray  ...       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 09:14 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 09:14 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 09:14 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 09:14 |INFO| x-ray image
+10-21 09:14 |INFO| saving ../results/95520-tim2-xray-reconstruction.png
+10-21 09:26 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 09:26 |INFO| "completed" the reconstruccion ;)
+10-21 09:26 |INFO| in total we have:
+10-21 09:26 |INFO|     shot  tim energy_cut  ...        x0        y0          δ
+0  95520    2          1  ... -0.080068 -0.093427   9.188241
+1  95520    2          2  ... -0.038799 -0.068239  64.821032
+2  95520    2          3  ... -0.032362 -0.061657  69.181673
+3  95520    2          4  ... -0.054242 -0.072368  59.456328
+4  95520    2          5  ... -0.042591 -0.064670  50.190326
+5  95520    2          6  ... -0.025594 -0.049163  46.540782
+6  95520    2          7  ... -0.022810 -0.053879  67.190906
+7  95520    2       xray  ...       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 09:26 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 09:27 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 09:27 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 09:27 |INFO| "completed" the reconstruccion ;)
+10-21 09:27 |INFO| in total we have:
+10-21 09:27 |INFO|     shot  tim energy_cut  ...        x0        y0          δ
+0  95520    2          1  ... -0.080068 -0.093427   9.188241
+1  95520    2          2  ... -0.038799 -0.068239  64.821032
+2  95520    2          3  ... -0.032362 -0.061657  69.181673
+3  95520    2          4  ... -0.054242 -0.072368  59.456328
+4  95520    2          5  ... -0.042591 -0.064670  50.190326
+5  95520    2          6  ... -0.025594 -0.049163  46.540782
+6  95520    2          7  ... -0.022810 -0.053879  67.190906
+7  95520    2       xray  ...       NaN       NaN        NaN
+
+[8 rows x 21 columns]
+10-21 09:27 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 09:27 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 09:27 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 09:27 |INFO| x-ray image
+10-21 09:27 |INFO| saving ../results/95520-tim2-xray-reconstruction.png
+10-21 09:30 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 09:30 |INFO| d in [ 0.80,  1.58] μm
+10-21 09:30 |INFO|   fitting electrick feeld
+10-21 09:36 |INFO|   n = 2761, (x0, y0) = (-0.023, -0.054) ± 0.011 cm, δ = 67.19 ± 11.30 μm, Q = 0.235 ± 0.061 cm*MeV, M = 13.92
+10-21 09:36 |INFO|   Charging artificially increased source size by 61.518 μm (a 1.916× change!)
+10-21 09:58 |INFO|   χ^2/n = 1.007922731454031
+10-21 09:58 |INFO|   P0 = 2.47 μm
+10-21 09:58 |INFO|   P2 = 1.24 μm = 50.0%, θ = -86.4°
+10-21 09:58 |INFO| d in [ 1.58,  1.81] μm
+10-21 09:58 |INFO|   fitting electrick feeld
+10-21 10:05 |INFO|   n = 5.035e+04, (x0, y0) = (-0.026, -0.049) ± 0.002 cm, δ = 46.54 ± 3.03 μm, Q = 0.258 ± 0.009 cm*MeV, M = 13.92
+10-21 10:05 |INFO|   Charging artificially increased source size by 74.224 μm (a 2.595× change!)
+10-21 10:22 |INFO|   χ^2/n = 1.023853298987358
+10-21 10:22 |INFO|   P0 = 17.62 μm
+10-21 10:22 |INFO|   P2 = 2.12 μm = 12.0%, θ = 10.7°
+10-21 10:22 |INFO| d in [ 1.81,  2.03] μm
+10-21 10:22 |INFO|   fitting electrick feeld
+10-21 10:30 |INFO|   n = 5.876e+04, (x0, y0) = (-0.043, -0.065) ± 0.003 cm, δ = 50.19 ± 3.00 μm, Q = 0.293 ± 0.007 cm*MeV, M = 13.92
+10-21 10:30 |INFO|   Charging artificially increased source size by 93.669 μm (a 2.866× change!)
+10-21 10:48 |INFO|   χ^2/n = 1.0223328404486431
+10-21 10:48 |INFO|   P0 = 22.33 μm
+10-21 10:48 |INFO|   P2 = 1.10 μm = 4.9%, θ = 39.7°
+10-21 10:48 |INFO| d in [ 2.03,  2.31] μm
+10-21 10:48 |INFO|   fitting electrick feeld
+10-21 10:53 |INFO|   n = 5.921e+04, (x0, y0) = (-0.054, -0.072) ± 0.003 cm, δ = 59.46 ± nan μm, Q = 0.293 ± nan cm*MeV, M = 13.92
+10-21 10:53 |INFO|   Charging artificially increased source size by 105.123 μm (a 2.768× change!)
+10-21 11:06 |INFO|   χ^2/n = 1.0106511951328194
+10-21 11:06 |INFO|   P0 = 31.89 μm
+10-21 11:06 |INFO|   P2 = 4.74 μm = 14.9%, θ = 7.5°
+10-21 11:06 |INFO| d in [ 2.31,  3.14] μm
+10-21 11:06 |INFO|   fitting electrick feeld
+10-21 11:35 |INFO|   n = 1.667e+05, (x0, y0) = (-0.032, -0.062) ± 0.002 cm, δ = 69.18 ± 2.92 μm, Q = 0.233 ± 0.006 cm*MeV, M = 13.92
+10-21 11:35 |INFO|   Charging artificially increased source size by 111.782 μm (a 2.616× change!)
+10-21 11:47 |INFO|   χ^2/n = 1.0129840330847288
+10-21 11:47 |INFO|   P0 = 33.07 μm
+10-21 11:47 |INFO|   P2 = 0.82 μm = 2.5%, θ = -114.9°
+10-21 11:47 |INFO| d in [ 3.14,  5.23] μm
+10-21 11:51 |INFO|   fitting electrick feeld
+10-21 11:58 |INFO|   n = 2.947e+05, (x0, y0) = (-0.039, -0.068) ± 0.001 cm, δ = 64.82 ± 2.35 μm, Q = 0.183 ± 0.003 cm*MeV, M = 13.92
+10-21 11:58 |INFO|   Charging artificially increased source size by 131.250 μm (a 3.025× change!)
+10-21 12:13 |INFO|   χ^2/n = 1.014330059802515
+10-21 12:13 |INFO|   P0 = 31.88 μm
+10-21 12:13 |INFO|   P2 = 0.55 μm = 1.7%, θ = 3.8°
+10-21 12:13 |INFO| d in [ 5.23,   inf] μm
+10-21 12:13 |INFO|   fitting electrick feeld
+10-21 12:21 |INFO|   n = 1.756e+05, (x0, y0) = (-0.080, -0.093) ± 0.003 cm, δ = 9.19 ± 1.01 μm, Q = 0.261 ± 0.004 cm*MeV, M = 13.92
+10-21 12:21 |INFO|   Charging artificially increased source size by 307.097 μm (a 34.423× change!)
+10-21 12:32 |INFO|   χ^2/n = 0.9973102831737596
+10-21 12:32 |INFO|   P0 = 60.47 μm
+10-21 12:32 |INFO|   P2 = 5.56 μm = 9.2%, θ = 34.2°
+10-21 12:32 |INFO| d in [  nan,   inf] μm
+10-21 12:32 |INFO|   No tracks found in this cut.
+10-21 12:32 |INFO| a reconstruccion was completed: {'energy_cut': '7', 'energy_min': 11.000000000000002, 'energy_max': 20.0, 'x0': -0.02280985592103785, 'dx0': 0.007251430452519476, 'y0': -0.05387852925799662, 'dy0': 0.007623621530562973, 'δ': 67.19090628463032, 'dδ': 11.3022346475591, 'Q': 0.23548940342782104, 'dQ': 0.06063869566933545, 'M': 13.92, 'dM': 0, 'P0_magnitude': 2.4721510402741265, 'dP0_magnitude': 0.41584245080761584, 'P2_magnitude': 1.2361158318959538, 'P2_angle': -86.4485670321624}
+10-21 12:32 |INFO| a reconstruccion was completed: {'energy_cut': '6', 'energy_min': 10.000000000000002, 'energy_max': 11.000000000000002, 'x0': -0.025593607803592, 'dx0': 0.0017354607070408387, 'y0': -0.04916313901066577, 'dy0': 0.0016294526393275598, 'δ': 46.5407821917525, 'dδ': 3.0283368944220084, 'Q': 0.258298640084507, 'dQ': 0.008749168094005002, 'M': 13.92, 'dM': 0, 'P0_magnitude': 17.622606096684606, 'dP0_magnitude': 1.146675790677051, 'P2_magnitude': 2.117094578884059, 'P2_angle': 10.7016155113735}
+10-21 12:32 |INFO| a reconstruccion was completed: {'energy_cut': '5', 'energy_min': 9.000000000000002, 'energy_max': 10.000000000000002, 'x0': -0.04259146105616944, 'dx0': 0.0018088917408259678, 'y0': -0.06466951238364971, 'dy0': 0.00176606508088127, 'δ': 50.190326341529754, 'dδ': 2.996878157481712, 'Q': 0.29337230130063563, 'dQ': 0.007453858171291874, 'M': 13.92, 'dM': 0, 'P0_magnitude': 22.325156813414182, 'dP0_magnitude': 1.3330412390866266, 'P2_magnitude': 1.1010822079897375, 'P2_angle': 39.72296528633165}
+10-21 12:32 |INFO| a reconstruccion was completed: {'energy_cut': '4', 'energy_min': 8.000000000000002, 'energy_max': 9.000000000000002, 'x0': -0.0542416454541443, 'dx0': 0.0016527372544230085, 'y0': -0.07236762949945244, 'dy0': 0.0018873008391281788, 'δ': 59.456328196911706, 'dδ': nan, 'Q': 0.2926611235415761, 'dQ': nan, 'M': 13.92, 'dM': 0, 'P0_magnitude': 31.89402782518148, 'dP0_magnitude': nan, 'P2_magnitude': 4.737909561212325, 'P2_angle': 7.539468374820754}
+10-21 12:32 |INFO| a reconstruccion was completed: {'energy_cut': '3', 'energy_min': 5.999999999999998, 'energy_max': 8.000000000000002, 'x0': -0.03236168250243616, 'dx0': 0.001214833532189811, 'y0': -0.06165729437927714, 'dy0': 0.0012298452156962406, 'δ': 69.1816730310516, 'dδ': 2.9218805372369, 'Q': 0.2334014286620375, 'dQ': 0.006026138094502583, 'M': 13.92, 'dM': 0, 'P0_magnitude': 33.07250430911471, 'dP0_magnitude': 1.3968136707985148, 'P2_magnitude': 0.8218933559440652, 'P2_angle': -114.93674995329457}
+10-21 12:32 |INFO| a reconstruccion was completed: {'energy_cut': '2', 'energy_min': 3.9999999999999996, 'energy_max': 5.999999999999998, 'x0': -0.038799026617819865, 'dx0': 0.000979938054687524, 'y0': -0.06823886197273074, 'dy0': 0.0009646717878877986, 'δ': 64.82103230745122, 'dδ': 2.346284630256048, 'Q': 0.18269971017062872, 'dQ': 0.00328693161934795, 'M': 13.92, 'dM': 0, 'P0_magnitude': 31.88474295609889, 'dP0_magnitude': 1.154111245601994, 'P2_magnitude': 0.5466887744929606, 'P2_angle': 3.7563764408852838}
+10-21 12:32 |INFO| a reconstruccion was completed: {'energy_cut': '1', 'energy_min': 2.4405231071480946, 'energy_max': 3.9999999999999996, 'x0': -0.0800678094679394, 'dx0': 0.0023103123687209493, 'y0': -0.09342710340291288, 'dy0': 0.0021558830096041802, 'δ': 9.188241193471804, 'dδ': 1.0149188769396758, 'Q': 0.2608181621289206, 'dQ': 0.0039456839912066196, 'M': 13.92, 'dM': 0, 'P0_magnitude': 60.47408975097818, 'dP0_magnitude': 6.679874195903724, 'P2_magnitude': 5.564887530368021, 'P2_angle': 34.154704850531566}
+10-21 12:32 |INFO| in total we have:
+10-21 12:32 |INFO|      shot  tim energy_cut      M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+85  95520    2          7  13.92      2.472151  ...           NaN               NaN -0.022810 -0.053879  67.190906
+86  95520    2          6  13.92     17.622606  ...           NaN               NaN -0.025594 -0.049163  46.540782
+87  95520    2          5  13.92     22.325157  ...           NaN               NaN -0.042591 -0.064670  50.190326
+88  95520    2          4  13.92     31.894028  ...           NaN               NaN -0.054242 -0.072368  59.456328
+89  95520    2          3  13.92     33.072504  ...           NaN               NaN -0.032362 -0.061657  69.181673
+90  95520    2          2  13.92     31.884743  ...           NaN               NaN -0.038799 -0.068239  64.821032
+91  95520    2          1  13.92     60.474090  ...           NaN               NaN -0.080068 -0.093427   9.188241
+
+[7 rows x 21 columns]
+10-21 12:32 |INFO| saving ../results/95520-tim2-7-reconstruction.png
+10-21 12:32 |INFO| saving ../results/95520-tim2-6-reconstruction.png
+10-21 12:32 |INFO| saving ../results/95520-tim2-5-reconstruction.png
+10-21 12:32 |INFO| saving ../results/95520-tim2-4-reconstruction.png
+10-21 12:32 |INFO| saving ../results/95520-tim2-3-reconstruction.png
+10-21 12:32 |INFO| saving ../results/95520-tim2-2-reconstruction.png
+10-21 12:32 |INFO| saving ../results/95520-tim2-1-reconstruction.png
+10-21 12:32 |INFO| Δ = 46.8 μm, θ = 50.7
+10-21 12:32 |INFO| x-ray image
+10-21 12:32 |INFO| saving ../results/95520-tim2-xray-reconstruction.png
+10-21 12:32 |INFO| Beginning reconstruction for TIM 4 on shot 95521
+10-21 12:32 |INFO| d in [ 0.80,  1.58] μm
+10-21 12:32 |INFO|   fitting electrick feeld
+10-21 12:39 |INFO|   n = 1214, (x0, y0) = (-0.054, -0.084) ± 0.011 cm, δ = 96.33 ± 7.59 μm, Q = 0.073 ± 0.050 cm*MeV, M = 14.00
+10-21 12:39 |INFO|   Charging artificially increased source size by 18.883 μm (a 1.196× change!)
+10-21 13:01 |INFO|   χ^2/n = 0.990092667013601
+10-21 13:01 |INFO|   P0 = 3.15 μm
+10-21 13:01 |INFO|   P2 = 1.59 μm = 50.6%, θ = -86.7°
+10-21 13:01 |INFO| d in [ 1.58,  1.81] μm
+10-21 13:01 |INFO|   fitting electrick feeld
+10-21 13:11 |INFO|   n = 7.222e+04, (x0, y0) = (-0.054, -0.082) ± 0.002 cm, δ = 32.10 ± 0.97 μm, Q = 0.273 ± 0.004 cm*MeV, M = 14.00
+10-21 13:11 |INFO|   Charging artificially increased source size by 77.908 μm (a 3.427× change!)
+10-21 13:27 |INFO|   χ^2/n = 1.0159335306293615
+10-21 13:27 |INFO|   P0 = 18.42 μm
+10-21 13:27 |INFO|   P2 = 0.59 μm = 3.2%, θ = -114.3°
+10-21 13:27 |INFO| d in [ 1.81,  2.03] μm
+10-21 13:27 |INFO|   fitting electrick feeld
+10-21 13:34 |INFO|   n = 1.122e+05, (x0, y0) = (-0.048, -0.087) ± 0.002 cm, δ = 18.21 ± 1.54 μm, Q = 0.293 ± 0.004 cm*MeV, M = 14.00
+10-21 13:34 |INFO|   Charging artificially increased source size by 92.904 μm (a 6.102× change!)
+10-21 13:56 |INFO|   χ^2/n = 1.0128761121963217
+10-21 13:56 |INFO|   P0 = 18.90 μm
+10-21 13:56 |INFO|   P2 = 1.98 μm = 10.5%, θ = -112.6°
+10-21 13:56 |INFO| d in [ 2.03,  2.31] μm
+10-21 13:57 |INFO|   fitting electrick feeld
+10-21 14:06 |INFO|   n = 1.092e+05, (x0, y0) = (-0.044, -0.092) ± 0.002 cm, δ = 27.38 ± 1.11 μm, Q = 0.273 ± 0.003 cm*MeV, M = 14.00
+10-21 14:06 |INFO|   Charging artificially increased source size by 97.652 μm (a 4.567× change!)
+10-21 14:27 |INFO|   χ^2/n = 1.0036479097919
+10-21 14:27 |INFO|   P0 = 20.15 μm
+10-21 14:27 |INFO|   P2 = 1.31 μm = 6.5%, θ = -91.7°
+10-21 14:27 |INFO| d in [ 2.31,  3.14] μm
+10-21 14:27 |INFO|   fitting electrick feeld
+10-21 14:35 |INFO|   n = 1.921e+05, (x0, y0) = (-0.040, -0.088) ± 0.002 cm, δ = 23.70 ± 3.23 μm, Q = 0.280 ± 0.004 cm*MeV, M = 14.00
+10-21 14:35 |INFO|   Charging artificially increased source size by 133.187 μm (a 6.619× change!)
+10-21 14:55 |INFO|   χ^2/n = 1.0044719574805216
+10-21 14:55 |INFO|   P0 = 25.85 μm
+10-21 14:55 |INFO|   P2 = 1.23 μm = 4.8%, θ = -105.6°
+10-21 14:55 |INFO| d in [ 3.14,  5.23] μm
+10-21 14:58 |INFO|   fitting electrick feeld
+10-21 15:07 |INFO|   n = 2.57e+05, (x0, y0) = (-0.041, -0.091) ± 0.002 cm, δ = 33.29 ± 1.58 μm, Q = 0.238 ± 0.002 cm*MeV, M = 14.00
+10-21 15:07 |INFO|   Charging artificially increased source size by 169.822 μm (a 6.102× change!)
+10-21 15:27 |INFO|   χ^2/n = 0.9995297360128106
+10-21 15:27 |INFO|   P0 = 33.76 μm
+10-21 15:27 |INFO|   P2 = 1.43 μm = 4.2%, θ = -126.3°
+10-21 15:27 |INFO| d in [ 5.23,   inf] μm
+10-21 15:30 |INFO|   fitting electrick feeld
+10-21 15:36 |INFO|   n = 2.483e+05, (x0, y0) = (-0.042, -0.094) ± 0.002 cm, δ = 62.28 ± 5.25 μm, Q = 0.175 ± 0.004 cm*MeV, M = 14.00
+10-21 15:36 |INFO|   Charging artificially increased source size by 205.009 μm (a 4.292× change!)
+10-21 15:49 |INFO|   χ^2/n = 0.9855003338836918
+10-21 15:49 |INFO|   P0 = 48.15 μm
+10-21 15:49 |INFO|   P2 = 1.82 μm = 3.8%, θ = 41.4°
+10-21 15:49 |INFO| d in [  nan,   inf] μm
+10-21 15:49 |INFO|   No tracks found in this cut.
+10-21 15:49 |INFO| a reconstruccion was completed: {'energy_cut': '7', 'energy_min': 11.000000000000002, 'energy_max': 20.0, 'x0': -0.05415590225185449, 'dx0': 0.007968504454744105, 'y0': -0.08362407683756805, 'dy0': 0.00825968370681345, 'δ': 96.3347421183899, 'dδ': 7.593477564902572, 'Q': 0.0726993040316765, 'dQ': 0.05043759587266663, 'M': 14.0, 'dM': 0, 'P0_magnitude': 3.1482116123834847, 'dP0_magnitude': 0.24815423514416834, 'P2_magnitude': 1.5943141643313166, 'P2_angle': -86.67795464992425}
+10-21 15:49 |INFO| a reconstruccion was completed: {'energy_cut': '6', 'energy_min': 10.000000000000002, 'energy_max': 11.000000000000002, 'x0': -0.05389369788189681, 'dx0': 0.0013181424212976261, 'y0': -0.0821620927050423, 'dy0': 0.0013603190274301998, 'δ': 32.103596941205275, 'dδ': 0.9688306479019517, 'Q': 0.27267753572915493, 'dQ': 0.004288480522365746, 'M': 14.0, 'dM': 0, 'P0_magnitude': 18.416233885729167, 'dP0_magnitude': 0.5557698671616518, 'P2_magnitude': 0.5914669557041793, 'P2_angle': -114.25846166604225}
+10-21 15:49 |INFO| a reconstruccion was completed: {'energy_cut': '5', 'energy_min': 9.000000000000002, 'energy_max': 10.000000000000002, 'x0': -0.0480350316021535, 'dx0': 0.0011412592052432535, 'y0': -0.08655349539374163, 'dy0': 0.0011579319365977328, 'δ': 18.211010361020058, 'dδ': 1.5374859582731588, 'Q': 0.2926469156763727, 'dQ': 0.0036989134789527835, 'M': 14.0, 'dM': 0, 'P0_magnitude': 18.903816782015287, 'dP0_magnitude': 1.5959769548167457, 'P2_magnitude': 1.9790840718168907, 'P2_angle': -112.5664632882845}
+10-21 15:49 |INFO| a reconstruccion was completed: {'energy_cut': '4', 'energy_min': 8.000000000000002, 'energy_max': 9.000000000000002, 'x0': -0.04425748866187629, 'dx0': 0.00119667024387406, 'y0': -0.09219704345732554, 'dy0': 0.0012402023568990183, 'δ': 27.37680402097757, 'dδ': 1.1059089048307265, 'Q': 0.27342468441270107, 'dQ': 0.003194532074784245, 'M': 14.0, 'dM': 0, 'P0_magnitude': 20.147991361180466, 'dP0_magnitude': 0.8138949690295656, 'P2_magnitude': 1.313884955386228, 'P2_angle': -91.72541948165029}
+10-21 15:49 |INFO| a reconstruccion was completed: {'energy_cut': '3', 'energy_min': 5.999999999999998, 'energy_max': 8.000000000000002, 'x0': -0.040062633388439586, 'dx0': 0.0010877236830405261, 'y0': -0.08832057416565835, 'dy0': 0.0011185606255359013, 'δ': 23.704850238922933, 'dδ': 3.233774410871709, 'Q': 0.2796925636733214, 'dQ': 0.0035287712847135487, 'M': 14.0, 'dM': 0, 'P0_magnitude': 25.84528769166746, 'dP0_magnitude': 3.5257691627048753, 'P2_magnitude': 1.2306711078414827, 'P2_angle': -105.6279115637094}
+10-21 15:49 |INFO| a reconstruccion was completed: {'energy_cut': '2', 'energy_min': 3.9999999999999996, 'energy_max': 5.999999999999998, 'x0': -0.04133053872617902, 'dx0': 0.0011120659766828097, 'y0': -0.09122828377911668, 'dy0': 0.0011178815081465132, 'δ': 33.28510785829579, 'dδ': 1.5816726991457768, 'Q': 0.23775129413035237, 'dQ': 0.002475418633021423, 'M': 14.0, 'dM': 0, 'P0_magnitude': 33.76063347819923, 'dP0_magnitude': 1.6042691676309524, 'P2_magnitude': 1.429674972397558, 'P2_angle': -126.29202584634314}
+10-21 15:49 |INFO| a reconstruccion was completed: {'energy_cut': '1', 'energy_min': 2.4405231071480946, 'energy_max': 3.9999999999999996, 'x0': -0.04221343399973488, 'dx0': 0.001490066980185871, 'y0': -0.0935753122625799, 'dy0': 0.001464615325389, 'δ': 62.2810697563002, 'dδ': 5.246971417739907, 'Q': 0.17511563273473607, 'dQ': 0.00405337479021107, 'M': 14.0, 'dM': 0, 'P0_magnitude': 48.14753112803541, 'dP0_magnitude': 4.056268151013719, 'P2_magnitude': 1.823888448216071, 'P2_angle': 41.373778241059334}
+10-21 15:49 |INFO| in total we have:
+10-21 15:49 |INFO|      shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+90  95521    4          7  14.0      3.148212  ...           NaN               NaN -0.054156 -0.083624  96.334742
+91  95521    4          6  14.0     18.416234  ...           NaN               NaN -0.053894 -0.082162  32.103597
+92  95521    4          5  14.0     18.903817  ...           NaN               NaN -0.048035 -0.086553  18.211010
+93  95521    4          4  14.0     20.147991  ...           NaN               NaN -0.044257 -0.092197  27.376804
+94  95521    4          3  14.0     25.845288  ...           NaN               NaN -0.040063 -0.088321  23.704850
+95  95521    4          2  14.0     33.760633  ...           NaN               NaN -0.041331 -0.091228  33.285108
+96  95521    4          1  14.0     48.147531  ...           NaN               NaN -0.042213 -0.093575  62.281070
+
+[7 rows x 21 columns]
+10-21 15:49 |INFO| saving ../results/95521-tim4-7-reconstruction.png
+10-21 15:49 |INFO| saving ../results/95521-tim4-6-reconstruction.png
+10-21 15:49 |INFO| saving ../results/95521-tim4-5-reconstruction.png
+10-21 15:49 |INFO| saving ../results/95521-tim4-4-reconstruction.png
+10-21 15:49 |INFO| saving ../results/95521-tim4-3-reconstruction.png
+10-21 15:49 |INFO| saving ../results/95521-tim4-2-reconstruction.png
+10-21 15:49 |INFO| saving ../results/95521-tim4-1-reconstruction.png
+10-21 15:49 |INFO| Δ = 9.1 μm, θ = -57.6
+10-21 15:49 |INFO| x-ray image
+10-21 15:49 |INFO| saving ../results/95521-tim4-xray-reconstruction.png
+10-21 15:49 |INFO| Beginning reconstruction for TIM 5 on shot 95522
+10-21 15:49 |INFO| d in [ 1.61,  3.17] μm
+10-21 15:49 |INFO|   fitting electrick feeld
+10-21 15:55 |INFO|   n = 8740, (x0, y0) = (0.131, 0.047) ± 0.022 cm, δ = 12.39 ± 3.84 μm, Q = 0.467 ± 0.170 cm*MeV, M = 14.00
+10-21 15:55 |INFO|   Charging artificially increased source size by 121.343 μm (a 10.791× change!)
+10-21 16:01 |INFO|   χ^2/n = 1.0088956232173607
+10-21 16:01 |INFO|   P0 = 54.05 μm
+10-21 16:01 |INFO|   P2 = 5.04 μm = 9.3%, θ = 33.7°
+10-21 16:01 |INFO| d in [ 3.17,  3.62] μm
+10-21 16:01 |INFO|   fitting electrick feeld
+10-21 16:06 |INFO|   n = 8935, (x0, y0) = (0.097, 0.023) ± 0.000 cm, δ = 2.08 ± 0.00 μm, Q = 0.412 ± 0.000 cm*MeV, M = 14.00
+10-21 16:06 |INFO|   Charging artificially increased source size by 117.696 μm (a 57.600× change!)
+10-21 16:37 |INFO|   χ^2/n = 1.0041777022112015
+10-21 16:37 |INFO|   P0 = 22.15 μm
+10-21 16:37 |INFO|   P2 = 0.20 μm = 0.9%, θ = -25.0°
+10-21 16:37 |INFO| d in [ 3.62,  4.07] μm
+10-21 16:37 |INFO|   fitting electrick feeld
+10-21 16:43 |INFO|   n = 1.396e+04, (x0, y0) = (0.087, 0.030) ± 0.006 cm, δ = 7.91 ± 1.62 μm, Q = 0.393 ± 0.015 cm*MeV, M = 14.00
+10-21 16:43 |INFO|   Charging artificially increased source size by 124.896 μm (a 16.790× change!)
+10-21 17:10 |INFO|   χ^2/n = 0.9962355499794069
+10-21 17:10 |INFO|   P0 = 22.81 μm
+10-21 17:10 |INFO|   P2 = 4.33 μm = 19.0%, θ = -115.0°
+10-21 17:10 |INFO| d in [ 4.07,  4.62] μm
+10-21 17:10 |INFO|   fitting electrick feeld
+10-21 17:16 |INFO|   n = 1.957e+04, (x0, y0) = (0.075, 0.030) ± 0.005 cm, δ = 7.27 ± 0.76 μm, Q = 0.388 ± 0.011 cm*MeV, M = 14.00
+10-21 17:16 |INFO|   Charging artificially increased source size by 138.505 μm (a 20.057× change!)
+10-21 17:34 |INFO|   χ^2/n = 1.0007102481870127
+10-21 17:34 |INFO|   P0 = 25.83 μm
+10-21 17:34 |INFO|   P2 = 1.87 μm = 7.2%, θ = -132.6°
+10-21 17:34 |INFO| d in [ 4.62,  6.27] μm
+10-21 17:34 |INFO|   fitting electrick feeld
+10-21 17:40 |INFO|   n = 4.653e+04, (x0, y0) = (0.070, 0.025) ± 0.004 cm, δ = 18.60 ± 2.56 μm, Q = 0.364 ± 0.009 cm*MeV, M = 14.00
+10-21 17:40 |INFO|   Charging artificially increased source size by 173.289 μm (a 10.317× change!)
+10-21 17:56 |INFO|   χ^2/n = 0.9979352791048336
+10-21 17:56 |INFO|   P0 = 31.25 μm
+10-21 17:56 |INFO|   P2 = 1.02 μm = 3.3%, θ = -74.9°
+10-21 17:56 |INFO| d in [ 6.27, 10.45] μm
+10-21 17:57 |INFO|   fitting electrick feeld
+10-21 18:03 |INFO|   n = 6.899e+04, (x0, y0) = (0.067, 0.024) ± 0.004 cm, δ = 7.13 ± 1.35 μm, Q = 0.267 ± 0.005 cm*MeV, M = 14.00
+10-21 18:03 |INFO|   Charging artificially increased source size by 190.927 μm (a 27.783× change!)
+10-21 18:39 |INFO|   χ^2/n = 0.9983997211138608
+10-21 18:39 |INFO|   P0 = 38.01 μm
+10-21 18:39 |INFO|   P2 = 1.80 μm = 4.7%, θ = -60.3°
+10-21 18:39 |INFO| d in [10.45,   inf] μm
+10-21 18:39 |INFO|   fitting electrick feeld
+10-21 18:44 |INFO|   n = 7.213e+04, (x0, y0) = (0.050, 0.016) ± 0.004 cm, δ = 13.49 ± 2.11 μm, Q = 0.183 ± 0.005 cm*MeV, M = 14.00
+10-21 18:44 |INFO|   Charging artificially increased source size by 214.503 μm (a 16.905× change!)
+10-21 19:10 |INFO|   χ^2/n = 0.9767916980588705
+10-21 19:10 |INFO|   P0 = 45.15 μm
+10-21 19:10 |INFO|   P2 = 2.87 μm = 6.4%, θ = 39.3°
+10-21 19:10 |INFO| d in [  nan,   inf] μm
+10-21 19:10 |INFO|   No tracks found in this cut.
+10-21 19:10 |INFO| a reconstruccion was completed: {'energy_cut': '7', 'energy_min': 11.000000000000002, 'energy_max': 20.0, 'x0': 0.13051215596692473, 'dx0': 0.01490026873493744, 'y0': 0.04739634636312537, 'dy0': 0.016479505710911804, 'δ': 12.393650365190116, 'dδ': 3.8422916859246454, 'Q': 0.4671691822271844, 'dQ': 0.1703016047239883, 'M': 14.0, 'dM': 0, 'P0_magnitude': 54.05410789922746, 'dP0_magnitude': 16.75790773916103, 'P2_magnitude': 5.04258493374442, 'P2_angle': 33.73502413394683}
+10-21 19:10 |INFO| a reconstruccion was completed: {'energy_cut': '6', 'energy_min': 10.000000000000002, 'energy_max': 11.000000000000002, 'x0': 0.09654574027602095, 'dx0': 0, 'y0': 0.023326966992903597, 'dy0': 0, 'δ': 2.0794270961818815, 'dδ': 0.0, 'Q': 0.41193773858719396, 'dQ': 0, 'M': 14.0, 'dM': 0, 'P0_magnitude': 22.153291489951332, 'dP0_magnitude': 0.0, 'P2_magnitude': 0.19789962121812865, 'P2_angle': -25.021100442896014}
+10-21 19:10 |INFO| a reconstruccion was completed: {'energy_cut': '5', 'energy_min': 9.000000000000002, 'energy_max': 10.000000000000002, 'x0': 0.08724916524765444, 'dx0': 0.00390475370379253, 'y0': 0.02995239670565982, 'dy0': 0.003997556884330384, 'δ': 7.910060158181663, 'dδ': 1.6185680619976763, 'Q': 0.39342240761373903, 'dQ': 0.015413669714645604, 'M': 14.0, 'dM': 0, 'P0_magnitude': 22.806997183808008, 'dP0_magnitude': 4.666801072758011, 'P2_magnitude': 4.332865184486778, 'P2_angle': -115.0366204003271}
+10-21 19:10 |INFO| a reconstruccion was completed: {'energy_cut': '4', 'energy_min': 8.000000000000002, 'energy_max': 9.000000000000002, 'x0': 0.07541584302992566, 'dx0': 0.003788789755060934, 'y0': 0.029932302486760688, 'dy0': 0.003586631417002645, 'δ': 7.267854362131837, 'dδ': 0.7620661317046772, 'Q': 0.38781301867044726, 'dQ': 0.011444409713240157, 'M': 14.0, 'dM': 0, 'P0_magnitude': 25.826190966219876, 'dP0_magnitude': 2.7079884193662447, 'P2_magnitude': 1.8714588430264163, 'P2_angle': -132.62212566670576}
+10-21 19:10 |INFO| a reconstruccion was completed: {'energy_cut': '3', 'energy_min': 5.999999999999998, 'energy_max': 8.000000000000002, 'x0': 0.06973119312488046, 'dx0': 0.00269706389946888, 'y0': 0.02548830254065755, 'dy0': 0.0026683692537147097, 'δ': 18.600196093741687, 'dδ': 2.5601391092047887, 'Q': 0.36390637718266006, 'dQ': 0.00931485648914396, 'M': 14.0, 'dM': 0, 'P0_magnitude': 31.248294343090624, 'dP0_magnitude': 4.301028873056143, 'P2_magnitude': 1.0231476472059635, 'P2_angle': -74.85947379599479}
+10-21 19:10 |INFO| a reconstruccion was completed: {'energy_cut': '2', 'energy_min': 3.9999999999999996, 'energy_max': 5.999999999999998, 'x0': 0.06672212100015468, 'dx0': 0.0025046141696735374, 'y0': 0.023669804627884036, 'dy0': 0.002492458859445492, 'δ': 7.128679983195244, 'dδ': 1.3474195622796368, 'Q': 0.2672975319874098, 'dQ': 0.005244026217369647, 'M': 14.0, 'dM': 0, 'P0_magnitude': 38.01341988962813, 'dP0_magnitude': 7.185064515334961, 'P2_magnitude': 1.8015381941875632, 'P2_angle': -60.3224107315803}
+10-21 19:10 |INFO| a reconstruccion was completed: {'energy_cut': '1', 'energy_min': 2.4405231071480946, 'energy_max': 3.9999999999999996, 'x0': 0.050235515337818504, 'dx0': 0.002981119392648981, 'y0': 0.01571104971355275, 'dy0': 0.002955520250483487, 'δ': 13.48690909900876, 'dδ': 2.1092526211803935, 'Q': 0.18322452784783388, 'dQ': 0.004654303005336856, 'M': 14.0, 'dM': 0, 'P0_magnitude': 45.14588967535799, 'dP0_magnitude': 7.060482534153681, 'P2_magnitude': 2.8738939341221714, 'P2_angle': 39.325369037065066}
+10-21 19:10 |INFO| in total we have:
+10-21 19:10 |INFO|       shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+95   95522    5          7  14.0     54.054108  ...           NaN               NaN  0.130512  0.047396  12.393650
+96   95522    5          6  14.0     22.153291  ...           NaN               NaN  0.096546  0.023327   2.079427
+97   95522    5          5  14.0     22.806997  ...           NaN               NaN  0.087249  0.029952   7.910060
+98   95522    5          4  14.0     25.826191  ...           NaN               NaN  0.075416  0.029932   7.267854
+99   95522    5          3  14.0     31.248294  ...           NaN               NaN  0.069731  0.025488  18.600196
+100  95522    5          2  14.0     38.013420  ...           NaN               NaN  0.066722  0.023670   7.128680
+101  95522    5          1  14.0     45.145890  ...           NaN               NaN  0.050236  0.015711  13.486909
+
+[7 rows x 21 columns]
+10-21 19:10 |INFO| saving ../results/95522-tim5-7-reconstruction.png
+10-21 19:10 |INFO| saving ../results/95522-tim5-6-reconstruction.png
+10-21 19:10 |INFO| saving ../results/95522-tim5-5-reconstruction.png
+10-21 19:10 |INFO| saving ../results/95522-tim5-4-reconstruction.png
+10-21 19:10 |INFO| saving ../results/95522-tim5-3-reconstruction.png
+10-21 19:10 |INFO| saving ../results/95522-tim5-2-reconstruction.png
+10-21 19:10 |INFO| saving ../results/95522-tim5-1-reconstruction.png
+10-21 19:10 |INFO| Δ = 69.4 μm, θ = 54.3
+10-21 19:10 |INFO| x-ray image
+10-21 19:10 |INFO| saving ../results/95522-tim5-xray-reconstruction.png
+10-21 19:10 |INFO| Beginning reconstruction for TIM 2 on shot simulated shot 95520
+10-21 19:10 |INFO| d in [ 0.80,  1.58] μm
+10-21 19:11 |INFO|   fitting electrick feeld
+10-21 19:17 |INFO|   n = 1.666e+05, (x0, y0) = (0.003, 0.003) ± 0.001 cm, δ = 15.59 ± 0.67 μm, Q = 0.195 ± 0.003 cm*MeV, M = 14.00
+10-21 19:17 |INFO|   Charging artificially increased source size by 50.574 μm (a 4.244× change!)
+10-21 19:28 |INFO|   χ^2/n = 0.9969298447750865
+10-21 19:28 |INFO|   P0 = 17.81 μm
+10-21 19:28 |INFO|   P2 = 0.26 μm = 1.5%, θ = -86.9°
+10-21 19:28 |INFO| d in [ 1.58,  1.81] μm
+10-21 19:28 |INFO|   No tracks found in this cut.
+10-21 19:28 |INFO| d in [ 1.81,  2.03] μm
+10-21 19:28 |INFO|   No tracks found in this cut.
+10-21 19:28 |INFO| d in [ 2.03,  2.31] μm
+10-21 19:28 |INFO|   No tracks found in this cut.
+10-21 19:28 |INFO| d in [ 2.31,  3.14] μm
+10-21 19:28 |INFO|   fitting electrick feeld
+10-21 19:35 |INFO|   n = 1.727e+05, (x0, y0) = (0.004, -0.003) ± 0.001 cm, δ = 27.86 ± 1.52 μm, Q = 0.131 ± 0.002 cm*MeV, M = 14.00
+10-21 19:35 |INFO|   Charging artificially increased source size by 62.553 μm (a 3.246× change!)
+10-21 19:46 |INFO|   χ^2/n = 0.9993491152900721
+10-21 19:46 |INFO|   P0 = 26.50 μm
+10-21 19:46 |INFO|   P2 = 0.48 μm = 1.8%, θ = -10.6°
+10-21 19:46 |INFO| d in [ 3.14,  5.23] μm
+10-21 19:47 |INFO|   fitting electrick feeld
+10-21 19:53 |INFO|   n = 4.348e+05, (x0, y0) = (0.004, -0.004) ± 0.001 cm, δ = 41.45 ± 1.75 μm, Q = 0.178 ± 0.002 cm*MeV, M = 14.00
+10-21 19:53 |INFO|   Charging artificially increased source size by 127.416 μm (a 4.074× change!)
+10-21 20:02 |INFO|   χ^2/n = 1.0141322719313357
+10-21 20:02 |INFO|   P0 = 42.19 μm
+10-21 20:02 |INFO|   P2 = 0.93 μm = 2.2%, θ = -68.3°
+10-21 20:02 |INFO| d in [ 5.23,   inf] μm
+10-21 20:02 |INFO|   No tracks found in this cut.
+10-21 20:02 |INFO| d in [  nan,   inf] μm
+10-21 20:02 |INFO|   No tracks found in this cut.
+10-21 20:02 |INFO| a reconstruccion was completed: {'energy_cut': '7', 'energy_min': 11.000000000000002, 'energy_max': 20.0, 'x0': 0.0033664216322256742, 'dx0': 0.0007609789905040615, 'y0': 0.002761071968822963, 'dy0': 0.0007826459732539907, 'δ': 15.588990346982508, 'dδ': 0.6735113151585266, 'Q': 0.19471055909287704, 'dQ': 0.003364960559518204, 'M': 14.0, 'dM': 0, 'P0_magnitude': 17.809140238824444, 'dP0_magnitude': 0.7694313228191229, 'P2_magnitude': 0.2598866400230779, 'P2_angle': -86.89399455740507}
+10-21 20:02 |INFO| a reconstruccion was completed: {'energy_cut': '3', 'energy_min': 5.999999999999998, 'energy_max': 8.000000000000002, 'x0': 0.003617924752867444, 'dx0': 0.0009477356677982422, 'y0': -0.0028046451740980118, 'dy0': 0.000973650327694599, 'δ': 27.85595570355918, 'dδ': 1.5152416535082527, 'Q': 0.1313614400351518, 'dQ': 0.002125440662070956, 'M': 14.0, 'dM': 0, 'P0_magnitude': 26.50283191931954, 'dP0_magnitude': 1.4416376622450613, 'P2_magnitude': 0.4784732817507018, 'P2_angle': -10.63325900044119}
+10-21 20:02 |INFO| a reconstruccion was completed: {'energy_cut': '2', 'energy_min': 3.9999999999999996, 'energy_max': 5.999999999999998, 'x0': 0.0039251781659941296, 'dx0': 0.0008489997974785216, 'y0': -0.003693863657995152, 'dy0': 0.0008605842425281768, 'δ': 41.45107170245713, 'dδ': 1.7477897882019138, 'Q': 0.17838195918319166, 'dQ': 0.0020095623507668595, 'M': 14.0, 'dM': 0, 'P0_magnitude': 42.19382010830819, 'dP0_magnitude': 1.7791078705971821, 'P2_magnitude': 0.9330330385655567, 'P2_angle': -68.27750719779046}
+10-21 20:02 |INFO| in total we have:
+10-21 20:02 |INFO|                      shot  tim energy_cut     M  ...  offset_magnitude        x0        y0          δ
+101  simulated shot 95520    2          7  14.0  ...               NaN  0.003366  0.002761  15.588990
+102  simulated shot 95520    2          3  14.0  ...               NaN  0.003618 -0.002805  27.855956
+103  simulated shot 95520    2          2  14.0  ...               NaN  0.003925 -0.003694  41.451072
+
+[3 rows x 21 columns]
+10-21 20:02 |INFO| saving ../results/simulated shot 95520-tim2-7-reconstruction.png
+10-21 20:02 |INFO| saving ../results/simulated shot 95520-tim2-3-reconstruction.png
+10-21 20:02 |INFO| saving ../results/simulated shot 95520-tim2-2-reconstruction.png
+10-21 20:02 |INFO| Beginning reconstruction for TIM 2 on shot simulated shot 95523
+10-21 20:02 |INFO| d in [ 0.80,  1.58] μm
+10-21 20:02 |INFO|   fitting electrick feeld
+10-21 20:08 |INFO|   n = 4.307e+04, (x0, y0) = (-0.004, -0.003) ± 0.003 cm, δ = 27.80 ± 2.09 μm, Q = 0.174 ± 0.009 cm*MeV, M = 14.00
+10-21 20:08 |INFO|   Charging artificially increased source size by 45.246 μm (a 2.628× change!)
+10-21 20:15 |INFO|   χ^2/n = 0.9971688760515255
+10-21 20:15 |INFO|   P0 = 26.38 μm
+10-21 20:15 |INFO|   P2 = 4.88 μm = 18.5%, θ = 16.0°
+10-21 20:15 |INFO| d in [ 1.58,  1.81] μm
+10-21 20:15 |INFO|   No tracks found in this cut.
+10-21 20:15 |INFO| d in [ 1.81,  2.03] μm
+10-21 20:15 |INFO|   No tracks found in this cut.
+10-21 20:15 |INFO| d in [ 2.03,  2.31] μm
+10-21 20:15 |INFO|   No tracks found in this cut.
+10-21 20:15 |INFO| d in [ 2.31,  3.14] μm
+10-21 20:15 |INFO|   fitting electrick feeld
+10-21 20:22 |INFO|   n = 6.217e+04, (x0, y0) = (-0.005, 0.001) ± 0.003 cm, δ = 48.39 ± 2.57 μm, Q = 0.102 ± 0.006 cm*MeV, M = 14.00
+10-21 20:22 |INFO|   Charging artificially increased source size by 48.529 μm (a 2.003× change!)
+10-21 20:28 |INFO|   χ^2/n = 0.9968992325432217
+10-21 20:28 |INFO|   P0 = 39.38 μm
+10-21 20:28 |INFO|   P2 = 0.58 μm = 1.5%, θ = -7.9°
+10-21 20:28 |INFO| d in [ 3.14,  5.23] μm
+10-21 20:28 |INFO|   fitting electrick feeld
+10-21 20:36 |INFO|   n = 1.686e+05, (x0, y0) = (-0.002, -0.001) ± 0.002 cm, δ = 59.37 ± 5.69 μm, Q = 0.162 ± 0.007 cm*MeV, M = 14.00
+10-21 20:36 |INFO|   Charging artificially increased source size by 115.487 μm (a 2.945× change!)
+10-21 20:42 |INFO|   χ^2/n = 1.0015377020960243
+10-21 20:42 |INFO|   P0 = 55.20 μm
+10-21 20:42 |INFO|   P2 = 1.33 μm = 2.4%, θ = -92.3°
+10-21 20:42 |INFO| d in [ 5.23,   inf] μm
+10-21 20:42 |INFO|   No tracks found in this cut.
+10-21 20:42 |INFO| d in [  nan,   inf] μm
+10-21 20:42 |INFO|   No tracks found in this cut.
+10-21 20:42 |INFO| a reconstruccion was completed: {'energy_cut': '7', 'energy_min': 11.000000000000002, 'energy_max': 20.0, 'x0': -0.004199442964737135, 'dx0': 0.002017943045285937, 'y0': -0.002502591519016696, 'dy0': 0.0018661134412424757, 'δ': 27.79962697359179, 'dδ': 2.093505876540877, 'Q': 0.17419662175450146, 'dQ': 0.009384612092852579, 'M': 14.0, 'dM': 0, 'P0_magnitude': 26.38088828473892, 'dP0_magnitude': 1.9866649543511345, 'P2_magnitude': 4.877719639629755, 'P2_angle': 16.01997390312982}
+10-21 20:42 |INFO| a reconstruccion was completed: {'energy_cut': '3', 'energy_min': 5.999999999999998, 'energy_max': 8.000000000000002, 'x0': -0.005040273075453541, 'dx0': 0.0019772146814803684, 'y0': 0.0010787404143748156, 'dy0': 0.0019463360896410191, 'δ': 48.38849486631486, 'dδ': 2.5667439804343526, 'Q': 0.10191123774498233, 'dQ': 0.005681741453825873, 'M': 14.0, 'dM': 0, 'P0_magnitude': 39.37574296180838, 'dP0_magnitude': 2.0886669755191956, 'P2_magnitude': 0.5774428873043732, 'P2_angle': -7.905288634947957}
+10-21 20:42 |INFO| a reconstruccion was completed: {'energy_cut': '2', 'energy_min': 3.9999999999999996, 'energy_max': 5.999999999999998, 'x0': -0.0023330964610686054, 'dx0': 0.0016928676314000037, 'y0': -0.0012170962420300407, 'dy0': 0.001735616821650252, 'δ': 59.36893513665145, 'dδ': 5.68635219584236, 'Q': 0.16168179971564733, 'dQ': 0.0071039987583215855, 'M': 14.0, 'dM': 0, 'P0_magnitude': 55.19764169495991, 'dP0_magnitude': 5.2868260199547565, 'P2_magnitude': 1.3302771458779992, 'P2_angle': -92.32210759459633}
+10-21 20:42 |INFO| in total we have:
+10-21 20:42 |INFO|                      shot  tim energy_cut     M  ...  offset_magnitude        x0        y0          δ
+102  simulated shot 95523    2          7  14.0  ...               NaN -0.004199 -0.002503  27.799627
+103  simulated shot 95523    2          3  14.0  ...               NaN -0.005040  0.001079  48.388495
+104  simulated shot 95523    2          2  14.0  ...               NaN -0.002333 -0.001217  59.368935
+
+[3 rows x 21 columns]
+10-21 20:42 |INFO| saving ../results/simulated shot 95523-tim2-7-reconstruction.png
+10-21 20:42 |INFO| saving ../results/simulated shot 95523-tim2-3-reconstruction.png
+10-21 20:42 |INFO| saving ../results/simulated shot 95523-tim2-2-reconstruction.png
+10-21 20:42 |INFO| Beginning reconstruction for TIM 2 on shot test0_square
+10-21 20:42 |INFO| d in [ 0.80,   inf] μm
+10-21 20:43 |INFO|   fitting electrick feeld
+10-21 21:00 |INFO|   n = 1.245e+06, (x0, y0) = (-0.009, -0.003) ± 0.000 cm, δ = 41.62 ± 0.07 μm, Q = 0.007 ± 0.000 cm*MeV, M = 14.00
+10-21 21:00 |INFO|   Charging artificially increased source size by 7.920 μm (a 1.190× change!)
+10-21 21:05 |INFO|   χ^2/n = 1.0210970920057807
+10-21 21:05 |INFO|   P0 = 21.61 μm
+10-21 21:05 |INFO|   P2 = 2.60 μm = 12.1%, θ = -96.3°
+10-21 21:05 |INFO| a reconstruccion was completed: {'energy_cut': 'synth', 'energy_min': 2.4405231071480946, 'energy_max': 20.0, 'x0': -0.009150560963936561, 'dx0': 0.00019838986494215635, 'y0': -0.002895722928691582, 'dy0': 0.00020085248121357976, 'δ': 41.62090343056429, 'dδ': 0.07152142166187392, 'Q': 0.006765136521208832, 'dQ': 6.274968936098589e-05, 'M': 14.0, 'dM': 0, 'P0_magnitude': 21.60739130715739, 'dP0_magnitude': 0.03713017299757736, 'P2_magnitude': 2.6037795110072084, 'P2_angle': -96.28566095814574}
+10-21 21:05 |INFO| in total we have:
+10-21 21:05 |INFO|              shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0          δ
+104  test0_square    2      synth  14.0     21.607391  ...           NaN               NaN -0.009151 -0.002896  41.620903
+
+[1 rows x 21 columns]
+10-21 21:05 |INFO| saving ../results/test0_square-tim2-synth-reconstruction.png
+10-21 21:05 |INFO| Beginning reconstruction for TIM 2 on shot test1_ring
+10-21 21:05 |INFO| d in [ 0.80,   inf] μm
+10-21 21:05 |INFO|   fitting electrick feeld
+10-21 21:14 |INFO|   n = 2.002e+05, (x0, y0) = (0.010, -0.001) ± 0.001 cm, δ = 122.32 ± 0.51 μm, Q = 0.014 ± 0.002 cm*MeV, M = 14.00
+10-21 21:14 |INFO|   Charging artificially increased source size by 16.493 μm (a 1.135× change!)
+10-21 21:20 |INFO|   χ^2/n = 1.0097676383035965
+10-21 21:20 |INFO|   P0 = 38.06 μm
+10-21 21:20 |INFO|   P2 = 27.27 μm = 71.7%, θ = -57.4°
+10-21 21:20 |INFO| a reconstruccion was completed: {'energy_cut': 'synth', 'energy_min': 2.4405231071480946, 'energy_max': 20.0, 'x0': 0.010372222725350537, 'dx0': 0.0009915310533715445, 'y0': -0.0005315729866728081, 'dy0': 0.00100362876259724, 'δ': 122.31932602147602, 'dδ': 0.5143260319572217, 'Q': 0.014087654701789229, 'dQ': 0.0018213581398616445, 'M': 14.0, 'dM': 0, 'P0_magnitude': 38.056762541879436, 'dP0_magnitude': 0.16002036884888068, 'P2_magnitude': 27.270986320971026, 'P2_angle': -57.424623715933684}
+10-21 21:20 |INFO| in total we have:
+10-21 21:20 |INFO|            shot  tim energy_cut     M  P0_magnitude  ...  offset_angle  offset_magnitude        x0        y0           δ
+105  test1_ring    2      synth  14.0     38.056763  ...           NaN               NaN  0.010372 -0.000532  122.319326
+
+[1 rows x 21 columns]
+10-21 21:20 |INFO| saving ../results/test1_ring-tim2-synth-reconstruction.png
+10-21 21:20 |INFO| Beginning reconstruction for TIM 2 on shot test2_cross
+10-21 21:20 |INFO| d in [ 0.80,   inf] μm
+10-21 21:21 |INFO|   fitting electrick feeld
+10-21 22:42 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 22:42 |INFO| d in [ 3.14,   inf] μm
+10-21 22:43 |INFO| Beginning reconstruction for TIM 2 on shot 95520
+10-21 22:43 |INFO| d in [ 0.80,  2.03] μm
+10-21 22:45 |INFO|   fitting electrick feeld
+10-21 22:53 |INFO|   n = 1.155e+05, (x0, y0) = (-0.034, -0.057) ± 0.002 cm, δ = 9.67 ± 0.51 μm, Q = 0.452 ± 0.006 cm*MeV, M = 13.92
+10-21 22:53 |INFO|   Charging artificially increased source size by 144.261 μm (a 15.924× change!)
+10-21 23:12 |INFO|   χ^2/n = 1.0392376269140569
+10-21 23:12 |INFO|   P0 = 19.44 μm
+10-21 23:12 |INFO|   P2 = 1.90 μm = 9.8%, θ = 20.2°
+10-21 23:12 |INFO| d in [ 3.14,   inf] μm
+10-21 23:20 |INFO|   fitting electrick feeld
+10-21 23:28 |INFO|   n = 4.786e+05, (x0, y0) = (-0.051, -0.075) ± 0.001 cm, δ = 30.95 ± 2.52 μm, Q = 0.218 ± 0.002 cm*MeV, M = 13.92
+10-21 23:28 |INFO|   Charging artificially increased source size by 256.121 μm (a 9.274× change!)
+10-21 23:40 |INFO|   χ^2/n = 0.9939377346477151
+10-21 23:40 |INFO|   P0 = 40.51 μm
+10-21 23:40 |INFO|   P2 = 1.21 μm = 3.0%, θ = 26.4°
+10-21 23:40 |INFO| Δ = 16.6 μm, θ = 41.0
+10-21 23:40 |INFO| x-ray image
+10-21 23:40 |INFO| Beginning reconstruction for TIM 4 on shot 95520
+10-21 23:40 |INFO| d in [ 0.80,  2.03] μm
+10-21 23:40 |INFO|   fitting electrick feeld
+10-21 23:48 |INFO|   n = 1.127e+05, (x0, y0) = (0.078, -0.139) ± 0.001 cm, δ = 36.05 ± 2.18 μm, Q = 0.266 ± 0.006 cm*MeV, M = 14.09
+10-21 23:48 |INFO|   Charging artificially increased source size by 83.913 μm (a 3.328× change!)
+10-22 00:00 |INFO|   χ^2/n = 1.0444093698560724
+10-22 00:00 |INFO|   P0 = 20.15 μm
+10-22 00:00 |INFO|   P2 = 0.53 μm = 2.6%, θ = -53.3°
+10-22 00:00 |INFO| d in [ 3.14,   inf] μm
+10-22 00:00 |INFO|   fitting electrick feeld
+10-22 00:07 |INFO|   n = 5.732e+05, (x0, y0) = (0.098, -0.117) ± 0.001 cm, δ = 63.17 ± 3.28 μm, Q = 0.165 ± 0.003 cm*MeV, M = 14.09
+10-22 00:07 |INFO|   Charging artificially increased source size by 192.170 μm (a 4.042× change!)
+10-22 00:20 |INFO|   χ^2/n = 0.9836496383665135
+10-22 00:20 |INFO|   P0 = 44.49 μm
+10-22 00:20 |INFO|   P2 = 0.50 μm = 1.1%, θ = -75.6°
+10-22 00:20 |INFO| Δ = 19.8 μm, θ = -141.8
+10-22 00:20 |INFO| x-ray image
+10-22 00:20 |INFO| Beginning reconstruction for TIM 5 on shot 95520
+10-22 00:20 |INFO| d in [ 0.80,  2.03] μm
+10-22 00:20 |INFO|   fitting electrick feeld
+10-22 00:27 |INFO|   n = 1.609e+05, (x0, y0) = (0.002, 0.009) ± 0.000 cm, δ = 6.29 ± 0.00 μm, Q = 0.451 ± 0.000 cm*MeV, M = 14.10
+10-22 00:27 |INFO|   Charging artificially increased source size by 142.070 μm (a 23.602× change!)
+10-22 00:52 |INFO|   χ^2/n = 1.0712462148896733
+10-22 00:52 |INFO|   P0 = 17.71 μm
+10-22 00:52 |INFO|   P2 = 0.47 μm = 2.6%, θ = -121.6°
+10-22 00:52 |INFO| d in [ 3.14,   inf] μm
+10-22 00:53 |INFO|   fitting electrick feeld
+10-22 00:59 |INFO|   n = 5.763e+05, (x0, y0) = (0.012, 0.019) ± 0.000 cm, δ = 3.65 ± 0.00 μm, Q = 0.223 ± 0.000 cm*MeV, M = 14.10
+10-22 00:59 |INFO|   Charging artificially increased source size by 258.641 μm (a 71.850× change!)
+10-22 01:15 |INFO|   χ^2/n = 0.9758905863534266
+10-22 01:15 |INFO|   P0 = 36.91 μm
+10-22 01:15 |INFO|   P2 = 2.27 μm = 6.2%, θ = -111.9°
+10-22 01:15 |INFO| Δ = 7.6 μm, θ = -132.9
+10-22 01:15 |INFO| x-ray image
+10-22 01:15 |INFO| Beginning reconstruction for TIM 2 on shot 95521
+10-22 01:15 |INFO| d in [ 0.80,  2.03] μm
+10-22 01:15 |INFO|   fitting electrick feeld
+10-22 01:21 |INFO|   n = 1.615e+05, (x0, y0) = (-0.104, 0.051) ± 0.001 cm, δ = 40.72 ± 1.41 μm, Q = 0.216 ± 0.005 cm*MeV, M = 14.07
+10-22 01:21 |INFO|   Charging artificially increased source size by 68.328 μm (a 2.678× change!)
+10-22 01:32 |INFO|   χ^2/n = 1.0281653573097926
+10-22 01:32 |INFO|   P0 = 19.57 μm
+10-22 01:32 |INFO|   P2 = 0.99 μm = 5.1%, θ = -31.2°
+10-22 01:32 |INFO| d in [ 3.14,   inf] μm
+10-22 01:33 |INFO|   fitting electrick feeld
+10-22 01:38 |INFO|   n = 5.66e+05, (x0, y0) = (-0.152, -0.031) ± 0.001 cm, δ = 48.62 ± 2.82 μm, Q = 0.240 ± 0.003 cm*MeV, M = 14.07
+10-22 01:38 |INFO|   Charging artificially increased source size by 280.046 μm (a 6.760× change!)
+10-22 01:54 |INFO|   χ^2/n = 1.0350100015766295
+10-22 01:54 |INFO|   P0 = 42.97 μm
+10-22 01:54 |INFO|   P2 = 1.46 μm = 3.4%, θ = -15.4°
+10-22 01:54 |INFO| Δ = 66.2 μm, θ = 30.2
+10-22 01:54 |INFO| x-ray image
+10-22 01:54 |INFO| Beginning reconstruction for TIM 4 on shot 95521
+10-22 01:54 |INFO| d in [ 0.80,  2.03] μm
+10-22 01:54 |INFO|   fitting electrick feeld
+10-22 01:59 |INFO|   n = 1.883e+05, (x0, y0) = (-0.051, -0.085) ± 0.000 cm, δ = 4.41 ± 0.00 μm, Q = 0.419 ± 0.000 cm*MeV, M = 14.00
+10-22 01:59 |INFO|   Charging artificially increased source size by 133.086 μm (a 31.148× change!)
+10-22 02:18 |INFO|   χ^2/n = 1.0142362922406143
+10-22 02:18 |INFO|   P0 = 17.18 μm
+10-22 02:18 |INFO|   P2 = 1.26 μm = 7.3%, θ = -112.5°
+10-22 02:18 |INFO| d in [ 3.14,   inf] μm
+10-22 02:22 |INFO|   fitting electrick feeld
+10-22 02:30 |INFO|   n = 5.112e+05, (x0, y0) = (-0.042, -0.092) ± 0.001 cm, δ = 16.68 ± 1.14 μm, Q = 0.221 ± 0.002 cm*MeV, M = 14.00
+10-22 02:30 |INFO|   Charging artificially increased source size by 258.444 μm (a 16.494× change!)
+10-22 02:45 |INFO|   χ^2/n = 0.9810924296796637
+10-22 02:45 |INFO|   P0 = 36.62 μm
+10-22 02:45 |INFO|   P2 = 1.32 μm = 3.6%, θ = -131.1°
+10-22 02:45 |INFO| Δ = 8.3 μm, θ = -46.6
+10-22 02:45 |INFO| x-ray image
+10-22 02:45 |INFO| Beginning reconstruction for TIM 5 on shot 95521
+10-22 02:45 |INFO| d in [ 0.80,  2.03] μm
+10-22 02:45 |INFO|   fitting electrick feeld
+10-22 02:52 |INFO|   n = 1.682e+05, (x0, y0) = (0.010, 0.018) ± 0.001 cm, δ = 40.43 ± 2.00 μm, Q = 0.268 ± 0.006 cm*MeV, M = 14.00
+10-22 02:52 |INFO|   Charging artificially increased source size by 85.189 μm (a 3.107× change!)
+10-22 03:08 |INFO|   χ^2/n = 1.0178513663616091
+10-22 03:08 |INFO|   P0 = 17.70 μm
+10-22 03:08 |INFO|   P2 = 1.99 μm = 11.2%, θ = -69.3°
+10-22 03:08 |INFO| d in [ 3.14,   inf] μm
+10-22 03:08 |INFO|   fitting electrick feeld
+10-22 03:13 |INFO|   n = 4.78e+05, (x0, y0) = (-0.038, 0.030) ± 0.001 cm, δ = 104.24 ± 2.26 μm, Q = 0.102 ± 0.003 cm*MeV, M = 14.00
+10-22 03:13 |INFO|   Charging artificially increased source size by 119.077 μm (a 2.142× change!)
+10-22 03:27 |INFO|   χ^2/n = 0.9717110250343557
+10-22 03:27 |INFO|   P0 = 35.81 μm
+10-22 03:27 |INFO|   P2 = 2.27 μm = 6.3%, θ = -64.9°
+10-22 03:27 |INFO| Δ = 36.7 μm, θ = 103.1
+10-22 03:27 |INFO| Beginning reconstruction for TIM 2 on shot 95522
+10-22 03:27 |INFO| d in [ 1.61,  4.07] μm
+10-22 03:27 |INFO|   fitting electrick feeld
+10-22 03:36 |INFO|   n = 5.879e+04, (x0, y0) = (-0.254, -0.462) ± 0.002 cm, δ = 49.07 ± 2.52 μm, Q = 0.188 ± 0.011 cm*MeV, M = 14.00
+10-22 03:36 |INFO|   Charging artificially increased source size by 59.641 μm (a 2.215× change!)
+10-22 03:49 |INFO|   χ^2/n = 1.0181965474096861
+10-22 03:49 |INFO|   P0 = 21.38 μm
+10-22 03:49 |INFO|   P2 = 2.63 μm = 12.3%, θ = 12.9°
+10-22 03:49 |INFO| d in [ 6.27,   inf] μm
+10-22 03:49 |INFO|   fitting electrick feeld
+10-22 03:55 |INFO|   n = 1.391e+05, (x0, y0) = (-0.260, -0.455) ± 0.003 cm, δ = 82.08 ± 4.48 μm, Q = 0.110 ± 0.006 cm*MeV, M = 14.00
+10-22 03:55 |INFO|   Charging artificially increased source size by 128.557 μm (a 2.566× change!)
+10-22 04:03 |INFO|   χ^2/n = 0.9735317624911769
+10-22 04:03 |INFO|   P0 = 51.76 μm
+10-22 04:03 |INFO|   P2 = 3.33 μm = 6.4%, θ = -134.9°
+10-22 04:03 |INFO| Δ = 6.8 μm, θ = 128.2
+10-22 04:03 |INFO| x-ray image
+10-22 04:03 |INFO| Beginning reconstruction for TIM 4 on shot 95522
+10-22 04:03 |INFO| d in [ 1.61,  4.07] μm
+10-22 04:03 |INFO|   fitting electrick feeld
+10-22 04:11 |INFO|   n = 6.214e+04, (x0, y0) = (-0.113, -0.181) ± 0.003 cm, δ = 25.79 ± 2.44 μm, Q = 0.404 ± 0.012 cm*MeV, M = 14.00
+10-22 04:11 |INFO|   Charging artificially increased source size by 128.386 μm (a 5.978× change!)
+10-22 04:26 |INFO|   χ^2/n = 1.0367916400961328
+10-22 04:26 |INFO|   P0 = 25.88 μm
+10-22 04:26 |INFO|   P2 = 1.69 μm = 6.5%, θ = -106.1°
+10-22 04:26 |INFO| d in [ 6.27,   inf] μm
+10-22 04:26 |INFO|   fitting electrick feeld
+10-22 04:32 |INFO|   n = 1.511e+05, (x0, y0) = (-0.083, -0.187) ± 0.003 cm, δ = 57.69 ± 4.65 μm, Q = 0.200 ± 0.005 cm*MeV, M = 14.00
+10-22 04:32 |INFO|   Charging artificially increased source size by 234.339 μm (a 5.062× change!)
+10-22 04:45 |INFO|   χ^2/n = 1.0100160048169924
+10-22 04:45 |INFO|   P0 = 46.40 μm
+10-22 04:45 |INFO|   P2 = 3.93 μm = 8.5%, θ = 41.7°
+10-22 04:45 |INFO| Δ = 22.6 μm, θ = -78.6
+10-22 04:45 |INFO| x-ray image
+10-22 04:45 |INFO| Beginning reconstruction for TIM 5 on shot 95522
+10-22 04:45 |INFO| d in [ 1.61,  4.07] μm
+10-22 04:45 |INFO|   fitting electrick feeld
+10-22 04:49 |INFO|   n = 3.206e+04, (x0, y0) = (0.096, 0.031) ± 0.000 cm, δ = 4.42 ± 0.00 μm, Q = 0.542 ± 0.000 cm*MeV, M = 14.00
+10-22 04:49 |INFO|   Charging artificially increased source size by 172.032 μm (a 39.948× change!)
+10-22 05:06 |INFO|   χ^2/n = 1.0002492566257917
+10-22 05:06 |INFO|   P0 = 26.52 μm
+10-22 05:06 |INFO|   P2 = 2.39 μm = 9.0%, θ = -104.4°
+10-22 05:06 |INFO| d in [ 6.27,   inf] μm
+10-22 05:08 |INFO|   fitting electrick feeld
+10-22 05:14 |INFO|   n = 1.418e+05, (x0, y0) = (0.060, 0.020) ± 0.003 cm, δ = 7.26 ± 0.77 μm, Q = 0.227 ± 0.004 cm*MeV, M = 14.00
+10-22 05:14 |INFO|   Charging artificially increased source size by 265.828 μm (a 37.600× change!)
+10-22 05:30 |INFO|   χ^2/n = 0.9800253006008225
+10-22 05:30 |INFO|   P0 = 41.07 μm
+10-22 05:30 |INFO|   P2 = 0.89 μm = 2.2%, θ = -131.4°
+10-22 05:30 |INFO| Δ = 28.8 μm, θ = 69.9
+10-22 05:30 |INFO| x-ray image
+10-22 05:30 |INFO| Beginning reconstruction for TIM 2 on shot 95523
+10-22 05:30 |INFO| d in [ 1.61,  4.07] μm
+10-22 05:30 |INFO|   fitting electrick feeld
+10-22 05:36 |INFO|   n = 7.548e+04, (x0, y0) = (-0.237, 0.050) ± 0.003 cm, δ = 46.78 ± 5.14 μm, Q = 0.410 ± 0.017 cm*MeV, M = 14.00
+10-22 05:36 |INFO|   Charging artificially increased source size by 130.052 μm (a 3.780× change!)
+10-22 05:48 |INFO|   χ^2/n = 1.0357818682264266
+10-22 05:48 |INFO|   P0 = 32.57 μm
+10-22 05:48 |INFO|   P2 = 4.28 μm = 13.1%, θ = -19.2°
+10-22 05:48 |INFO| d in [ 6.27,   inf] μm
+10-22 05:48 |INFO|   fitting electrick feeld
+10-22 05:55 |INFO|   n = 1.631e+05, (x0, y0) = (-0.270, 0.031) ± 0.003 cm, δ = 72.64 ± 5.48 μm, Q = 0.167 ± 0.006 cm*MeV, M = 14.00
+10-22 05:55 |INFO|   Charging artificially increased source size by 195.606 μm (a 3.693× change!)
+10-22 06:06 |INFO|   χ^2/n = 1.0013594752153323
+10-22 06:06 |INFO|   P0 = 47.93 μm
+10-22 06:06 |INFO|   P2 = 2.16 μm = 4.5%, θ = -100.9°
+10-22 06:06 |INFO| Δ = 28.6 μm, θ = 63.9
+10-22 06:06 |INFO| x-ray image
+10-22 06:06 |INFO| Beginning reconstruction for TIM 4 on shot 95523
+10-22 06:06 |INFO| d in [ 1.61,  4.07] μm
+10-22 06:06 |INFO|   fitting electrick feeld
+10-22 06:14 |INFO|   n = 6.697e+04, (x0, y0) = (-0.187, -0.051) ± 0.002 cm, δ = 19.04 ± 1.00 μm, Q = 0.319 ± 0.008 cm*MeV, M = 14.00
+10-22 06:14 |INFO|   Charging artificially increased source size by 101.172 μm (a 6.314× change!)
+10-22 06:27 |INFO|   χ^2/n = 1.0566471254668093
+10-22 06:27 |INFO|   P0 = 21.37 μm
+10-22 06:27 |INFO|   P2 = 0.44 μm = 2.0%, θ = -40.5°
+10-22 06:27 |INFO| d in [ 6.27,   inf] μm
+10-22 06:28 |INFO|   fitting electrick feeld
+10-22 06:35 |INFO|   n = 1.47e+05, (x0, y0) = (-0.138, -0.038) ± 0.002 cm, δ = 84.54 ± 3.87 μm, Q = 0.107 ± 0.005 cm*MeV, M = 14.00
+10-22 06:35 |INFO|   Charging artificially increased source size by 125.492 μm (a 2.484× change!)
+10-22 06:42 |INFO|   χ^2/n = 0.9644053697627972
+10-22 06:42 |INFO|   P0 = 52.17 μm
+10-22 06:42 |INFO|   P2 = 2.04 μm = 3.9%, θ = -92.9°
+10-22 06:42 |INFO| Δ = 36.5 μm, θ = -98.4
+10-22 06:42 |INFO| x-ray image
+10-22 06:42 |INFO| Beginning reconstruction for TIM 5 on shot 95523
+10-22 06:42 |INFO| d in [ 0.80,  2.03] μm
+10-22 06:42 |INFO|   fitting electrick feeld
+10-22 06:50 |INFO|   n = 8.055e+04, (x0, y0) = (-0.051, 0.010) ± 0.002 cm, δ = 6.99 ± 0.47 μm, Q = 0.499 ± 0.007 cm*MeV, M = 14.00
+10-22 06:50 |INFO|   Charging artificially increased source size by 158.396 μm (a 23.671× change!)
+10-22 07:11 |INFO|   χ^2/n = 1.005523476141086
+10-22 07:11 |INFO|   P0 = 18.93 μm
+10-22 07:11 |INFO|   P2 = 0.41 μm = 2.2%, θ = 19.9°
+10-22 07:11 |INFO| d in [ 3.14,   inf] μm
+10-22 07:11 |INFO|   fitting electrick feeld
+10-22 07:19 |INFO|   n = 1.673e+05, (x0, y0) = (-0.048, 0.005) ± 0.002 cm, δ = 7.52 ± 0.75 μm, Q = 0.222 ± 0.003 cm*MeV, M = 14.00
+10-22 07:19 |INFO|   Charging artificially increased source size by 259.769 μm (a 35.521× change!)
+10-22 07:27 |INFO|   χ^2/n = 1.0072854721594318
+10-22 07:27 |INFO|   P0 = 49.45 μm
+10-22 07:27 |INFO|   P2 = 3.44 μm = 7.0%, θ = -28.0°
+10-22 07:27 |INFO| Δ = 2.9 μm, θ = -24.8
+10-22 07:27 |INFO| x-ray image
+10-22 07:27 |INFO| Beginning reconstruction for TIM 2 on shot 95524
+10-22 07:27 |INFO| d in [ 0.80,  2.03] μm
+10-22 07:27 |INFO|   fitting electrick feeld
+10-22 07:33 |INFO|   n = 2.094e+04, (x0, y0) = (-0.138, 0.026) ± 0.003 cm, δ = 41.98 ± 3.21 μm, Q = 0.257 ± 0.013 cm*MeV, M = 14.00
+10-22 07:33 |INFO|   Charging artificially increased source size by 81.570 μm (a 2.943× change!)
+10-22 07:45 |INFO|   χ^2/n = 1.006887869384637
+10-22 07:45 |INFO|   P0 = 17.72 μm
+10-22 07:45 |INFO|   P2 = 1.04 μm = 5.9%, θ = -10.9°
+10-22 07:45 |INFO| d in [ 3.14,   inf] μm
+10-22 07:45 |INFO|   fitting electrick feeld
+10-22 07:49 |INFO|   n = 1.087e+05, (x0, y0) = (-0.133, -0.018) ± 0.003 cm, δ = 53.92 ± 7.23 μm, Q = 0.229 ± 0.007 cm*MeV, M = 14.00
+10-22 07:49 |INFO|   Charging artificially increased source size by 268.110 μm (a 5.973× change!)
+10-22 08:03 |INFO|   χ^2/n = 1.0061113106466384
+10-22 08:03 |INFO|   P0 = 47.25 μm
+10-22 08:03 |INFO|   P2 = 3.27 μm = 6.9%, θ = 13.6°
+10-22 08:03 |INFO| Δ = 30.1 μm, θ = -9.5
+10-22 08:03 |INFO| x-ray image
+10-22 08:03 |INFO| Beginning reconstruction for TIM 4 on shot 95524
+10-22 08:03 |INFO| d in [ 1.61,  4.07] μm
+10-22 08:03 |INFO|   fitting electrick feeld
+10-22 08:10 |INFO|   n = 6.264e+04, (x0, y0) = (-0.149, -0.194) ± 0.003 cm, δ = 7.46 ± 0.52 μm, Q = 0.497 ± 0.011 cm*MeV, M = 14.00
+10-22 08:10 |INFO|   Charging artificially increased source size by 157.673 μm (a 22.150× change!)
+10-22 09:20 |INFO|   χ^2/n = 1.1676359847215718
+10-22 09:20 |INFO|   P0 = 11.18 μm
+10-22 09:20 |INFO|   P2 = 5.60 μm = 50.1%, θ = -114.0°
+10-22 09:20 |INFO| d in [ 6.27,   inf] μm
+10-22 09:20 |INFO|   fitting electrick feeld
+10-22 09:26 |INFO|   n = 1e+05, (x0, y0) = (-0.159, -0.193) ± 0.004 cm, δ = 40.74 ± 5.57 μm, Q = 0.274 ± 0.006 cm*MeV, M = 14.00
+10-22 09:26 |INFO|   Charging artificially increased source size by 320.493 μm (a 8.868× change!)
+10-22 10:08 |INFO|   χ^2/n = 1.018549751970428
+10-22 10:08 |INFO|   P0 = 53.90 μm
+10-22 10:08 |INFO|   P2 = 0.44 μm = 0.8%, θ = -34.5°
+10-22 10:08 |INFO| Δ = 17.7 μm, θ = 47.7
+10-22 10:08 |INFO| Beginning reconstruction for TIM 5 on shot 95524
+10-22 10:08 |INFO| d in [ 1.61,  4.07] μm
+10-22 10:09 |INFO|   fitting electrick feeld
+10-22 10:14 |INFO|   n = 4.193e+04, (x0, y0) = (0.157, 0.073) ± 0.000 cm, δ = 5.99 ± 0.00 μm, Q = 0.482 ± 0.000 cm*MeV, M = 14.00
+10-22 10:14 |INFO|   Charging artificially increased source size by 153.114 μm (a 26.561× change!)
+10-22 10:33 |INFO|   χ^2/n = 1.0112644620910678
+10-22 10:33 |INFO|   P0 = 23.62 μm
+10-22 10:33 |INFO|   P2 = 0.73 μm = 3.1%, θ = -113.5°
+10-22 10:33 |INFO| d in [ 6.27,   inf] μm
+10-22 10:33 |INFO|   fitting electrick feeld
+10-22 10:38 |INFO|   n = 1.023e+05, (x0, y0) = (0.115, 0.083) ± 0.003 cm, δ = 18.95 ± 2.86 μm, Q = 0.246 ± 0.005 cm*MeV, M = 14.00
+10-22 10:38 |INFO|   Charging artificially increased source size by 288.436 μm (a 16.220× change!)
+10-22 10:52 |INFO|   χ^2/n = 0.9892735963263735
+10-22 10:52 |INFO|   P0 = 45.23 μm
+10-22 10:52 |INFO|   P2 = 2.56 μm = 5.7%, θ = -22.1°
+10-22 10:52 |INFO| Δ = 30.4 μm, θ = 106.0
+10-22 10:52 |INFO| Beginning reconstruction for TIM 2 on shot 97385
+10-22 10:53 |INFO| d in [ 0.80,  2.03] μm
+10-22 10:53 |INFO|   fitting electrick feeld
+10-22 10:59 |INFO|   n = 2.834e+05, (x0, y0) = (0.047, -0.035) ± 0.001 cm, δ = 39.72 ± 1.19 μm, Q = 0.400 ± 0.006 cm*MeV, M = 20.85
+10-22 10:59 |INFO|   Charging artificially increased source size by 85.206 μm (a 3.145× change!)
+10-22 11:16 |INFO|   χ^2/n = 1.3229797605870093
+10-22 11:16 |INFO|   P0 = 17.41 μm
+10-22 11:16 |INFO|   P2 = 1.39 μm = 8.0%, θ = -52.9°
+10-22 11:16 |INFO| d in [ 3.14,   inf] μm
+10-22 11:17 |INFO|   fitting electrick feeld
+10-22 11:21 |INFO|   n = 1.298e+06, (x0, y0) = (0.022, 0.070) ± 0.001 cm, δ = 80.24 ± 1.11 μm, Q = 0.135 ± 0.002 cm*MeV, M = 20.85
+10-22 11:21 |INFO|   Charging artificially increased source size by 106.333 μm (a 2.325× change!)
+10-22 11:29 |INFO|   χ^2/n = 1.1421529835603514
+10-22 11:29 |INFO|   P0 = 38.19 μm
+10-22 11:29 |INFO|   P2 = 2.42 μm = 6.3%, θ = -52.5°
+10-22 11:29 |INFO| Δ = 52.5 μm, θ = 166.9
+10-22 11:29 |INFO| Beginning reconstruction for TIM 4 on shot 97385
+10-22 11:29 |INFO| d in [ 0.80,  2.03] μm
+10-22 11:29 |INFO|   fitting electrick feeld
+10-22 11:35 |INFO|   n = 5165, (x0, y0) = (-0.004, -0.056) ± 0.007 cm, δ = 79.28 ± 1.48 μm, Q = 0.043 ± 0.009 cm*MeV, M = 20.54
+10-22 11:35 |INFO|   Charging artificially increased source size by 9.354 μm (a 1.118× change!)
+10-22 11:52 |INFO|   χ^2/n = 1.052637264338618
+10-22 11:52 |INFO|   P0 = 1.28 μm
+10-22 11:52 |INFO|   P2 = 0.64 μm = 50.0%, θ = 0.0°
+10-22 11:52 |INFO| d in [ 3.14,   inf] μm
+10-22 11:53 |INFO|   fitting electrick feeld
+10-22 11:58 |INFO|   n = 6.472e+05, (x0, y0) = (0.032, -0.051) ± 0.001 cm, δ = 108.78 ± 0.42 μm, Q = 0.024 ± 0.001 cm*MeV, M = 20.54
+10-22 11:58 |INFO|   Charging artificially increased source size by 19.278 μm (a 1.177× change!)
+10-22 12:07 |INFO|   χ^2/n = 1.1170338058505755
+10-22 12:07 |INFO|   P0 = 20.95 μm
+10-22 12:07 |INFO|   P2 = 10.51 μm = 50.2%, θ = 36.3°
+10-22 12:07 |INFO| Δ = 21.5 μm, θ = -101.2
+10-22 12:07 |INFO| Beginning reconstruction for TIM 5 on shot 97385
+10-22 12:07 |INFO| d in [ 0.80,  2.03] μm
+10-22 12:07 |INFO|   fitting electrick feeld
+10-22 12:13 |INFO|   n = 843, (x0, y0) = (-0.089, 0.007) ± 0.016 cm, δ = 60.81 ± 1.02 μm, Q = 0.001 ± 0.000 cm*MeV, M = 20.60
+10-22 12:30 |INFO|   χ^2/n = 1.0294819852432446
+10-22 12:30 |INFO|   P0 = 1.59 μm
+10-22 12:30 |INFO|   P2 = 0.80 μm = 50.0%, θ = 13.6°
+10-22 12:30 |INFO| d in [ 3.14,   inf] μm
+10-22 12:30 |INFO|   fitting electrick feeld
+10-22 12:39 |INFO|   n = 4.487e+05, (x0, y0) = (-0.022, 0.139) ± 0.001 cm, δ = 85.71 ± 0.08 μm, Q = 0.001 ± 0.000 cm*MeV, M = 20.60
+10-22 12:50 |INFO|   χ^2/n = 1.1272382754867363
+10-22 12:50 |INFO|   P0 = 2.26 μm
+10-22 12:50 |INFO|   P2 = 1.28 μm = 56.5%, θ = -48.0°
+10-22 12:50 |INFO| Δ = 81.4 μm, θ = -157.4
+10-22 12:50 |INFO| Beginning reconstruction for TIM 2 on shot 97386
+10-22 12:50 |INFO| d in [ 0.80,  2.03] μm
+10-22 12:50 |INFO|   fitting electrick feeld
+10-22 12:57 |INFO|   n = 6.198e+04, (x0, y0) = (0.007, -0.121) ± 0.000 cm, δ = 3.11 ± 0.00 μm, Q = 1.094 ± 0.000 cm*MeV, M = 19.62
+10-22 12:57 |INFO|   Charging artificially increased source size by 247.726 μm (a 80.729× change!)
+10-22 13:24 |INFO|   χ^2/n = 1.2616505393038393
+10-22 13:24 |INFO|   P0 = 15.57 μm
+10-22 13:24 |INFO|   P2 = 7.80 μm = 50.1%, θ = -59.4°
+10-22 13:24 |INFO| d in [ 3.14,   inf] μm
+10-22 13:25 |INFO|   fitting electrick feeld
+10-22 13:30 |INFO|   n = 1.523e+06, (x0, y0) = (-0.032, -0.025) ± 0.000 cm, δ = 0.64 ± 0.00 μm, Q = 0.428 ± 0.000 cm*MeV, M = 19.62
+10-22 13:30 |INFO|   Charging artificially increased source size by 357.622 μm (a 559.126× change!)
+10-22 13:54 |INFO|   χ^2/n = 1.3201844190173044
+10-22 13:54 |INFO|   P0 = 30.96 μm
+10-22 13:54 |INFO|   P2 = 7.94 μm = 25.7%, θ = -70.5°
+10-22 13:54 |INFO| Δ = 60.2 μm, θ = 156.3
+10-22 13:54 |INFO| Beginning reconstruction for TIM 2 on shot 97387
+10-22 13:54 |INFO| d in [ 0.80,  2.03] μm
+10-22 13:55 |INFO|   fitting electrick feeld
+10-22 15:08 |INFO|   n = 4.099e+05, (x0, y0) = (-0.096, -0.071) ± nan cm, δ = 57.54 ± nan μm, Q = 0.029 ± 0.001 cm*MeV, M = 20.60
+10-22 15:08 |INFO|   Charging artificially increased source size by 6.360 μm (a 1.111× change!)
+10-22 15:19 |INFO|   χ^2/n = 1.157198501050327
+10-22 15:19 |INFO|   P0 = 20.98 μm
+10-22 15:19 |INFO|   P2 = 8.64 μm = 41.2%, θ = -39.3°
+10-22 15:19 |INFO| d in [ 3.14,   inf] μm
+10-22 15:20 |INFO|   fitting electrick feeld
+10-22 15:32 |INFO|   n = 8.671e+05, (x0, y0) = (-0.112, -0.055) ± 0.001 cm, δ = 121.54 ± 0.11 μm, Q = 0.002 ± 0.000 cm*MeV, M = 20.60
+10-22 15:47 |INFO|   χ^2/n = 1.4526374547519516
+10-22 15:47 |INFO|   P0 = 3.01 μm
+10-22 15:47 |INFO|   P2 = 1.51 μm = 50.1%, θ = 29.5°
+10-22 15:47 |INFO| Δ = 12.7 μm, θ = 130.9
+10-22 15:47 |INFO| Beginning reconstruction for TIM 2 on shot 97388
+10-22 15:47 |INFO| d in [ 0.80,  2.03] μm
+10-22 15:48 |INFO|   fitting electrick feeld
+10-22 16:00 |INFO|   n = 9.02e+04, (x0, y0) = (-0.104, -0.095) ± 0.001 cm, δ = 73.29 ± 0.45 μm, Q = 0.037 ± 0.002 cm*MeV, M = 15.33
+10-22 16:00 |INFO|   Charging artificially increased source size by 10.628 μm (a 1.145× change!)
+10-22 16:14 |INFO|   χ^2/n = 1.100782892151374
+10-22 16:14 |INFO|   P0 = 18.90 μm
+10-22 16:14 |INFO|   P2 = 6.70 μm = 35.5%, θ = -26.7°
+10-22 16:14 |INFO| d in [ 3.14,   inf] μm
+10-22 16:15 |INFO|   fitting electrick feeld
+10-22 16:22 |INFO|   n = 4.438e+05, (x0, y0) = (-0.131, -0.032) ± 0.001 cm, δ = 131.58 ± 1.23 μm, Q = 0.025 ± 0.004 cm*MeV, M = 15.33
+10-22 16:22 |INFO|   Charging artificially increased source size by 27.092 μm (a 1.206× change!)
+10-22 16:33 |INFO|   χ^2/n = 1.0300809989113475
+10-22 16:33 |INFO|   P0 = 30.54 μm
+10-22 16:33 |INFO|   P2 = 2.56 μm = 8.4%, θ = -10.9°
+10-22 16:33 |INFO| Δ = 46.0 μm, θ = 156.9
+10-22 16:33 |INFO| Beginning reconstruction for TIM 4 on shot 97388
+10-22 16:33 |INFO| d in [ 0.80,  2.03] μm
+10-22 16:33 |INFO|   fitting electrick feeld
+10-22 16:46 |INFO|   n = 7.69e+04, (x0, y0) = (0.073, 0.051) ± 0.001 cm, δ = 60.40 ± 0.14 μm, Q = 0.000 ± 0.000 cm*MeV, M = 15.57
+10-22 17:00 |INFO|   χ^2/n = 1.0682482215779938
+10-22 17:00 |INFO|   P0 = 12.42 μm
+10-22 17:00 |INFO|   P2 = 3.04 μm = 24.5%, θ = -3.5°
+10-22 17:00 |INFO| d in [ 3.14,   inf] μm
+10-22 17:01 |INFO|   fitting electrick feeld
+10-22 17:09 |INFO|   n = 2.484e+05, (x0, y0) = (0.066, 0.002) ± 0.001 cm, δ = 101.49 ± 0.16 μm, Q = 0.001 ± 0.000 cm*MeV, M = 15.57
+10-22 17:17 |INFO|   χ^2/n = 1.0502209667916367
+10-22 17:17 |INFO|   P0 = 15.13 μm
+10-22 17:17 |INFO|   P2 = 7.58 μm = 50.1%, θ = -85.8°
+10-22 17:17 |INFO| Δ = 33.6 μm, θ = 11.1
+10-22 17:17 |INFO| Beginning reconstruction for TIM 2 on shot test0_square
+10-22 17:17 |INFO| d in [ 0.80,   inf] μm
+10-22 17:19 |INFO|   fitting electrick feeld
+10-22 18:32 |INFO|   n = 1.245e+06, (x0, y0) = (-0.009, -0.003) ± 0.000 cm, δ = 41.62 ± 0.07 μm, Q = 0.007 ± 0.000 cm*MeV, M = 14.00
+10-22 18:32 |INFO|   Charging artificially increased source size by 7.920 μm (a 1.190× change!)
+10-22 19:06 |INFO|   χ^2/n = 1.0210970920057807
+10-22 19:06 |INFO|   P0 = 21.61 μm
+10-22 19:06 |INFO|   P2 = 2.60 μm = 12.1%, θ = -96.3°
+10-22 19:06 |INFO| Beginning reconstruction for TIM 2 on shot test1_ring
+10-22 19:06 |INFO| d in [ 0.80,   inf] μm
+10-22 19:07 |INFO|   fitting electrick feeld
+10-22 19:21 |INFO|   n = 2.002e+05, (x0, y0) = (0.010, -0.001) ± 0.001 cm, δ = 122.32 ± 0.51 μm, Q = 0.014 ± 0.002 cm*MeV, M = 14.00
+10-22 19:21 |INFO|   Charging artificially increased source size by 16.493 μm (a 1.135× change!)
+10-22 19:28 |INFO|   χ^2/n = 1.0097676383035965
+10-22 19:28 |INFO|   P0 = 38.06 μm
+10-22 19:28 |INFO|   P2 = 27.27 μm = 71.7%, θ = -57.4°
+10-22 19:28 |INFO| Beginning reconstruction for TIM 2 on shot test2_cross
+10-22 19:28 |INFO| d in [ 0.80,   inf] μm
+10-22 19:29 |INFO|   fitting electrick feeld

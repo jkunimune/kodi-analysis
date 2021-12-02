@@ -33,7 +33,7 @@ EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
 # SMOOTHING = 1e-3
-CONTOUR = .50 #XXX.25 TODO: what is the significance of the 17% contour?
+CONTOUR = .50
 
 
 def where_is_the_ocean(x, y, z, title, timeout=None):
@@ -59,6 +59,7 @@ def where_is_the_ocean(x, y, z, title, timeout=None):
 		raise TimeoutError
 
 def hessian(f, x, args, epsilon=None):
+	""" use finite-difference to get the hessian matrix of this function """
 	def f_red(xp):
 		return f(xp, *args)
 	H = nd.Hessian(f_red, step=epsilon)
@@ -66,7 +67,7 @@ def hessian(f, x, args, epsilon=None):
 
 
 def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
-	""" compute the shape of a simple analytic single-apeture penumbral image """
+	""" synthesize a simple analytic single-apeture penumbral image """
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
 	n_pixel = 72
 	# if 3*δ >= r.max(): # if 3*source size is bigger than the image radius
@@ -88,7 +89,7 @@ def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 
 
 def simple_fit(*args, a=1, b=0, c=1, plot=False):
-	""" compute how close these data are to this penumbral image """
+	""" quantify how close these data are to this penumbral image """
 	if len(args[0]) == 4 and len(args) == 12: # first, parse the parameters
 		(x0, y0, δ, background), Q, r0, s0, r_img, X, Y, exp, where, e_min, e_max, config = args
 	elif len(args[0]) == 5 and len(args) == 11:
@@ -370,13 +371,13 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		step = [        .2*r0,        .2*r0, .16*min(δ0, r0), .3*np.mean(NC)]
 		bounds = [(None,None), (None,None), (0,None), (0,None)]
 		args = (r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds, aperture_configuration)
-		if Q is None: # decide whether to fit the electrick feeld
-			logging.info("  fitting electrick feeld")
+		if Q is None: # decide whether to fit the electric field
+			logging.info("  fitting electric field")
 			gess.append(.15)
 			step.append(.10)
 			bounds.append((0, None))
 		else: # or not
-			logging.info(f"  setting electrick feeld to {Q}")
+			logging.info(f"  setting electric field to {Q}")
 			args = (Q, *args)
 
 		opt = minimize_repeated_nelder_mead(
@@ -511,12 +512,12 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			continue
 		B = np.maximum(0, B) # we know this must be nonnegative
 
-		def func(x, A, mouth):
-			return A*(1 + erf((100e-4 - x)/mouth))/2
-		real = source_bins
-		cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
-		(A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
-		logging.debug(f"  XXX {mouth/1e-4:.1f}")
+		# def func(x, A, mouth):
+		# 	return A*(1 + erf((100e-4 - x)/mouth))/2
+		# real = source_bins
+		# cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
+		# (A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
+		# logging.debug(f"  XXX {mouth/1e-4:.1f}")
 
 		save_as_hdf5(f'{output_filename}-{cut_name}-reconstruction', x=xS_bins, y=yS_bins, z=B)
 
