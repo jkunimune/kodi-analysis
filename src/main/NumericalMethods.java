@@ -23,7 +23,6 @@
  */
 package main;
 
-import java.util.Arrays;
 import java.util.Locale;
 import java.util.Random;
 
@@ -279,15 +278,15 @@ public class NumericalMethods {
 	public static Quantity moment(int n, double[] x, Quantity[] y, double a, double b) {
 		if (x.length != y.length+1)
 			throw new IllegalArgumentException("Array lengths do not correspond.");
-		Quantity N = (n > 0) ? moment(0, x, y, a, b) : new Quantity(1, y[0].getDofs());
-		Quantity μ = (n > 1) ? moment(1, x, y, a, b) : new Quantity(0, y[0].getDofs());
-		Quantity σ = (n > 2) ? moment(2, x, y, a, b).sqrt() : new Quantity(1, y[0].getDofs());
-		Quantity sum = new Quantity(0, y[0].getDofs());
+		Quantity N = (n > 0) ? moment(0, x, y, a, b) : new FixedQuantity(1);
+		Quantity μ = (n > 1) ? moment(1, x, y, a, b) : new FixedQuantity(0);
+		Quantity σ = (n > 2) ? moment(2, x, y, a, b).sqrt() : new FixedQuantity(1);
+		Quantity sum = new FixedQuantity(0);
 		for (int i = 0; i < y.length; i ++) {
 			double xL = Math.max(a, x[i]); // define the bounds of this integrand bin, which might not be the bounds of the datum bin
 			double xR = Math.min(b, x[i+1]);
 			double w = (xR - xL)/(x[i+1] - x[i]); // determine what fraction of the data in this bin fall into the integrand bin
-			sum = sum.plus(y[i].times(w).times(μ.minus((xL + xR)/2).times(-1).over(σ).pow(n))); // sum up the average x value to whatever power
+			sum = sum.plus(y[i].times(w).times(μ.minus((xL + xR)/2).over(σ).neg().pow(n))); // sum up the average x value to whatever power
 		}
 		return sum.over(N);
 	}
@@ -363,8 +362,8 @@ public class NumericalMethods {
 	public static Quantity average(Quantity[] y, Quantity[] f, int left, int rite) {
 		if (y.length != f.length)
 			throw new IllegalArgumentException("The array lengths don't match.");
-		Quantity p0 = new Quantity(0, y[0].getDofs());
-		Quantity p1 = new Quantity(0, y[0].getDofs());
+		Quantity p0 = new FixedQuantity(0);
+		Quantity p1 = new FixedQuantity(0);
 		for (int i = left; i < rite; i ++) {
 			p0 = p0.plus(f[i]);
 			p1 = p1.plus(f[i].times(y[i]));
@@ -463,7 +462,7 @@ public class NumericalMethods {
 	}
 
 	public static Quantity sum(Quantity[][][][] arr) {
-		Quantity s = new Quantity(0, arr[0][0][0][0].getDofs());
+		Quantity s = new FixedQuantity(0);
 		for (Quantity[][][] mat: arr)
 			for (Quantity[][] lvl: mat)
 				for (Quantity[] row: lvl)
@@ -480,7 +479,7 @@ public class NumericalMethods {
 	 */
 	public static Quantity[] cumsum(Quantity[] arr, boolean normalize) {
 		Quantity[] s = new Quantity[arr.length + 1];
-		s[0] = new Quantity(0, arr[0].getDofs());
+		s[0] = new FixedQuantity(0);
 		for (int i = 0; i < arr.length; i ++)
 			s[i+1] = s[i].plus(arr[i]);
 		if (normalize) {
@@ -505,7 +504,7 @@ public class NumericalMethods {
 	public static Quantity[] minus(Quantity[] x) {
 		Quantity[] out = new Quantity[x.length];
 		for (int i = 0; i < out.length; i ++)
-			out[i] = x[i].times(-1);
+			out[i] = x[i].neg();
 		return out;
 	}
 	
@@ -669,11 +668,11 @@ public class NumericalMethods {
 			if (i == -1 || x[j].value > x[i].value)
 				i = j;
 		if (i <= left || i >= right-1)
-			return new Quantity(i, x[i].getDofs());
+			return new FixedQuantity(i);
 		Quantity dxdi = (x[i+1].minus(x[i-1])).over(2);
 		Quantity d2xdi2 = (x[i+1]).plus(x[i].times(-2)).plus(x[i-1]);
 		assert d2xdi2.value < 0;
-		return dxdi.over(d2xdi2).times(-1).plus(i);
+		return dxdi.over(d2xdi2).subtractedFrom(i);
 	}
 	
 	/**
@@ -708,7 +707,7 @@ public class NumericalMethods {
 		try {
 			return interp(x, quadargmax(Math.max(0, left), Math.min(x.length, right), y));
 		} catch (IndexOutOfBoundsException e) { // y is empty or all NaN
-			return new Quantity(-1, y[0].getDofs());
+			return new FixedQuantity(-1);
 		}
 	}
 	
@@ -741,7 +740,7 @@ public class NumericalMethods {
 	public static Quantity interp(double[] x, Quantity i) {
 		Quantity[] x_q = new Quantity[x.length];
 		for (int j = 0; j < x_q.length; j ++)
-			x_q[j] = new Quantity(x[j], i.getDofs());
+			x_q[j] = new FixedQuantity(x[j]);
 		return interp(x_q, i);
 	}
 	
@@ -759,17 +758,17 @@ public class NumericalMethods {
 	}
 
 	public static Quantity interp(double x0, Quantity[] x, double[] y) {
-		Quantity x0_q = new Quantity(x0, x[0].getDofs());
+		Quantity x0_q = new FixedQuantity(x0);
 		Quantity[] y_q = new Quantity[y.length];
 		for (int i = 0; i < y_q.length; i ++)
-			y_q[i] = new Quantity(y[i], x0_q.getDofs());
+			y_q[i] = new FixedQuantity(y[i]);
 		return interp(x0_q, x, y_q);
 	}
 
 	public static Quantity interp(Quantity x0, double[] x, Quantity[] y) {
 		Quantity[] x_q = new Quantity[x.length];
 		for (int i = 0; i < x_q.length; i ++)
-			x_q[i] = new Quantity(x[i], x0.getDofs());
+			x_q[i] = new FixedQuantity(x[i]);
 		return interp(x0, x_q, y);
 	}
 	
@@ -799,8 +798,7 @@ public class NumericalMethods {
 	}
 
 	public static Quantity interp3d(Quantity[][][] values, double i, double j, double k, boolean smooth) {
-		int N = values[0][0][0].getDofs();
-		return interp3d(values, new Quantity(i, N), new Quantity(j, N), new Quantity(k, N), smooth);
+		return interp3d(values, new FixedQuantity(i), new FixedQuantity(j), new FixedQuantity(k), smooth);
 	}
 
 	public static Quantity interp3d(Quantity[][][] values, Quantity i, Quantity j, Quantity k, boolean smooth) {
@@ -826,7 +824,7 @@ public class NumericalMethods {
 			cj0 = j.minus(j0).minus(1).abs();
 			ck0 = k.minus(k0).minus(1).abs();
 		}
-		Quantity value = new Quantity(0, i.getDofs());
+		Quantity value = new FixedQuantity(0);
 		for (int di = 0; di <= 1; di ++)
 			for (int dj = 0; dj <= 1; dj ++)
 				for (int dk = 0; dk <= 1; dk ++)
@@ -845,7 +843,10 @@ public class NumericalMethods {
 			throw new IndexOutOfBoundsException("Even partial indices have limits: "+i);
 		int i0 = Math.max(1, Math.min(x.length-3, (int) i.value));
 		Quantity xA = x[i0-1], xB = x[i0], xC = x[i0+1], xD = x[i0+2];
-		Quantity δA = i.minus(i0 - 1), δB = i.minus(i0), δC = i.minus(i0 + 1).times(-1), δD = i.minus(i0 + 2).times(-1);
+		Quantity δA = i.minus(i0 - 1);
+		Quantity δB = i.minus(i0);
+		Quantity δC = i.subtractedFrom(i0 + 1);
+		Quantity δD = i.subtractedFrom(i0 + 2);
 		return xB.times(δA).times(δC).times(δD).times(3).plus(xC.times(δA).times(δB).times(δD).times(3)).minus(xA.times(δB).times(δC).times(δD)).minus(xD.times(δA).times(δB).times(δC)).over(6);
 	}
 	
@@ -917,15 +918,15 @@ public class NumericalMethods {
 		Quantity[] weights = new Quantity[x.length];
 		for (int i = 0; i < x.length; i ++) {
 			if (x[i] <= x0.minus(Δx/2 + dx/2).value)
-				weights[i] = new Quantity(0, x0.getDofs());
+				weights[i] = new FixedQuantity(0);
 			else if (x[i] <= x0.minus(Δx/2 - dx/2).value)
 				weights[i] = x0.minus(Δx/2 + dx/2).minus(x[i]).over(-dx);
 			else if (x[i] <= x0.plus(Δx/2 - dx/2).value)
-				weights[i] = new Quantity(1, x0.getDofs());
+				weights[i] = new FixedQuantity(1);
 			else if (x[i] <= x0.plus(Δx/2 + dx/2).value)
 				weights[i] = x0.plus(Δx/2 + dx/2).minus(x[i]).over(dx);
 			else
-				weights[i] = new Quantity(0, x0.getDofs());
+				weights[i] = new FixedQuantity(0);
 		}
 //		for (int i = 0; i < x.length; i ++)
 //			System.out.print(weights[i].value+", ");
@@ -934,7 +935,7 @@ public class NumericalMethods {
 		double[] xMoments = new double[5];
 		Quantity[] yMoments = new Quantity[3];
 		for (int j = 0; j < 3; j ++)
-				yMoments[j] = new Quantity(0, x0.getDofs());
+				yMoments[j] = new FixedQuantity(0);
 		for (int i = 0; i < x.length; i ++) {
 			if (weights[i].value > 0) {
 				for (int j = 0; j < 5; j ++)
@@ -1172,7 +1173,7 @@ public class NumericalMethods {
 	 * extract the errors from an array of Quantities
 	 * @return the standard deviation of each Quantity in the same order as before
 	 */
-	public static double[] stds(Quantity[] x, double[][] covariance) {
+	public static double[] stds(VariableQuantity[] x, double[][] covariance) {
 		double[] y = new double[x.length];
 		for (int i = 0; i < x.length; i ++)
 			y[i] = Math.sqrt(x[i].variance(covariance));
@@ -1428,12 +1429,12 @@ public class NumericalMethods {
 			throw new IllegalArgumentException("|m| must not exceed l, but |"+m+"| > "+l);
 
 		Quantity x2 = x.pow(2); // get some simple calculacions done out front
-		Quantity y2 = x2.minus(1).times(-1);
-		Quantity y = (m%2 == 1) ? y2.sqrt() : new Quantity(Double.NaN, x.getDofs()); // but avoid taking a square root if you can avoid it
+		Quantity y2 = x2.subtractedFrom(1);
+		Quantity y = (m%2 == 1) ? y2.sqrt() : new FixedQuantity(Double.NaN); // but avoid taking a square root if you can avoid it
 
 		if (m == 0) {
 			if (l == 0)
-				return new Quantity(1, x.getDofs());
+				return new FixedQuantity(1);
 			else if (l == 1)
 				return x;
 			else if (l == 2)
@@ -1697,7 +1698,7 @@ public class NumericalMethods {
 		for (int i = 0; i < n; i ++)
 			for (int j = 0; j < n; j ++)
 				for (int k = 0; k < n; k ++)
-					test[i][j][k] = new Quantity(Math.random(), 0);
+					test[i][j][k] = new FixedQuantity(Math.random());
 		double i = 2.5;
 		double j = 2.5;
 		double k = 2.5;

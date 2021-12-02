@@ -123,7 +123,6 @@ public class SparseVector extends Vector {
 
 	@Override
 	public double[] getValues() {
-		System.err.println("Warning: you are converting a sparse vector to a plain double[].  i si an efficient e mas zar di an nia.");
 		double[] values = new double[this.length];
 		for (int i: this.values.keySet())
 			values[i] = this.values.get(i);

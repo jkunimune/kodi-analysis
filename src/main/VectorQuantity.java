@@ -51,14 +51,14 @@ public class VectorQuantity {
 	public Quantity dot(Vector that) {
 		if (this.getLength() != that.getLength())
 			throw new IllegalArgumentException("the dimensions don't match.");
-		Quantity product = new Quantity(0, this.getDofs());
+		Quantity product = new FixedQuantity(0);
 		for (int i = 0; i < this.getLength(); i ++)
 			product = product.plus(this.get(i).times(that.get(i)));
 		return product;
 	}
 
 	public Quantity sqr() {
-		Quantity sum = new Quantity(0, this.values[0].getDofs());
+		Quantity sum = new FixedQuantity(0);
 		for (Quantity x: this.values)
 			sum = sum.plus(x.pow(2));
 		return sum;
@@ -70,9 +70,5 @@ public class VectorQuantity {
 
 	public int getLength() {
 		return this.values.length;
-	}
-
-	public int getDofs() {
-		return this.values[0].getDofs();
 	}
 }

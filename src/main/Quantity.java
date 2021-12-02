@@ -29,153 +29,77 @@ package main;
  * determination.
  * @author Justin Kunimune
  */
-public class Quantity {
+public abstract class Quantity {
 	public final double value;
-	public final Vector gradient;
 
-	public Quantity(double value, int dofs) {
-		this(value, new SparseVector(dofs));
-	}
-
-	public Quantity(double value, int i, int n) {
-		this(value, new SparseVector(n, i, 1));
-	}
-
-	public Quantity(double value, double[] gradient) {
-		this(value, new DenseVector(gradient));
-	}
-
-	public Quantity(double value, Vector gradient) {
+	protected Quantity(double value) {
 		this.value = value;
-		this.gradient = gradient;
 	}
 
-	public double variance(double[][] covariance) {
-		if (this.getDofs() == 0)
-			return 0;
-		if (covariance.length != this.getDofs() || covariance[0].length != this.getDofs())
-			throw new IllegalArgumentException("this covariance matrix doesn't go with this Quantity");
+	public abstract Quantity plus(Quantity that);
 
-		double variance = this.gradient.dot(new Matrix(covariance).times(this.gradient));
-		if (variance < 0) { // if it doesn't work
-			double[][] newCovariance = new double[covariance.length][covariance.length];
-			for (int i = 0; i < covariance.length; i ++) {
-				if (covariance[i][i] < 0)
-					return variance; // first check that the diagonal terms are positive (they should be)
-				for (int j = 0; j < covariance.length; j ++) {
-					if (i == j)  newCovariance[i][j] = covariance[i][j]; // then halving the off-diagonal terms and try again
-					else         newCovariance[i][j] = covariance[i][j]/2;
-				}
-			}
-			return this.variance(newCovariance);
-		}
-		else {
-			return variance;
-		}
-	}
-
-	public Quantity plus(double constant) {
-		return new Quantity(this.value + constant, this.gradient);
-	}
-
-	public Quantity plus(Quantity that) {
-		return new Quantity(this.value + that.value, this.gradient.plus(that.gradient));
-	}
+	public abstract Quantity plus(double constant);
 
 	public Quantity minus(double constant) {
 		return this.plus(-constant);
 	}
 
 	public Quantity minus(Quantity that) {
-		return this.plus(that.times(-1));
+		return this.plus(that.neg());
 	}
 
 	public Quantity subtractedFrom(double constant) {
-		return this.minus(constant).times(-1);
+		return this.minus(constant).neg();
 	}
 
-	public Quantity times(double constant) {
-		return new Quantity(this.value*constant, this.gradient.times(constant));
-	}
+	public abstract Quantity times(double factor);
 
-	public Quantity times(Quantity that) {
-		return new Quantity(this.value*that.value,
-							this.gradient.times(that.value).plus(that.gradient.times(this.value)));
-	}
+	public abstract Quantity times(Quantity that);
 
-	public Quantity over(double constant) {
-		return this.times(1/constant);
-	}
+	public abstract Quantity over(double divisor);
 
-	public Quantity over(Quantity that) {
-		return new Quantity(this.value/that.value,
-							this.gradient.times(that.value).minus(that.gradient.times(this.value)).times(
-								  Math.pow(that.value, -2)));
-	}
+	public abstract Quantity over(Quantity that);
 
-	public Quantity pow(double exponent) {
-		return new Quantity(Math.pow(this.value, exponent),
-							this.gradient.times(exponent*Math.pow(this.value, exponent - 1)));
-	}
+	public abstract Quantity neg();
+
+	public abstract Quantity pow(double exponent);
 
 	public Quantity sqrt() {
 		return this.pow(1/2.);
 	}
 
-	public Quantity exp() {
-		return new Quantity(Math.exp(this.value),
-							this.gradient.times(Math.exp(this.value)));
-	}
+	public abstract Quantity exp();
 
-	public Quantity log() {
-		return new Quantity(Math.log(this.value),
-							this.gradient.times(1/this.value));
-	}
+	public abstract Quantity log();
 
-	public Quantity sin() {
-		return new Quantity(Math.sin(this.value),
-							this.gradient.times(Math.cos(this.value)));
-	}
+	public abstract Quantity sin();
 
 	public Quantity cos() {
-		return new Quantity(Math.cos(this.value),
-							this.gradient.times(-Math.sin(this.value)));
+		return this.subtractedFrom(Math.PI/2).sin();
 	}
 
-	public Quantity atan() {
-		return new Quantity(Math.atan(this.value),
-							this.gradient.times(1/(1 + this.value*this.value)));
-	}
+	public abstract Quantity atan();
 
 	public Quantity abs() {
 		if (this.value < 0)
-			return this.times(-1);
+			return this.neg();
 		else
 			return this;
 	}
 
+	public int floor() {
+		return (int) Math.floor(this.value);
+	}
+
+	/**
+	 * do the modulo operator in a way that correctly accounts for negative numbers
+	 * @return x - ⌊x/d⌋*d
+	 */
 	public Quantity mod(double divisor) {
-		return new Quantity(this.value%divisor, this.gradient);
+		return this.minus(this.over(divisor).floor()*divisor);
 	}
 
 	public boolean isNaN() {
 		return Double.isNaN(this.value);
 	}
-
-	/**
-	 * @return the number of variables upon which this depends
-	 */
-	public int getDofs() {
-		return this.gradient.getLength();
-	}
-
-	public String toString(double[][] covariance) {
-		return String.format("%8.6g \u00B1 %8.3g", this.value, Math.sqrt(this.variance(covariance)));
-	}
-
-	@Override
-	public String toString() {
-		return "Quantity(" + this.value + ", " + this.gradient + ")";
-	}
-
 }

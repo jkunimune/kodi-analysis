@@ -84,7 +84,7 @@ public class VoxelFit {
 	 * @return the stopping power on the test particle (MeV/μm)
 	 */
 	private static Quantity dЭdx(Quantity Э, Quantity ρ, Quantity T) {
-		Quantity dЭdx = new Quantity(0, ρ.getDofs());
+		Quantity dЭdx = new FixedQuantity(0);
 		for (double[] properties: medium) {
 			double qf = properties[0], mf = properties[1], number = properties[2];
 			Quantity vf2 = T.times(keV*2/mf).abs();
@@ -97,7 +97,7 @@ public class VoxelFit {
 			double lnΛ = 2;
 			Quantity Gx = μ.minus(dμdx.minus(μ.plus(dμdx).over(lnΛ)).times(mf/m_D));
 			if (Gx.value < 0) // if Gx is negative
-				Gx = new Quantity(0, ρ.getDofs()); // that means the field thermal speed is hier than the particle speed, so no slowing
+				Gx = new FixedQuantity(0); // that means the field thermal speed is hier than the particle speed, so no slowing
 			Quantity contribution = Gx.times(-lnΛ*q_D*q_D/(4*Math.PI*ɛ0)).times(ωpf2).over(vt2);
 //			if (Gx.value < 0)
 //				throw new IllegalArgumentException("hecc.  m/m = "+(mf/m_D)+", E = "+Э.value+"MeV, T = "+T.value+"keV, x = "+x.value+", μ(x) = "+μ.value+", μ’(x) = "+dμdx.value+", G(x) = "+Gx.value);
@@ -126,10 +126,10 @@ public class VoxelFit {
 									   r0.get(2)/dx + (z.length-1)/2.);
 		index = index.plus(ζ.times(1/2.));
 		Quantity T, ρ;
-		Quantity Э = new Quantity(Э0, temperature_field[0][0][0].getDofs());
+		Quantity Э = new FixedQuantity(Э0);
 		while (true) {
 			if (Э.value < 2*Э_bins[0] - Э_bins[1] || Э.value <= 0) // stop if it ranges out
-				return new Quantity(0, Э.getDofs());
+				return new FixedQuantity(0);
 			try {
 				T = NumericalMethods.interp3d(temperature_field, index, false);
 				ρ = NumericalMethods.interp3d(density_field, index, false);
@@ -155,10 +155,10 @@ public class VoxelFit {
 	/**
 	 * inicialize an array of Quantities with values equal to 0
 	 */
-	private static Quantity[] quantity_array(int length, int dofs) {
+	private static Quantity[] quantity_array(int length) {
 		Quantity[] output = new Quantity[length];
 		for (int i = 0; i < length; i ++)
-			output[i] = new Quantity(0, dofs);
+			output[i] = new FixedQuantity(0);
 		return output;
 	}
 
@@ -190,8 +190,8 @@ public class VoxelFit {
 		else {
 			Quantity[][] harmonics = new Quantity[n][];
 			for (int l = 0; l < n; l ++)
-				harmonics[l] = quantity_array(2*l + 1, x.getDofs());
-			harmonics[0][0] = new Quantity(1, x.getDofs());
+				harmonics[l] = quantity_array(2*l + 1);
+			harmonics[0][0] = new FixedQuantity(1);
 			return harmonics;
 		}
 	}
@@ -222,9 +222,9 @@ public class VoxelFit {
 		Quantity[] state_q = new Quantity[state.length];
 		for (int i = 0; i < state.length; i ++) {
 			if (calculate_derivatives)
-				state_q[i] = new Quantity(state[i], i, state.length);
+				state_q[i] = new VariableQuantity(state[i], i, state.length);
 			else
-				state_q[i] = new Quantity(state[i], state.length);
+				state_q[i] = new FixedQuantity(state[i]);
 		}
 
 		Quantity[][][] state_coefs = new Quantity[2][dof][];
@@ -272,14 +272,13 @@ public class VoxelFit {
 		if (core_radius.length != shell_thickness.length)
 			throw new IllegalArgumentException("I haven't accounted for differing resolucions because I don't want to do so.");
 		int orders = core_radius.length;
-		int dofs = 4 + 2*orders*orders;
 
 		Quantity[][][] production = new Quantity[x.length][y.length][z.length];
 		Quantity[][][] temperature = new Quantity[x.length][y.length][z.length];
 		Quantity[][][] density = new Quantity[x.length][y.length][z.length];
 
 		Quantity[][][] coefs = new Quantity[3][][]; // put together coefficient arrays for the critical surfaces
-		coefs[0] = new Quantity[][] {{new Quantity(0, dofs)}, core_radius[1]}; // the zeroth surface is the center of the hot spot
+		coefs[0] = new Quantity[][] {{new FixedQuantity(0)}, core_radius[1]}; // the zeroth surface is the center of the hot spot
 		coefs[1] = new Quantity[orders][]; // the oneth surface is the hot spot edge
 		for (int l = 0; l < coefs[1].length; l ++)
 			coefs[1][l] = Arrays.copyOf(core_radius[l], core_radius[l].length);
@@ -293,7 +292,7 @@ public class VoxelFit {
 		for (int i = 0; i < x.length; i ++) {
 			for (int j = 0; j < y.length; j ++) {
 				for (int k = 0; k < z.length; k ++) {
-					Quantity p = new Quantity(Double.POSITIVE_INFINITY, dofs); // find the normalized radial posicion
+					Quantity p = new FixedQuantity(Double.POSITIVE_INFINITY); // find the normalized radial posicion
 					Quantity[] ρ = new Quantity[coefs.length]; // the calculation uses three reference surfaces
 					for (int n = 0; n < coefs.length; n ++) { // iterate thru the various radial posicions to get a normalized radius
 						Quantity x_rel = coefs[n][1][0].plus(x[i]); // turn the p1 coefficients into an origin
@@ -322,7 +321,7 @@ public class VoxelFit {
 					if (p.value <= 1) {
 						temperature[i][j][k] = core_temperature; // in the hotspot, keep things constant
 						density[i][j][k] = core_density;
-						reagent_fraction = new Quantity(1., dofs);
+						reagent_fraction = new FixedQuantity(1.);
 					}
 					else if (p.value <= 1.5) { // in the shel, do this swoopy stuff
 						temperature[i][j][k] = core_temperature.minus(shell_temperature).times(NumericalMethods.smooth_step(p.minus(1.5).over(-0.5))).plus(shell_temperature);
@@ -332,12 +331,12 @@ public class VoxelFit {
 					else if (p.value <= 2) {
 						temperature[i][j][k] = shell_temperature;
 						density[i][j][k] = shell_density.times(NumericalMethods.smooth_step(p.minus(2).over(-0.5)));
-						reagent_fraction = new Quantity(0, dofs);
+						reagent_fraction = new FixedQuantity(0);
 					}
 					else {
 						temperature[i][j][k] = shell_temperature;
-						density[i][j][k] = new Quantity(0, dofs);
-						reagent_fraction = new Quantity(0, dofs);
+						density[i][j][k] = new FixedQuantity(0);
+						reagent_fraction = new FixedQuantity(0);
 					}
 
 					production[i][j][k] = density[i][j][k].over(m_DT).pow(2).times(reagent_fraction).times(σv(temperature[i][j][k])).times(BURN_WIDTH);
@@ -385,9 +384,9 @@ public class VoxelFit {
 		for (int i = 0; i < production.length; i ++) {
 			for (int j = 0; j < production[i].length; j ++) {
 				for (int k = 0; k < production[i][j].length; k ++) {
-					production_q[i][j][k] = new Quantity(production[i][j][k], 0);
-					temperature_q[i][j][k] = new Quantity(temperature[i][j][k], 0);
-					density_q[i][j][k] = new Quantity(density[i][j][k], 0);
+					production_q[i][j][k] = new FixedQuantity(production[i][j][k]);
+					temperature_q[i][j][k] = new FixedQuantity(temperature[i][j][k]);
+					density_q[i][j][k] = new FixedQuantity(density[i][j][k]);
 				}
 			}
 		}
@@ -431,8 +430,6 @@ public class VoxelFit {
 		  double[] υ,
 		  Vector[] lines_of_sight
 	) {
-		final int dofs = production[0][0][0].getDofs();
-
 		double L_pixel = (x[1] - x[0])*1e-6; // (m)
 		double V_voxel = Math.pow(L_pixel, 3); // (m^3)
 		double dV2 = V_voxel*V_voxel/8; // (m^6)
@@ -442,7 +439,7 @@ public class VoxelFit {
 			Э_centers[h] = (Э[h] + Э[h+1])/2.;
 
 //		System.out.print("[");
-		Quantity[][][][] images = new Quantity[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1];
+		Quantity[][][][] images = new Quantity[lines_of_sight.length][][][];
 		for (int l = 0; l < lines_of_sight.length; l ++) {
 			Vector ζ_hat = lines_of_sight[l];
 			Vector ξ_hat = UNIT_K.cross(ζ_hat);
@@ -452,8 +449,20 @@ public class VoxelFit {
 				ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
 			Vector υ_hat = ζ_hat.cross(ξ_hat);
 
-			double[][][] image = new double[Э.length-1][ξ.length-1][υ.length-1];
-			double[][][][] gradients = new double[Э.length-1][ξ.length-1][υ.length-1][dofs];
+			Quantity[][][] image = new Quantity[Э.length-1][ξ.length-1][υ.length-1]; // create the image
+			for (int h = 0; h < image.length; h ++) { // initialize it to zeros, with or without gradients
+				for (int i = 0; i < image[h].length; i++) {
+					for (int j = 0; j < image[h][i].length; j++) {
+						if (production[0][0][0] instanceof VariableQuantity) {
+							int dofs = ((VariableQuantity) production[0][0][0]).getDofs();
+							image[h][i][j] = new VariableQuantity(0., new SparseVector(dofs));
+						}
+						else {
+							image[h][i][j] = new FixedQuantity(0.);
+						}
+					}
+				}
+			}
 
 			for (int iJ = 0; iJ < x.length; iJ ++) { // integrate brute-force
 				for (int jJ = 0; jJ < y.length; jJ ++) {
@@ -504,16 +513,14 @@ public class VoxelFit {
 									int jV = NumericalMethods.bin(υV, υ);
 
 									if (parcial_hV.value > Э_centers.length - 1) // prevent hi-energy deuterons from leaving the bin
-										parcial_hV = new Quantity(Э_centers.length - 1, dofs);
+										parcial_hV = new FixedQuantity(Э_centers.length - 1);
 
 									for (int dh = 0; dh <= 1; dh ++) { // finally, iterate over the two energy bins
-										int hV = (int) Math.floor(parcial_hV.value) + dh; // the bin index
-										Quantity ch = parcial_hV.minus(hV).abs().times(-1).plus(1); // the bin weit
+										int hV = parcial_hV.floor() + dh; // the bin index
+										Quantity ch = parcial_hV.minus(hV).abs().neg().plus(1); // the bin weit
 										if (hV >= 0 && hV < image.length) {
 											Quantity contribution = fluence.times(ch); // the amount of fluence going to that bin
-											image[hV][iV][jV] += contribution.value;
-											for (int k: contribution.gradient.nonzero())
-												gradients[hV][iV][jV][k] += contribution.gradient.get(k);
+											image[hV][iV][jV] = image[hV][iV][jV].plus(contribution);
 										}
 									}
 								}
@@ -523,11 +530,7 @@ public class VoxelFit {
 				}
 			}
 
-
-			for (int h = 0; h < image.length; h ++)
-				for (int i = 0; i < image[h].length; i ++)
-					for (int j = 0; j < image[h][i].length; j ++)
-						images[l][h][i][j] = new Quantity(image[h][i][j], gradients[h][i][j]);
+			images[l] = image;
 		}
 
 		return images;
@@ -583,9 +586,12 @@ public class VoxelFit {
 		boolean[] ignore_all_but_the_top_bin = {false};
 
 		Function<double[], double[]> residuals = (double[] state) -> {
+//			long a = System.currentTimeMillis();
 			Quantity[][][][] morphology = interpret_state(state, x, y, z, false);
+//			long b = System.currentTimeMillis();
 			Quantity[][][][] synthetic = synthesize_images(
 				  morphology[0], morphology[1], morphology[2], x, y, z, Э, ξ, υ, lines_of_sight);
+//			long c = System.currentTimeMillis();
 			double[][][][] output = new double[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1];
 			for (int l = 0; l < lines_of_sight.length; l ++) {
 				for (int h = 0; h < Э.length - 1; h ++) {
@@ -595,6 +601,12 @@ public class VoxelFit {
 							output[l][h][i][j] = (synthetic[l][h][i][j].value - images[l][h][i][j])
 								  /image_sum;
 				}
+			}
+//			long d = System.currentTimeMillis();
+//			System.out.printf("outer times: %f, %f, %f\n", (b-a)/1000., (c-b)/1000., (d-c)/1000.);
+			if (ignore_all_but_the_top_bin[0]) {
+				for (int l = 0; l < lines_of_sight.length; l ++)
+					output[l] = new double[][][] {output[l][output[l].length-1]};
 			}
 			return unravel(output);
 		};
@@ -607,10 +619,17 @@ public class VoxelFit {
 			for (int l = 0; l < lines_of_sight.length; l ++) {
 				for (int h = 0; h < Э.length - 1; h ++) {
 					double image_sum = NumericalMethods.sum(images[l][h]);
-					for (int i = 0; i < ξ.length - 1; i ++)
-						for (int j = 0; j < υ.length - 1; j ++)
-							output[l][h][i][j] = synthetic[l][h][i][j].over(image_sum).gradient.getValues();
+					for (int i = 0; i < ξ.length - 1; i ++) {
+						for (int j = 0; j < υ.length - 1; j++) {
+							VariableQuantity var = (VariableQuantity) synthetic[l][h][i][j].over(image_sum);
+							output[l][h][i][j] = var.gradient.getValues();
+						}
+					}
 				}
+			}
+			if (ignore_all_but_the_top_bin[0]) {
+				for (int l = 0; l < lines_of_sight.length; l ++)
+					output[l] = new double[][][][] {output[l][output[l].length-1]};
 			}
 			return unravel(output);
 		};
@@ -646,24 +665,27 @@ public class VoxelFit {
 			lower[i] = (i < 4) ? 0 : Double.NEGATIVE_INFINITY;
 			upper[i] = Double.POSITIVE_INFINITY;
 			scale[i] = (i < 2) ? 8 : (i < 4) ? 3_000 : (i == 4 || i == 4 + DEGREES_OF_FREE) ? 50 : 20;
-			hot_spot[i] = i == 0 || i == 1 || (i >= 4 && i < 4 + DEGREES_OF_FREE);
+			hot_spot[i] = i == 0 || i == 1 || i == 2 || (i >= 4 && i < 4 + DEGREES_OF_FREE);
 //			dense_fuel[i] = !hot_spot[i];
 		}
 		double[] optimal_state;
 		optimal_state = inicial_state;
-//		optimal_state = Optimize.least_squares( // start by optimizing the hot spot
-//			  residuals,
-//			  gradients,
-//			  inicial_state,
-////			  lower, upper,
-//			  hot_spot,
-//			  1e-5, logger);
+
+		ignore_all_but_the_top_bin[0] = true;
+		optimal_state = Optimize.least_squares( // start by optimizing the hot spot
+			  residuals,
+			  gradients,
+			  optimal_state,
+			  hot_spot,
+			  1e-5, logger);
+//		ignore_all_but_the_top_bin[0] = false;
 //		optimal_state = Optimize.least_squares( // then optimize the cold fuel
 //			  residuals,
 //			  gradients,
 //			  optimal_state,
 //			  dense_fuel,
 //			  1e-5);
+//		ignore_all_but_the_top_bin[0] = false;
 //		optimal_state = Optimize.least_squares( // then do a pass at the hole thing
 //			  residuals,
 //			  gradients,
@@ -672,22 +694,22 @@ public class VoxelFit {
 
 		if (args.length != 6)
 			throw new IllegalArgumentException("need five arguments but got "+Arrays.toString(args));
-		ignore_all_but_the_top_bin[0] = true;
-		optimal_state = Optimize.differential_evolution(
-			  error,
-			  optimal_state,
-			  scale,
-			  lower,
-			  upper,
-			  hot_spot,
-			  Integer.parseInt(args[0]),
-			  Integer.parseInt(args[1]),
-			  Integer.parseInt(args[2])*scale.length,
-			  Double.parseDouble(args[3]),
-			  Double.parseDouble(args[4]),
-			  Double.parseDouble(args[5]),
-			  VoxelFit.logger
-		);
+//		ignore_all_but_the_top_bin[0] = true;
+//		optimal_state = Optimize.differential_evolution(
+//			  error,
+//			  optimal_state,
+//			  scale,
+//			  lower,
+//			  upper,
+//			  hot_spot,
+//			  Integer.parseInt(args[0]),
+//			  Integer.parseInt(args[1]),
+//			  Integer.parseInt(args[2])*scale.length,
+//			  Double.parseDouble(args[3]),
+//			  Double.parseDouble(args[4]),
+//			  Double.parseDouble(args[5]),
+//			  VoxelFit.logger
+//		);
 		ignore_all_but_the_top_bin[0] = false;
 		optimal_state = Optimize.differential_evolution(
 			  error,
@@ -705,7 +727,6 @@ public class VoxelFit {
 		);
 
 //		optimal_state = new double[] {9.273959811456912, 5.518470453527778, 3379.6315006764044, 2806.8227418006895, 57.312484849617846, -6.354991720528519, -4.890995459201385, -3.172402766914786, -0.9751284235695912, 3.4976336757066027, 2.2772950205449227, -3.1253109776152197, 9.154319177700158, 26.323061614764356, 3.856299934741362, -4.591693972906754, 7.565448970711607, 1.4394580467414047, 1.6703579440004832, 1.320842480963671, 1.946330732423208, -21.184329431207065};
-
 
 		VoxelFit.logger.info(Arrays.toString(optimal_state));
 

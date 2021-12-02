@@ -116,7 +116,7 @@ public class Optimize {
 		double[][] inicial_jacobian = compute_jacobian.apply(inicial_gess); // to start off, you must look for any irrelevant residuals
 		boolean[] relevant = new boolean[inicial_jacobian.length];
 		for (int i = 0; i < relevant.length; i ++) { // for each residual
-			relevant[i] = false;
+			relevant[i] = true;
 			for (int j = 0; j < active.length; j ++) { // see if it has any nonzero gradients
 				if (active[j] && inicial_jacobian[i][j] != 0) { // in active dofs
 					relevant[i] = true; // then it is relevant
@@ -179,6 +179,7 @@ public class Optimize {
 		double λ = 4e-5;
 
 		double[] residuals = compute_residuals.apply(state); // compute inicial distances
+		System.out.println(residuals.length);
 
 		double last_value = Double.POSITIVE_INFINITY;
 		double new_value = 0;
@@ -189,28 +190,29 @@ public class Optimize {
 
 		while (true) {
 			double[][] jacobian = compute_jacobian.apply(state); // take the gradients
+//			System.out.println(jacobian.length+" "+jacobian[0].length);
 
-			double[] direction = new double[state.length];
-			for (int i = 0; i < state.length; i ++) {
-				direction[i] = 2*Math.random() - 1;
-			}
-			double slope = 0;
-			for (int j = 0; j < state.length; j ++)
-				for (int i = 0; i < residuals.length; i ++)
-					slope += 2*residuals[i]*jacobian[i][j]*direction[j];
-			System.out.println("[");
-			for (double d = 0; d < 1; d += 0.01) {
-				double[] probe_x = new double[direction.length];
-				for (int i = 0; i < state.length; i ++)
-					probe_x[i] = state[i] + d*direction[i];
-				double[] probe_residuals = compute_residuals.apply(probe_x);
-				double probe_value = 0;
-				for (double r: probe_residuals)
-					probe_value += r*r;
-				System.out.printf("%f, %.8g],\n", d, probe_value);
-			}
-			System.out.println("]");
-			System.out.println(slope);
+//			double[] direction = new double[state.length];
+//			for (int i = 0; i < state.length; i ++) {
+//				direction[i] = 2*Math.random() - 1;
+//			}
+//			double slope = 0;
+//			for (int j = 0; j < state.length; j ++)
+//				for (int i = 0; i < residuals.length; i ++)
+//					slope += 2*residuals[i]*jacobian[i][j]*direction[j];
+//			System.out.println("[");
+//			for (double d = 0; d < 1; d += 0.01) {
+//				double[] probe_x = new double[direction.length];
+//				for (int i = 0; i < state.length; i ++)
+//					probe_x[i] = state[i] + d*direction[i];
+//				double[] probe_residuals = compute_residuals.apply(probe_x);
+//				double probe_value = 0;
+//				for (double r: probe_residuals)
+//					probe_value += r*r;
+//				System.out.printf("[%f, %.8g],\n", d, probe_value);
+//			}
+//			System.out.println("]");
+//			System.out.println(slope);
 
 			if (is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance))
 				return state;
