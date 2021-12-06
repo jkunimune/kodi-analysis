@@ -976,8 +976,23 @@ public class NumericalMethods {
 		int bin = (int)((value - binEdges[0])/(binEdges[binEdges.length-1] - binEdges[0])*(binEdges.length-1));
 		return (bin >= 0 && bin < binEdges.length-1) ? bin : -1;
 	}
-	
 
+	/**
+	 * return the number of trues in arr
+	 */
+	public static int count(boolean[] arr) {
+		int count = 0;
+		for (boolean val: arr)
+			if (val)
+				count ++;
+		return count;
+	}
+
+	/**
+	 * extract a colum from a matrix as a 1d array.
+	 * @param matrix the matrix of values
+	 * @param collumIndex the index of the colum to extract
+	 */
 	public static double[] collum(double[][] matrix, int collumIndex) {
 		double[] collum = new double[matrix.length];
 		for (int i = 0; i < matrix.length; i ++) {

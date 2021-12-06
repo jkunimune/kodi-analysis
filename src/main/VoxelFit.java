@@ -660,24 +660,24 @@ public class VoxelFit {
 		double[] upper = new double[inicial_state.length];
 		double[] scale = new double[inicial_state.length];
 		boolean[] hot_spot = new boolean[inicial_state.length];
-//		boolean[] dense_fuel = new boolean[inicial_state.length];
+		boolean[] dense_fuel = new boolean[inicial_state.length];
 		for (int i = 0; i < inicial_state.length; i ++) {
 			lower[i] = (i < 4) ? 0 : Double.NEGATIVE_INFINITY;
 			upper[i] = Double.POSITIVE_INFINITY;
 			scale[i] = (i < 2) ? 8 : (i < 4) ? 3_000 : (i == 4 || i == 4 + DEGREES_OF_FREE) ? 50 : 20;
 			hot_spot[i] = i == 0 || i == 1 || i == 2 || (i >= 4 && i < 4 + DEGREES_OF_FREE);
-//			dense_fuel[i] = !hot_spot[i];
+			dense_fuel[i] = i == 0 || i == 1 || i == 3 || i >= 4 + DEGREES_OF_FREE;
 		}
 		double[] optimal_state;
 		optimal_state = inicial_state;
 
-		ignore_all_but_the_top_bin[0] = true;
-		optimal_state = Optimize.least_squares( // start by optimizing the hot spot
-			  residuals,
-			  gradients,
-			  optimal_state,
-			  hot_spot,
-			  1e-5, logger);
+//		ignore_all_but_the_top_bin[0] = true;
+//		optimal_state = Optimize.least_squares( // start by optimizing the hot spot
+//			  residuals,
+//			  gradients,
+//			  optimal_state,
+//			  hot_spot,
+//			  1e-5, logger);
 //		ignore_all_but_the_top_bin[0] = false;
 //		optimal_state = Optimize.least_squares( // then optimize the cold fuel
 //			  residuals,
@@ -694,22 +694,38 @@ public class VoxelFit {
 
 		if (args.length != 6)
 			throw new IllegalArgumentException("need five arguments but got "+Arrays.toString(args));
-//		ignore_all_but_the_top_bin[0] = true;
-//		optimal_state = Optimize.differential_evolution(
-//			  error,
-//			  optimal_state,
-//			  scale,
-//			  lower,
-//			  upper,
-//			  hot_spot,
-//			  Integer.parseInt(args[0]),
-//			  Integer.parseInt(args[1]),
-//			  Integer.parseInt(args[2])*scale.length,
-//			  Double.parseDouble(args[3]),
-//			  Double.parseDouble(args[4]),
-//			  Double.parseDouble(args[5]),
-//			  VoxelFit.logger
-//		);
+		ignore_all_but_the_top_bin[0] = true;
+		optimal_state = Optimize.differential_evolution(
+			  error,
+			  optimal_state,
+			  scale,
+			  lower,
+			  upper,
+			  hot_spot,
+			  Integer.parseInt(args[0]),
+			  Integer.parseInt(args[1]),
+			  Integer.parseInt(args[2])*NumericalMethods.count(hot_spot),
+			  Double.parseDouble(args[3]),
+			  Double.parseDouble(args[4]),
+			  Double.parseDouble(args[5]),
+			  VoxelFit.logger
+		);
+		ignore_all_but_the_top_bin[0] = false;
+		optimal_state = Optimize.differential_evolution(
+			  error,
+			  optimal_state,
+			  scale,
+			  lower,
+			  upper,
+			  dense_fuel,
+			  Integer.parseInt(args[0]),
+			  Integer.parseInt(args[1]),
+			  Integer.parseInt(args[2])*NumericalMethods.count(dense_fuel),
+			  Double.parseDouble(args[3]),
+			  Double.parseDouble(args[4]),
+			  Double.parseDouble(args[5]),
+			  VoxelFit.logger
+		);
 		ignore_all_but_the_top_bin[0] = false;
 		optimal_state = Optimize.differential_evolution(
 			  error,

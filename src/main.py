@@ -35,7 +35,7 @@ CHARGE_FITTING = 'all'
 MAX_NUM_PIXELS = 200
 
 INPUT_FOLDER = '../scans/'
-OUTPUT_FOLDER = '../results/'
+OUTPUT_FOLDER = '../out/'
 SHOT = 'Shot number'
 TIM = 'TIM'
 APERTURE_RADIUS = 'Aperture Radius'
