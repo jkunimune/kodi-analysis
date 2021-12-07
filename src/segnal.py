@@ -168,8 +168,10 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 	L0 = N*np.sum(f*np.log(f), where=where & (f > 0))
 	scores, best_G, best_S = [], None, None
 	while len(scores) < 200:
+		g[abs(g) < 1e-17] = 0 # start by correcting for roundoff
+		if abs(g0) < 1e-17: g0 = 0
 		gsum = g.sum() + g0
-		g, g0, s = g/gsum, g0/gsum, s/gsum # correct for roundoff
+		g, g0, s = g/gsum, g0/gsum, s/gsum
 
 		dlds = f/s - 1
 		δg, δg0 = np.zeros(g.shape), 0 # step direction
@@ -186,23 +188,23 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 		d2Ldh2 = -N*np.sum(f*δs**2/s**2, where=where)
 		assert dLdh > 0 and d2Ldh2 < 0, f"{dLdh} > 0; {d2Ldh2} < 0"
 
-		h = -dLdh/d2Ldh2/2 # compute step length
+		h = -dLdh/d2Ldh2 # compute step length
 		assert np.all(g >= 0) and g0 >= 0, g
 		if np.amin(g + h*δg) < 0: # if one of the pixels would become negative from this step,
-			h = np.amin(-g/δg*5/6, where=δg < 0, initial=h) # stop short
+			h = np.amin(-g/δg, where=δg < 0, initial=h) # stop when it hits zero
 		if g0 + h*δg0 < 0: # that applies to the background pixel, as well
-			h = -g0/δg0*5/6
+			h = -g0/δg0
 		assert h > 0, h
 
 		g += h*δg # step
 		g0 += h*δg0
 		s += h*δs
 		γ = g/η/np.sum(g/η)
-		α = N/F.size*SMOOTHING
+		α = N/F.size*SMOOTHING # this entropy weiting parameter was determined quasiempirically (it's essentially the strength of my prior)
 
-		L = N*np.sum(f*np.log(s), where=where)
-		S = np.sum(γ*np.log(γ), where=g!=0)
-		scores.append(L - α*S)
+		L = N*np.sum(f*np.log(s), where=where) # compute likelihood
+		S = np.sum(γ*np.log(γ), where=g!=0) # compute entropy
+		scores.append(L - α*S) # the score is a combination of both
 		if verbose: print(f"[{L - L0}, {S}, {scores[-1] - L0}],")
 		if show_plots and len(scores)%10 == 1:
 			fig, axes = plt.subplots(3, 2, figsize=(6, 9))
@@ -243,7 +245,7 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 		if np.argmax(scores) == len(scores) - 1: # keep track of the best we've found
 			best_G = N*g/η
 			best_S = N*s
-		elif np.argmax(scores) < len(scores) - 6: # if the value function decreases twice in a row, quit
+		elif np.argmax(scores) < len(scores) - 6: # if the value function decreases six times in a row, quit
 			break
 
 	np.seterr('warn')
