@@ -1488,7 +1488,7 @@ public class NumericalMethods {
 				return y2.pow(2).times(105);
 		}
 
-		throw new IllegalArgumentException("I don't know Legendre polynomials that high (_"+l+"^"+m+").");
+		throw new IllegalArgumentException("I don't know Legendre polynomials that high (Y_"+l+"^"+m+").");
 	}
 
 	/**

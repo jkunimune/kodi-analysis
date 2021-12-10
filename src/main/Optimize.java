@@ -96,6 +96,9 @@ public class Optimize {
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
 	 *     System". Journal of Research of the National Institute of Standards and Technology
 	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
+	 * while ignoring any dimensions i for which active[i] is false.  it also throws out any
+	 * residuals that inicially have zero gradients.  this is a little problematic if the
+	 * problem is hily nonlinear, but shh don't worry about it.
 	 * @param compute_residuals returns the error of each point given the state
 	 * @param compute_jacobian returns the Jacobian matrix where each row is the
 	 *                         gradient of the error at one point
@@ -114,11 +117,23 @@ public class Optimize {
 		  double tolerance, Logger logger) {
 
 		double[][] inicial_jacobian = compute_jacobian.apply(inicial_gess); // to start off, you must look for any irrelevant residuals
+		boolean[] truly_active = new boolean[active.length];
+		for (int j = 0; j < active.length; j ++) { // for each input dof
+			truly_active[j] = false;
+			if (active[j]) { // in the active dofs
+				for (int i = 0; i < inicial_jacobian.length; i ++) { // see if it affects any residuals
+					if (inicial_jacobian[i][j] != 0) {
+						truly_active[j] = true; // then it gets to be active
+						break;
+					}
+				}
+			}
+		}
 		boolean[] relevant = new boolean[inicial_jacobian.length];
 		for (int i = 0; i < relevant.length; i ++) { // for each residual
-			relevant[i] = true;
-			for (int j = 0; j < active.length; j ++) { // see if it has any nonzero gradients
-				if (active[j] && inicial_jacobian[i][j] != 0) { // in active dofs
+			relevant[i] = false;
+			for (int j = 0; j < active.length; j ++) { // see if it is affected by any dofs
+				if (truly_active[j] && inicial_jacobian[i][j] != 0) { // in active dofs
 					relevant[i] = true; // then it is relevant
 					break;
 				}
@@ -129,19 +144,19 @@ public class Optimize {
 			  NumericalMethods.where(
 			  	  relevant,
 				  compute_residuals.apply(NumericalMethods.insert(
-				  	  active,
+				  	  truly_active,
 					  inicial_gess,
 					  reduced_state)));
 
 		Function<double[], double[][]> reduced_jacobian = (double[] reduced_state) ->
 			  NumericalMethods.where(
-			  	    relevant, active,
+			  	    relevant, truly_active,
 				    compute_jacobian.apply(NumericalMethods.insert(
-						  active,
+						  truly_active,
 						  inicial_gess,
 						  reduced_state)));
 
-		double[] reduced_inicial = NumericalMethods.where(active, inicial_gess);
+		double[] reduced_inicial = NumericalMethods.where(truly_active, inicial_gess);
 
 		double[] anser = least_squares(reduced_residuals,
 									   reduced_jacobian,
@@ -149,7 +164,7 @@ public class Optimize {
 									   tolerance,
 									   logger);
 
-		return NumericalMethods.insert(active, inicial_gess, anser);
+		return NumericalMethods.insert(truly_active, inicial_gess, anser);
 	}
 
 	/**
@@ -179,7 +194,6 @@ public class Optimize {
 		double λ = 4e-5;
 
 		double[] residuals = compute_residuals.apply(state); // compute inicial distances
-		System.out.println(residuals.length);
 
 		double last_value = Double.POSITIVE_INFINITY;
 		double new_value = 0;
@@ -193,15 +207,16 @@ public class Optimize {
 //			System.out.println(jacobian.length+" "+jacobian[0].length);
 
 //			double[] direction = new double[state.length];
+//			int direction_index = (int)(state.length*Math.random());
 //			for (int i = 0; i < state.length; i ++) {
-//				direction[i] = 2*Math.random() - 1;
+//				direction[i] = (direction_index == i) ? 1 : 0;//2*Math.random() - 1;
 //			}
 //			double slope = 0;
 //			for (int j = 0; j < state.length; j ++)
 //				for (int i = 0; i < residuals.length; i ++)
 //					slope += 2*residuals[i]*jacobian[i][j]*direction[j];
 //			System.out.println("[");
-//			for (double d = 0; d < 1; d += 0.01) {
+//			for (double d = 0; d < Math.abs(2*state[direction_index]); d += Math.abs(state[direction_index])*0.02) {
 //				double[] probe_x = new double[direction.length];
 //				for (int i = 0; i < state.length; i ++)
 //					probe_x[i] = state[i] + d*direction[i];
@@ -224,12 +239,13 @@ public class Optimize {
 			Matrix U = J0.trans().times(J0); // and do some linear algebra
 			Matrix v = J0.trans().times(d0);
 
-			if (logger != null) logger.info("Beginning line search.");
+			if (logger != null)
+				logger.info("Beginning line search with λ = "+λ);
 
 			while (true) {
 				Matrix H = U.copy(); // estimate Hessian
 				for (int i = 0; i < state.length; i ++)
-					H.set(i, i, H.get(i, i) + λ*(1 + U.get(i, i)));
+					H.set(i, i, H.get(i, i) + λ*U.get(i, i));
 				Matrix B = H.inverse();
 				Matrix x = B.times(v);
 
@@ -242,7 +258,8 @@ public class Optimize {
 				new_value = 0;
 				for (double d : residuals)
 					new_value += Math.pow(d, 2); // compute new chi^2
-				if (logger != null) logger.info("updated value: "+new_value);
+				if (logger != null)
+					logger.info("updated value: "+new_value);
 
 				if (new_value <= last_value) { // terminate the line search if reasonable
 					state = new_state;
@@ -253,8 +270,10 @@ public class Optimize {
 					throw new RuntimeException("the line search did not converge");
 			}
 
-			if (logger != null) logger.info("Completed line search.");
-			if (logger != null) logger.info("state: "+Arrays.toString(state));
+			if (logger != null) {
+				logger.info("Completed line search with λ = " + λ);
+				logger.info("state: " + Arrays.toString(state));
+			}
 
 			λ *= 4e-5; // decrement the line search parameter XXX
 
@@ -493,7 +512,7 @@ public class Optimize {
 	}
 
 
-	public static void main(String[] args) throws InterruptedException {
+	public static void main(String[] args) {
 		double[] x = {0, 1, 2, 3, 4, 5};
 		double[] y = {6, 4, 3, 2, 1.5, 1.25};
 
@@ -514,28 +533,28 @@ public class Optimize {
 			return J;
 		};
 
-//		double[] c = least_squares(err, grad,
-//								   new double[] {1, -1, 0},
-////								   new double[] {1, 1, 1},
-//								   new double[] {0, 0, 0},
-//								   new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
-//								   1e-7,
-//								   null);
-		double[] c = differential_evolution(
-			  (state) -> {
-				double[] ds = err.apply(state);
-				double sum = 0;
-				for (double d: ds)
-				  	sum += d*d;
-				return sum;
-			  },
-			  new double[] {1, -1, 0},
-			  new double[] {2, 2, 2},
-			  new double[] {0, Double.NEGATIVE_INFINITY, 0},
-			  new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
-			  10,
-			  null
-		);
+		double[] c = least_squares(err, grad,
+								   new double[] {1, -1, 0},
+//								   new double[] {1, 1, 1},
+								   new double[] {0, 0, 0},
+								   new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
+								   1e-7,
+								   null);
+//		double[] c = differential_evolution(
+//			  (state) -> {
+//				double[] ds = err.apply(state);
+//				double sum = 0;
+//				for (double d: ds)
+//				  	sum += d*d;
+//				return sum;
+//			  },
+//			  new double[] {1, -1, 0},
+//			  new double[] {2, 2, 2},
+//			  new double[] {0, Double.NEGATIVE_INFINITY, 0},
+//			  new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
+//			  10,
+//			  null
+//		);
 		System.out.println("y = "+c[0]+" exp("+c[1]+"x) + "+c[2]);
 	}
 

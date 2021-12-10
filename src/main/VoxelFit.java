@@ -15,15 +15,10 @@ import java.util.logging.SimpleFormatter;
 public class VoxelFit {
 
 	public static final int MAX_MODE = 2;
-	public static final int DEGREES_OF_FREE = (MAX_MODE + 1)*(MAX_MODE + 1);
-	public static final double CORE_TEMPERATURE_GESS = 4; // (keV)
-	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
-	public static final double CORE_DENSITY_GESS = 100; // (g/L)
+	public static final double SHELL_TEMPERATURE_GESS = 3; // (keV)
 	public static final double SHELL_DENSITY_GESS = 1_000; // (g/L)
-	public static final double CORE_RADIUS_GESS = 40;
-	public static final double SHELL_THICKNESS_GESS = 50;
-	public static final double SMALL_DISTANCE = 10; // (μm)
-	public static final double BURN_WIDTH = 800e-12; // (s)
+	public static final double CORE_RADIUS_GESS = 30;
+	public static final double SHELL_RADIUS_GESS = 50;
 
 	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
 	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
@@ -94,7 +89,7 @@ public class VoxelFit {
 			Quantity dμdx = maxwellFunction.evaluate(x);
 			Quantity nf = ρ.times(number);
 			Quantity ωpf2 = nf.times(qf*qf/(ɛ0*mf));
-			double lnΛ = 2;
+			double lnΛ = 6; // TODO calculate this for real
 			Quantity Gx = μ.minus(dμdx.minus(μ.plus(dμdx).over(lnΛ)).times(mf/m_D));
 			if (Gx.value < 0) // if Gx is negative
 				Gx = new FixedQuantity(0); // that means the field thermal speed is hier than the particle speed, so no slowing
@@ -143,14 +138,14 @@ public class VoxelFit {
 		}
 	}
 
-	/**
-	 * an approximation of the DT reactivity coefficient
-	 * @param Ti ion temperature (keV)
-	 * @return reactivity (m^3/s)
-	 */
-	private static Quantity σv(Quantity Ti) {
-		return Ti.over(64.2).abs().pow(2.13).times(-0.572).exp().times(9.1e-22);
-	}
+//	/**
+//	 * an approximation of the DT reactivity coefficient
+//	 * @param Ti ion temperature (keV)
+//	 * @return reactivity (m^3/s)
+//	 */
+//	private static Quantity σv(Quantity Ti) {
+//		return Ti.over(64.2).abs().pow(2.13).times(-0.572).exp().times(9.1e-22);
+//	}
 
 	/**
 	 * inicialize an array of Quantities with values equal to 0
@@ -167,16 +162,15 @@ public class VoxelFit {
 	 * @param x the x posicion relative to the origin
 	 * @param y the y posicion relative to the origin
 	 * @param z the z posicion relative to the origin
-	 * @param n the maximum l to compute
 	 * @return an array where P[l][l+m] is P_l^m(x, y, z)
 	 */
-	private static Quantity[][] spherical_harmonics(Quantity x, Quantity y, Quantity z, int n) {
+	private static Quantity[][] spherical_harmonics(Quantity x, Quantity y, Quantity z) { // TODO: this can be changed back to primitive arithmetic
 		if (x.value != 0 || y.value != 0 || z.value != 0) {
 			Quantity cosθ = z.over(x.pow(2).plus(y.pow(2)).plus(z.pow(2)).sqrt());
 			Quantity ɸ = y.over(x).atan();
 			if (y.value < 0) ɸ = ɸ.minus(Math.PI);
-			Quantity[][] harmonics = new Quantity[n][];
-			for (int l = 0; l < n; l ++) {
+			Quantity[][] harmonics = new Quantity[MAX_MODE + 1][];
+			for (int l = 0; l <= MAX_MODE; l ++) {
 				harmonics[l] = new Quantity[2*l + 1];
 				for (int m = -l; m <= l; m++) {
 					if (m >= 0)
@@ -188,8 +182,8 @@ public class VoxelFit {
 			return harmonics;
 		}
 		else {
-			Quantity[][] harmonics = new Quantity[n][];
-			for (int l = 0; l < n; l ++)
+			Quantity[][] harmonics = new Quantity[MAX_MODE + 1][];
+			for (int l = 0; l <= MAX_MODE; l ++)
 				harmonics[l] = quantity_array(2*l + 1);
 			harmonics[0][0] = new FixedQuantity(1);
 			return harmonics;
@@ -198,27 +192,50 @@ public class VoxelFit {
 
 
 	/**
-	 * take a state vector, break it up into the actual quantities they represent,
-	 * and generate the morphology for them
+	 * take two shaped arrays of coefficients and unravel it to a state vector
+	 * @param production_coefs the neutron production coefficients (m^-3)
+	 * @param density_coefs the mass density coefficients (g/L)
+	 * @return the 1D state vector
+	 */
+	private static double[] convert_to_state_vector(
+		double[][][] production_coefs, double[][][] density_coefs) {
+		double[][][][] coefs = {production_coefs, density_coefs};
+
+		int degrees_of_free = 0;
+		for (double[][][] quantity: coefs)
+			for (double[][] radius: quantity)
+				for (double[] mode: radius)
+					degrees_of_free += mode.length;
+
+		int i = 0;
+		double[] inicial_state_vector = new double[degrees_of_free];
+		for (int q = 0; q < 2; q ++) {
+			for (int s = 0; s < coefs[q].length; s ++) {
+				for (int l = 0; l < coefs[q][s].length; l ++) {
+					for (int m = -l; m <= l; m ++) {
+						inicial_state_vector[i] = coefs[q][s][l][l + m];
+						i ++;
+					}
+				}
+			}
+		}
+		assert i == inicial_state_vector.length;
+
+		return inicial_state_vector;
+	}
+
+
+	/**
+	 * take a state vector and break it up into an array of the correct shape
 	 * @param state the state vector
-	 * @param x the x bins to use
-	 * @param y the y bins to use
-	 * @param z the z bins to use
 	 * @param calculate_derivatives whether to calculate the jacobian of the
 	 *                              morphology or just the values
-	 * @return the morphology corresponding to this state vector
+	 * @return the neutron production coefficients and mass density coefficients
 	 */
-	private static Quantity[][][][] interpret_state(
-		  double[] state, double[] x, double[] y, double[] z,
-		  boolean calculate_derivatives) {
-		int dof = state.length - 4;
-		if (dof%2 != 0)
-			throw new IllegalArgumentException("the input vector length makes no sense.");
-		dof = dof/2;
-		if (Math.pow(Math.floor(Math.sqrt(dof)), 2) != dof)
-			throw new IllegalArgumentException("the spherick harmonick numbers are rong.");
-		dof = (int)Math.sqrt(dof);
-
+	private static Quantity[][][][] convert_from_state_vector(
+		  double[] state,
+		  boolean calculate_derivatives,
+		  int num_radii) {
 		Quantity[] state_q = new Quantity[state.length];
 		for (int i = 0; i < state.length; i ++) {
 			if (calculate_derivatives)
@@ -227,119 +244,77 @@ public class VoxelFit {
 				state_q[i] = new FixedQuantity(state[i]);
 		}
 
-		Quantity[][][] state_coefs = new Quantity[2][dof][];
-		for (int q = 0; q < state_coefs.length; q ++) {
-			for (int l = 0; l < dof; l++) {
-				state_coefs[q][l] = new Quantity[2*l + 1];
-				System.arraycopy(state_q, 4 + q*dof*dof + l*l,
-								 state_coefs[q][l], 0, 2*l + 1);
+		int i = 0;
+		Quantity[][][][] coefs = new Quantity[2][num_radii][][];
+		for (int q = 0; q < coefs.length; q ++) {
+			for (int s = 0; s < num_radii; s ++) {
+				coefs[q][s] = new Quantity[Math.min(s + 1, MAX_MODE + 1)][];
+				for (int l = 0; l < coefs[q][s].length; l ++) {
+					coefs[q][s][l] = new Quantity[2*l + 1];
+					System.arraycopy(state_q, i,
+									 coefs[q][s][l], 0, 2*l + 1);
+					i += 2*l + 1;
+				}
 			}
 		}
 
-		return bild_morphology(
-			  state_q[0], state_q[1], state_q[2], state_q[3],
-			  state_coefs[0], state_coefs[1],
-			  x, y, z);
+		if (i != state.length)
+			throw new IllegalArgumentException("state vector length ("+state.length+") is not what it should be ("+i+")");
+
+		return coefs;
 	}
 
 
 	/**
 	 * calculate a voxel matrix of reactivities and densities
-	 * @param core_temperature the constant temperature in the core (keV)
-	 * @param shell_temperature the central temperature in the shell (keV)
-	 * @param core_density the constant density in the core (g/L)
-	 * @param shell_density the peak density in the shell (g/L)
-	 * @param core_radius the spherical harmonic coefficients for the core radius (μm)
-	 * @param shell_thickness the spherical harmonic coefficients for the thickness (μm)
+	 * @param production_coefs a triangular array of n^2⟨σv⟩ coefficients,
+	 *                            where production_profiles[s][l][m] is the Y_l^m
+	 *                            component of the profile at r[s]
+	 * @param density_coefs the same thing for ρ
+	 * @param r the radial position coordinate for the profiles
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
 	 * @param z the z bin edges (μm)
-	 * @return {reactivity (#/m^3), density (g/L)} at the vertices
+	 * @return {reactivity (#/m^3), temperature (keV), density (g/L)} at the vertices
 	 */
 	private static Quantity[][][][] bild_morphology(
-		  Quantity core_temperature,
-		  Quantity shell_temperature,
-		  Quantity core_density,
-		  Quantity shell_density,
-		  Quantity[][] core_radius,
-		  Quantity[][] shell_thickness,
+		  Quantity[][][] production_coefs,
+		  Quantity[][][] density_coefs,
+		  double[] r,
 		  double[] x,
 		  double[] y,
 		  double[] z) {
-		if (core_temperature.isNaN() || shell_temperature.isNaN() ||
-			  core_density.isNaN() || shell_density.isNaN())
-			throw new IllegalArgumentException("nan");
-		if (core_radius.length != shell_thickness.length)
+
+		if (production_coefs.length != density_coefs.length)
 			throw new IllegalArgumentException("I haven't accounted for differing resolucions because I don't want to do so.");
-		int orders = core_radius.length;
 
 		Quantity[][][] production = new Quantity[x.length][y.length][z.length];
 		Quantity[][][] temperature = new Quantity[x.length][y.length][z.length];
 		Quantity[][][] density = new Quantity[x.length][y.length][z.length];
 
-		Quantity[][][] coefs = new Quantity[3][][]; // put together coefficient arrays for the critical surfaces
-		coefs[0] = new Quantity[][] {{new FixedQuantity(0)}, core_radius[1]}; // the zeroth surface is the center of the hot spot
-		coefs[1] = new Quantity[orders][]; // the oneth surface is the hot spot edge
-		for (int l = 0; l < coefs[1].length; l ++)
-			coefs[1][l] = Arrays.copyOf(core_radius[l], core_radius[l].length);
-		coefs[2] = new Quantity[orders][]; // and the twoth surface is the shell edge
-		for (int l = 0; l < coefs[2].length; l ++) {
-			coefs[2][l] = new Quantity[2*l + 1];
-			for (int m = -l; m <= l; m++)
-				coefs[2][l][l + m] = core_radius[l][l + m].plus(shell_thickness[l][l + m]); // be warnd that this is not a clean copy, but we don't need shell_thickness after this, so it should be fine
-		}
-
 		for (int i = 0; i < x.length; i ++) {
 			for (int j = 0; j < y.length; j ++) {
 				for (int k = 0; k < z.length; k ++) {
-					Quantity p = new FixedQuantity(Double.POSITIVE_INFINITY); // find the normalized radial posicion
-					Quantity[] ρ = new Quantity[coefs.length]; // the calculation uses three reference surfaces
-					for (int n = 0; n < coefs.length; n ++) { // iterate thru the various radial posicions to get a normalized radius
-						Quantity x_rel = coefs[n][1][0].plus(x[i]); // turn the p1 coefficients into an origin
-						Quantity y_rel = coefs[n][1][1].plus(y[j]);
-						Quantity z_rel = coefs[n][1][2].plus(z[k]);
-						Quantity[][] harmonics = spherical_harmonics(
-							  x_rel, y_rel, z_rel, coefs[n].length); // compute the spherical harmonicks
-						ρ[n] = x_rel.pow(2).plus(y_rel.pow(2)).plus(z_rel.pow(2)).sqrt();
-						for (int l = 0; l < harmonics.length; l++) // sum up the basis funccions
-							if (l != 1) // skipping P1
-								for (int m = -l; m <= l; m++)
-									ρ[n] = ρ[n].minus(coefs[n][l][l + m].times(harmonics[l][l + m]));
-						if (n > 0 && ρ[n].value > ρ[n - 1].value - 10) { // force each shell to be bigger than the next
-//							System.out.printf("to make it less than %.3f, I'm shifting %.3f to ", ρ[n - 1].value, ρ[n].value);
-							ρ[n] = ρ[n].minus(ρ[n - 1]).over(-SMALL_DISTANCE).minus(1).exp().times(-SMALL_DISTANCE).plus(ρ[n - 1]);
-//							System.out.printf("%.3f\n", ρ[n].value);
-						}
-						if (ρ[n].value < 0) { // if we are inside a surface
-							assert n > 0 : n;
-							p = ρ[n-1].times(n).minus(ρ[n].times(n-1)).over(ρ[n-1].minus(ρ[n]));
-							break;
+					production[i][j][k] = new FixedQuantity(0);
+					density[i][j][k] = new FixedQuantity(0);
+					temperature[i][j][k] = new FixedQuantity(SHELL_TEMPERATURE_GESS); //TODO: do something about this
+
+					Quantity[][] harmonics = spherical_harmonics(new FixedQuantity(x[i]), new FixedQuantity(y[j]), new FixedQuantity(z[k]));
+					double s_partial = Math.sqrt(x[i]*x[i] + y[j]*y[j] + z[k]*z[k])/r[r.length-1]*r.length;
+					for (int s = (int) s_partial; s <= (int) s_partial + 1; s ++) {
+						double weit = 1 - Math.abs(s - s_partial);
+						if (s < r.length) {
+							for (int l = 0; l < density_coefs[s].length; l ++) { // sum up the basis funccions
+								// if (l != 1) // skipping P1 TODO: should I bring back the shift for P1?  probably not.  it would be nonlinear.
+								for (int m = -l; m <= l; m ++) {
+									production[i][j][k] = production[i][j][k].plus(
+										  production_coefs[s][l][l+m].times(weit).times(harmonics[l][l + m]));
+									density[i][j][k] = density[i][j][k].plus(
+										  density_coefs[s][l][l+m].times(weit).times(harmonics[l][l + m]));
+								}
+							}
 						}
 					}
-
-					Quantity reagent_fraction;
-					if (p.value <= 1) {
-						temperature[i][j][k] = core_temperature; // in the hotspot, keep things constant
-						density[i][j][k] = core_density;
-						reagent_fraction = new FixedQuantity(1.);
-					}
-					else if (p.value <= 1.5) { // in the shel, do this swoopy stuff
-						temperature[i][j][k] = core_temperature.minus(shell_temperature).times(NumericalMethods.smooth_step(p.minus(1.5).over(-0.5))).plus(shell_temperature);
-						density[i][j][k] = shell_density.minus(core_density).times(NumericalMethods.smooth_step(p.minus(1).over(0.5))).plus(core_density);
-						reagent_fraction = NumericalMethods.smooth_step(p.minus(1.5).over(-0.5));
-					}
-					else if (p.value <= 2) {
-						temperature[i][j][k] = shell_temperature;
-						density[i][j][k] = shell_density.times(NumericalMethods.smooth_step(p.minus(2).over(-0.5)));
-						reagent_fraction = new FixedQuantity(0);
-					}
-					else {
-						temperature[i][j][k] = shell_temperature;
-						density[i][j][k] = new FixedQuantity(0);
-						reagent_fraction = new FixedQuantity(0);
-					}
-
-					production[i][j][k] = density[i][j][k].over(m_DT).pow(2).times(reagent_fraction).times(σv(temperature[i][j][k])).times(BURN_WIDTH);
 				}
 			}
 		}
@@ -469,7 +444,7 @@ public class VoxelFit {
 					for (int kJ = 0; kJ < z.length; kJ ++) {
 
 						Quantity n2σvτJ = NumericalMethods.interp3d(production, iJ, jJ, kJ, false);
-						if (n2σvτJ.value == 0)
+						if (n2σvτJ instanceof FixedQuantity && n2σvτJ.value == 0)
 							continue; // because of the way the funccions are set up, if the value is 0, the gradient should be 0 too
 
 						for (double iD = 0.25; iD < x.length - 1; iD += 0.5) {
@@ -477,7 +452,7 @@ public class VoxelFit {
 								for (double kD = 0.25; kD < z.length - 1; kD += 0.5) {
 
 									Quantity ρD = NumericalMethods.interp3d(density, iD, jD, kD, false); // (g/cm^3)
-									if (ρD.value == 0)
+									if (ρD instanceof FixedQuantity && ρD.value == 0)
 										continue;
 
 									Quantity nD = ρD.over(m_DT); // (m^-3)
@@ -568,30 +543,28 @@ public class VoxelFit {
 	 * reconstruct the implosion morphology that corresponds to the given images.
 	 * @param images an array of arrays of images.  images[l][h][i][j] is the ij
 	 *               pixel of the h energy bin of the l line of site
-	 * @param x the edges of the x bins to use for the morphology
-	 * @param y the edges of the y bins to use for the morphology
-	 * @param z the edges of the z bins to use for the morphology
-	 * @param Э the edges of the energy bins of the images
-	 * @param ξ the edges of the x bins of the images
-	 * @param υ the edges of the y bins of the images
+	 * @param r the r points to use for the parameterization (μm)
+	 * @param x the edges of the x bins to use for the morphology (μm)
+	 * @param y the edges of the y bins to use for the morphology (μm)
+	 * @param z the edges of the z bins to use for the morphology (μm)
+	 * @param Э the edges of the energy bins of the images (MeV)
+	 * @param ξ the edges of the x bins of the images (μm)
+	 * @param υ the edges of the y bins of the images (μm)
 	 * @param lines_of_sight the normalized z vector of each line of site
 	 * @return an array of three 3d matrices: the neutron production (m^-3), the
 	 * plasma temperature (keV), and the mass density (g/L)
 	 */
 	private static double[][][][] reconstruct_images(
-		  double[][][][] images, double[] x, double[] y, double[] z,
-		  double[] Э, double[] ξ, double[] υ, Vector[] lines_of_sight,
-		  String[] args) throws InterruptedException {
+		  double[][][][] images, double[] r, double[] x, double[] y, double[] z,
+		  double[] Э, double[] ξ, double[] υ, Vector[] lines_of_sight) { // TODO: multithread?
 
-		boolean[] ignore_all_but_the_top_bin = {false};
-
-		Function<double[], double[]> residuals = (double[] state) -> {
-//			long a = System.currentTimeMillis();
-			Quantity[][][][] morphology = interpret_state(state, x, y, z, false);
-//			long b = System.currentTimeMillis();
+		Function<double[], double[]> residuals = (double[] state_vector) -> {
+			Quantity[][][][] state = convert_from_state_vector(
+				  state_vector, false, r.length);
+			Quantity[][][][] morphology = bild_morphology(
+				  state[0], state[1], r, x, y, z);
 			Quantity[][][][] synthetic = synthesize_images(
 				  morphology[0], morphology[1], morphology[2], x, y, z, Э, ξ, υ, lines_of_sight);
-//			long c = System.currentTimeMillis();
 			double[][][][] output = new double[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1];
 			for (int l = 0; l < lines_of_sight.length; l ++) {
 				for (int h = 0; h < Э.length - 1; h ++) {
@@ -602,44 +575,34 @@ public class VoxelFit {
 								  /image_sum;
 				}
 			}
-//			long d = System.currentTimeMillis();
-//			System.out.printf("outer times: %f, %f, %f\n", (b-a)/1000., (c-b)/1000., (d-c)/1000.);
-			if (ignore_all_but_the_top_bin[0]) {
-				for (int l = 0; l < lines_of_sight.length; l ++)
-					output[l] = new double[][][] {output[l][output[l].length-1]};
-			}
 			return unravel(output);
 		};
 
-		Function<double[], double[][]> gradients = (double[] state) -> {
-			Quantity[][][][] morphology = interpret_state(state, x, y, z, true);
+		Function<double[], double[][]> gradients = (double[] state_vector) -> {
+			Quantity[][][][] state = convert_from_state_vector(
+				  state_vector, true, r.length);
+			Quantity[][][][] morphology = bild_morphology(
+				  state[0], state[1], r, x, y, z);
 			Quantity[][][][] synthetic = synthesize_images(
 				  morphology[0], morphology[1], morphology[2], x, y, z, Э, ξ, υ, lines_of_sight);
-			double[][][][][] output = new double[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1][];
+			double[][][][][] output = new double[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1][state_vector.length];
 			for (int l = 0; l < lines_of_sight.length; l ++) {
 				for (int h = 0; h < Э.length - 1; h ++) {
 					double image_sum = NumericalMethods.sum(images[l][h]);
 					for (int i = 0; i < ξ.length - 1; i ++) {
 						for (int j = 0; j < υ.length - 1; j++) {
-							VariableQuantity var = (VariableQuantity) synthetic[l][h][i][j].over(image_sum);
-							output[l][h][i][j] = var.gradient.getValues();
+							if (synthetic[l][h][i][j] instanceof VariableQuantity) {
+								VariableQuantity var = (VariableQuantity) synthetic[l][h][i][j].over(image_sum);
+								output[l][h][i][j] = var.gradient.getValues();
+							}
+							else {
+								assert synthetic[l][h][i][j].value == 0: synthetic[l][h][i][j];
+							}
 						}
 					}
 				}
 			}
-			if (ignore_all_but_the_top_bin[0]) {
-				for (int l = 0; l < lines_of_sight.length; l ++)
-					output[l] = new double[][][][] {output[l][output[l].length-1]};
-			}
 			return unravel(output);
-		};
-
-		Function<double[], Double> error = (double[] state) -> {
-			double[] ds = residuals.apply(state);
-			double sum = 0;
-			for (double d: ds)
-				sum += d*d;
-			return sum;
 		};
 
 		VoxelFit.logger.info(String.format("reconstructing images of size %dx%dx%dx%d",
@@ -648,112 +611,52 @@ public class VoxelFit {
 		VoxelFit.logger.info(String.format("using 3d basis of size %dx%dx%d",
 										   x.length - 1, y.length - 1, z.length - 1));
 
-		double[] inicial_state = new double[4 + DEGREES_OF_FREE*2];
-		inicial_state[0] = CORE_TEMPERATURE_GESS;
-		inicial_state[1] = SHELL_TEMPERATURE_GESS;
-		inicial_state[2] = CORE_DENSITY_GESS;
-		inicial_state[3] = SHELL_DENSITY_GESS;
-		inicial_state[4] = CORE_RADIUS_GESS;
-		inicial_state[4 + DEGREES_OF_FREE] = SHELL_THICKNESS_GESS;
-
-		double[] lower = new double[inicial_state.length];
-		double[] upper = new double[inicial_state.length];
-		double[] scale = new double[inicial_state.length];
-		boolean[] hot_spot = new boolean[inicial_state.length];
-		boolean[] dense_fuel = new boolean[inicial_state.length];
-		for (int i = 0; i < inicial_state.length; i ++) {
-			lower[i] = (i < 4) ? 0 : Double.NEGATIVE_INFINITY;
-			upper[i] = Double.POSITIVE_INFINITY;
-			scale[i] = (i < 2) ? 8 : (i < 4) ? 3_000 : (i == 4 || i == 4 + DEGREES_OF_FREE) ? 50 : 20;
-			hot_spot[i] = i == 0 || i == 1 || i == 2 || (i >= 4 && i < 4 + DEGREES_OF_FREE);
-			dense_fuel[i] = i == 0 || i == 1 || i == 3 || i >= 4 + DEGREES_OF_FREE;
+		double[][][][] inicial_state = new double[2][r.length][][];
+		for (int s = 0; s < r.length; s ++) { // set up the inicial state
+			for (int q = 0; q < 2; q ++) {
+				inicial_state[q][s] = new double[Math.min(s + 1, MAX_MODE + 1)][]; // each radial position has a certain number of spherical harmonic modes
+				for (int l = 0; l < inicial_state[q][s].length; l++)
+					inicial_state[q][s][l] = new double[2*l + 1];
+			}
+			inicial_state[1][s][0][0] = Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2)))*SHELL_DENSITY_GESS; // then set the p0 terms to be these gaussian profiles
 		}
-		double[] optimal_state;
-		optimal_state = inicial_state;
+		double[] inicial_state_vector = convert_to_state_vector(inicial_state[0], inicial_state[1]); // (the hot spot can stay as zero since it gets linearly optimized)
 
-//		ignore_all_but_the_top_bin[0] = true;
-//		optimal_state = Optimize.least_squares( // start by optimizing the hot spot
-//			  residuals,
-//			  gradients,
-//			  optimal_state,
-//			  hot_spot,
-//			  1e-5, logger);
-//		ignore_all_but_the_top_bin[0] = false;
-//		optimal_state = Optimize.least_squares( // then optimize the cold fuel
-//			  residuals,
-//			  gradients,
-//			  optimal_state,
-//			  dense_fuel,
-//			  1e-5);
-//		ignore_all_but_the_top_bin[0] = false;
-//		optimal_state = Optimize.least_squares( // then do a pass at the hole thing
-//			  residuals,
-//			  gradients,
-//			  optimal_state,
-//			  1e-5, logger);
+		boolean[] production_dimensions = new boolean[inicial_state_vector.length];
+		boolean[] density_dimensions = new boolean[inicial_state_vector.length];
+		for (int i = 0; i < inicial_state_vector.length; i ++) { // mark out which dimensions are which
+			production_dimensions[i] = i < inicial_state_vector.length/2; // first half is "hot spot"
+			density_dimensions[i] = i >= inicial_state_vector.length/2; // second half is "density"
+		}
+		double[] optimal_state_vector;
+		optimal_state_vector = inicial_state_vector;
 
-		if (args.length != 6)
-			throw new IllegalArgumentException("need five arguments but got "+Arrays.toString(args));
-		ignore_all_but_the_top_bin[0] = true;
-		optimal_state = Optimize.differential_evolution(
-			  error,
-			  optimal_state,
-			  scale,
-			  lower,
-			  upper,
-			  hot_spot,
-			  Integer.parseInt(args[0]),
-			  Integer.parseInt(args[1]),
-			  Integer.parseInt(args[2])*NumericalMethods.count(hot_spot),
-			  Double.parseDouble(args[3]),
-			  Double.parseDouble(args[4]),
-			  Double.parseDouble(args[5]),
-			  VoxelFit.logger
-		);
-		ignore_all_but_the_top_bin[0] = false;
-		optimal_state = Optimize.differential_evolution(
-			  error,
-			  optimal_state,
-			  scale,
-			  lower,
-			  upper,
-			  dense_fuel,
-			  Integer.parseInt(args[0]),
-			  Integer.parseInt(args[1]),
-			  Integer.parseInt(args[2])*NumericalMethods.count(dense_fuel),
-			  Double.parseDouble(args[3]),
-			  Double.parseDouble(args[4]),
-			  Double.parseDouble(args[5]),
-			  VoxelFit.logger
-		);
-		ignore_all_but_the_top_bin[0] = false;
-		optimal_state = Optimize.differential_evolution(
-			  error,
-			  optimal_state,
-			  scale,
-			  lower,
-			  upper,
-			  Integer.parseInt(args[0]),
-			  Integer.parseInt(args[1]),
-			  Integer.parseInt(args[2])*scale.length,
-			  Double.parseDouble(args[3]),
-			  Double.parseDouble(args[4]),
-			  Double.parseDouble(args[5]),
-			  VoxelFit.logger
-		);
+		for (int iter = 0; iter < 6; iter ++) {
+			optimal_state_vector = Optimize.least_squares( // start by optimizing the hot spot
+				  residuals,
+				  gradients,
+				  optimal_state_vector,
+				  production_dimensions,
+				  1e-3,
+				  logger);
+			optimal_state_vector = Optimize.least_squares( // then optimize the cold fuel
+				  residuals,
+				  gradients,
+				  optimal_state_vector,
+				  density_dimensions,
+				  1e-3,
+				  logger);
+		}
 
-//		optimal_state = new double[] {9.273959811456912, 5.518470453527778, 3379.6315006764044, 2806.8227418006895, 57.312484849617846, -6.354991720528519, -4.890995459201385, -3.172402766914786, -0.9751284235695912, 3.4976336757066027, 2.2772950205449227, -3.1253109776152197, 9.154319177700158, 26.323061614764356, 3.856299934741362, -4.591693972906754, 7.565448970711607, 1.4394580467414047, 1.6703579440004832, 1.320842480963671, 1.946330732423208, -21.184329431207065};
-
-		VoxelFit.logger.info(Arrays.toString(optimal_state));
-
-		Quantity[][][][] output_q = interpret_state(optimal_state, x, y, z, false);
-		double[][][][] output = new double[output_q.length][x.length][y.length][z.length];
-		for (int q = 0; q < output.length; q ++)
+		Quantity[][][][] output = convert_from_state_vector(optimal_state_vector, false, r.length);
+		Quantity[][][][] morphology_q = bild_morphology(output[0], output[1], r, x, y, z);
+		double[][][][] morphology = new double[morphology_q.length][x.length][y.length][z.length];
+		for (int q = 0; q < morphology.length; q ++)
 			for (int i = 0; i < x.length; i ++)
 				for (int j = 0; j < y.length; j ++)
 					for (int k = 0; k < z.length; k ++)
-						output[q][i][j][k] = output_q[q][i][j][k].value;
-		return output;
+						morphology[q][i][j][k] = morphology_q[q][i][j][k].value;
+		return morphology;
 	}
 
 	private static Formatter newFormatter(String format) {
@@ -768,7 +671,7 @@ public class VoxelFit {
 		};
 	}
 
-	public static void main(String[] args) throws IOException, InterruptedException {
+	public static void main(String[] args) throws IOException {
 //				double[][] basis = CSV.read(new File("tmp/lines_of_site.csv"), ',');
 //				Vector[] lines_of_site = new Vector[basis.length];
 //				for (int i = 0; i < basis.length; i ++)
@@ -831,6 +734,10 @@ public class VoxelFit {
 		double[] ξ = CSV.readColumn(new File("tmp/xye.csv")); // (μm)
 		double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv")); // (μm)
 
+		double[] r = new double[(x.length + 1)/2]; // (μm)
+		for (int s = 0; s < r.length; s ++)
+			r[s] = x[x.length - 1]*s/(r.length - 1);
+
 		double[] anser_as_colum = CSV.readColumn(new File("tmp/morphology.csv")); // load the input morphology (m^-3, keV, g/L)
 		double[][][][] anser = new double[3][x.length][y.length][z.length];
 		for (int q = 0; q < anser.length; q ++)
@@ -845,7 +752,7 @@ public class VoxelFit {
 
 		CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
 
-		anser = reconstruct_images(images, x, y, z, Э, ξ, υ, lines_of_site, args); // reconstruct the morphology
+		anser = reconstruct_images(images, r, x, y, z, Э, ξ, υ, lines_of_site); // reconstruct the morphology
 
 		images = synthesize_images(
 			  anser[0], anser[1], anser[2], x, y, z, Э, ξ, υ, lines_of_site); // get the reconstructed morphologie's images
