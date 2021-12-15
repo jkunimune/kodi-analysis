@@ -193,7 +193,7 @@ public class NumericalMethods {
 			return (int) Math.max(0., normal(k*μ, Math.sqrt(k)*μ, random));
 		}
 	}
-	
+
 	/**
 	 * generate a generic unimodal distribution with a handful of parameters with which to play.
 	 * it will be the linear combination of an erf stepping from yL to yR with a generalized
@@ -210,7 +210,7 @@ public class NumericalMethods {
 	 * @return y values corresponding to the x values
 	 */
 	public static double[] unimode(double[] x, double yL, double yR, double yPeak,
-			double xPeak, double std, double tilt, double fatten) {
+								   double xPeak, double std, double tilt, double fatten) {
 		final double yS = (yL - yR), yG = yPeak - (yL + yR)/2;
 		double[] y = new double[x.length];
 		for (int i = 0; i < x.length; i ++) {
@@ -220,7 +220,7 @@ public class NumericalMethods {
 		}
 		return y;
 	}
-	
+
 	/**
 	 * compute the nth moment of the histogram over the whole domain. normalize and center it,
 	 * if applicable.
@@ -231,7 +231,7 @@ public class NumericalMethods {
 	public static double moment(int n, double[] x, double[] y) {
 		return moment(n, x, y, x[0], x[x.length-1]);
 	}
-	
+
 	/**
 	 * compute the nth moment of the histogram. normalize and center it, if applicable.
 	 * @param x the bin edges
@@ -255,7 +255,7 @@ public class NumericalMethods {
 		}
 		return sum/N;
 	}
-	
+
 	/**
 	 * compute the nth moment of the histogram over the whole domain. normalize and center it,
 	 * if applicable.
@@ -266,7 +266,7 @@ public class NumericalMethods {
 	public static Quantity moment(int n, double[] x, Quantity[] y) {
 		return moment(n, x, y, x[0], x[x.length-1]);
 	}
-	
+
 	/**
 	 * compute the nth moment of the histogram. normalize and center it, if applicable.
 	 * @param x the bin edges
@@ -290,7 +290,7 @@ public class NumericalMethods {
 		}
 		return sum.over(N);
 	}
-	
+
 	/**
 	 * compute the 0th moment of the histogram
 	 * @param x the bin edges
@@ -300,7 +300,7 @@ public class NumericalMethods {
 	public static double definiteIntegral(double[] x, double[] y) {
 		return definiteIntegral(x, y, x[0], x[x.length-1]);
 	}
-	
+
 	/**
 	 * compute the 0th moment of the histogram
 	 * @param x the bin edges
@@ -320,7 +320,7 @@ public class NumericalMethods {
 		}
 		return s;
 	}
-	
+
 	/**
 	 * compute the mean of the histogram
 	 * @param x the bin edges
@@ -330,7 +330,7 @@ public class NumericalMethods {
 	public static double mean(double[] x, double[] y) {
 		return moment(1, x, y);
 	}
-	
+
 	/**
 	 * compute the mean of the histogram
 	 * @param x the bin edges
@@ -342,7 +342,7 @@ public class NumericalMethods {
 	public static double mean(double[] x, double[] y, double a, double b) {
 		return moment(1, x, y, a, b);
 	}
-	
+
 	/**
 	 * compute the averaged value
 	 * @param y the values
@@ -351,7 +351,7 @@ public class NumericalMethods {
 	public static Quantity average(Quantity[] y, Quantity[] f) {
 		return average(y, f, 0, y.length);
 	}
-	
+
 	/**
 	 * compute the averaged value in the given interval
 	 * @param y the values
@@ -370,7 +370,7 @@ public class NumericalMethods {
 		}
 		return p1.over(p0);
 	}
-	
+
 	/**
 	 * find the full-width at half-maximum of a distribucion. if it is very noisy, this will
 	 * underestimate the width.
@@ -398,7 +398,7 @@ public class NumericalMethods {
 		}
 		return xR - xL;
 	}
-	
+
 	/**
 	 * compute the standard deviation of the histogram
 	 * @param x the bin edges
@@ -408,7 +408,7 @@ public class NumericalMethods {
 	public static double std(double[] x, double[] y) {
 		return Math.sqrt(moment(2, x, y));
 	}
-	
+
 	/**
 	 * compute the standard deviation of the histogram
 	 * @param x the bin edges
@@ -420,7 +420,7 @@ public class NumericalMethods {
 	public static double std(double[] x, double[] y, double a, double b) {
 		return Math.sqrt(moment(2, x, y, a, b));
 	}
-	
+
 	/**
 	 * do a standard deviation of a not histogram. it's just a list of numbers.
 	 * @param x the array of points
@@ -435,14 +435,14 @@ public class NumericalMethods {
 		}
 		return Math.sqrt(meanSqr - Math.pow(mean, 2));
 	}
-	
+
 	public static double sum(double[] arr) {
 		double s = 0;
 		for (double x: arr)
 			s += x;
 		return s;
 	}
-	
+
 	public static double sum(double[][] arr) {
 		double s = 0;
 		for (double[] row: arr)
@@ -493,56 +493,56 @@ public class NumericalMethods {
 	public static double mean(double[] arr) {
 		return sum(arr)/arr.length;
 	}
-	
+
 	public static double[] minus(double[] x) {
 		double[] out = new double[x.length];
 		for (int i = 0; i < out.length; i ++)
 			out[i] = -x[i];
 		return out;
 	}
-	
+
 	public static Quantity[] minus(Quantity[] x) {
 		Quantity[] out = new Quantity[x.length];
 		for (int i = 0; i < out.length; i ++)
 			out[i] = x[i].neg();
 		return out;
 	}
-	
+
 	public static double sqr(double[] v) {
 		double s = 0;
 		for (double x: v)
 			s += Math.pow(x, 2);
 		return s;
 	}
-	
+
 	public static int lastIndexBefore(double level, double[] v, int start) {
 		int l = start;
 		while (l-1 >= 0 && v[l-1] > level)
 			l --;
 		return l;
 	}
-	
+
 	public static int firstIndexAfter(double level, double[] v, int start) {
 		int r = start;
 		while (r < v.length && v[r] > level)
 			r ++;
 		return r;
 	}
-	
+
 	public static int firstLocalMin(double[] v) {
 		for (int i = 0; i < v.length-1; i ++)
 			if (v[i] < v[i+1])
 				return i;
 		return v.length-1;
 	}
-	
+
 	public static int lastLocalMin(double[] v) {
 		for (int i = v.length-1; i >= 1; i --)
 			if (v[i] < v[i-1])
 				return i;
 		return 0;
 	}
-	
+
 	public static double max(double[] arr) {
 		double max = Double.NEGATIVE_INFINITY;
 		for (double x: arr)
@@ -550,7 +550,7 @@ public class NumericalMethods {
 				max = x;
 		return max;
 	}
-	
+
 	public static double max(double[][] arr) {
 		double max = Double.NEGATIVE_INFINITY;
 		for (double[] row: arr)
@@ -559,7 +559,7 @@ public class NumericalMethods {
 					max = x;
 		return max;
 	}
-	
+
 	/**
 	 * find the last index of the highest value
 	 * @param x the array of values
@@ -572,8 +572,8 @@ public class NumericalMethods {
 				argmax = i;
 		return argmax;
 	}
-	
-	
+
+
 	/**
 	 * find the last index of the second highest value
 	 * @param x the array of values
@@ -587,7 +587,7 @@ public class NumericalMethods {
 				argpenmax = i;
 		return argpenmax;
 	}
-	
+
 	/**
 	 * find the last index of the lowest value
 	 * @param x the array of values
@@ -596,7 +596,7 @@ public class NumericalMethods {
 	public static int argmin(double[] x) {
 		return argmax(minus(x));
 	}
-	
+
 	/**
 	 * find the interpolative index of the highest value
 	 * @param x the array of values
@@ -605,7 +605,7 @@ public class NumericalMethods {
 	public static Quantity quadargmin(int left, int right, Quantity[] x) {
 		return quadargmax(left, right, minus(x));
 	}
-	
+
 	/**
 	 * find the interpolative index of the highest value
 	 * @param x the array of values
@@ -614,7 +614,7 @@ public class NumericalMethods {
 	public static double quadargmax(double[] x) {
 		return quadargmax(0, x.length, x);
 	}
-	
+
 	/**
 	 * find the interpolative index of the highest value in [left, right)
 	 * @param left the leftmost acceptable index
@@ -633,7 +633,7 @@ public class NumericalMethods {
 		assert d2xdi2 < 0;
 		return i - dxdi/d2xdi2;
 	}
-	
+
 	/**
 	 * find the x coordinate of the highest value
 	 * @param x the horizontal axis
@@ -647,7 +647,7 @@ public class NumericalMethods {
 			return -1;
 		}
 	}
-	
+
 	/**
 	 * find the interpolative index of the highest value
 	 * @param x the array of values
@@ -656,7 +656,7 @@ public class NumericalMethods {
 	public static Quantity quadargmax(Quantity[] x) {
 		return quadargmax(0, x.length, x);
 	}
-	
+
 	/**
 	 * find the interpolative index of the highest value
 	 * @param x the array of values
@@ -674,7 +674,7 @@ public class NumericalMethods {
 		assert d2xdi2.value < 0;
 		return dxdi.over(d2xdi2).subtractedFrom(i);
 	}
-	
+
 	/**
 	 * find the x coordinate of the highest value in the bounds [left, right)
 	 * @param left the leftmost acceptable index
@@ -692,7 +692,7 @@ public class NumericalMethods {
 			return -1;
 		}
 	}
-	
+
 	/**
 	 * find the x coordinate of the highest value in the bounds [left, right)
 	 * @param left the leftmost acceptable index
@@ -710,7 +710,7 @@ public class NumericalMethods {
 			return new FixedQuantity(-1);
 		}
 	}
-	
+
 	/**
 	 * take the floating-point index of an array using linear interpolation.
 	 * @param x the array of values
@@ -723,14 +723,14 @@ public class NumericalMethods {
 		int i0 = Math.max(0, Math.min(x.length-2, (int) i));
 		return (i0+1-i)*x[i0] + (i-i0)*x[i0+1];
 	}
-	
+
 	/**
 	 * interpolate a value onto a line
 	 */
 	public static double interp(double x, double x1, double x2, double y1, double y2) {
 		return y1 + (x - x1)/(x2 - x1)*(y2 - y1);
 	}
-	
+
 	/**
 	 * take the floating-point index of an array using linear interpolation.
 	 * @param x the array of values
@@ -743,7 +743,7 @@ public class NumericalMethods {
 			x_q[j] = new FixedQuantity(x[j]);
 		return interp(x_q, i);
 	}
-	
+
 	/**
 	 * take the floating-point index of an array using linear interpolation.
 	 * @param x the array of values
@@ -771,7 +771,7 @@ public class NumericalMethods {
 			x_q[i] = new FixedQuantity(x[i]);
 		return interp(x0, x_q, y);
 	}
-	
+
 	/**
 	 * interpolate the value onto the given array.
 	 * @param x0 the desired coordinate
@@ -794,6 +794,10 @@ public class NumericalMethods {
 	}
 
 	public static Quantity interp3d(Quantity[][][] values, Vector index, boolean smooth) {
+		return interp3d(values, index.get(0), index.get(1), index.get(2), smooth);
+	}
+
+	public static double interp3d(double[][][] values, Vector index, boolean smooth) {
 		return interp3d(values, index.get(0), index.get(1), index.get(2), smooth);
 	}
 
@@ -831,7 +835,41 @@ public class NumericalMethods {
 					value = value.plus(values[i0+di][j0+dj][k0+dk].times(ci0.minus(di).abs()).times(cj0.minus(dj).abs()).times(ck0.minus(dk).abs()));
 		return value;
 	}
-	
+
+	public static double interp3d(double[][][] values, double i, double j, double k, boolean smooth) {
+		if (
+			  (i < 0 || i > values.length - 1) ||
+					(j < 0 || j > values[0].length - 1) ||
+					(k < 0 || k > values[0][0].length - 1))
+			throw new ArrayIndexOutOfBoundsException(i+", "+j+", "+k+" out of bounds for "+values.length+"x"+values[0].length+"x"+values[0][0].length);
+		if (Double.isNaN(i) || Double.isNaN(j) || Double.isNaN(k))
+			throw new IllegalArgumentException("is this a joke to you");
+
+		int i0 = Math.min((int)i, values.length - 2);
+		int j0 = Math.min((int)j, values[i0].length - 2);
+		int k0 = Math.min((int)k, values[i0][j0].length - 2);
+		double ci0, cj0, ck0;
+		if (smooth) {
+			ci0 = smooth_step(1 - (i - i0));
+			cj0 = smooth_step(1 - (j - j0));
+			ck0 = smooth_step(1 - (k - k0));
+		}
+		else {
+			ci0 = 1 - (i - i0);
+			cj0 = 1 - (j - j0);
+			ck0 = 1 - (k - k0);
+		}
+		double value = 0;
+		for (int di = 0; di <= 1; di ++)
+			for (int dj = 0; dj <= 1; dj ++)
+				for (int dk = 0; dk <= 1; dk ++)
+					value += values[i0+di][j0+dj][k0+dk] *
+						  Math.abs(ci0 - di) *
+						  Math.abs(cj0 - dj) *
+						  Math.abs(ck0 - dk);
+		return value;
+	}
+
 	/**
 	 * take the floating-point index of an array using cubic interpolation.
 	 * @param x the array of values
@@ -849,7 +887,7 @@ public class NumericalMethods {
 		Quantity δD = i.subtractedFrom(i0 + 2);
 		return xB.times(δA).times(δC).times(δD).times(3).plus(xC.times(δA).times(δB).times(δD).times(3)).minus(xA.times(δB).times(δC).times(δD)).minus(xD.times(δA).times(δB).times(δC)).over(6);
 	}
-	
+
 	/**
 	 * find the second order finite difference derivative. for best results, x
 	 * should be evenly spaced.
@@ -865,7 +903,7 @@ public class NumericalMethods {
 			dydx[i] = (y[i+1] - y[i])/(x[i+1] - x[i]);
 		return dydx;
 	}
-	
+
 	/**
 	 * find the second order finite difference derivative. for best results, x
 	 * should be evenly spaced.
@@ -889,7 +927,7 @@ public class NumericalMethods {
 		}
 		return dydx;
 	}
-	
+
 	/**
 	 * find the second order finite difference double derivative. for best results, x
 	 * should be evenly spaced.
@@ -909,7 +947,7 @@ public class NumericalMethods {
 		d2ydx2[x.length-1] = d2ydx2[x.length-2];
 		return d2ydx2;
 	}
-	
+
 	/**
 	 * fit to a parabola and find the nth derivative.  x must be evenly spaced.
 	 */
@@ -964,7 +1002,24 @@ public class NumericalMethods {
 		else
 			throw new IllegalArgumentException("I don't do that derivative.");
 	}
-	
+
+	/**
+	 * @return an array full of the given value
+	 */
+	public static double[] full(double value, int n) {
+		double[] output = new double[n];
+		for (int i = 0; i < n; i ++)
+			output[i] = value;
+		return output;
+	}
+
+	public static boolean all_zero(double[] values) {
+		for (double value: values)
+			if (value != 0)
+				return false;
+		return true;
+	}
+
 	/**
 	 * return the index of the pair of bin edges in an evenly spaced array that contains
 	 * the value
@@ -973,7 +1028,8 @@ public class NumericalMethods {
 	public static int bin(double value, double[] binEdges) {
 		if (Double.isNaN(value))
 			return -1;
-		int bin = (int)((value - binEdges[0])/(binEdges[binEdges.length-1] - binEdges[0])*(binEdges.length-1));
+		int bin = (int)Math.floor(
+			  (value - binEdges[0])/(binEdges[binEdges.length-1] - binEdges[0])*(binEdges.length-1));
 		return (bin >= 0 && bin < binEdges.length-1) ? bin : -1;
 	}
 
@@ -1100,7 +1156,7 @@ public class NumericalMethods {
 		else
 			return (int) x;
 	}
-	
+
 	/**
 	 * convert this 2d histogram to a lower resolution. the output bins must be uniform.
 	 * only works if the input spectrum has a higher resolution than the output spectrum :P
@@ -1112,10 +1168,10 @@ public class NumericalMethods {
 	 * @return zO the counts of the new histogram
 	 */
 	public static double[][] downsample(double[] xI, double[] yI, double[][] zI,
-			double[] xO, double[] yO) {
+										double[] xO, double[] yO) {
 		if (yI.length-1 != zI.length || xI.length-1 != zI[0].length)
 			throw new IllegalArgumentException("Array sizes don't match fix it.");
-		
+
 		double[][] zO = new double[yO.length-1][xO.length-1]; // resize the input array to match the output array
 		for (int iI = 0; iI < yI.length-1; iI ++) {
 			for (int jI = 0; jI < xI.length-1; jI ++) { // for each small pixel on the input spectrum
@@ -1127,17 +1183,17 @@ public class NumericalMethods {
 				double jOmod = jO - jOint;
 				double cU = Math.min(1, (1 - iOmod)*(yO[1] - yO[0])/(yI[iI+1] - yI[iI])); // find the fraction of it that is above the next pixel
 				double cL = Math.min(1, (1 - jOmod)*(xO[1] - xO[0])/(xI[jI+1] - xI[jI])); // and left of the next pixel
-				
+
 				addIfInBounds(zO, iOint,   jOint,   zI[iI][jI]*cU*cL); // now add the contents of this spectrum
 				addIfInBounds(zO, iOint,   jOint+1, zI[iI][jI]*cU*(1-cL)); // being careful to distribute them properly
 				addIfInBounds(zO, iOint+1, jOint,   zI[iI][jI]*(1-cU)*cL); // (I used this convenience method because otherwise I would have to check all the bounds all the time)
 				addIfInBounds(zO, iOint+1, jOint+1, zI[iI][jI]*(1-cU)*(1-cL));
 			}
 		}
-		
+
 		return zO;
 	}
-	
+
 	/**
 	 * do a Runge-Kutta 4-5 integral to get the final value of y after some interval
 	 * @param f dy/dt as a function of y
@@ -1158,7 +1214,7 @@ public class NumericalMethods {
 		}
 		return y;
 	}
-	
+
 	/**
 	 * a simple convenience method to avoid excessive if statements
 	 */
@@ -1166,6 +1222,11 @@ public class NumericalMethods {
 		if (i >= 0 && i < arr.length)
 			if (j >= 0 && j < arr[i].length)
 				arr[i][j] += val;
+	}
+
+	public static double smooth_step(double x) {
+		assert x >= 0 && x <= 1;
+		return (((-20*x + 70)*x - 84)*x + 35)*Math.pow(x, 4);
 	}
 
 	public static Quantity smooth_step(Quantity x) {
@@ -1183,7 +1244,7 @@ public class NumericalMethods {
 			y[i] = x[i].value;
 		return y;
 	}
-	
+
 	/**
 	 * extract the errors from an array of Quantities
 	 * @return the standard deviation of each Quantity in the same order as before
@@ -1194,7 +1255,7 @@ public class NumericalMethods {
 			y[i] = Math.sqrt(x[i].variance(covariance));
 		return y;
 	}
-	
+
 	/**
 	 * multiply a vector by a matrix
 	 * @param A matrix
@@ -1258,7 +1319,7 @@ public class NumericalMethods {
 				throw new IllegalArgumentException("Only square matrices have inverses; not this "+arr.length+"×"+arr[i].length+" trash.");
 			a[i] = arr[i].clone();
 		}
-		
+
 		int n = a.length;
 		double[][] x = new double[n][n];
 		double[][] b = new double[n][n];
@@ -1288,7 +1349,7 @@ public class NumericalMethods {
 		}
 		return x;
 	}
-	
+
 	/**
 	 * Method to carry out the partial-pivoting Gaussian
 	 * elimination. Here index[] stores pivoting order.
@@ -1341,8 +1402,8 @@ public class NumericalMethods {
 			}
 		}
 	}
-	
-	
+
+
 	/**
 	 * a poor person's pseudoinverse. It's like a regular inverse, but if a particular diagonal
 	 * value is zero, then it removes that dimension before inverting, and then puts NaNs back
@@ -1377,8 +1438,8 @@ public class NumericalMethods {
 		}
 		return c;
 	}
-	
-	
+
+
 	private static final double[] cof = {
 		-1.3026537197817094, 6.4196979235649026e-1,
 		1.9476473204185836e-2, -9.561514786808631e-3, -9.46595344482036e-4,
@@ -1388,7 +1449,7 @@ public class NumericalMethods {
 		9.6467911e-11, 2.394038e-12, -6.886027e-12, 8.94487e-13, 3.13092e-13,
 		-1.12708e-13, 3.81e-16, 7.106e-15, -1.523e-15, -9.4e-17, 1.21e-16, -2.8e-17
 	};
-	
+
 	/**
 	 * The Gauss error function.
 	 */
@@ -1399,14 +1460,14 @@ public class NumericalMethods {
 			return erfccheb(-x) - 1.0;
 		}
 	}
-	
+
 	/**
 	 * the complementary Gauss error function
 	 */
 	public static double erfc(double x) {
 		return 1 - erf(x);
 	}
-	
+
 	private static double erfccheb(double z) {
 		double t, ty, tmp, d = 0., dd = 0.;
 		if (z < 0.) {
@@ -1421,14 +1482,14 @@ public class NumericalMethods {
 		}
 		return t * Math.exp(-z * z + 0.5 * (cof[0] + ty * d) - dd);
 	}
-	
+
 	/**
 	 * Legendre polynomial of degree l
 	 * @param l the degree of the polynomial
 	 * @param z the cosine of the angle at which this is evaluated
 	 * @return P_l(z)
 	 */
-	public static Quantity legendre(int l, Quantity z) {
+	public static double legendre(int l, double z) {
 		return legendre(l, 0, z);
 	}
 
@@ -1439,65 +1500,75 @@ public class NumericalMethods {
 	 * @param x the cosine of the angle at which this is evaluated
 	 * @return P_l^m(z)
 	 */
-	public static Quantity legendre(int l, int m, Quantity x) {
+	public static double legendre(int l, int m, double x) {
 		if (Math.abs(m) > l)
 			throw new IllegalArgumentException("|m| must not exceed l, but |"+m+"| > "+l);
 
-		Quantity x2 = x.pow(2); // get some simple calculacions done out front
-		Quantity y2 = x2.subtractedFrom(1);
-		Quantity y = (m%2 == 1) ? y2.sqrt() : new FixedQuantity(Double.NaN); // but avoid taking a square root if you can avoid it
+		double x2 = Math.pow(x, 2); // get some simple calculacions done out front
+		double y2 = 1 - x2;
+		double y = (m%2 == 1) ? Math.sqrt(y2) : Double.NaN; // but avoid taking a square root if you can avoid it
 
 		if (m == 0) {
 			if (l == 0)
-				return new FixedQuantity(1);
+				return 1;
 			else if (l == 1)
 				return x;
 			else if (l == 2)
-				return x2.times(3).minus(1).over(2);
+				return (3*x2 - 1)/2.;
 			else if (l == 3)
-				return x2.times(5).minus(3).times(x).over(2);
+				return (5*x2 - 3)*x/2.;
 			else if (l == 4)
-				return x2.times(35).minus(30).times(x2).plus(3).over(8);
+				return ((35*x2 - 30)*x2 + 3)/8.;
+			else if (l == 5)
+				return ((63*x2 - 70)*x2 + 15)*x/8.;
+			else if (l == 6)
+				return (((231*x2 - 315)*x2 + 105)*x2 - 5)/16.;
+			else if (l == 7)
+				return (((429*x2 - 693)*x2 + 315)*x2 - 35)*x/16.;
+			else if (l == 8)
+				return ((((6435*x2 - 12012)*x2 + 6930)*x2 - 1260)*x2 + 35)/128.;
+			else if (l == 9)
+				return ((((12155*x2 - 25740)*x2 + 18018)*x2 - 4620)*x2 + 315)*x/128.;
 		}
 		else if (m == 1) {
 			if (l == 1)
-				return y.times(-1);
+				return -y;
 			else if (l == 2)
-				return x.times(y).times(-3);
+				return -3*y*x;
 			else if (l == 3)
-				return x2.times(5).minus(1).times(y).times(-3/2.);
+				return -3*y*(5*x2 - 1)/2.;
 			else if (l == 4)
-				return x2.times(7).minus(3).times(x).times(y).times(-5/2.);
+				return -5*y*(7*x2 - 3)*x/2.;
 		}
 		else if (m == 2) {
 			if (l == 2)
-				return y2.times(3);
+				return 3*y2;
 			else if (l == 3)
-				return x.times(y2).times(15);
+				return 15*y2*x;
 			else if (l == 4)
-				return x2.times(7).minus(1).times(y2).times(15/2.);
+				return 15*y2*(7*x2 - 1)/2.;
 		}
 		else if (m == 3) {
 			if (l == 3)
-				return y.pow(3).times(-15);
+				return -15*y*y2;
 			else if (l == 4)
-				return x.times(y.pow(3)).times(-105);
+				return -105*y*y2*x;
 		}
 		else if (m == 4) {
 			if (l == 4)
-				return y2.pow(2).times(105);
+				return 105*y2*y2;
 		}
 
-		throw new IllegalArgumentException("I don't know Legendre polynomials that high (Y_"+l+"^"+m+").");
+		throw new IllegalArgumentException("I don't know Legendre polynomials that high (_"+l+"^"+m+").");
 	}
 
 	/**
 	 * a discrete representation of an unknown function, capable of evaluating in log time.
-	 * 
+	 *
 	 * @author Justin Kunimune
 	 */
 	public static class DiscreteFunction {
-		
+
 		private final boolean equal; // whether the x index is equally spaced
 		private final boolean log; // whether to use log interpolation instead of linear
 		private final double[] X;
@@ -1605,7 +1676,7 @@ public class NumericalMethods {
 			else
 				return Y[i] + (x - X[i]) / (X[i+1] - X[i]) * (Y[i+1] - Y[i]); // linearly interpolate x from X[i] to Y[i]
 		}
-		
+
 		/**
 		 * it's a function. evaluate it. if this function's x values are equally spaced, this
 		 * can be run in O(1) time. otherwise, it will take O(log(n)).
@@ -1636,7 +1707,7 @@ public class NumericalMethods {
 			else
 				return x.minus(X[i]).times((Y[i+1] - Y[i])/(X[i+1] - X[i])).plus(Y[i]); // linearly interpolate x from X[i] to Y[i]
 		}
-		
+
 		/**
 		 * return the inverse of this, assuming it has an increasing inverse.
 		 * @return the inverse.
@@ -1648,7 +1719,7 @@ public class NumericalMethods {
 				throw new IllegalArgumentException("cannot invert a non-monotonically increasing function.");
 			}
 		}
-		
+
 		/**
 		 * return the antiderivative of this, shifted so the zeroth value is 0
 		 * @return the antiderivative.
@@ -1703,10 +1774,10 @@ public class NumericalMethods {
 			return s.toString();
 		}
 	}
-	
-	
 
-	
+
+
+
 	public static void main(String[] args) {
 		int n = 6;
 		Quantity[][][] test = new Quantity[n][n][n];

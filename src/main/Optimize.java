@@ -168,7 +168,7 @@ public class Optimize {
 	}
 
 	/**
-	 * find a local minimum of the funccion f(state; points) = Σ dist(point[i], state)^2,
+	 * find a local minimum of the funccion f(state) = Σ residuals(state)[i]^2,
 	 * using the Levenberg-Marquardt formula as defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
 	 *     System". Journal of Research of the National Institute of Standards and Technology
@@ -283,6 +283,108 @@ public class Optimize {
 		}
 	}
 
+
+	/**
+	 * find the minimum of the function f(x) = Σ (y[i] - y_target[i])^2 assuming
+	 * it satisfies the condition y = J x where J is _weakly_ dependent on x
+	 * @param compute_local_jacobian compute the matrix J that gives y for this x
+	 * @param data_values the correct y values to which we are minimizing the error
+	 * @param initial_input the inicial gess for the minimizacion
+	 * @param tolerance the maximum acceptable value of the components of the gradient of the
+	 * 	 *              sum of squares, normalized by the norm of the errors and the norm of
+	 * 	 *              the gradients of the individual errors.
+	 * 	                an infinite tolerance indicates that the problem is actually linear.
+	 * @param logger the optional logger object
+	 * @return the solucion to the least-squares problem
+	 */
+	public static double[] quasilinear_least_squares(
+		  Function<double[], double[][]> compute_local_jacobian,
+		  double[] data_values,
+		  double[] initial_input,
+		  double tolerance,
+		  Logger logger) {
+		int iter = 0;
+		Vector data = new DenseVector(data_values);
+		Vector input = new DenseVector(Arrays.copyOf(initial_input, initial_input.length));
+
+		Matrix jacobian = new Matrix(compute_local_jacobian.apply(input.getValues()));
+		Vector output = jacobian.times(input); // compute inicial residuals
+		Vector residuals = output.minus(data);
+
+		double zai_error = 0; // compute the inicial total error
+		for (double d : residuals.getValues()) // ("zai" is the Pandunia word for "current")
+			zai_error += Math.pow(d, 2)/2.; // compute inicial chi^2
+		if (logger != null)
+			logger.info("inicial value: "+zai_error);
+		double new_error;
+
+		while (true) { // then start searching for a solution
+			Matrix hessian = jacobian.trans().times(jacobian); // calculate a step using Gauss-Newton
+			Vector v = jacobian.trans().times(residuals);
+			Vector step = hessian.smart_inverse().times(v).neg();
+			if (Double.isNaN(step.get(0)))
+				throw new RuntimeException("singular hessian");
+
+			if (logger != null)
+				logger.info("Beginning line search");
+
+			for (double step_scale = 1; true; step_scale /= 2) { // do a backtracking line search
+				// side note: 99 times out of 100 this for-loop should resolve on
+				// the first iteration, but a little robustness never hurt anyone
+				Vector new_input = input.plus(step.times(step_scale));
+				if (Double.isInfinite(tolerance)) { // in the event that the tolerance is infinity, stop here and return the value
+					if (logger != null)
+						logger.info("Cancelled line search");
+					return new_input.getValues();
+				}
+
+				jacobian = new Matrix(compute_local_jacobian.apply(new_input.getValues()));
+				output = jacobian.times(new_input);
+				residuals = output.minus(data);
+
+				new_error = 0;
+				for (double d : residuals.getValues())
+					new_error += Math.pow(d, 2)/2.;
+				if (logger != null)
+					logger.info("updated value: "+new_error);
+
+				if (new_error <= zai_error) { // the termination condition on the line search is pretty lax
+					input = new_input;
+					break;
+				}
+				if (step_scale < 1e-14) // check iterations
+					throw new RuntimeException("the line search did not converge");
+			}
+
+			if (logger != null) {
+				logger.info("Completed line search");
+				logger.info("state: " + Arrays.toString(input.getValues()));
+			}
+
+			iter += 1; // check iteracions
+			if (iter > 100)
+				throw new RuntimeException("the maximum number of iteracions has not been reached");
+
+			if (is_converged(
+				  zai_error, new_error, residuals.getValues(),
+				  jacobian.getValues(), tolerance, tolerance))
+				return input.getValues();
+
+			zai_error = new_error;
+		}
+	}
+
+
+	/**
+	 * a utility function for least-square related things
+	 * @param last_value the previous total error
+	 * @param new_value the current total error
+	 * @param residuals the current residual vector
+	 * @param jacobian the local derivative of the residual vector
+	 * @param f_tolerance the minimum noteworthy relative change in the total error
+	 * @param g_tolerance the maximum acceptable angle between the gradients
+	 * @return whether it's okay to stop now
+	 */
 	private static boolean is_converged(double last_value, double new_value,
 										double[] residuals, double[][] jacobian,
 										double f_tolerance, double g_tolerance) {

@@ -1,8 +1,8 @@
 # reconstruct_3d.py
 # do a forward fit.
 # coordinate notes: the indices i, j, and k map to the x, y, and z direccions, respectively.
-# in index subscripts, J indicates neutron birth (jen) and D indicates scattering (darba).
-# also, V indicates deuteron detection (vide)
+# in index subscripts, P indicates neutron birth (production) and D indicates scattering (density).
+# also, V indicates deuteron detection (visibility)
 # z^ points upward, x^ points to 90-00, and y^ points whichever way makes it a rite-handed system.
 # ζ^ points toward the TIM, υ^ points perpendicular to ζ^ and upward, and ξ^ makes it rite-handed.
 # Э stands for Энергия
@@ -57,6 +57,7 @@ def plot_source(x, y, z, source, density):
 	plt.contourf(y, z, thing.T, cmap='Reds', levels=np.linspace(0.00, 1.00, 7)*thing.max())
 	thing = source[len(x)//2,:,:]
 	plt.contourf(y, z, thing.T, cmap='Blues', levels=np.linspace(0.17, 1.00, 7)*thing.max())
+	# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
 	plt.xlabel("y (cm)")
 	plt.ylabel("z (cm)")
 	# plt.colorbar()
@@ -118,9 +119,8 @@ if __name__ == '__main__':
 	np.savetxt("tmp/energy.csv", Э)
 	np.savetxt("tmp/xye.csv", ξ)
 	np.savetxt("tmp/ypsilon.csv", υ)
-	np.savetxt("tmp/morphology.csv", np.ravel([tru_production, tru_temperature, tru_density]))
+	np.savetxt("tmp/morphology.csv", np.ravel([tru_production, tru_density, tru_temperature]))
 
-	# tru_production, tru_temperature, tru_density = np.loadtxt("tmp/morphology - copia.csv").reshape((3, N+1, N+1, N+1))
 	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 	# completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
 	# if completed_process.returncode > 0:
@@ -131,7 +131,7 @@ if __name__ == '__main__':
 
 	tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H))
 	images = np.loadtxt("tmp/images-recon.csv").reshape((lines_of_sight.shape[0], M, H, H))
-	production, temperature, density = np.loadtxt("tmp/morphology-recon.csv").reshape((3, N+1, N+1, N+1))
+	production, density, temperature = np.loadtxt("tmp/morphology-recon.csv").reshape((3, N+1, N+1, N+1))
 
 	plot_source(x, y, z, production, density)
 

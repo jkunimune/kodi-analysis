@@ -34,6 +34,10 @@ public abstract class Vector {
 
 	public abstract Vector times(double scalar);
 
+	public Vector neg() {
+		return this.times(-1);
+	}
+
 	public Vector cross(Vector that) {
 		if (this.getLength() != 3 || that.getLength() != 3)
 			throw new IllegalArgumentException("I don't kno how to do cross products in seven dimensions.");
@@ -70,7 +74,7 @@ public abstract class Vector {
 	public String toString() {
 		StringBuilder s = new StringBuilder("[");
 		for (int i = 0; i < this.getLength(); i ++)
-			s.append(String.format("\n  %8.4g", this.get(i)));
+			s.append(String.format("  %8.4g", this.get(i)));
 		s.append(" ]");
 		return s.toString();
 	}

@@ -23,6 +23,10 @@
  */
 package main;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 public class Matrix {
 	private final double[][] values;
 
@@ -56,8 +60,43 @@ public class Matrix {
 		return new Matrix(values);
 	}
 
+	/**
+	 * @return the inverse of this matrix
+	 */
 	public Matrix inverse() {
 		return new Matrix(NumericalMethods.matinv(values));
+	}
+
+	/**
+	 * @return the inverse of this matrix, but if any row-collum is completely zero, it will be removed before the
+	 * inversion and then filld in with zeros afterward.
+	 */
+	public Matrix smart_inverse() {
+		if (this.getN() != this.getM())
+			throw new IllegalArgumentException("this makes even less sense than taking the regular inverse of "+this.getN()+"×"+this.getM());
+		List<Integer> nonzero = new ArrayList<>(this.getN());
+		for (int i = 0; i < this.getN(); i ++) {
+			for (int j = 0; j < this.getN(); j++) {
+				if (this.get(i, j) != 0 || this.get(j, i) != 0) {
+					nonzero.add(i);
+					break;
+				}
+			}
+		}
+
+		double[][] pruned_values = new double[nonzero.size()][nonzero.size()];
+		for (int i = 0; i < pruned_values.length; i ++)
+			for (int j = 0; j < pruned_values[i].length; j ++)
+				pruned_values[i][j] = values[nonzero.get(i)][nonzero.get(j)];
+
+		double[][] pruned_inverse = NumericalMethods.matinv(pruned_values);
+
+		double[][] inverse = new double[this.getN()][this.getN()];
+		for (int i = 0; i < pruned_inverse.length; i ++)
+			for (int j = 0; j < pruned_inverse[i].length; j ++)
+				inverse[nonzero.get(i)][nonzero.get(j)] = pruned_inverse[i][j];
+
+		return new Matrix(inverse);
 	}
 
 	public Matrix trans() {
@@ -81,6 +120,13 @@ public class Matrix {
 
 	public double get(int i, int j) {
 		return this.values[i][j];
+	}
+
+	public double[][] getValues() {
+		double[][] copy = new double[this.getN()][];
+		for (int i = 0; i < this.getN(); i ++)
+			copy[i] = Arrays.copyOf(this.values[i], this.getM());
+		return copy;
 	}
 
 	public int getN() {
