@@ -6,13 +6,15 @@
 # z^ points upward, x^ points to 90-00, and y^ points whichever way makes it a rite-handed system.
 # ζ^ points toward the TIM, υ^ points perpendicular to ζ^ and upward, and ξ^ makes it rite-handed.
 # Э stands for Энергия
+# и is the index of a basis function
 
+import datetime
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.optimize as optimize
 import os
+import scipy.optimize as optimize
+import shutil
 import subprocess
-import datetime
 
 plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
@@ -26,6 +28,10 @@ m_DT = 3.34e-21 + 5.01e-21 # (mg)
 
 def bin_centers(x):
 	return (x[1:] + x[:-1])/2
+
+
+def expand_bins(x):
+	return np.concatenate([[2*x[0] - x[1]], (x[1:] + x[:-1])/2, [2*x[-1] - x[-2]]])
 
 
 def integrate(y, x):
@@ -70,7 +76,7 @@ def plot_source(x, y, z, source, density):
 def plot_images(Э, ξ, υ, images):
 	for i in range(images.shape[1]):
 		plt.figure()
-		plt.pcolormesh(ξ, υ, images[0,i,:,:].T, vmin=0)#, vmax=np.max(images))
+		plt.pcolormesh(ξ, υ, images[0,i,:,:].T, vmin=min(0, np.min(images[0,i,:,:])))#, vmax=np.max(images))
 		plt.axis('square')
 		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
 		plt.colorbar()
@@ -79,9 +85,9 @@ def plot_images(Э, ξ, υ, images):
 
 
 if __name__ == '__main__':
-	N = 11 # model spatial resolucion
+	N = 21 # model spatial resolucion
 	M = 4 # image energy resolucion
-	H = 11#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
+	H = 22#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
@@ -92,8 +98,8 @@ if __name__ == '__main__':
 	Э = np.linspace(Э_min, Э_max, M+1)
 	print(Э)
 	# r_max *= np.sqrt(3)
-	ξ = np.linspace(-r_max, r_max, H+1)
-	υ = np.linspace(-r_max, r_max, H+1)
+	ξ = expand_bins(x)
+	υ = expand_bins(y)
 
 	lines_of_sight = np.array([
 		[1, 0, 0],
@@ -104,11 +110,9 @@ if __name__ == '__main__':
 	X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 	# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 	# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
+	tru_production = 1e+10*np.exp(-(np.sqrt(X**2 + (Y - 20)**2 + 2.5*Z**2)/50)**4/2)
 	tru_temperature = 6*np.exp(-(np.sqrt(X**2 + (Y - 20)**2 + 2.5*Z**2)/75)**4/2)
 	tru_density = 10000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*Y**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_temperature/tru_temperature.max())**2)
-	tru_σv = 9.1e-22*np.exp(-0.572*abs(np.log(tru_temperature/64.2))**2.13)
-	tru_number_density = np.where(X**2 + (Y - 20)**2 + 2.5*Z**2 < 75**2, 1/4*tru_density/(5*1.66e-27), 0)
-	tru_production = tru_number_density**2*tru_σv*100e-9
 
 	os.chdir("..")
 
@@ -122,9 +126,12 @@ if __name__ == '__main__':
 	np.savetxt("tmp/morphology.csv", np.ravel([tru_production, tru_density, tru_temperature]))
 
 	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-	# completed_process = subprocess.run(["java", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"], capture_output=True, encoding='utf-8')
-	# if completed_process.returncode > 0:
-	# 	raise ValueError(completed_process.stderr)
+	cmd = [shutil.which("java"), "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"]
+	with subprocess.Popen(cmd, stderr=subprocess.PIPE, encoding='utf-8') as process:
+		for line in process.stderr:
+			print(line, end='')
+		if process.returncode > 0:
+			raise ValueError("see above.")
 	print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 
 	plot_source(x, y, z, tru_production, tru_density)
