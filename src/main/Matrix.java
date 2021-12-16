@@ -30,12 +30,20 @@ import java.util.List;
 public class Matrix {
 	private final double[][] values;
 
+	/**
+	 * generate a new matrix by specifying all of its values explicitly.
+	 */
 	public Matrix(double[][] values) {
 		this.values = values;
 	}
 
+	/**
+	 * generate a square diagonal matrix, given the diagonal values.
+	 */
 	public Matrix(double[] values) {
-		this.values = new double[][] {values};
+		this.values = new double[values.length][values.length];
+		for (int i = 0; i < values.length; i ++)
+			this.values[i][i] = values[i];
 	}
 
 	public Vector times(Vector v) {

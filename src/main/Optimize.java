@@ -91,83 +91,6 @@ public class Optimize {
 	}
 
 	/**
-	 * find a local minimum of the funccion f(state; points) = Σ dist(point[i], state)^2,
-	 * using the Levenberg-Marquardt formula as defined in
-	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
-	 *     System". Journal of Research of the National Institute of Standards and Technology
-	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
-	 * while ignoring any dimensions i for which active[i] is false.  it also throws out any
-	 * residuals that inicially have zero gradients.  this is a little problematic if the
-	 * problem is hily nonlinear, but shh don't worry about it.
-	 * @param compute_residuals returns the error of each point given the state
-	 * @param compute_jacobian returns the Jacobian matrix where each row is the
-	 *                         gradient of the error at one point
-	 * @param inicial_gess the inicial gess for the optimal state
-	 * @param active whether each dimension should be allowd to change or not (in
-	 *               case you want to optimize the system one part at a time)
-	 * @param tolerance the maximum acceptable value of the components of the gradient of the
-	 *                  sum of squares, normalized by the norm of the errors and the norm of
-	 *                  the gradients of the individual errors.
-	 * @return the parameters that minimize the sum of squared distances
-	 */
-	public static double[] least_squares(
-		  Function<double[], double[]> compute_residuals,
-		  Function<double[], double[][]> compute_jacobian,
-		  double[] inicial_gess, boolean[] active,
-		  double tolerance, Logger logger) {
-
-		double[][] inicial_jacobian = compute_jacobian.apply(inicial_gess); // to start off, you must look for any irrelevant residuals
-		boolean[] truly_active = new boolean[active.length];
-		for (int j = 0; j < active.length; j ++) { // for each input dof
-			truly_active[j] = false;
-			if (active[j]) { // in the active dofs
-				for (int i = 0; i < inicial_jacobian.length; i ++) { // see if it affects any residuals
-					if (inicial_jacobian[i][j] != 0) {
-						truly_active[j] = true; // then it gets to be active
-						break;
-					}
-				}
-			}
-		}
-		boolean[] relevant = new boolean[inicial_jacobian.length];
-		for (int i = 0; i < relevant.length; i ++) { // for each residual
-			relevant[i] = false;
-			for (int j = 0; j < active.length; j ++) { // see if it is affected by any dofs
-				if (truly_active[j] && inicial_jacobian[i][j] != 0) { // in active dofs
-					relevant[i] = true; // then it is relevant
-					break;
-				}
-			}
-		}
-
-		Function<double[], double[]> reduced_residuals = (double[] reduced_state) ->
-			  NumericalMethods.where(
-			  	  relevant,
-				  compute_residuals.apply(NumericalMethods.insert(
-				  	  truly_active,
-					  inicial_gess,
-					  reduced_state)));
-
-		Function<double[], double[][]> reduced_jacobian = (double[] reduced_state) ->
-			  NumericalMethods.where(
-			  	    relevant, truly_active,
-				    compute_jacobian.apply(NumericalMethods.insert(
-						  truly_active,
-						  inicial_gess,
-						  reduced_state)));
-
-		double[] reduced_inicial = NumericalMethods.where(truly_active, inicial_gess);
-
-		double[] anser = least_squares(reduced_residuals,
-									   reduced_jacobian,
-									   reduced_inicial,
-									   tolerance,
-									   logger);
-
-		return NumericalMethods.insert(truly_active, inicial_gess, anser);
-	}
-
-	/**
 	 * find a local minimum of the funccion f(state) = Σ residuals(state)[i]^2,
 	 * using the Levenberg-Marquardt formula as defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
@@ -176,7 +99,7 @@ public class Optimize {
 	 * @param compute_residuals returns the error of each point given the state
 	 * @param compute_jacobian returns the Jacobian matrix where each row is the
 	 *                         gradient of the error at one point
-	 * @param inicial_gess the inicial gess for the optimal state
+	 * @param initial_gess the inicial gess for the optimal state
 	 * @param tolerance the maximum acceptable value of the components of the gradient of the
 	 *                  sum of squares, normalized by the norm of the errors and the norm of
 	 *                  the gradients of the individual errors.
@@ -185,25 +108,26 @@ public class Optimize {
 	public static double[] least_squares(
 		  Function<double[], double[]> compute_residuals,
 		  Function<double[], double[][]> compute_jacobian,
-		  double[] inicial_gess,
+		  double[] initial_gess,
 		  double tolerance,
 		  Logger logger) {
+		initial_gess = Arrays.copyOf(initial_gess, initial_gess.length); // copy this input just in case
 
-		int iter = 0;
-		double[] state = Arrays.copyOf(inicial_gess, inicial_gess.length);
+		Vector state = new DenseVector(initial_gess);
 		double λ = 4e-5;
 
-		double[] residuals = compute_residuals.apply(state); // compute inicial distances
+		Vector residuals = new DenseVector(compute_residuals.apply(state.getValues())); // compute inicial distances
 
-		double last_value = Double.POSITIVE_INFINITY;
-		double new_value = 0;
-		for (double d : residuals)
-			new_value += Math.pow(d, 2); // compute inicial chi^2
+		double last_error = Double.POSITIVE_INFINITY;
+		double new_error = 0;
+		for (double d : residuals.getValues())
+			new_error += Math.pow(d, 2); // compute inicial chi^2
 //		System.out.println("state: "+Arrays.toString(state));
-		if (logger != null) logger.info(String.format("inicial value: %.8e", new_value));
+		if (logger != null) logger.info(String.format("inicial value: %.8e", new_error));
 
+		int iter = 0;
 		while (true) {
-			double[][] jacobian = compute_jacobian.apply(state); // take the gradients
+			Matrix jacobian = new Matrix(compute_jacobian.apply(state.getValues())); // take the gradients
 //			System.out.println(jacobian.length+" "+jacobian[0].length);
 
 //			double[] direction = new double[state.length];
@@ -229,39 +153,37 @@ public class Optimize {
 //			System.out.println("]");
 //			System.out.println(slope);
 
-			if (is_converged(last_value, new_value, residuals, jacobian, tolerance, tolerance))
-				return state;
+			if (is_converged(last_error, new_error,
+							 residuals.getValues(),
+							 jacobian.getValues(),
+							 tolerance, tolerance))
+				return state.getValues();
 
-			last_value = new_value;
+			last_error = new_error;
 
-			Matrix d0 = new Matrix(residuals).trans(); // convert distances and gradients to matrices
-			Matrix J0 = new Matrix(jacobian);
-			Matrix U = J0.trans().times(J0); // and do some linear algebra
-			Matrix v = J0.trans().times(d0);
+			Matrix hessian = jacobian.trans().times(jacobian); // and do some linear algebra
+			Vector gradient = jacobian.trans().times(residuals);
 
 			if (logger != null)
 				logger.info(String.format("beginning line search with λ = %.4g", λ));
 
 			while (true) {
-				Matrix H = U.copy(); // estimate Hessian
-				for (int i = 0; i < state.length; i ++)
-					H.set(i, i, H.get(i, i) + λ*U.get(i, i));
-				Matrix B = H.inverse();
-				Matrix x = B.times(v);
+				Matrix modified_hessian = hessian.copy();
+				for (int i = 0; i < state.getLength(); i ++)
+					modified_hessian.set(i, i, (1 + λ)*hessian.get(i, i));
+				Vector step = modified_hessian.inverse().times(gradient);
 
-				double[] new_state = new double[state.length]; // take step
-				for (int i = 0; i < state.length; i ++)
-					new_state[i] = state[i] - x.get(i, 0);
+				Vector new_state = state.minus(step); // take step
 
-				residuals = compute_residuals.apply(new_state); // compute new distances and gradients
+				residuals = new DenseVector(compute_residuals.apply(new_state.getValues())); // compute new distances and gradients
 
-				new_value = 0;
-				for (double d : residuals)
-					new_value += Math.pow(d, 2); // compute new chi^2
+				new_error = 0;
+				for (double d : residuals.getValues())
+					new_error += Math.pow(d, 2); // compute new chi^2
 				if (logger != null)
-					logger.info(String.format("updated value: %.8e", new_value));
+					logger.info(String.format("updated value: %.8e", new_error));
 
-				if (new_value <= last_value) { // terminate the line search if reasonable
+				if (new_error <= last_error) { // terminate the line search if reasonable
 					state = new_state;
 					break;
 				}
@@ -272,7 +194,7 @@ public class Optimize {
 
 			if (logger != null) {
 				logger.info(String.format("completed line search with λ = %.4g", λ));
-				logger.info("state: " + Arrays.toString(state));
+				logger.info("state: " + state);
 			}
 
 			λ *= 4e-5; // decrement the line search parameter XXX
@@ -289,6 +211,7 @@ public class Optimize {
 	 * it satisfies the condition y = J x where J is _weakly_ dependent on x
 	 * @param compute_local_jacobian compute the matrix J that gives y for this x
 	 * @param data_values the correct y values to which we are minimizing the error
+	 * @param data_weights the relative importance of each residual (i.e. inverse variance)
 	 * @param initial_input the inicial gess for the minimizacion
 	 * @param tolerance the maximum acceptable value of the components of the gradient of the
 	 * 	 *              sum of squares, normalized by the norm of the errors and the norm of
@@ -300,16 +223,29 @@ public class Optimize {
 	public static double[] quasilinear_least_squares(
 		  Function<double[], double[][]> compute_local_jacobian,
 		  double[] data_values,
+		  double[] data_weights,
 		  double[] initial_input,
 		  double tolerance,
 		  Logger logger) {
-		int iter = 0;
+		if (data_values.length != data_weights.length)
+			throw new IllegalArgumentException("there must be the same number of residuals as weights");
+		double[][] initial_jacobian = compute_local_jacobian.apply(initial_input);
+		if (initial_jacobian.length != data_values.length)
+			throw new IllegalArgumentException("there must be the same number of gradients as residuals");
+		if (initial_jacobian[0].length != initial_input.length)
+			throw new IllegalArgumentException("the jacobian width must match the initial gess");
+
+		data_values = Arrays.copyOf(data_values, data_values.length); // copy this inputs, just in case
+		data_weights = Arrays.copyOf(data_weights, data_weights.length);
+		initial_input = Arrays.copyOf(initial_input, initial_input.length);
+
 		Vector data = new DenseVector(data_values);
 		Vector input = new DenseVector(Arrays.copyOf(initial_input, initial_input.length));
 
-		Matrix jacobian = new Matrix(compute_local_jacobian.apply(input.getValues()));
+		Matrix jacobian = new Matrix(initial_jacobian);
 		Vector output = jacobian.times(input); // compute inicial residuals
 		Vector residuals = output.minus(data);
+		Matrix weights = new Matrix(data_weights);
 
 		double zai_error = 0; // compute the inicial total error
 		for (double d : residuals.getValues()) // ("zai" is the Pandunia word for "current")
@@ -318,10 +254,11 @@ public class Optimize {
 			logger.info(String.format("inicial value: %.8e", zai_error));
 		double new_error;
 
+		int iter = 0;
 		while (true) { // then start searching for a solution
-			Matrix hessian = jacobian.trans().times(jacobian); // calculate a step using Gauss-Newton
-			Vector v = jacobian.trans().times(residuals);
-			Vector step = hessian.smart_inverse().times(v).neg();
+			Vector gradient = jacobian.trans().times(weights.times(residuals)); // calculate a step using Gauss-Newton
+			Matrix hessian = jacobian.trans().times(weights.times(jacobian));
+			Vector step = hessian.smart_inverse().times(gradient).neg();
 			if (Double.isNaN(step.get(0)))
 				throw new RuntimeException("singular hessian");
 

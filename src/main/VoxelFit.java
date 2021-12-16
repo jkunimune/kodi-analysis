@@ -581,6 +581,9 @@ public class VoxelFit {
 										   images[0][0].length, images[0][0][0].length));
 
 		double[] data_vector = unravel(images);
+		double[] inverse_variance_vector = new double[data_vector.length];
+		for (int i = 0; i < data_vector.length; i ++)
+			inverse_variance_vector[i] = 1./(data_vector[i] + 1);
 
 		double[][][][] basis_functions = basis_functions(r, x, y, z);
 		int num_basis_functions = basis_functions[0][0][0].length;
@@ -614,6 +617,7 @@ public class VoxelFit {
 					  lines_of_sight,
 					  basis_functions),
 				  data_vector,
+				  inverse_variance_vector,
 				  production_coefs,
 				  Double.POSITIVE_INFINITY,
 				  logger); // start by optimizing the hot spot// TODO: do shell temperature
@@ -629,6 +633,7 @@ public class VoxelFit {
 					  lines_of_sight,
 					  basis_functions),
 				  data_vector,
+				  inverse_variance_vector,
 				  density_coefs,
 				  1e-3,
 				  logger); // then optimize the cold fuel

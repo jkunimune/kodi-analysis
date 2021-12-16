@@ -87,7 +87,6 @@ def plot_images(Э, ξ, υ, images):
 if __name__ == '__main__':
 	N = 23 # model spatial resolucion
 	M = 4 # image energy resolucion
-	H = N + 1#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
@@ -96,9 +95,11 @@ if __name__ == '__main__':
 	z = np.linspace(-r_max, r_max, N+1)
 
 	Э = np.linspace(Э_min, Э_max, M+1)
+	# H = int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
 	# r_max *= np.sqrt(3)
 	ξ = expand_bins(x)
 	υ = expand_bins(y)
+	H = len(ξ) - 1
 
 	lines_of_sight = np.array([
 		[1, 0, 0],
