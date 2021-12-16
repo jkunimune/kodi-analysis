@@ -85,9 +85,9 @@ def plot_images(Э, ξ, υ, images):
 
 
 if __name__ == '__main__':
-	N = 21 # model spatial resolucion
+	N = 23 # model spatial resolucion
 	M = 4 # image energy resolucion
-	H = 22#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
+	H = N + 1#int(np.ceil(min(50, N)))#N/np.sqrt(3)))) # image spacial resolucion
 	print(f"beginning test with N = {N} and M = {M}")
 
 	r_max = 110 # (μm)
@@ -96,7 +96,6 @@ if __name__ == '__main__':
 	z = np.linspace(-r_max, r_max, N+1)
 
 	Э = np.linspace(Э_min, Э_max, M+1)
-	print(Э)
 	# r_max *= np.sqrt(3)
 	ξ = expand_bins(x)
 	υ = expand_bins(y)
@@ -111,8 +110,8 @@ if __name__ == '__main__':
 	# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 	# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
 	tru_production = 1e+10*np.exp(-(np.sqrt(X**2 + (Y - 20)**2 + 2.5*Z**2)/50)**4/2)
-	tru_temperature = 6*np.exp(-(np.sqrt(X**2 + (Y - 20)**2 + 2.5*Z**2)/75)**4/2)
-	tru_density = 10000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*Y**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_temperature/tru_temperature.max())**2)
+	tru_density = 10_000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*Y**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
+	tru_temperature = 1
 
 	os.chdir("..")
 
@@ -123,14 +122,16 @@ if __name__ == '__main__':
 	np.savetxt("tmp/energy.csv", Э)
 	np.savetxt("tmp/xye.csv", ξ)
 	np.savetxt("tmp/ypsilon.csv", υ)
-	np.savetxt("tmp/morphology.csv", np.ravel([tru_production, tru_density, tru_temperature]))
+	np.savetxt("tmp/production.csv", tru_production.ravel())
+	np.savetxt("tmp/density.csv", tru_density.ravel())
+	np.savetxt("tmp/temperature.csv", [tru_temperature])
 
 	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 	cmd = [shutil.which("java"), "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"]
 	with subprocess.Popen(cmd, stderr=subprocess.PIPE, encoding='utf-8') as process:
 		for line in process.stderr:
 			print(line, end='')
-		if process.returncode > 0:
+		if process.wait() > 0:
 			raise ValueError("see above.")
 	print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 
@@ -138,12 +139,14 @@ if __name__ == '__main__':
 
 	tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H))
 	images = np.loadtxt("tmp/images-recon.csv").reshape((lines_of_sight.shape[0], M, H, H))
-	production, density, temperature = np.loadtxt("tmp/morphology-recon.csv").reshape((3, N+1, N+1, N+1))
+	production = np.loadtxt("tmp/production-recon.csv").reshape((N+1, N+1, N+1))
+	density = np.loadtxt("tmp/density-recon.csv").reshape((N+1, N+1, N+1))
+	temperature = np.loadtxt("tmp/temperature-recon.csv")
 
 	plot_source(x, y, z, production, density)
 
-	print(np.sum(tru_temperature < 0), np.sum(tru_temperature == 0), np.sum(tru_temperature > 0))
-	print(np.sum(temperature < 0), np.sum(temperature == 0), np.sum(temperature > 0))
+	print(np.sum(tru_production < 0), np.sum(tru_production == 0), np.sum(tru_production > 0))
+	print(np.sum(production < 0), np.sum(production == 0), np.sum(production > 0))
 
 	plot_images(Э, ξ, υ, tru_images)
 	plot_images(Э, ξ, υ, images)

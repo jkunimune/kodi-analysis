@@ -30,7 +30,6 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -70,7 +69,7 @@ public class CSV {
 			throws NumberFormatException, IOException {
 		List<double[]> list;
 		try (BufferedReader in = new BufferedReader(new FileReader(file))) {
-			list = new ArrayList<double[]>();
+			list = new ArrayList<>();
 			String line;
 			for (int i = 0; i < headerRows; i ++)
 				in.readLine();
@@ -87,7 +86,7 @@ public class CSV {
 		}
 		return list.toArray(new double[0][]);
 	}
-	
+
 	/**
 	 * read a CSV file where there is only one column, bypassing the need for a multi-
 	 * dimensional array. values will be separated by line breaks and adjacent whitespace
@@ -98,10 +97,10 @@ public class CSV {
 	 * @throws NumberFormatException if elements are not parsable as doubles
 	 */
 	public static double[] readColumn(File file)
-			throws NumberFormatException, IOException {
+		  throws NumberFormatException, IOException {
 		return readColumn(file, '\n', 0);
 	}
-	
+
 	/**
 	 * read a CSV file and return a single column as a 1D array.
 	 * @param file the CSV file to open
@@ -112,14 +111,29 @@ public class CSV {
 	 * @throws NumberFormatException if elements are not parsable as doubles
 	 */
 	public static double[] readColumn(File file, char delimiter, int j)
-			throws NumberFormatException, IOException {
+		  throws NumberFormatException, IOException {
 		double[][] table = read(file, delimiter);
 		double[] out = new double[table.length];
 		for (int i = 0; i < table.length; i ++)
 			out[i] = table[i][j];
 		return out;
 	}
-	
+
+	/**
+	 * read a file with a single number ritten in it.
+	 * @param file the CSV file to open
+	 * @return the number
+	 * @throws IOException if file cannot be found or permission is denied
+	 * @throws NumberFormatException if elements are not parsable as doubles
+	 */
+	public static double readScalar(File file)
+		  throws NumberFormatException, IOException {
+		double[][] table = read(file, ',');
+		if (table.length != 1 || table[0].length != 1)
+			throw new NumberFormatException("there are multiple numbers here.");
+		return table[0][0];
+	}
+
 	/**
 	 * read a COSY-generated file and return the coefficients as a double matrix along with the
 	 * exponents as an int matrix.
@@ -134,8 +148,8 @@ public class CSV {
 		List<double[]> coefList;
 		List<int[]> expList;
 		try (BufferedReader in = new BufferedReader(new FileReader(file))) { // start by reading it like a CSV
-			coefList = new ArrayList<double[]>();
-			expList = new ArrayList<int[]>();
+			coefList = new ArrayList<>();
+			expList = new ArrayList<>();
 			String line;
 			while ((line = in.readLine()) != null) {
 				line = line.substring(1); // remove this single stupid space in front of the numbers
@@ -199,7 +213,7 @@ public class CSV {
 			}
 		}
 	}
-	
+
 	/**
 	 * save the given array as a column of newline-separated number strings.
 	 * @param data the numbers to write, in 1D form
@@ -212,8 +226,19 @@ public class CSV {
 			columnVector[i][0] = data[i];
 		write(columnVector, file, '\n');
 	}
-	
-	
+
+
+	/**
+	 * create and save a file with a single number ritten in it.
+	 * @param data the number to write
+	 * @param file the file at which to save
+	 * @throws IOException if the file cannot be found or permission is denied
+	 */
+	public static void writeScalar(double data, File file) throws IOException {
+		writeColumn(new double[] {data}, file);
+	}
+
+
 	public static class COSYMapping {
 		public final double[][] coefficients;
 		public final int[][] exponents;

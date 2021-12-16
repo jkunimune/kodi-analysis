@@ -200,7 +200,7 @@ public class Optimize {
 		for (double d : residuals)
 			new_value += Math.pow(d, 2); // compute inicial chi^2
 //		System.out.println("state: "+Arrays.toString(state));
-		if (logger != null) logger.info("inicial value: "+new_value);
+		if (logger != null) logger.info(String.format("inicial value: %.8e", new_value));
 
 		while (true) {
 			double[][] jacobian = compute_jacobian.apply(state); // take the gradients
@@ -240,7 +240,7 @@ public class Optimize {
 			Matrix v = J0.trans().times(d0);
 
 			if (logger != null)
-				logger.info("Beginning line search with λ = "+λ);
+				logger.info(String.format("beginning line search with λ = %.4g", λ));
 
 			while (true) {
 				Matrix H = U.copy(); // estimate Hessian
@@ -259,7 +259,7 @@ public class Optimize {
 				for (double d : residuals)
 					new_value += Math.pow(d, 2); // compute new chi^2
 				if (logger != null)
-					logger.info("updated value: "+new_value);
+					logger.info(String.format("updated value: %.8e", new_value));
 
 				if (new_value <= last_value) { // terminate the line search if reasonable
 					state = new_state;
@@ -271,7 +271,7 @@ public class Optimize {
 			}
 
 			if (logger != null) {
-				logger.info("Completed line search with λ = " + λ);
+				logger.info(String.format("completed line search with λ = %.4g", λ));
 				logger.info("state: " + Arrays.toString(state));
 			}
 
@@ -315,7 +315,7 @@ public class Optimize {
 		for (double d : residuals.getValues()) // ("zai" is the Pandunia word for "current")
 			zai_error += Math.pow(d, 2)/2.; // compute inicial chi^2
 		if (logger != null)
-			logger.info("inicial value: "+zai_error);
+			logger.info(String.format("inicial value: %.8e", zai_error));
 		double new_error;
 
 		while (true) { // then start searching for a solution
@@ -326,15 +326,15 @@ public class Optimize {
 				throw new RuntimeException("singular hessian");
 
 			if (logger != null)
-				logger.info("Beginning line search");
+				logger.info("beginning line search");
 
-			for (double step_scale = 1; true; step_scale /= 2) { // do a backtracking line search
+			for (double step_scale = 1; true; step_scale -= Math.max(0.2, step_scale/2.)) { // do a backtracking line search
 				// side note: 99 times out of 100 this for-loop should resolve on
 				// the first iteration, but a little robustness never hurt anyone
 				Vector new_input = input.plus(step.times(step_scale));
 				if (Double.isInfinite(tolerance)) { // in the event that the tolerance is infinity, stop here and return the value
 					if (logger != null)
-						logger.info("Cancelled line search");
+						logger.info("cancelled line search");
 					return new_input.getValues();
 				}
 
@@ -346,7 +346,7 @@ public class Optimize {
 				for (double d : residuals.getValues())
 					new_error += Math.pow(d, 2)/2.;
 				if (logger != null)
-					logger.info("updated value: "+new_error);
+					logger.info(String.format("updated value: %.8e", new_error));
 
 				if (new_error <= zai_error) { // the termination condition on the line search is pretty lax
 					input = new_input;
@@ -356,14 +356,12 @@ public class Optimize {
 					throw new RuntimeException("the line search did not converge");
 			}
 
-			if (logger != null) {
-				logger.info("Completed line search");
-				logger.info("state: " + Arrays.toString(input.getValues()));
-			}
+			if (logger != null)
+				logger.info("completed line search");
 
 			iter += 1; // check iteracions
 			if (iter > 100)
-				throw new RuntimeException("the maximum number of iteracions has not been reached");
+				throw new RuntimeException("the maximum number of iteracions has been reached");
 
 			if (is_converged(
 				  zai_error, new_error, residuals.getValues(),
