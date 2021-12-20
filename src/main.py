@@ -249,7 +249,7 @@ if __name__ == '__main__':
 		input_filename = None
 		for fname in os.listdir(INPUT_FOLDER): # search for filenames that match each row
 			if (fname.endswith('.txt') or fname.endswith('.pkl')) \
-					and	str(data[SHOT]) in fname and ('tim'+str(data[TIM]) in fname.lower() or 'tim' not in fname.lower()) \
+					and str(data[SHOT]) in fname and ('tim'+str(data[TIM]) in fname.lower() or 'tim' not in fname.lower()) \
 					and data[ETCH_TIME].replace(' ','') in fname:
 				input_filename = fname
 				print()

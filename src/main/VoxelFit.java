@@ -71,6 +71,13 @@ public class VoxelFit {
 
 	private static final Logger logger = Logger.getLogger("root");
 
+	private static boolean contains(String[] arr, String str) {
+		for (String s: arr)
+			if (s.equals(str))
+				return true;
+		return false;
+	}
+
 	/**
 	 * Li-Petrasso stopping power (deuteron, weakly coupled)
 	 * @param Э the energy of the test particle (MeV)
@@ -588,9 +595,9 @@ public class VoxelFit {
 		double[][][][] basis_functions = basis_functions(r, x, y, z);
 		int num_basis_functions = basis_functions[0][0][0].length;
 
-		VoxelFit.logger.info(String.format("using %d 3d basis functions on %dx%dx%d mesh",
+		VoxelFit.logger.info(String.format("using %d 3d basis functions on %dx%dx%d point array",
 										   num_basis_functions,
-										   x.length - 1, y.length - 1, z.length - 1));
+										   x.length, y.length, z.length));
 
 		double[] production_coefs = new double[num_basis_functions];
 		double[] density_coefs = new double[num_basis_functions];
@@ -695,26 +702,39 @@ public class VoxelFit {
 		for (int s = 0; s < r.length; s ++)
 			r[s] = x[x.length - 1]*s/r.length;
 
-		String[] morphology_filenames = { "production", "density" };
-		double[][][][] anser = new double[2][x.length][y.length][z.length];
-		for (int q = 0; q < morphology_filenames.length; q ++) {
-			double[] anser_as_colum = CSV.readColumn(new File(
-				  String.format("tmp/%s.csv", morphology_filenames[q]))); // load the input morphology (m^-3, g/L, keV)
-			for (int i = 0; i < x.length; i++)
-				for (int j = 0; j < y.length; j++)
-					System.arraycopy(
-						  anser_as_colum, (i*y.length + j)*z.length,
-						  anser[q][i][j], 0, z.length);
+		double[][][][] images;
+
+		if (contains(args, "test")) {
+			String[] morphology_filenames = {"production", "density"};
+			double[][][][] anser = new double[2][x.length][y.length][z.length];
+			for (int q = 0; q < morphology_filenames.length; q++) {
+				double[] anser_as_colum = CSV.readColumn(new File(
+					  String.format("tmp/%s.csv", morphology_filenames[q]))); // load the input morphology (m^-3, g/L, keV)
+				for (int i = 0; i < x.length; i++)
+					for (int j = 0; j < y.length; j++)
+						System.arraycopy(
+							  anser_as_colum, (i*y.length + j)*z.length,
+							  anser[q][i][j], 0, z.length);
+			}
+			double temperature = CSV.readScalar(new File("tmp/temperature.csv"));
+
+			images = synthesize_images(
+				  anser[0], anser[1], temperature,
+				  x, y, z, Э, ξ, υ, lines_of_site); // synthesize the true images
+			CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
 		}
-		double temperature = CSV.readScalar(new File("tmp/temperature.csv"));
+		else {
+			double[] images_as_colum = CSV.readColumn(new File("tmp/images.csv"));
+			images = new double[lines_of_site.length][Э.length - 1][ξ.length - 1][υ.length - 1];
+			for (int l = 0; l < lines_of_site.length; l ++)
+				for (int h = 0; h < Э.length - 1; h ++)
+					for (int i = 0; i < ξ.length - 1; i ++)
+						System.arraycopy(
+							  images_as_colum, ((l*(Э.length - 1) + h)*(ξ.length - 1) + i)*(υ.length - 1),
+							  images[l][h][i], 0, υ.length - 1);
+		}
 
-		double[][][][] images = synthesize_images(
-			  anser[0], anser[1], temperature,
-			  x, y, z, Э, ξ, υ, lines_of_site); // synthesize the true images
-
-		CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
-
-		anser = reconstruct_images(
+		double[][][][] anser = reconstruct_images(
 			  images,
 			  r, x, y, z,
 			  Э, ξ, υ,

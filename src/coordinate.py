@@ -3,13 +3,14 @@
 import numpy as np
 
 
-TIM_LOCATIONS = [
-	None,
-	[ 37.38, 162.00],
-	None,
-	[ 63.44, 342.00],
-	[100.81, 270.00],
-	None]
+TIM_LOCATIONS = {
+	2: [ 37.38, 162.00],
+	4: [ 63.44, 342.00],
+	5: [100.81, 270.00],
+	'x': [90, 0],
+	'y': [90, 270],
+	'z': [0, 0],
+}
 # TIM_LOCATIONS = [
 # 	None,
 # 	[90, 0],
@@ -20,7 +21,11 @@ TIM_LOCATIONS = [
 
 
 def tim_coordinates(tim):
-	return orthogonal_basis(*TIM_LOCATIONS[tim-1])
+	return orthogonal_basis(*TIM_LOCATIONS[tim])
+
+
+def tim_direction(tim):
+	return tim_coordinates(tim)[:,-1]
 
 
 def orthogonal_basis(polar_angle, azimuthal_angle):
@@ -60,4 +65,4 @@ def project(r, polar_angle, azimuthal_angle, basis):
 
 
 if __name__ == '__main__':
-	print(tim_coordinates(2))
+	print(tim_direction(2))
