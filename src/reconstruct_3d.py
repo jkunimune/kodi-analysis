@@ -15,6 +15,7 @@ import os
 import scipy.optimize as optimize
 import shutil
 import subprocess
+import sys
 
 plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
@@ -41,7 +42,7 @@ def integrate(y, x):
 
 
 def plot_source(x, y, z, source, density):
-	ax = plt.figure().add_subplot(projection='3d')
+	ax = plt.figure(figsize=(5.5, 5)).add_subplot(projection='3d')
 	ax.set_box_aspect([1,1,1])
 
 	for thing, contour_plot, cmap in [(density, ax.contour, 'Reds'), (source, ax.contour, 'Blues')]:
@@ -58,7 +59,7 @@ def plot_source(x, y, z, source, density):
 	ax.set_zlim(-100, 100)
 	plt.tight_layout()
 
-	plt.figure()
+	plt.figure(figsize=(5.5, 5))
 	thing = density[len(x)//2,:,:]
 	plt.contourf(y, z, thing.T, cmap='Reds', levels=np.linspace(0.00, 1.00, 7)*thing.max())
 	thing = source[len(x)//2,:,:]
@@ -75,13 +76,13 @@ def plot_source(x, y, z, source, density):
 
 def plot_images(Э, ξ, υ, images):
 	for i in range(images.shape[1]):
-		plt.figure()
+		plt.figure(figsize=(6, 5))
 		plt.pcolormesh(ξ, υ, images[0,i,:,:].T, vmin=min(0, np.min(images[0,i,:,:])))#, vmax=np.max(images))
 		plt.axis('square')
 		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
 		plt.colorbar()
 		plt.tight_layout()
-		plt.show()
+	plt.show()
 
 
 if __name__ == '__main__':
@@ -107,34 +108,42 @@ if __name__ == '__main__':
 		[0, 0, 1],
 	]) # ()
 
-	X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
-	# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
-	# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
-	tru_production = 1e+10*np.exp(-(np.sqrt(X**2 + (Y - 20)**2 + 2.5*Z**2)/50)**4/2)
-	tru_density = 10_000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*Y**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
-	tru_temperature = 1
-
 	os.chdir("..")
 
-	np.savetxt("tmp/lines_of_site.csv", lines_of_sight, delimiter=',')
-	np.savetxt("tmp/x.csv", x)
-	np.savetxt("tmp/y.csv", y)
-	np.savetxt("tmp/z.csv", z)
-	np.savetxt("tmp/energy.csv", Э)
-	np.savetxt("tmp/xye.csv", ξ)
-	np.savetxt("tmp/ypsilon.csv", υ)
-	np.savetxt("tmp/production.csv", tru_production.ravel())
-	np.savetxt("tmp/density.csv", tru_density.ravel())
-	np.savetxt("tmp/temperature.csv", [tru_temperature])
+	if len(sys.argv) > 1 and sys.argv[1] == 'skip':
+		print(f"Using previous reconstruction.")
 
-	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-	cmd = [shutil.which("java"), "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"]
-	with subprocess.Popen(cmd, stderr=subprocess.PIPE, encoding='utf-8') as process:
-		for line in process.stderr:
-			print(line, end='')
-		if process.wait() > 0:
-			raise ValueError("see above.")
-	print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+		tru_production = np.loadtxt("tmp/production.csv").reshape((N+1, N+1, N+1))
+		tru_density = np.loadtxt("tmp/density.csv").reshape((N+1, N+1, N+1))
+		tru_temperature = np.loadtxt("tmp/temperature.csv")
+
+	else:
+		X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+		# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
+		# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
+		tru_production = 1e+10*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
+		tru_density = 10_000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*(Y + 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
+		tru_temperature = 1
+
+		np.savetxt("tmp/lines_of_site.csv", lines_of_sight, delimiter=',')
+		np.savetxt("tmp/x.csv", x)
+		np.savetxt("tmp/y.csv", y)
+		np.savetxt("tmp/z.csv", z)
+		np.savetxt("tmp/energy.csv", Э)
+		np.savetxt("tmp/xye.csv", ξ)
+		np.savetxt("tmp/ypsilon.csv", υ)
+		np.savetxt("tmp/production.csv", tru_production.ravel())
+		np.savetxt("tmp/density.csv", tru_density.ravel())
+		np.savetxt("tmp/temperature.csv", [tru_temperature])
+
+		print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+		cmd = [shutil.which("java"), "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", "-ea"]
+		with subprocess.Popen(cmd, stderr=subprocess.PIPE, encoding='utf-8') as process:
+			for line in process.stderr:
+				print(line, end='')
+			if process.wait() > 0:
+				raise ValueError("see above.")
+		print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 
 	plot_source(x, y, z, tru_production, tru_density)
 

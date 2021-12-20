@@ -14,7 +14,7 @@ import java.util.logging.SimpleFormatter;
 public class VoxelFit {
 
 	public static final int MAX_MODE = 2;
-	public static final int NUM_PASSES = 4;
+	public static final int NUM_PASSES = 5;
 	public static final int STOPPING_POWER_RESOLUTION = 126;
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SHELL_DENSITY_GESS = 1_000; // (g/L)
