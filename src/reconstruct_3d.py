@@ -48,6 +48,13 @@ def plot_source(x, y, z, source, density):
 	ax.set_box_aspect([1,1,1])
 
 	for thing, contour_plot, cmap in [(density, ax.contour, 'Reds'), (source, ax.contour, 'Blues')]:
+		if thing.max() <= 0 and thing.min() < 0:
+			print(f"warning: the {cmap[:-1]} stuff is negative!")
+			thing = -thing
+		elif thing.max() == 0 and thing.min() == 0:
+			print(f"warning: the {cmap[:-1]} stuff is zero!")
+			continue
+
 		levels = np.linspace(0.17, 1.00, 4)*thing.max()
 		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
 			offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
@@ -62,18 +69,21 @@ def plot_source(x, y, z, source, density):
 	plt.tight_layout()
 
 	plt.figure(figsize=(5.5, 5))
-	thing = density[len(x)//2,:,:]
-	plt.contourf(y, z, thing.T, cmap='Reds', levels=np.linspace(0.00, 1.00, 7)*thing.max())
-	thing = source[len(x)//2,:,:]
-	plt.contourf(y, z, thing.T, cmap='Blues', levels=np.linspace(0.17, 1.00, 7)*thing.max())
+	for thing, transparent, cmap in [(density, False, 'Reds'), (source, True, 'Blues')]:
+		thing = thing[len(x)//2,:,:]
+		if thing.max() <= 0 and thing.min() < 0:
+			print(f"warning: the {cmap[:-1]} flat stuff is negative!")
+			thing = -thing
+		elif thing.max() == 0 and thing.min() == 0:
+			print(f"warning: the {cmap[:-1]} flat stuff is zero!")
+			continue
+		plt.contourf(y, z, thing.T, cmap=cmap, levels=np.linspace(1/6 if transparent else 0, 1.00, 7)*thing.max())
 	# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
 	plt.xlabel("y (cm)")
 	plt.ylabel("z (cm)")
 	# plt.colorbar()
 	plt.axis('square')
 	plt.tight_layout()
-
-	plt.show()
 
 
 def plot_images(Э, ξ, υ, images):
@@ -84,7 +94,6 @@ def plot_images(Э, ξ, υ, images):
 		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
 		plt.colorbar()
 		plt.tight_layout()
-	plt.show()
 
 
 if __name__ == '__main__':
@@ -230,4 +239,5 @@ if __name__ == '__main__':
 
 	plot_images(Э, ξ, υ, tru_images)
 	plot_images(Э, ξ, υ, images)
+	plt.show()
 

@@ -289,8 +289,11 @@ public class Optimize {
 					input = new_input;
 					break;
 				}
-				if (step_scale < 1e-14) // check iterations
-					throw new RuntimeException("the line search did not converge");
+				if (step_scale < 1e-14) { // check iterations
+					if (logger != null)
+						logger.warning("the line search did not converge");
+					break;
+				}
 			}
 
 			if (logger != null)

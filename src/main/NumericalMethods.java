@@ -1060,6 +1060,26 @@ public class NumericalMethods {
 	}
 
 	/**
+	 * concatenate the rows of two 2d matrices
+	 */
+	public static double[] concatenate(double[] a, double[] b) {
+		double[] c = new double[a.length + b.length];
+		System.arraycopy(a, 0, c, 0, a.length);
+		System.arraycopy(b, 0, c, a.length, b.length);
+		return c;
+	}
+
+	/**
+	 * concatenate the rows of two 2d matrices
+	 */
+	public static double[][] vertically_stack(double[][] a, double[][] b) {
+		double[][] c = new double[a.length + b.length][];
+		System.arraycopy(a, 0, c, 0, a.length);
+		System.arraycopy(b, 0, c, a.length, b.length);
+		return c;
+	}
+
+	/**
 	 * @param active an array of whether each value is important
 	 * @param full an array about only some of whose values we care
 	 * @return an array whose length is the number of true elements in active, and

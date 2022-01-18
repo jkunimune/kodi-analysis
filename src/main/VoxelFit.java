@@ -4,7 +4,9 @@ import main.NumericalMethods.DiscreteFunction;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.logging.FileHandler;
 import java.util.logging.Formatter;
 import java.util.logging.LogRecord;
@@ -14,7 +16,7 @@ import java.util.logging.SimpleFormatter;
 public class VoxelFit {
 
 	public static final int MAX_MODE = 2;
-	public static final int NUM_PASSES = 5;
+	public static final int NUM_PASSES = 12;
 	public static final int STOPPING_POWER_RESOLUTION = 126;
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SHELL_DENSITY_GESS = 1_000; // (g/L)
@@ -71,9 +73,9 @@ public class VoxelFit {
 
 	private static final Logger logger = Logger.getLogger("root");
 
-	private static boolean contains(String[] arr, String str) {
+	private static boolean containsTheWordTest(String[] arr) {
 		for (String s: arr)
-			if (s.equals(str))
+			if (s.equals("test"))
 				return true;
 		return false;
 	}
@@ -207,6 +209,46 @@ public class VoxelFit {
 
 
 	/**
+	 * create an array that represents the dangers of overfitting with the basis functions you are given.
+	 * each row of the array represents one "bad mode", which is two basis functions with the same angular
+	 * distribution and adjacent radial positions, which ideally should have similar coefficients.  each
+	 * collum represents 
+	 * @param r the radial bins
+	 * @param num_basis_functions the total number of basis functions in uce
+	 * @param weit the quantity by which to scale the smoothing terms
+	 */
+	private static double[][] list_bad_modes(double[] r, int num_basis_functions, double weit) {
+		double dr = r[1] - r[0];
+		List<double[]> bad_modes = new ArrayList<>(0);
+		int иR = 1;
+		for (int sR = 1; sR < r.length; sR ++) { // for each radial posicion
+			int sM = sR - 1, sL = Math.abs(sR - 2);
+			int num_modes_R = Math.min(sR + 1, MAX_MODE + 1);
+			int num_modes_M = Math.min(sM + 1, MAX_MODE + 1);
+			int num_modes_L = Math.min(sL + 1, MAX_MODE + 1);
+			for (int l = 0; l < num_modes_R; l ++) { // go thru the l and m values
+				for (int m = -l; m <= l; m ++) {
+					double[] components = new double[num_basis_functions]; // create a new "bad mode"
+					int иM = иR - num_modes_M*num_modes_M;
+					int иL = (sL < sM) ? иM - num_modes_L*num_modes_L : иR;
+					components[иR] += 0.5*weit/Math.sqrt(dr); // it is based on this
+					if (l < num_modes_M) // and the corresponding previous basis
+						components[иM] += -weit/Math.sqrt(dr); // note that if there is no previous one, it just weys this value down
+					if (l < num_modes_L)
+						components[иL] += 0.5*weit/Math.sqrt(dr);
+					bad_modes.add(components);
+					иR ++;
+				}
+			}
+		}
+//		System.out.println("bad modes:");
+//		for (double[] mode: bad_modes)
+//			System.out.println("  "+Arrays.toString(mode));
+		return bad_modes.toArray(new double[0][]);
+	}
+
+
+	/**
 	 * calculate a voxel matrix of reactivities and densities
 	 * @param coefs a triangular array of spherical harmonick coefficients, where
 	 *              production_profiles[s][l][m] is the Y_l^m component of the
@@ -248,16 +290,20 @@ public class VoxelFit {
 		  double[] x,
 		  double[] y,
 		  double[] z,
+		  double[] r,
 		  double[] Э,
 		  double[] ξ,
 		  double[] υ,
 		  Vector[] lines_of_sight,
-		  double[][][][] basis_functions
+		  double[][][][] basis_functions,
+		  double smoothing
 	) {
-		return unravel(synthesize_image_response(
-			  null, density, temperature, x, y, z,
-			  Э, ξ, υ, lines_of_sight, basis_functions,
-			  true, false));
+		return NumericalMethods.vertically_stack(
+			  unravel(synthesize_image_response(
+			  	  null, density, temperature, x, y, z,
+				  Э, ξ, υ, lines_of_sight, basis_functions,
+				  true, false)),
+			  list_bad_modes(r, basis_functions[0][0][0].length, smoothing));
 	}
 
 	/**
@@ -282,16 +328,20 @@ public class VoxelFit {
 		  double[] x,
 		  double[] y,
 		  double[] z,
+		  double[] r,
 		  double[] Э,
 		  double[] ξ,
 		  double[] υ,
 		  Vector[] lines_of_sight,
-		  double[][][][] basis_functions
+		  double[][][][] basis_functions,
+		  double smoothing
 	) {
-		return unravel(synthesize_image_response(
-			  production, density, temperature, x, y, z,
-			  Э, ξ, υ, lines_of_sight, basis_functions,
-			  false, true));
+		return NumericalMethods.vertically_stack(
+			  unravel(synthesize_image_response(
+				  production, density, temperature, x, y, z,
+				  Э, ξ, υ, lines_of_sight, basis_functions,
+				  false, true)),
+			  list_bad_modes(r, basis_functions[0][0][0].length, smoothing));
 	}
 
 	/**
@@ -587,13 +637,17 @@ public class VoxelFit {
 										   images.length, images[0].length,
 										   images[0][0].length, images[0][0][0].length));
 
-		double[] data_vector = unravel(images);
+		double[][][][] basis_functions = basis_functions(r, x, y, z);
+		int num_basis_functions = basis_functions[0][0][0].length;
+
+		int num_smoothing_parameters = list_bad_modes(
+			  r, num_basis_functions, 0).length;
+
+		double[] data_vector = NumericalMethods.concatenate(
+			  unravel(images), new double[num_smoothing_parameters]);
 		double[] inverse_variance_vector = new double[data_vector.length];
 		for (int i = 0; i < data_vector.length; i ++)
 			inverse_variance_vector[i] = 1./(data_vector[i] + 1);
-
-		double[][][][] basis_functions = basis_functions(r, x, y, z);
-		int num_basis_functions = basis_functions[0][0][0].length;
 
 		VoxelFit.logger.info(String.format("using %d 3d basis functions on %dx%dx%d point array",
 										   num_basis_functions,
@@ -615,14 +669,16 @@ public class VoxelFit {
 
 			double[][][] density = bild_3d_map(density_coefs, basis_functions);
 
+			final double ruff_value = NumericalMethods.sum(images)/Math.pow(r[r.length-1], 3)/1e-12;
 			production_coefs = Optimize.quasilinear_least_squares(
 				  (coefs) -> generate_production_response_matrix(
 					  density,
 					  current_temperature,
-					  x, y, z,
+					  x, y, z, r,
 					  Э, ξ, υ,
 					  lines_of_sight,
-					  basis_functions),
+					  basis_functions,
+					  0),//r[r.length-1]/Math.pow(ruff_value, 2)*1e-1),
 				  data_vector,
 				  inverse_variance_vector,
 				  production_coefs,
@@ -635,10 +691,11 @@ public class VoxelFit {
 				  	  production,
 					  bild_3d_map(coefs, basis_functions),
 					  current_temperature,
-					  x, y, z,
+					  x, y, z, r,
 					  Э, ξ, υ,
 					  lines_of_sight,
-					  basis_functions),
+					  basis_functions,
+					  0),//r[r.length-1]/Math.pow(SHELL_DENSITY_GESS, 2)*1e-1),
 				  data_vector,
 				  inverse_variance_vector,
 				  density_coefs,
@@ -704,7 +761,7 @@ public class VoxelFit {
 
 		double[][][][] images;
 
-		if (contains(args, "test")) {
+		if (containsTheWordTest(args)) {
 			String[] morphology_filenames = {"production", "density"};
 			double[][][][] anser = new double[2][x.length][y.length][z.length];
 			for (int q = 0; q < morphology_filenames.length; q++) {

@@ -10,6 +10,7 @@ TIM_LOCATIONS = {
 	'x': [90, 0],
 	'y': [90, 270],
 	'z': [0, 0],
+	'xy': [90, 315],
 }
 # TIM_LOCATIONS = [
 # 	None,
