@@ -1,6 +1,7 @@
 package main;
 
 import main.NumericalMethods.DiscreteFunction;
+import main.Optimize.Optimum;
 
 import java.io.File;
 import java.io.IOException;
@@ -16,7 +17,6 @@ import java.util.logging.SimpleFormatter;
 public class VoxelFit {
 
 	public static final int MAX_MODE = 2;
-	public static final int NUM_PASSES = 12;
 	public static final int STOPPING_POWER_RESOLUTION = 126;
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SHELL_DENSITY_GESS = 1_000; // (g/L)
@@ -663,14 +663,18 @@ public class VoxelFit {
 		}
 		double temperature = SHELL_TEMPERATURE_GESS;
 
-		for (int iter = 0; iter < NUM_PASSES; iter ++) {
-			logger.info(String.format("Pass %d of %d", iter, NUM_PASSES));
+		double last_error, next_error = Double.POSITIVE_INFINITY;
+		int iter = 0;
+		do {
+			last_error = next_error;
+			logger.info(String.format("Pass %d", iter));
+
 			final double current_temperature = temperature;
 
 			double[][][] density = bild_3d_map(density_coefs, basis_functions);
 
 			final double ruff_value = NumericalMethods.sum(images)/Math.pow(r[r.length-1], 3)/1e-12;
-			production_coefs = Optimize.quasilinear_least_squares(
+			Optimum production_solution = Optimize.quasilinear_least_squares(
 				  (coefs) -> generate_production_response_matrix(
 					  density,
 					  current_temperature,
@@ -684,9 +688,10 @@ public class VoxelFit {
 				  production_coefs,
 				  Double.POSITIVE_INFINITY,
 				  logger); // start by optimizing the hot spot// TODO: do shell temperature
+			production_coefs = production_solution.location;
 			double[][][] production = bild_3d_map(production_coefs, basis_functions);
 
-			density_coefs = Optimize.quasilinear_least_squares(
+			Optimum density_solution = Optimize.quasilinear_least_squares(
 				  (coefs) -> generate_density_response_matrix(
 				  	  production,
 					  bild_3d_map(coefs, basis_functions),
@@ -701,9 +706,12 @@ public class VoxelFit {
 				  density_coefs,
 				  1e-3,
 				  logger); // then optimize the cold fuel
+			density_coefs = density_solution.location;
 
 //			temperature = temperature; TODO: fit temperature
-		}
+
+			next_error = density_solution.value;
+		} while (last_error - next_error > 0.01);
 
 		double[][][] production = bild_3d_map(production_coefs, basis_functions);
 		double[][][] density = bild_3d_map(density_coefs, basis_functions);

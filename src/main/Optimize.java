@@ -46,9 +46,9 @@ public class Optimize {
 	 * @param tolerance the maximum acceptable value of the components of the gradient of the
 	 *                  sum of squares, normalized by the norm of the errors and the norm of
 	 *                  the gradients of the individual errors.
-	 * @return the parameters that minimize the sum of squared distances
+	 * @return the minimum of the sum of squares
 	 */
-	public static double[] least_squares(
+	public static Optimum least_squares(
 		  Function<double[], double[]> compute_residuals,
 		  double[] inicial_gess,
 		  double[] scale,
@@ -73,7 +73,22 @@ public class Optimize {
 		return least_squares(compute_residuals, compute_jacobian, inicial_gess, lower_bound, upper_bound, tolerance, logger);
 	}
 
-	public static double[] least_squares(
+	/**
+	 * find a local minimum of the funccion f(state; points) = Σ dist(point[i], state)^2,
+	 * using the Levenberg-Marquardt formula as defined in
+	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
+	 *     System". Journal of Research of the National Institute of Standards and Technology
+	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
+	 * and using finite differences to get the jacobian.
+	 * @param compute_residuals the error of a single point given the state, along with any intermediate
+	 *             quantities that may be useful.
+	 * @param inicial_gess the inicial gess for the optimal state
+	 * @param tolerance the maximum acceptable value of the components of the gradient of the
+	 *                  sum of squares, normalized by the norm of the errors and the norm of
+	 *                  the gradients of the individual errors.
+	 * @return the minimum of the sum of squares
+	 */
+	public static Optimum least_squares(
 		  Function<double[], double[]> compute_residuals,
 		  Function<double[], double[][]> compute_jacobian,
 		  double[] inicial_gess,
@@ -105,7 +120,7 @@ public class Optimize {
 	 *                  the gradients of the individual errors.
 	 * @return the parameters that minimize the sum of squared distances
 	 */
-	public static double[] least_squares(
+	public static Optimum least_squares(
 		  Function<double[], double[]> compute_residuals,
 		  Function<double[], double[][]> compute_jacobian,
 		  double[] initial_gess,
@@ -128,41 +143,16 @@ public class Optimize {
 		int iter = 0;
 		while (true) {
 			Matrix jacobian = new Matrix(compute_jacobian.apply(state.getValues())); // take the gradients
-//			System.out.println(jacobian.length+" "+jacobian[0].length);
-
-//			double[] direction = new double[state.length];
-//			int direction_index = (int)(state.length*Math.random());
-//			for (int i = 0; i < state.length; i ++) {
-//				direction[i] = (direction_index == i) ? 1 : 0;//2*Math.random() - 1;
-//			}
-//			double slope = 0;
-//			for (int j = 0; j < state.length; j ++)
-//				for (int i = 0; i < residuals.length; i ++)
-//					slope += 2*residuals[i]*jacobian[i][j]*direction[j];
-//			System.out.println("[");
-//			for (double d = 0; d < Math.abs(2*state[direction_index]); d += Math.abs(state[direction_index])*0.02) {
-//				double[] probe_x = new double[direction.length];
-//				for (int i = 0; i < state.length; i ++)
-//					probe_x[i] = state[i] + d*direction[i];
-//				double[] probe_residuals = compute_residuals.apply(probe_x);
-//				double probe_value = 0;
-//				for (double r: probe_residuals)
-//					probe_value += r*r;
-//				System.out.printf("[%f, %.8g],\n", d, probe_value);
-//			}
-//			System.out.println("]");
-//			System.out.println(slope);
+			Matrix hessian = jacobian.trans().times(jacobian); // and do some linear algebra
+			Vector gradient = jacobian.trans().times(residuals);
 
 			if (is_converged(last_error, new_error,
 							 residuals.getValues(),
 							 jacobian.getValues(),
 							 tolerance, tolerance))
-				return state.getValues();
+				return new Optimum(state.getValues(), new_error, gradient.getValues(), hessian.getValues());
 
 			last_error = new_error;
-
-			Matrix hessian = jacobian.trans().times(jacobian); // and do some linear algebra
-			Vector gradient = jacobian.trans().times(residuals);
 
 			if (logger != null)
 				logger.info(String.format("beginning line search with λ = %.4g", λ));
@@ -220,7 +210,7 @@ public class Optimize {
 	 * @param logger the optional logger object
 	 * @return the solucion to the least-squares problem
 	 */
-	public static double[] quasilinear_least_squares(
+	public static Optimum quasilinear_least_squares(
 		  Function<double[], double[][]> compute_local_jacobian,
 		  double[] data_values,
 		  double[] data_weights,
@@ -272,7 +262,7 @@ public class Optimize {
 				if (Double.isInfinite(tolerance)) { // in the event that the tolerance is infinity, stop here and return the value
 					if (logger != null)
 						logger.info("cancelled line search");
-					return new_input.getValues();
+					return new Optimum(new_input.getValues());
 				}
 
 				jacobian = new Matrix(compute_local_jacobian.apply(new_input.getValues()));
@@ -306,7 +296,7 @@ public class Optimize {
 			if (is_converged(
 				  zai_error, new_error, residuals.getValues(),
 				  jacobian.getValues(), tolerance, tolerance))
-				return input.getValues();
+				return new Optimum(input.getValues(), new_error);
 
 			zai_error = new_error;
 		}
@@ -347,7 +337,7 @@ public class Optimize {
 	}
 
 
-	public static double[] differential_evolution(
+	public static Optimum differential_evolution(
 		  Function<double[], Double> objective,
 		  double[] inicial_gess,
 		  double[] scale,
@@ -366,7 +356,7 @@ public class Optimize {
 			  logger);
 	}
 
-	public static double[] differential_evolution(
+	public static Optimum differential_evolution(
 		  Function<double[], Double> objective,
 		  double[] inicial_gess,
 		  double[] scale,
@@ -406,7 +396,7 @@ public class Optimize {
 	 * @param population_size the number of states to have at any given time
 	 * @return the parameters that minimize the sum of squared distances
 	 */
-	public static double[] differential_evolution(
+	public static Optimum differential_evolution(
 		  Function<double[], Double> objective,
 		  double[] inicial_gess,
 		  double[] scale,
@@ -527,7 +517,7 @@ public class Optimize {
 			if (logger != null && (max_iterations - iterations)%10 == 0)
 				logger.info(Arrays.toString(candidates[best]));
 			if (iterations >= max_iterations)
-				return candidates[best];
+				return new Optimum(candidates[best]);
 		}
 	}
 
@@ -579,7 +569,7 @@ public class Optimize {
 								   new double[] {0, 0, 0},
 								   new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
 								   1e-7,
-								   null);
+								   null).location;
 //		double[] c = differential_evolution(
 //			  (state) -> {
 //				double[] ds = err.apply(state);
@@ -594,8 +584,36 @@ public class Optimize {
 //			  new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
 //			  10,
 //			  null
-//		);
+//		).location;
 		System.out.println("y = "+c[0]+" exp("+c[1]+"x) + "+c[2]);
+	}
+
+	public static class Optimum {
+		public final double[] location;
+		public final double value;
+		public final double[] gradient;
+		public final double[][] hessian;
+
+		public Optimum(double[] location) {
+			this(location, Double.NaN, null, null);
+		}
+
+		public Optimum(double[] location, double value) {
+			this(location, value, null, null);
+		}
+
+		public Optimum(double[] location, double value,
+					   double[] gradient) {
+			this(location, value, gradient, null);
+		}
+
+		public Optimum(double[] location, double value,
+					   double[] gradient, double[][] hessian) {
+			this.location = location;
+			this.value = value;
+			this.gradient = gradient;
+			this.hessian = hessian;
+		}
 	}
 
 }
