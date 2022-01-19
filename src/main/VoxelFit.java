@@ -236,7 +236,8 @@ public class VoxelFit {
 						components[иM] += -weit/Math.sqrt(dr); // note that if there is no previous one, it just weys this value down
 					if (l < num_modes_L)
 						components[иL] += 0.5*weit/Math.sqrt(dr);
-					bad_modes.add(components);
+					if (!(l == 1 && sR == 1)) // skip this one set of modes because the sines work out to make these ones specifically rong
+						bad_modes.add(components);
 					иR ++;
 				}
 			}
