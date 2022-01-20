@@ -169,7 +169,6 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 	scores, best_G, best_S = [], None, None
 	while len(scores) < 200:
 		g[abs(g) < 1e-17] = 0 # start by correcting for roundoff
-		if abs(g0) < 1e-17: g0 = 0
 		gsum = g.sum() + g0
 		g, g0, s = g/gsum, g0/gsum, s/gsum
 
@@ -192,8 +191,8 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 		assert np.all(g >= 0) and g0 >= 0, g
 		if np.amin(g + h*δg) < 0: # if one of the pixels would become negative from this step,
 			h = np.amin(-g/δg, where=δg < 0, initial=h) # stop when it hits zero
-		if g0 + h*δg0 < 0: # that applies to the background pixel, as well
-			h = -g0/δg0
+		if g0 + h*δg0 < 0: # don't let the background pixel even reach zero
+			h = -g0/δg0*5/6
 		assert h > 0, h
 
 		g += h*δg # step

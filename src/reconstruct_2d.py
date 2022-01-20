@@ -24,9 +24,7 @@ warnings.filterwarnings("ignore")
 SHOW_RAW_DATA = False
 SHOW_CROPD_DATA = False
 SHOW_POINT_SPREAD_FUNCCION = False
-SHOW_INICIAL_RESIDUALS = False
-SHOW_1D_FIT_PROCESS = False
-SHOW_2D_FIT_PROCESS = False
+SHOW_GELFGAT_PLOTS = False
 
 MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -313,7 +311,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		cuts = [('synth', [0, 100])]
 	else:
 		# cuts = [('all', [0, 100])] # [MeV] (pre-filtering)
-		cuts = [('hi', [9, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
+		cuts = [('hi', [10, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
 		# cuts = [('7', [11, 100]), ('6', [10, 11]), ('5', [9, 10]), ('4', [8, 9]), ('3', [6, 8]), ('2', [4, 6]), ('1', [2, 4]), ('0', [0, 2])]
 		# cuts = [('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
 		# cuts = [('all', [0, 100]), ('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
@@ -502,7 +500,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			where=data_bins,
 			illegal=np.logical_not(source_bins),
 			verbose=verbose,
-			show_plots=False) # deconvolve!
+			show_plots=SHOW_GELFGAT_PLOTS) # deconvolve!
 
 		# B, χ2_red = np.ones(XS.shape), 0
 
