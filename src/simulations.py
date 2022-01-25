@@ -18,7 +18,7 @@ kB = 8.617333262145e-8 # keV/K
 ɛ0 = 8.854e-12 # F/m
 qe = 1.6e-19 # C
 
-σD = np.loadtxt('../endf-6[58591].txt', skiprows=4)
+σD = np.loadtxt('../endf-6[58591].txt', delimiter=',')
 σD[:,0] = 14.1*4/9*(1 - σD[:,0]) # MeV
 σD[:,1] = .64e-28/(4*np.pi)*2*σD[:,1] # m^2/srad
 
@@ -117,7 +117,7 @@ if __name__ == '__main__':
 
 		ne = n
 		nD, nT = n/2, n/2 # m^-3
-		dt = np.gradient(t)
+		dt = np.gradient(t)[:,None]
 		dR = np.gradient(R, axis=1)
 
 		σv = 9.1e-22*np.exp(-0.572*abs(np.log(Ti/64.2))**2.13) # m^3/s
@@ -125,13 +125,16 @@ if __name__ == '__main__':
 		# plt.show()
 		Yn = nD*nT*σv # [1/(m^3 s)]
 
-		r_bins = np.linspace(0, 150, 201)
+		r_bins = np.linspace(0, 150, 151)
+		Y, _ = np.histogram(R, bins=r_bins, weights=Yn*(4*np.pi*R**2*dR)*dt)
+		# plt.plot(np.repeat(r_bins, 2)[1:-1], np.repeat(Y,2))
+
 		r = (r_bins[:-1] + r_bins[1:])/2
 		Yn_integrated = np.zeros(r_bins.size-1)
 		nD_burn_average = np.zeros(r_bins.size-1)
 		for i in range(t.size):
-			Yn_integrated += np.interp(r, R[i,:], Yn[i,:])
-			nD_burn_average += np.interp(r, R[i,:], nD[i,:])*np.sum(Yn[i,:]*4*np.pi*R[i,:]**2*dR[i,:])
+			Yn_integrated += np.interp(r, R[i,:], Yn[i,:]*dt[i,:])
+			nD_burn_average += np.interp(r, R[i,:], nD[i,:])*np.sum(Yn[i,:]*dt[i,:]*4*np.pi*R[i,:]**2*dR[i,:])
 		r_img = np.linspace(r_bins[0], r_bins[-1], r.size//2)
 		blu = np.zeros(r_img.shape)
 		red = np.zeros(r_img.shape)
