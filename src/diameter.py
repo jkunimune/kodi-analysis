@@ -11,8 +11,10 @@ def D(E, τ=5, vB=2.66, k=.8, n=1.2, a=1, z=1):
 
 
 if __name__ == '__main__':
-	plt.rcParams.update({'font.family': 'serif', 'font.size': 14})
+	plt.rcParams.update({'font.family': 'sans', 'font.size': 18})
 	x = np.linspace(1, 16)
+	plt.figure(figsize=(5.5,3.5))
+
 	# for k, n in [(.849, .806), (.626, .867), (.651, .830), (.651, .779), (.868, 1.322)]:
 	# 	plt.plot(x, D(x, k=k, n=n), '-')
 	plt.plot(x, D(x, a=1, z=1), '-k', linewidth=3)

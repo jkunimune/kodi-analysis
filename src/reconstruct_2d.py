@@ -31,7 +31,8 @@ EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
 # SMOOTHING = 1e-3
-CONTOUR = .50
+MAX_CONTRAST = 40
+CONTOUR = .25
 
 
 def where_is_the_ocean(x, y, z, title, timeout=None):
@@ -277,7 +278,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy()
 		track_list['x(cm)'] =  np.cos(rotation+np.pi)*x_temp - np.sin(rotation+np.pi)*y_temp # apply any requested rotation, plus 180 flip to deal with inherent flip due to aperture
 		track_list['y(cm)'] =  np.sin(rotation+np.pi)*x_temp + np.cos(rotation+np.pi)*y_temp
-		hicontrast = (track_list['cn(%)'] < 35) & (track_list['e(%)'] < 15)
+		hicontrast = (track_list['cn(%)'] < MAX_CONTRAST) & (track_list['e(%)'] < 15)
 
 		track_list['x(cm)'] -= np.mean(track_list['x(cm)'][hicontrast]) # do your best to center
 		track_list['y(cm)'] -= np.mean(track_list['y(cm)'][hicontrast])
@@ -289,10 +290,6 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
 		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2 # change these to bin centers
 		XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
-		# plt.hist2d(track_list['x(cm)'], track_list['y(cm)'], bins=(xC_bins, yC_bins), vmin=0, vmax=6)
-		# plt.axis('square')
-		# plt.show()
-		# return None
 
 	else: # if it is a pickle file, load the histogram directly like a raster image
 		mode = 'raster'
@@ -311,10 +308,10 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		cuts = [('synth', [0, 100])]
 	else:
 		# cuts = [('all', [0, 100])] # [MeV] (pre-filtering)
-		cuts = [('hi', [10, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
+		cuts = [('hi', [9, 100]), ('lo', [0, 6])] # [MeV] (pre-filtering)
 		# cuts = [('7', [11, 100]), ('6', [10, 11]), ('5', [9, 10]), ('4', [8, 9]), ('3', [6, 8]), ('2', [4, 6]), ('1', [2, 4]), ('0', [0, 2])]
-		# cuts = [('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
-		# cuts = [('all', [0, 100]), ('lo', [0, 6]), ('hi', [10, 100])] # [MeV] (pre-filtering)
+		# cuts = [('lo', [0, 6]), ('hi', [9, 100])] # [MeV] (pre-filtering)
+		# cuts = [('all', [0, 100]), ('lo', [0, 6]), ('hi', [9, 100])] # [MeV] (pre-filtering)
 
 	outputs = []
 	for cut_name, e_in_bounds in cuts: # iterate over the cuts
@@ -326,15 +323,24 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 
 		if mode == 'hist': # if we still need to tally the histogram
 
-			logging.info(f"d in [{d_bounds[0]:5.2f}, {d_bounds[1]:5.2f}] μm")
+			logging.info(f"d in [{d_bounds[0]:5.2f}, {d_bounds[1]:5.2f}] μm") # do the contrast and diameter cuts
 			track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 			track_y = track_list['y(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
 
-			if len(track_x) <= 0:
+			if len(track_x) <= 0: # skip everything if there are 0 tracks
 				logging.info("  No tracks found in this cut.")
 				continue
+			else:
+				logging.info(f"  {len(track_x):.3g} tracks found in this cut.")
 
-			if aperture_charge_fitting == 'all':
+			if SHOW_RAW_DATA: # plot the N(d,c) histogram if desired
+				plt.hist2d(track_list['d(µm)'], track_list['cn(%)'], bins=(np.linspace(0, 20, 201), np.linspace(0, 50, 51)))
+				plt.axvline(d_bounds[0], color='w')
+				plt.axvline(d_bounds[1], color='w')
+				plt.axhline(MAX_CONTRAST, color='w')
+				plt.show()
+				
+			if aperture_charge_fitting == 'all': # forget the previous Q value if we want to fit it again
 				Q = None
 
 			NC, xC_bins, yC_bins = np.histogram2d( # make a histogram
@@ -377,8 +383,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		else: # or not
 			logging.info(f"  setting electric field to {Q}")
 			args = (Q, *args)
-
-		opt = minimize_repeated_nelder_mead(
+		opt = minimize_repeated_nelder_mead( # then do the fit
 			simple_fit,
 			x0=gess,
 			args=args,

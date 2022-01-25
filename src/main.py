@@ -16,26 +16,32 @@ import segnal as mysignal
 from reconstruct_2d import reconstruct, get_relative_aperture_positions
 
 plt.rcParams["legend.framealpha"] = 1
-plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
+plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 
 e_in_bounds = 2
 
 SKIP_RECONSTRUCTION = False
 SHOW_PLOTS = False
-SHOW_OFFSET = False
+PLOT_THEORETICAL_PROJECTION = False
+PLOT_CONTOUR = True
+PLOT_OFFSET = False
 
 OBJECT_SIZE = 200e-4 # (cm)
 RESOLUTION = 5e-4
 EXPANSION_FACTOR = 1.20
-PLOT_CONTOUR = .25
+CONTOUR_LEVEL = .25
 PLOT_RADIUS = 80 # (μm)
 APERTURE_CONFIGURATION = 'hex'
 CHARGE_FITTING = 'all'
 MAX_NUM_PIXELS = 200
 
+SQUARE_FIGURE_SIZE = (6.4, 5.2)
+RECTANGULAR_FIGURE_SIZE = (6.4, 4.8)
+
 INPUT_FOLDER = '../scans/'
 OUTPUT_FOLDER = '../out/'
+
 SHOT = 'Shot number'
 TIM = 'TIM'
 APERTURE_RADIUS = 'Aperture Radius'
@@ -87,12 +93,14 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	r0 = data[APERTURE_RADIUS]*1e-4*(M + 1)
 	r_img = (xI_bins.max() - xI_bins.min())/2
 
-	plt.figure()
-	plt.pcolormesh(xC_bins, yC_bins, NC.T, vmax=np.quantile(NC, (NC.size-6)/NC.size), rasterized=True)
+	plt.figure(figsize=SQUARE_FIGURE_SIZE)
+	plt.pcolormesh(xC_bins, yC_bins, NC.T,
+		           vmax=np.quantile(NC, 35/36), cmap=COFFEE, rasterized=True)
 	T = np.linspace(0, 2*np.pi)
-	for dx, dy in get_relative_aperture_positions(s0, r0, xC_bins.max(), mode=APERTURE_CONFIGURATION):
-		plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    '--w')
-		plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), '--w')
+	if PLOT_THEORETICAL_PROJECTION:
+		for dx, dy in get_relative_aperture_positions(s0, r0, xC_bins.max(), mode=APERTURE_CONFIGURATION):
+			plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    'k--')
+			# plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), 'k--')
 	plt.axis('square')
 	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
@@ -101,19 +109,19 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
 
-	plt.figure()
-	plt.pcolormesh(xI_bins, yI_bins, NI.T, vmax=np.quantile(NI, (NI.size-6)/NI.size), rasterized=True)
+	plt.figure(figsize=SQUARE_FIGURE_SIZE)
+	plt.pcolormesh(xI_bins, yI_bins, NI.T,
+		           vmax=np.quantile(NI, (NI.size-6)/NI.size), cmap=COFFEE, rasterized=True)
 	T = np.linspace(0, 2*np.pi)
 	# plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 	plt.axis('square')
-	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV)")
+	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
-	for filetype in ['png', 'eps']:
-		plt.savefig(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-projection.{filetype}')
+	save_current_figure(f'{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-projection')
 
 	if SHOW_PLOTS:
 		plt.show()
@@ -122,7 +130,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 
 def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 		             δ, Q, energy_min, energy_max, energy_cut, data, **kwargs):
-	plt.figure()
+	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 4, 5, 10])
 	plt.fill_between(np.repeat(rI_bins, 2)[1:-1], 0, np.repeat(zI, 2)/1e3,  label="Data", color='#f9A72E')
 	plt.plot(r_actual, z_actual/1e3, '-', color='#0C6004', linewidth=2, label="Fit with charging")
@@ -134,9 +142,7 @@ def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 	plt.legend()
 	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.tight_layout()
-	for filetype in ['png', 'eps']:
-		plt.savefig(OUTPUT_FOLDER+f'{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout.{filetype}')
-		print(f"saving {OUTPUT_FOLDER}{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout.{filetype}")
+	save_current_figure(f'{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout')
 
 	if SHOW_PLOTS:
 		plt.show()
@@ -147,18 +153,19 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(
 			(x_bins[:-1] + x_bins[1:])/2,
 			(y_bins[:-1] + y_bins[1:])/2,
-			Z, contour=PLOT_CONTOUR) # compute the three number summary
+			Z, contour=CONTOUR_LEVEL) # compute the three number summary
 
 	x0, y0 = p1*np.cos(θ1), p1*np.sin(θ1)
 
-	plt.figure() # plot the reconstructed source image
+	plt.figure(figsize=SQUARE_FIGURE_SIZE) # plot the reconstructed source image
 	plt.locator_params(steps=[1, 2, 5, 10])
 	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=CMAP[cut_name], vmin=0, rasterized=True)
-	plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T, levels=[PLOT_CONTOUR*np.max(Z)], colors='w', linestyle='dashed')
+	if PLOT_CONTOUR:
+		plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T,
+			        levels=[CONTOUR_LEVEL*np.max(Z)], colors='w', linestyle='dashed')
 	# T = np.linspace(0, 2*np.pi, 144)
 	# R = p0 + p2*np.cos(2*(T - θ2))
 	# plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
-	plt.axis('equal')
 	# plt.colorbar()
 	plt.axis('square')
 	if cut_name == 'synth':
@@ -171,19 +178,17 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	plt.ylabel("y (μm)")
 	plt.axis([-PLOT_RADIUS, PLOT_RADIUS, -PLOT_RADIUS, PLOT_RADIUS])
 	plt.tight_layout()
-	for filetype in ['png', 'eps']:
-		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction.{filetype}")
+	save_current_figure(f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction")
 
 	j_lineout = np.argmax(np.sum(Z, axis=0))
-	plt.figure()
+	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
 	plt.plot((np.repeat(x_bins, 2)[1:-1] - x0)/1e-4, np.repeat(Z[:,j_lineout], 2))
 	plt.xlabel("x (μm)")
 	plt.ylabel("Fluence")
 	plt.xlim(-150, 150)
 	plt.ylim(0, None)
 	plt.tight_layout()
-	for filetype in ['png', 'eps']:
-		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction-lineout.{filetype}")
+	save_current_figure(f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction-lineout")
 
 	if SHOW_PLOTS:
 		plt.show()
@@ -203,14 +208,14 @@ def plot_overlaid_contors(reconstructions, projected_offset, projected_flow, dat
 	x_off, y_off, z_off = projected_offset
 	x_flo, y_flo, z_flo = projected_flow
 
-	plt.figure()
+	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
 	for X, Y, N, cmap in reconstructions:
 		if len(reconstructions) > 3:
-			plt.contour((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[PLOT_CONTOUR], colors=[cmap.colors[-1]])
+			plt.contour((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[CONTOUR_LEVEL], colors=[cmap.colors[-1]])
 		else:
-			plt.contourf((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[PLOT_CONTOUR, 1], colors=[cmap.colors[-1]])
-	if SHOW_OFFSET:
+			plt.contourf((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[CONTOUR_LEVEL, 1], colors=[cmap.colors[-1]])
+	if PLOT_OFFSET:
 		plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 		plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
 		plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k', head_width=5, head_length=5, length_includes_head=True)
@@ -223,10 +228,17 @@ def plot_overlaid_contors(reconstructions, projected_offset, projected_flow, dat
 	plt.ylabel("y (μm)")
 	plt.title("TIM {} on shot {}".format(data[TIM], data[SHOT]))
 	plt.tight_layout()
-	for filetype in ['png', 'eps']:
-		plt.savefig(OUTPUT_FOLDER+f"{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction.{filetype}")
+	save_current_figure(f"{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction")
 
 	plt.close('all')
+
+
+def save_current_figure(filename, filetypes=['png', 'eps']):
+	for filetype in filetypes:
+		extension = filetype if filetype.startswith('.') else '.' + filetype
+		filepath = OUTPUT_FOLDER + filename + extension
+		plt.savefig(filepath)
+		logging.debug(f"  saving {filepath}")
 
 
 if __name__ == '__main__':
