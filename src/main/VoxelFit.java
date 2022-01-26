@@ -21,6 +21,8 @@ public class VoxelFit {
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SHELL_DENSITY_GESS = 1_000; // (g/L)
 	public static final double SHELL_RADIUS_GESS = 50;
+	public static final double SMOOTHING = 1e-2;
+	public static final double TOLERANCE = 5e-2;
 
 	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
 //	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
@@ -221,7 +223,7 @@ public class VoxelFit {
 		double dr = r[1] - r[0];
 		List<double[]> bad_modes = new ArrayList<>(0);
 		int иR = 1;
-		for (int sR = 1; sR < r.length; sR ++) { // for each radial posicion
+		for (int sR = 1; sR < r.length + 2; sR ++) { // for each radial posicion
 			int sM = sR - 1, sL = Math.abs(sR - 2);
 			int num_modes_R = Math.min(sR + 1, MAX_MODE + 1);
 			int num_modes_M = Math.min(sM + 1, MAX_MODE + 1);
@@ -231,8 +233,9 @@ public class VoxelFit {
 					double[] components = new double[num_basis_functions]; // create a new "bad mode"
 					int иM = иR - num_modes_M*num_modes_M;
 					int иL = (sL < sM) ? иM - num_modes_L*num_modes_L : иR;
-					components[иR] += 0.5*weit/Math.sqrt(dr); // it is based on this
-					if (l < num_modes_M) // and the corresponding previous basis
+					if (sR < r.length)
+						components[иR] += 0.5*weit/Math.sqrt(dr); // it is based on this
+					if (sM < r.length && l < num_modes_M) // and the corresponding previous basis
 						components[иM] += -weit/Math.sqrt(dr); // note that if there is no previous one, it just weys this value down
 					if (l < num_modes_L)
 						components[иL] += 0.5*weit/Math.sqrt(dr);
@@ -518,7 +521,9 @@ public class VoxelFit {
 
 									double σ = σ_nD.evaluate(ЭD);
 
-									double parcial_hV = (ЭV - Э_centers[0])/(Э[1] - Э[0]);
+									int hV = NumericalMethods.bin(ЭV, Э);
+									if (hV < 0 || hV >= Э.length)
+										continue;
 									int iV = NumericalMethods.bin(ξV, ξ);
 									if (iV < 0 || iV >= ξ.length - 1)
 										continue;
@@ -526,28 +531,17 @@ public class VoxelFit {
 									if (jV < 0 || jV >= υ.length - 1)
 										continue;
 
-									if (parcial_hV > Э_centers.length - 1) // prevent hi-energy deuterons from leaving the bin
-										parcial_hV = Э_centers.length - 1;
+									double contribution =
+										  1./m_DT*
+										  σ/(4*Math.PI*Δr2)*
+										  dV2; // (d/srad/(d/m^3)/(g/L))
 
-									for (int dh = 0; dh <= 1; dh ++) { // iterate over the two energy bins that share this fluence
-										int hV = (int)Math.floor(parcial_hV) + dh; // the bin index
-										if (hV >= 0 && hV < Э.length - 1) {
-											double weight = 1 - Math.abs(parcial_hV - hV); // the bin weit
-
-											double contribution =
-												  weight*
-												  1./m_DT*
-												  σ/(4*Math.PI*Δr2)*
-												  dV2; // (d/srad/(d/m^3)/(g/L))
-
-											for (int и = 0; и < num_basis_functions; и ++) // finally, iterate over the basis functions
-												if (local_production[и] != 0 && local_density[и] != 0) // TODO I feel like this line does noting
-													basis_images[l][hV][iV][jV][и] +=
-														  local_production[и]*
-														  local_density[и]*
-														  contribution;
-										}
-									}
+									for (int и = 0; и < num_basis_functions; и ++) // finally, iterate over the basis functions
+										if (local_production[и] != 0 && local_density[и] != 0) // TODO I feel like this line does noting
+											basis_images[l][hV][iV][jV][и] +=
+												  local_production[и]*
+												  local_density[и]*
+												  contribution;
 								}
 							}
 						}
@@ -645,10 +639,13 @@ public class VoxelFit {
 			  r, num_basis_functions, 0).length;
 
 		double[] data_vector = NumericalMethods.concatenate(
-			  unravel(images), new double[num_smoothing_parameters]);
-		double[] inverse_variance_vector = new double[data_vector.length];
+			  unravel(images), new double[num_smoothing_parameters]); // unroll the data
+		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
+		double data_scale = NumericalMethods.max(data_vector)/6.;
 		for (int i = 0; i < data_vector.length; i ++)
-			inverse_variance_vector[i] = 1./(data_vector[i] + 1);
+//			inverse_variance_vector[i] = 1./(data_scale*data_scale); // uniform
+//			inverse_variance_vector[i] = 1/(data_scale*data_vector[i]); // unitless Poisson
+			inverse_variance_vector[i] = 1./(data_vector[i] + 1); // corrected Poisson
 
 		VoxelFit.logger.info(String.format("using %d 3d basis functions on %dx%dx%d point array",
 										   num_basis_functions,
@@ -677,13 +674,13 @@ public class VoxelFit {
 			final double ruff_value = NumericalMethods.sum(images)/Math.pow(r[r.length-1], 3)/1e-12;
 			Optimum production_solution = Optimize.quasilinear_least_squares(
 				  (coefs) -> generate_production_response_matrix(
-					  density,
-					  current_temperature,
-					  x, y, z, r,
-					  Э, ξ, υ,
-					  lines_of_sight,
-					  basis_functions,
-					  0),//r[r.length-1]/Math.pow(ruff_value, 2)*1e-1),
+						density,
+						current_temperature,
+						x, y, z, r,
+						Э, ξ, υ,
+						lines_of_sight,
+						basis_functions,
+						SMOOTHING*r[r.length-1]/Math.pow(ruff_value, 2)),
 				  data_vector,
 				  inverse_variance_vector,
 				  production_coefs,
@@ -694,14 +691,14 @@ public class VoxelFit {
 
 			Optimum density_solution = Optimize.quasilinear_least_squares(
 				  (coefs) -> generate_density_response_matrix(
-				  	  production,
-					  bild_3d_map(coefs, basis_functions),
-					  current_temperature,
-					  x, y, z, r,
-					  Э, ξ, υ,
-					  lines_of_sight,
-					  basis_functions,
-					  0),//r[r.length-1]/Math.pow(SHELL_DENSITY_GESS, 2)*1e-1),
+						production,
+						bild_3d_map(coefs, basis_functions),
+						current_temperature,
+						x, y, z, r,
+						Э, ξ, υ,
+						lines_of_sight,
+						basis_functions,
+						SMOOTHING*r[r.length-1]/Math.pow(SHELL_DENSITY_GESS, 2)),
 				  data_vector,
 				  inverse_variance_vector,
 				  density_coefs,
@@ -712,7 +709,8 @@ public class VoxelFit {
 //			temperature = temperature; TODO: fit temperature
 
 			next_error = density_solution.value;
-		} while (last_error - next_error > 0.01);
+			iter ++;
+		} while ((last_error - next_error)/next_error > TOLERANCE);
 
 		double[][][] production = bild_3d_map(production_coefs, basis_functions);
 		double[][][] density = bild_3d_map(density_coefs, basis_functions);

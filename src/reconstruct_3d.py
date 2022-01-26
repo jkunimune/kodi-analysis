@@ -56,6 +56,7 @@ def plot_source(x, y, z, source, density):
 			continue
 
 		levels = np.linspace(0.17, 1.00, 4)*thing.max()
+		print(thing[:,:,len(z)//2])
 		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
 			offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 		contour_plot(np.meshgrid(x, z, indexing='ij')[0], thing[:, len(y)//2, :], np.meshgrid(x, z, indexing='ij')[1],
@@ -89,7 +90,7 @@ def plot_source(x, y, z, source, density):
 def plot_images(Э, ξ, υ, images):
 	for i in range(images.shape[1]):
 		plt.figure(figsize=(6, 5))
-		plt.pcolormesh(ξ, υ, images[0,i,:,:].T, vmin=min(0, np.min(images[0,i,:,:])))#, vmax=np.max(images))
+		plt.pcolormesh(ξ, υ, images[0,i,:,:], vmin=min(0, np.min(images[0,i,:,:])))#, vmax=np.max(images))
 		plt.axis('square')
 		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
 		plt.colorbar()
@@ -124,7 +125,7 @@ if __name__ == '__main__':
 
 	else:
 		if 'test' in sys.argv:
-			N = 23 # model spatial resolucion
+			N = 31 # model spatial resolucion
 			M = 4 # image energy resolucion
 			print(f"testing synthetic morphology with N = {N} and M = {M}")
 
