@@ -731,9 +731,9 @@ public class VoxelFit {
 		try {
 			String filename;
 			if (args.length == 6)
-				filename = String.format("out/log-3d-%3$s-%4$s-%5$s-%6$s.log", (Object[]) args);
+				filename = String.format("images/log-3d-%3$s-%4$s-%5$s-%6$s.log", (Object[]) args);
 			else
-				filename = "out/log-3d.log";
+				filename = "images/log-3d.log";
 			FileHandler handler = new FileHandler(
 				  filename,
 				  true);
