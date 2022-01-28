@@ -93,14 +93,18 @@ def plot_source(x, y, z, source, density, name):
 		plt.savefig(f"3d/{name}-section.{extension}", dpi=300)
 
 
-def plot_images(Э, ξ, υ, images):
-	for i in range(images.shape[1]):
-		plt.figure(figsize=(6, 5))
-		plt.pcolormesh(ξ, υ, images[0,i,:,:].T, vmin=min(0, np.min(images[0,i,:,:])))#, vmax=np.max(images))
-		plt.axis('square')
-		plt.title(f"{Э[i,0]:.1f} -- {Э[i,1]:.1f} MeV")
-		plt.colorbar()
-		plt.tight_layout()
+def plot_images(Э, ξ, υ, *image_sets, line_of_sight=0):
+	for h in range(image_sets[0].shape[1]):
+		maximum = np.amax([image_set[0,h,:,:] for image_set in image_sets])
+		for image_set in image_sets:
+			plt.figure(figsize=(6, 5))
+			plt.pcolormesh(ξ, υ, image_set[0,h,:,:].T,
+				           vmin=min(0, np.min(image_set[0,h,:,:])),
+				           vmax=maximum)
+			plt.axis('square')
+			plt.title(f"{Э[h,0]:.1f} -- {Э[h,1]:.1f} MeV")
+			plt.colorbar()
+			plt.tight_layout()
 
 
 if __name__ == '__main__':
@@ -266,7 +270,6 @@ if __name__ == '__main__':
 
 	plot_source(x, y, z, production, density, name)
 
-	plot_images(Э, ξ, υ, tru_images)
-	plot_images(Э, ξ, υ, images)
+	plot_images(Э, ξ, υ, tru_images, images)
 	plt.show()
 
