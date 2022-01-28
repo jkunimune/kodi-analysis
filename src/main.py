@@ -102,7 +102,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 			plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    'k--')
 			# plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), 'k--')
 	plt.axis('square')
-	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+	if energy_cut != 'synth':
+		plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
@@ -115,7 +116,8 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	T = np.linspace(0, 2*np.pi)
 	# plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 	plt.axis('square')
-	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+	if energy_cut != 'synth':
+		plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
