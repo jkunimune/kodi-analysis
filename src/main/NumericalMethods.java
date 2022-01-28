@@ -1034,6 +1034,19 @@ public class NumericalMethods {
 	}
 
 	/**
+	 * return the index of the pair of bin edges in an array of pairs of bin edges
+	 * @return int in the range [0, bins.length-1), or -1 if it's out of range
+	 */
+	public static int bin(double value, Interval[] binEdges) {
+		if (Double.isNaN(value))
+			return -1;
+		for (int i = 0; i < binEdges.length; i ++)
+			if (value >= binEdges[i].min && value < binEdges[i].max)
+				return i;
+		return -1;
+	}
+
+	/**
 	 * return the number of trues in arr
 	 */
 	public static int count(boolean[] arr) {
@@ -1580,6 +1593,16 @@ public class NumericalMethods {
 		}
 
 		throw new IllegalArgumentException("I don't know Legendre polynomials that high (_"+l+"^"+m+").");
+	}
+
+
+	public static class Interval {
+		public double min;
+		public double max;
+		public Interval(double min, double max) {
+			this.min = min;
+			this.max = max;
+		}
 	}
 
 	/**

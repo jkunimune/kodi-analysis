@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 
+from hdf5_util import load_hdf5
 import coordinate
 
 plt.rcParams["legend.framealpha"] = 1
@@ -43,7 +44,7 @@ def integrate(y, x):
 	return (cumsum[:-1] + cumsum[1:] - cumsum[1])/2
 
 
-def plot_source(x, y, z, source, density):
+def plot_source(x, y, z, source, density, name):
 	ax = plt.figure(figsize=(5.5, 5)).add_subplot(projection='3d')
 	ax.set_box_aspect([1,1,1])
 
@@ -56,7 +57,6 @@ def plot_source(x, y, z, source, density):
 			continue
 
 		levels = np.linspace(0.17, 1.00, 4)*thing.max()
-		print(thing[:,:,len(z)//2])
 		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
 			offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 		contour_plot(np.meshgrid(x, z, indexing='ij')[0], thing[:, len(y)//2, :], np.meshgrid(x, z, indexing='ij')[1],
@@ -68,9 +68,11 @@ def plot_source(x, y, z, source, density):
 	ax.set_ylim(-100, 100)
 	ax.set_zlim(-100, 100)
 	plt.tight_layout()
+	for extension in ['png', 'eps']:
+		plt.savefig(f"3d/{name}-xiti-holgrafe.{extension}", dpi=300)
 
 	plt.figure(figsize=(5.5, 5))
-	for thing, transparent, cmap in [(density, False, 'Reds'), (source, True, 'Blues')]:
+	for i, (thing, transparent, cmap) in enumerate([(density, False, 'Reds'), (source, True, 'Blues')]):
 		thing = thing[len(x)//2,:,:]
 		if thing.max() <= 0 and thing.min() < 0:
 			print(f"warning: the {cmap[:-1]} flat stuff is negative!")
@@ -78,27 +80,32 @@ def plot_source(x, y, z, source, density):
 		elif thing.max() == 0 and thing.min() == 0:
 			print(f"warning: the {cmap[:-1]} flat stuff is zero!")
 			continue
-		plt.contourf(y, z, thing.T, cmap=cmap, levels=np.linspace(1/6 if transparent else 0, 1.00, 7)*thing.max())
+		plt.contourf(y, z, thing.T, cmap=cmap, levels=np.linspace(1/6 if transparent else 0, 1.00, 7)*thing.max(), zorder=i)
+		# if not transparent:
+		# 	plt.contour(y, z, thing.T, cmap=cmap, levels=np.linspace(0, 1.00, 7)*thing.max(), zorder=i+10)
 	# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
 	plt.xlabel("y (cm)")
 	plt.ylabel("z (cm)")
 	# plt.colorbar()
 	plt.axis('square')
 	plt.tight_layout()
+	for extension in ['png', 'eps']:
+		plt.savefig(f"3d/{name}-section.{extension}", dpi=300)
 
 
 def plot_images(Э, ξ, υ, images):
 	for i in range(images.shape[1]):
 		plt.figure(figsize=(6, 5))
-		plt.pcolormesh(ξ, υ, images[0,i,:,:], vmin=min(0, np.min(images[0,i,:,:])))#, vmax=np.max(images))
+		plt.pcolormesh(ξ, υ, images[0,i,:,:].T, vmin=min(0, np.min(images[0,i,:,:])))#, vmax=np.max(images))
 		plt.axis('square')
-		plt.title(f"{Э[i]:.1f} -- {Э[i+1]:.1f} MeV")
+		plt.title(f"{Э[i,0]:.1f} -- {Э[i,1]:.1f} MeV")
 		plt.colorbar()
 		plt.tight_layout()
 
 
 if __name__ == '__main__':
 	os.chdir("..")
+	name = sys.argv[1] if len(sys.argv[1]) > 1 else "example"
 
 	if 'skip' in sys.argv:
 		print(f"using previous reconstruction.")
@@ -107,11 +114,11 @@ if __name__ == '__main__':
 		x = np.loadtxt("tmp/x.csv")
 		y = np.loadtxt("tmp/y.csv")
 		z = np.loadtxt("tmp/z.csv")
-		Э = np.loadtxt("tmp/energy.csv")
+		Э = np.loadtxt("tmp/energy.csv", delimiter=',')
 		ξ = np.loadtxt("tmp/xye.csv")
 		υ = np.loadtxt("tmp/ypsilon.csv")
 		N = x.size - 1
-		M = Э.size - 1
+		M = Э.shape[0]
 		H = ξ.size - 1
 		try:
 			tru_production = np.loadtxt("tmp/production.csv").reshape((N+1, N+1, N+1))
@@ -119,13 +126,11 @@ if __name__ == '__main__':
 			tru_temperature = np.loadtxt("tmp/temperature.csv")
 		except OSError:
 			tru_production, tru_density, tru_temperature = None, None, None
-		tru_images = np.transpose(
-			np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H)),
-			(0, 1, 3, 2))
+		tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H))
 
 	else:
 		if 'test' in sys.argv:
-			N = 31 # model spatial resolucion
+			N = 21 # model spatial resolucion
 			M = 4 # image energy resolucion
 			print(f"testing synthetic morphology with N = {N} and M = {M}")
 
@@ -135,6 +140,7 @@ if __name__ == '__main__':
 			z = np.linspace(-r_max, r_max, N+1)
 
 			Э = np.linspace(Э_min, Э_max, M+1)
+			Э = np.transpose([Э[:-1], Э[1:]])
 			ξ = expand_bins(x)
 			υ = expand_bins(y)
 			H = len(ξ) - 1
@@ -157,45 +163,67 @@ if __name__ == '__main__':
 			np.savetxt("tmp/temperature.csv", [tru_temperature])
 
 		else:
-			filetag = sys.argv[1] if len(sys.argv) > 1 else 'example'
 			print(f"reconstructing images marked '{filetag}'")
 
 			tru_production, tru_density, tru_temperature = None, None, None
 
-			H = None
+			x_bins, y_bins, H = None, None, None
+			first_tim_encountered = None
+			Э_cuts = []
 			tru_image_dict = {}
-			for filename in os.listdir('scans'): # search for filenames that match each row
-				metadata = filename.split('_')
-				if filename.endswith('.csv') and filetag in metadata:
-					for metadatum in metadata:
+			for filename in os.listdir('images'): # search for files that match each row
+				filepath = os.path.join('images', filename)
+
+				metadata = filename.split('_') if '_' in filename else filename.split('-')
+				if (filename.endswith('.csv') or filename.endswith('.h5')) and name in metadata: # only take csv and h5 files
+					for metadatum in metadata: # pull out the different peces of information from the filename
 						if metadatum.startswith('tim'):
 							tim = metadatum[3:]
 						elif metadatum.endswith('MeV'):
 							э_min, э_max = metadatum[:-3].split('-')
 							э_min = float(э_min)
 							э_max = float(э_max)
+						elif metadatum == 'hi':
+							э_min, э_max = 9, 13
+						elif metadatum == 'lo':
+							э_min, э_min = 2.4, 6
 					if tim not in tru_image_dict:
 						tru_image_dict[tim] = []
-					image = np.loadtxt(os.path.join('scans', filename), delimiter=',')
-					while image.size >= 900:
+					if first_tim_encountered is None:
+						first_tim_encountered = tim
+
+					if filename.endswith('.csv'): # load the image
+						image = np.loadtxt(filepath, delimiter=',')
+					else:
+						x_bins, y_bins, image = load_hdf5(filepath)
+					while x_bins is None and image.size > 900: # scale it down if necessary
 						image = (image[:-1:2,:-1:2] + image[:-1:2,1::2] + image[1::2,:-1:2] + image[1::2,1::2])
+
 					if H is None:
 						H = image.shape[0]
 					assert image.shape == (H, H)
 					tru_image_dict[tim].append(image)
+					if tim == first_tim_encountered:
+						Э.append([э_min, э_min])
+
 			if len(tru_image_dict) == 0:
 				raise ValueError("no images were found")
 
-			r_max = 100
-			Э = [0, 2.4, 7, 9, 12.5]
-			ξ = np.linspace(-r_max, r_max, H + 1)
-			υ = np.linspace(-r_max, r_max, H + 1)
-			x = bin_centers(ξ)
-			y = bin_centers(ξ)
-			z = bin_centers(ξ)
+			r_max = 150
+			Э = [[2.4, 6], [9, 12.5]]
+			if x_bins is None:
+				ξ = np.linspace(-r_max, r_max, H + 1)
+				υ = np.linspace(-r_max, r_max, H + 1)
+				x = bin_centers(ξ)
+			else:
+				ξ = x_bins
+				υ = x_bins
+				x = bin_centers(x_bins)
+			y = x
+			z = x
 			N = x.size - 1
 
-			M = len(Э) - 1
+			M = len(Э)
 			lines_of_sight = []
 			tru_images = []
 			for tim in sorted(tru_image_dict.keys()):
@@ -210,7 +238,7 @@ if __name__ == '__main__':
 		np.savetxt("tmp/x.csv", x)
 		np.savetxt("tmp/y.csv", y)
 		np.savetxt("tmp/z.csv", z)
-		np.savetxt("tmp/energy.csv", Э)
+		np.savetxt("tmp/energy.csv", Э, delimiter=',')
 		np.savetxt("tmp/xye.csv", ξ)
 		np.savetxt("tmp/ypsilon.csv", υ)
 
@@ -229,14 +257,14 @@ if __name__ == '__main__':
 			tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H))
 
 	if tru_production is not None:
-		plot_source(x, y, z, tru_production, tru_density)
+		plot_source(x, y, z, tru_production, tru_density, "synthetic")
 
 	images = np.loadtxt("tmp/images-recon.csv").reshape((lines_of_sight.shape[0], M, H, H))
 	production = np.loadtxt("tmp/production-recon.csv").reshape((N+1, N+1, N+1))
 	density = np.loadtxt("tmp/density-recon.csv").reshape((N+1, N+1, N+1))
 	temperature = np.loadtxt("tmp/temperature-recon.csv")
 
-	plot_source(x, y, z, production, density)
+	plot_source(x, y, z, production, density, name)
 
 	plot_images(Э, ξ, υ, tru_images)
 	plot_images(Э, ξ, υ, images)

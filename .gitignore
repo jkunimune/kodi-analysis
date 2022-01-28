@@ -1,9 +1,13 @@
+# data files
 LILAC_sims/*
 scans/*
+images/*
+3d/*
 *.png
 *.eps
 *.csv
 
+# basic intellij stuff
 .idea/*
 out/*
 

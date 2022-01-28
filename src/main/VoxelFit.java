@@ -1,6 +1,7 @@
 package main;
 
 import main.NumericalMethods.DiscreteFunction;
+import main.NumericalMethods.Interval;
 import main.Optimize.Optimum;
 
 import java.io.File;
@@ -22,7 +23,7 @@ public class VoxelFit {
 	public static final double SHELL_DENSITY_GESS = 1_000; // (g/L)
 	public static final double SHELL_RADIUS_GESS = 50;
 	public static final double SMOOTHING = 1e-2;
-	public static final double TOLERANCE = 5e-2;
+	public static final double TOLERANCE = 1e-3;
 
 	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
 //	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
@@ -263,7 +264,7 @@ public class VoxelFit {
 	private static double[][][] bild_3d_map(
 		  double[] coefs, double[][][][] basis) {
 
-		double[][][] values = new double[basis.length][basis[0].length][basis[1].length];
+		double[][][] values = new double[basis.length][basis[0].length][basis[0][0].length];
 		for (int i = 0; i < basis.length; i ++)
 			for (int j = 0; j < basis[i].length; j ++)
 				for (int k = 0; k < basis[i][j].length; k ++)
@@ -281,7 +282,7 @@ public class VoxelFit {
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
 	 * @param z the z bin edges (μm)
-	 * @param Э the energy bin edges (MeV)
+	 * @param Э_cuts the energy bin edges in pairs (MeV)
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
 	 * @param lines_of_sight the detector line of site direccions
@@ -295,7 +296,7 @@ public class VoxelFit {
 		  double[] y,
 		  double[] z,
 		  double[] r,
-		  double[] Э,
+		  Interval[] Э_cuts,
 		  double[] ξ,
 		  double[] υ,
 		  Vector[] lines_of_sight,
@@ -305,7 +306,7 @@ public class VoxelFit {
 		return NumericalMethods.vertically_stack(
 			  unravel(synthesize_image_response(
 			  	  null, density, temperature, x, y, z,
-				  Э, ξ, υ, lines_of_sight, basis_functions,
+				  Э_cuts, ξ, υ, lines_of_sight, basis_functions,
 				  true, false)),
 			  list_bad_modes(r, basis_functions[0][0][0].length, smoothing));
 	}
@@ -318,7 +319,7 @@ public class VoxelFit {
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
 	 * @param z the z bin edges (μm)
-	 * @param Э the energy bin edges (MeV)
+	 * @param Э_cuts the energy bin edges (MeV)
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
 	 * @param lines_of_sight the detector line of site direccions
@@ -333,7 +334,7 @@ public class VoxelFit {
 		  double[] y,
 		  double[] z,
 		  double[] r,
-		  double[] Э,
+		  Interval[] Э_cuts,
 		  double[] ξ,
 		  double[] υ,
 		  Vector[] lines_of_sight,
@@ -343,7 +344,7 @@ public class VoxelFit {
 		return NumericalMethods.vertically_stack(
 			  unravel(synthesize_image_response(
 				  production, density, temperature, x, y, z,
-				  Э, ξ, υ, lines_of_sight, basis_functions,
+				  Э_cuts, ξ, υ, lines_of_sight, basis_functions,
 				  false, true)),
 			  list_bad_modes(r, basis_functions[0][0][0].length, smoothing));
 	}
@@ -355,7 +356,7 @@ public class VoxelFit {
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
 	 * @param z the z bin edges (μm)
-	 * @param Э the energy bin edges (MeV)
+	 * @param Э_cuts the energy bin edges (MeV)
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
 	 * @param lines_of_sight the detector line of site direccions
@@ -368,14 +369,14 @@ public class VoxelFit {
 		  double[] x,
 		  double[] y,
 		  double[] z,
-		  double[] Э,
+		  Interval[] Э_cuts,
 		  double[] ξ,
 		  double[] υ,
 		  Vector[] lines_of_sight
 	) {
 		return remove_last_axis(synthesize_image_response(
 			  production, density, temperature,
-			  x, y, z, Э, ξ, υ, lines_of_sight, null,
+			  x, y, z, Э_cuts, ξ, υ, lines_of_sight, null,
 			  false, false
 		));
 	}
@@ -396,7 +397,7 @@ public class VoxelFit {
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
 	 * @param z the z bin edges (μm)
-	 * @param Э the energy bin edges (MeV)
+	 * @param Э_cuts the energy bin edges (MeV)
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
 	 * @param lines_of_sight the detector line of site direccions
@@ -414,7 +415,7 @@ public class VoxelFit {
 		  double[] x,
 		  double[] y,
 		  double[] z,
-		  double[] Э,
+		  Interval[] Э_cuts,
 		  double[] ξ,
 		  double[] υ,
 		  Vector[] lines_of_sight,
@@ -433,17 +434,13 @@ public class VoxelFit {
 		double V_voxel = Math.pow(L_pixel, 3); // (m^3)
 		double dV2 = V_voxel*V_voxel; // (m^6)
 
-		double[] Э_centers = new double[Э.length-1];
-		for (int h = 0; h < Э_centers.length; h ++)
-			Э_centers[h] = (Э[h] + Э[h+1])/2.;
-
 		int num_basis_functions;
 		if (basis_functions == null)
 			num_basis_functions = 1;
 		else
 			num_basis_functions = basis_functions[0][0][0].length;
 
-		double[][][][][] basis_images = new double[lines_of_sight.length][Э.length - 1][ξ.length - 1][υ.length - 1][num_basis_functions];
+		double[][][][][] basis_images = new double[lines_of_sight.length][Э_cuts.length][ξ.length - 1][υ.length - 1][num_basis_functions];
 
 		for (int l = 0; l < lines_of_sight.length; l ++) { // for each line of sight
 			Vector ζ_hat = lines_of_sight[l];
@@ -458,7 +455,7 @@ public class VoxelFit {
 			for (int i1 = x.length - 1; i1 >= 0; i1 --) {
 				for (int j1 = y.length - 1; j1 >= 0; j1 --) {
 					for (int k1 = z.length - 1; k1 >= 0; k1 --) {
-						Vector previous_pixel = new DenseVector(i1, j1, k1).plus(ζ_hat);
+						Vector previous_pixel = new DenseVector(i1, j1, k1).plus(ζ_hat); // TODO: this should tie into the full integral.  it should solve for the stuff in each pixel one at a time
 						int i0 = (int)Math.round(previous_pixel.get(0)); // look at the voxel one step toward the detector
 						int j0 = (int)Math.round(previous_pixel.get(1));
 						int k0 = (int)Math.round(previous_pixel.get(2));
@@ -521,8 +518,8 @@ public class VoxelFit {
 
 									double σ = σ_nD.evaluate(ЭD);
 
-									int hV = NumericalMethods.bin(ЭV, Э);
-									if (hV < 0 || hV >= Э.length)
+									int hV = NumericalMethods.bin(ЭV, Э_cuts);
+									if (hV < 0 || hV >= Э_cuts.length)
 										continue;
 									int iV = NumericalMethods.bin(ξV, ξ);
 									if (iV < 0 || iV >= ξ.length - 1)
@@ -615,7 +612,7 @@ public class VoxelFit {
 	 * @param x the edges of the x bins to use for the morphology (μm)
 	 * @param y the edges of the y bins to use for the morphology (μm)
 	 * @param z the edges of the z bins to use for the morphology (μm)
-	 * @param Э the edges of the energy bins of the images (MeV)
+	 * @param Э_cuts the edges of the energy bins of the images (MeV)
 	 * @param ξ the edges of the x bins of the images (μm)
 	 * @param υ the edges of the y bins of the images (μm)
 	 * @param lines_of_sight the normalized z vector of each line of site
@@ -626,7 +623,7 @@ public class VoxelFit {
 	 */
 	private static double[][][][] reconstruct_images(
 		  double[][][][] images, double[] r, double[] x, double[] y, double[] z,
-		  double[] Э, double[] ξ, double[] υ, Vector[] lines_of_sight) { // TODO: multithread?
+		  Interval[] Э_cuts, double[] ξ, double[] υ, Vector[] lines_of_sight) { // TODO: multithread?
 
 		VoxelFit.logger.info(String.format("reconstructing images of size %dx%dx%dx%d",
 										   images.length, images[0].length,
@@ -641,7 +638,7 @@ public class VoxelFit {
 		double[] data_vector = NumericalMethods.concatenate(
 			  unravel(images), new double[num_smoothing_parameters]); // unroll the data
 		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
-		double data_scale = NumericalMethods.max(data_vector)/6.;
+//		double data_scale = NumericalMethods.max(data_vector)/6.;
 		for (int i = 0; i < data_vector.length; i ++)
 //			inverse_variance_vector[i] = 1./(data_scale*data_scale); // uniform
 //			inverse_variance_vector[i] = 1/(data_scale*data_vector[i]); // unitless Poisson
@@ -677,7 +674,7 @@ public class VoxelFit {
 						density,
 						current_temperature,
 						x, y, z, r,
-						Э, ξ, υ,
+						Э_cuts, ξ, υ,
 						lines_of_sight,
 						basis_functions,
 						SMOOTHING*r[r.length-1]/Math.pow(ruff_value, 2)),
@@ -695,7 +692,7 @@ public class VoxelFit {
 						bild_3d_map(coefs, basis_functions),
 						current_temperature,
 						x, y, z, r,
-						Э, ξ, υ,
+						Э_cuts, ξ, υ,
 						lines_of_sight,
 						basis_functions,
 						SMOOTHING*r[r.length-1]/Math.pow(SHELL_DENSITY_GESS, 2)),
@@ -758,9 +755,12 @@ public class VoxelFit {
 		double[] x = CSV.readColumn(new File("tmp/x.csv")); // load the coordinate system (μm)
 		double[] y = CSV.readColumn(new File("tmp/y.csv")); // (μm)
 		double[] z = CSV.readColumn(new File("tmp/z.csv")); // (μm)
-		double[] Э = CSV.readColumn(new File("tmp/energy.csv")); // (MeV)
 		double[] ξ = CSV.readColumn(new File("tmp/xye.csv")); // (μm)
 		double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv")); // (μm)
+		double[][] Э_array = CSV.read(new File("tmp/energy.csv"), ','); // (MeV)
+		Interval[] Э_cuts = new Interval[Э_array.length];
+		for (int i = 0; i < Э_cuts.length; i ++)
+			Э_cuts[i] = new Interval(Э_array[i][0], Э_array[i][1]);
 
 		double[] r = new double[(int)((x.length - 1)/(2*Math.sqrt(3)))]; // (μm)
 		for (int s = 0; s < r.length; s ++)
@@ -784,29 +784,29 @@ public class VoxelFit {
 
 			images = synthesize_images(
 				  anser[0], anser[1], temperature,
-				  x, y, z, Э, ξ, υ, lines_of_site); // synthesize the true images
+				  x, y, z, Э_cuts, ξ, υ, lines_of_site); // synthesize the true images
 			CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
 		}
 		else {
 			double[] images_as_colum = CSV.readColumn(new File("tmp/images.csv"));
-			images = new double[lines_of_site.length][Э.length - 1][ξ.length - 1][υ.length - 1];
+			images = new double[lines_of_site.length][Э_cuts.length][ξ.length - 1][υ.length - 1];
 			for (int l = 0; l < lines_of_site.length; l ++)
-				for (int h = 0; h < Э.length - 1; h ++)
+				for (int h = 0; h < Э_cuts.length; h ++)
 					for (int i = 0; i < ξ.length - 1; i ++)
 						System.arraycopy(
-							  images_as_colum, ((l*(Э.length - 1) + h)*(ξ.length - 1) + i)*(υ.length - 1),
+							  images_as_colum, ((l*Э_cuts.length + h)*(ξ.length - 1) + i)*(υ.length - 1),
 							  images[l][h][i], 0, υ.length - 1);
 		}
 
 		double[][][][] anser = reconstruct_images(
 			  images,
 			  r, x, y, z,
-			  Э, ξ, υ,
+			  Э_cuts, ξ, υ,
 			  lines_of_site); // reconstruct the morphology
 
 		images = synthesize_images(
 			  anser[0], anser[1], anser[2][0][0][0],
-			  x, y, z, Э, ξ, υ, lines_of_site); // get the reconstructed morphologie's images
+			  x, y, z, Э_cuts, ξ, υ, lines_of_site); // get the reconstructed morphologie's images
 
 		CSV.writeColumn(unravel(anser[0]), new File("tmp/production-recon.csv"));
 		CSV.writeColumn(unravel(anser[1]), new File("tmp/density-recon.csv"));
