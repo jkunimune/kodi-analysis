@@ -168,7 +168,6 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 	L0 = N*np.sum(f*np.log(f), where=where & (f > 0))
 	scores, best_G, best_S = [], None, None
 	while len(scores) < 200:
-		g[abs(g) < 1e-17] = 0 # start by correcting for roundoff
 		gsum = g.sum() + g0
 		g, g0, s = g/gsum, g0/gsum, s/gsum
 
@@ -195,14 +194,16 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 			h = -g0/δg0*5/6
 		assert h > 0, h
 
-		g += h*δg # step
+		g += h*δg # step # take the step
+		g[abs(g) < 1e-17] = 0 # and immediately correct for roundoff
 		g0 += h*δg0
 		s += h*δs
 		γ = g/η/np.sum(g/η)
 		α = N/F.size*SMOOTHING # this entropy weiting parameter was determined quasiempirically (it's essentially the strength of my prior)
 
 		L = N*np.sum(f*np.log(s), where=where) # compute likelihood
-		S = np.sum(γ*np.log(γ), where=g!=0) # compute entropy
+		S = np.sum(γ*np.log(γ), where=γ!=0) # compute entropy
+		assert np.all(np.isfinite(S))
 		scores.append(L - α*S) # the score is a combination of both
 		if verbose: print(f"[{L - L0}, {S}, {scores[-1] - L0}],")
 		if show_plots and len(scores)%10 == 1:
