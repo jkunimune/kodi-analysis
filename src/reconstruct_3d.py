@@ -21,7 +21,7 @@ from hdf5_util import load_hdf5
 import coordinate
 
 plt.rcParams["legend.framealpha"] = 1
-plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
+plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 
 
@@ -93,7 +93,7 @@ def plot_source(x, y, z, source, density, name):
 		plt.savefig(f"3d/{name}-section.{extension}", dpi=300)
 
 
-def plot_images(Э, ξ, υ, *image_sets, line_of_sight=0):
+def plot_images(Э_cuts, ξ, υ, *image_sets, line_of_sight=0):
 	for h in range(image_sets[0].shape[1]):
 		maximum = np.amax([image_set[0,h,:,:] for image_set in image_sets])
 		for image_set in image_sets:
@@ -102,14 +102,14 @@ def plot_images(Э, ξ, υ, *image_sets, line_of_sight=0):
 				           vmin=min(0, np.min(image_set[0,h,:,:])),
 				           vmax=maximum)
 			plt.axis('square')
-			plt.title(f"{Э[h,0]:.1f} -- {Э[h,1]:.1f} MeV")
+			plt.title(f"{Э_cuts[h][0]:.1f} -- {Э_cuts[h][1]:.1f} MeV")
 			plt.colorbar()
 			plt.tight_layout()
 
 
 if __name__ == '__main__':
 	os.chdir("..")
-	name = sys.argv[1] if len(sys.argv[1]) > 1 else "example"
+	name = sys.argv[1] if len(sys.argv) > 1 else "example"
 
 	if 'skip' in sys.argv:
 		print(f"using previous reconstruction.")
@@ -118,11 +118,11 @@ if __name__ == '__main__':
 		x = np.loadtxt("tmp/x.csv")
 		y = np.loadtxt("tmp/y.csv")
 		z = np.loadtxt("tmp/z.csv")
-		Э = np.loadtxt("tmp/energy.csv", delimiter=',')
+		Э_cuts = np.loadtxt("tmp/energy.csv", delimiter=',')
 		ξ = np.loadtxt("tmp/xye.csv")
 		υ = np.loadtxt("tmp/ypsilon.csv")
 		N = x.size - 1
-		M = Э.shape[0]
+		M = Э_cuts.shape[0]
 		H = ξ.size - 1
 		try:
 			tru_production = np.loadtxt("tmp/production.csv").reshape((N+1, N+1, N+1))
@@ -144,7 +144,7 @@ if __name__ == '__main__':
 			z = np.linspace(-r_max, r_max, N+1)
 
 			Э = np.linspace(Э_min, Э_max, M+1)
-			Э = np.transpose([Э[:-1], Э[1:]])
+			Э_cuts = np.transpose([Э[:-1], Э[1:]])
 			ξ = expand_bins(x)
 			υ = expand_bins(y)
 			H = len(ξ) - 1
@@ -158,8 +158,8 @@ if __name__ == '__main__':
 			X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 			# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 			# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
-			tru_production = 1e+10*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
-			tru_density = 10_000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*(Y + 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
+			tru_production = 1e+26*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
+			tru_density = 10_000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*(Y - 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
 			tru_temperature = 1
 
 			np.savetxt("tmp/production.csv", tru_production.ravel())
@@ -167,7 +167,7 @@ if __name__ == '__main__':
 			np.savetxt("tmp/temperature.csv", [tru_temperature])
 
 		else:
-			print(f"reconstructing images marked '{filetag}'")
+			print(f"reconstructing images marked '{name}'")
 
 			tru_production, tru_density, tru_temperature = None, None, None
 
@@ -177,9 +177,11 @@ if __name__ == '__main__':
 			tru_image_dict = {}
 			for filename in os.listdir('images'): # search for files that match each row
 				filepath = os.path.join('images', filename)
+				filename, extension = os.path.splitext(filename)
 
 				metadata = filename.split('_') if '_' in filename else filename.split('-')
-				if (filename.endswith('.csv') or filename.endswith('.h5')) and name in metadata: # only take csv and h5 files
+				if (extension == '.csv' and name in metadata) or \
+					(extension == '.h5' and name in metadata and 'reconstruction' in metadata): # only take csv and h5 files
 					for metadatum in metadata: # pull out the different peces of information from the filename
 						if metadatum.startswith('tim'):
 							tim = metadatum[3:]
@@ -196,7 +198,7 @@ if __name__ == '__main__':
 					if first_tim_encountered is None:
 						first_tim_encountered = tim
 
-					if filename.endswith('.csv'): # load the image
+					if extension == '.csv': # load the image
 						image = np.loadtxt(filepath, delimiter=',')
 					else:
 						x_bins, y_bins, image = load_hdf5(filepath)
@@ -205,16 +207,15 @@ if __name__ == '__main__':
 
 					if H is None:
 						H = image.shape[0]
-					assert image.shape == (H, H)
+					assert image.shape == (H, H), (H, image.shape)
 					tru_image_dict[tim].append(image)
 					if tim == first_tim_encountered:
-						Э.append([э_min, э_min])
+						Э_cuts.append([э_min, э_max])
 
 			if len(tru_image_dict) == 0:
 				raise ValueError("no images were found")
 
 			r_max = 150
-			Э = [[2.4, 6], [9, 12.5]]
 			if x_bins is None:
 				ξ = np.linspace(-r_max, r_max, H + 1)
 				υ = np.linspace(-r_max, r_max, H + 1)
@@ -227,11 +228,11 @@ if __name__ == '__main__':
 			z = x
 			N = x.size - 1
 
-			M = len(Э)
+			M = len(Э_cuts)
 			lines_of_sight = []
 			tru_images = []
 			for tim in sorted(tru_image_dict.keys()):
-				assert len(tru_image_dict[tim]) == M
+				assert len(tru_image_dict[tim]) == M, (len(tru_image_dict[tim]), M)
 				lines_of_sight.append(coordinate.tim_direction(tim))
 				tru_images.append(tru_image_dict[tim])
 			lines_of_sight = np.array(lines_of_sight)
@@ -242,7 +243,7 @@ if __name__ == '__main__':
 		np.savetxt("tmp/x.csv", x)
 		np.savetxt("tmp/y.csv", y)
 		np.savetxt("tmp/z.csv", z)
-		np.savetxt("tmp/energy.csv", Э, delimiter=',')
+		np.savetxt("tmp/energy.csv", Э_cuts, delimiter=',')
 		np.savetxt("tmp/xye.csv", ξ)
 		np.savetxt("tmp/ypsilon.csv", υ)
 
@@ -270,6 +271,6 @@ if __name__ == '__main__':
 
 	plot_source(x, y, z, production, density, name)
 
-	plot_images(Э, ξ, υ, tru_images, images)
+	plot_images(Э_cuts, ξ, υ, tru_images, images)
 	plt.show()
 
