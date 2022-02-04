@@ -36,6 +36,12 @@ def load_shot(shot_num):
 def normalize(a):
 	return a/a.sum()
 
+def nonunimodal_interp(x, x_ref, y_ref):
+	for i in range(1, len(x_ref)):
+		if (x >= x_ref[i-1] and x < x_ref[i]) or (x >= x_ref[i] and x < x_ref[i-1]):
+			return np.interp(x, x_ref[i-1:i+1], y_ref[i-1:i+1])
+	return np.nan
+
 def make_image(t, R, ρ, Ti, e_bounds):
 	R = R*1e-6 # convert to meters
 	ρ = ρ*1e-3/(1e-2)**3 # convert to kg/m^3
@@ -141,6 +147,8 @@ if __name__ == '__main__':
 		for z in np.linspace(-150, 150/2, 100):
 			blu += np.interp(np.hypot(z, r_img), r, Yn_integrated)
 			red += np.interp(np.hypot(z, r_img), r, nD_burn_average)
+		print(f"hi-energy: {nonunimodal_interp(blu.max()/4, blu, r_img)} μm")
+		print(f"lo-energy: {nonunimodal_interp(red.max()/4, red, r_img)} μm")
 		fig, ax_left = plt.subplots()
 		plt.grid('on')
 		ax_rite = ax_left.twinx()
