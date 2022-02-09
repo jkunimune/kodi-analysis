@@ -34,6 +34,10 @@ public abstract class Vector {
 
 	public abstract Vector times(double scalar);
 
+	public Vector over(double scalar) {
+		return this.times(1./scalar);
+	}
+
 	public Vector neg() {
 		return this.times(-1);
 	}

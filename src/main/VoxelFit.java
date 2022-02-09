@@ -22,7 +22,7 @@ public class VoxelFit {
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SHELL_DENSITY_GESS = 1_000; // (g/L)
 	public static final double SHELL_RADIUS_GESS = 50;
-	public static final double SMOOTHING = 1e-2;
+	public static final double SMOOTHING = 1e-3;
 	public static final double TOLERANCE = 1e-3;
 
 	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
@@ -43,7 +43,7 @@ public class VoxelFit {
 
 	private static final double Э_KOD = 12.45;
 
-	private static final DiscreteFunction σ_nD; // (MeV -> μm^2/srad)
+	private static final DiscreteFunction σ_nD; // (MeV -> m^2/srad)
 	static {
 		double[][] cross_sections = new double[0][];
 		try {
@@ -56,7 +56,7 @@ public class VoxelFit {
 		for (int i = 0; i < cross_sections.length; i ++) {
 			int j = cross_sections.length - 1 - i;
 			Э_data[j] = 14.1*4/9.*(1 - cross_sections[i][0]); // (MeV)
-			σ_data[j] = .64e-28/1e-12/(4*Math.PI)*2*cross_sections[i][1]; // (μm^2/srad)
+			σ_data[j] = .64e-28/(4*Math.PI)*2*cross_sections[i][1]; // (m^2/srad)
 		}
 		σ_nD = new DiscreteFunction(Э_data, σ_data).indexed(20);
 	}
@@ -432,7 +432,6 @@ public class VoxelFit {
 
 		double L_pixel = (x[1] - x[0])*μm; // (m)
 		double V_voxel = Math.pow(L_pixel, 3); // (m^3)
-		double dV2 = V_voxel*V_voxel; // (m^6)
 
 		int num_basis_functions;
 		if (basis_functions == null)
@@ -516,7 +515,7 @@ public class VoxelFit {
 									double ξV = rD.dot(ξ_hat);
 									double υV = rD.dot(υ_hat);
 
-									double σ = σ_nD.evaluate(ЭD);
+									double σ = σ_nD.evaluate(ЭD); // (m^2)
 
 									int hV = NumericalMethods.bin(ЭV, Э_cuts);
 									if (hV < 0 || hV >= Э_cuts.length)
@@ -531,7 +530,7 @@ public class VoxelFit {
 									double contribution =
 										  1./m_DT*
 										  σ/(4*Math.PI*Δr2)*
-										  dV2; // (d/srad/(d/m^3)/(g/L))
+										  V_voxel*V_voxel; // (d/srad/(n/m^3)/(g/L))
 
 									for (int и = 0; и < num_basis_functions; и ++) // finally, iterate over the basis functions
 										if (local_production[и] != 0 && local_density[и] != 0) // TODO I feel like this line does noting
@@ -638,11 +637,16 @@ public class VoxelFit {
 		double[] data_vector = NumericalMethods.concatenate(
 			  unravel(images), new double[num_smoothing_parameters]); // unroll the data
 		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
-//		double data_scale = NumericalMethods.max(data_vector)/6.;
-		for (int i = 0; i < data_vector.length; i ++)
+		double data_scale = NumericalMethods.max(data_vector)/6.;
+		for (int i = 0; i < data_vector.length - num_smoothing_parameters; i ++)
 //			inverse_variance_vector[i] = 1./(data_scale*data_scale); // uniform
-//			inverse_variance_vector[i] = 1/(data_scale*data_vector[i]); // unitless Poisson
-			inverse_variance_vector[i] = 1./(data_vector[i] + 1); // corrected Poisson
+			inverse_variance_vector[i] = 1/(data_scale*(data_vector[i] + data_scale/36)); // unitless Poisson
+//			inverse_variance_vector[i] = 1./(data_vector[i] + 1); // corrected Poisson
+		for (int i = data_vector.length - num_smoothing_parameters; i < data_vector.length; i ++)
+			inverse_variance_vector[i] = 1;
+
+		double production_gess = NumericalMethods.sum(images)/1e-2/
+			  (4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS*1e-6, 3))/(4*Math.PI);
 
 		VoxelFit.logger.info(String.format("using %d 3d basis functions on %dx%dx%d point array",
 										   num_basis_functions,
@@ -668,7 +672,6 @@ public class VoxelFit {
 
 			double[][][] density = bild_3d_map(density_coefs, basis_functions);
 
-			final double ruff_value = NumericalMethods.sum(images)/Math.pow(r[r.length-1], 3)/1e-12;
 			Optimum production_solution = Optimize.quasilinear_least_squares(
 				  (coefs) -> generate_production_response_matrix(
 						density,
@@ -677,7 +680,7 @@ public class VoxelFit {
 						Э_cuts, ξ, υ,
 						lines_of_sight,
 						basis_functions,
-						SMOOTHING*r[r.length-1]/Math.pow(ruff_value, 2)),
+						SMOOTHING/(production_gess/Math.sqrt(r[r.length-1]))),
 				  data_vector,
 				  inverse_variance_vector,
 				  production_coefs,
@@ -695,7 +698,7 @@ public class VoxelFit {
 						Э_cuts, ξ, υ,
 						lines_of_sight,
 						basis_functions,
-						SMOOTHING*r[r.length-1]/Math.pow(SHELL_DENSITY_GESS, 2)),
+						SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length-1]))),
 				  data_vector,
 				  inverse_variance_vector,
 				  density_coefs,

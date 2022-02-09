@@ -134,9 +134,7 @@ public class Optimize {
 		Vector residuals = new DenseVector(compute_residuals.apply(state.getValues())); // compute inicial distances
 
 		double last_error = Double.POSITIVE_INFINITY;
-		double new_error = 0;
-		for (double d : residuals.getValues())
-			new_error += Math.pow(d, 2); // compute inicial chi^2
+		double new_error = 1/2.*residuals.sqr(); // compute inicial chi^2
 //		System.out.println("state: "+Arrays.toString(state));
 		if (logger != null) logger.info(String.format("inicial value: %.8e", new_error));
 
@@ -167,9 +165,7 @@ public class Optimize {
 
 				residuals = new DenseVector(compute_residuals.apply(new_state.getValues())); // compute new distances and gradients
 
-				new_error = 0;
-				for (double d : residuals.getValues())
-					new_error += Math.pow(d, 2); // compute new chi^2
+				new_error = 1/2.*residuals.sqr(); // compute new chi^2
 				if (logger != null)
 					logger.info(String.format("updated value: %.8e", new_error));
 
@@ -237,9 +233,7 @@ public class Optimize {
 		Vector residuals = output.minus(data);
 		Matrix weights = new Matrix(data_weights);
 
-		double zai_error = 0; // compute the inicial total error
-		for (double d : residuals.getValues()) // ("zai" is the Pandunia word for "current")
-			zai_error += Math.pow(d, 2)/2.; // compute inicial chi^2
+		double zai_error = 1/2.*residuals.dot(weights.times(residuals)); // compute the inicial total error ("zai" is the Pandunia word for "current")
 		if (logger != null)
 			logger.info(String.format("inicial value: %.8e", zai_error));
 		double new_error;
@@ -259,23 +253,22 @@ public class Optimize {
 				// side note: 99 times out of 100 this for-loop should resolve on
 				// the first iteration, but a little robustness never hurt anyone
 				Vector new_input = input.plus(step.times(step_scale));
-				if (Double.isInfinite(tolerance)) { // in the event that the tolerance is infinity, stop here and return the value
-					if (logger != null)
-						logger.info("cancelled line search");
-					return new Optimum(new_input.getValues());
-				}
 
-				jacobian = new Matrix(compute_local_jacobian.apply(new_input.getValues()));
+				if (Double.isFinite(tolerance))
+					jacobian = new Matrix(compute_local_jacobian.apply(new_input.getValues())); // get the updating jacobian if there mite be more
 				output = jacobian.times(new_input);
 				residuals = output.minus(data);
-
-				new_error = 0;
-				for (double d : residuals.getValues())
-					new_error += Math.pow(d, 2)/2.;
+				new_error = 1/2.*residuals.dot(weights.times(residuals));
 				if (logger != null)
 					logger.info(String.format("updated value: %.8e", new_error));
 
-				if (new_error <= zai_error) { // the termination condition on the line search is pretty lax
+				if (Double.isInfinite(tolerance)) { // if the tolerance is infinite,
+					if (logger != null)
+						logger.info("cancelled line search");
+					return new Optimum(new_input.getValues()); // that means we can just stop here
+				}
+
+				if (new_error <= zai_error) { // infinite tolerances aside, the termination condition on the line search is pretty lax
 					input = new_input;
 					break;
 				}
