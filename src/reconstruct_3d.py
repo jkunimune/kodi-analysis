@@ -74,17 +74,18 @@ def plot_source(x, y, z, source, density, name):
 		plt.savefig(f"3d/{name}-xiti-holgrafe.{extension}", dpi=300)
 
 	plt.figure(figsize=(5.5, 5))
-	for i, (thing, transparent, cmap) in enumerate([(density, False, 'Reds'), (source, True, 'Blues')]):
+	for i, (thing, transparent, color) in enumerate([(density, False, 'Reds'), (source, True, '#1f7bbb')]):
 		thing = thing[len(x)//2,:,:]
 		if thing.max() <= 0 and thing.min() < 0:
-			print(f"warning: the {cmap[:-1]} flat stuff is negative!")
+			print(f"warning: the {color[:-1]} flat stuff is negative!")
 			thing = -thing
 		elif thing.max() == 0 and thing.min() == 0:
-			print(f"warning: the {cmap[:-1]} flat stuff is zero!")
+			print(f"warning: the {color[:-1]} flat stuff is zero!")
 			continue
-		plt.contourf(y, z, thing.T, cmap=cmap, levels=np.linspace(1/6 if transparent else 0, 1.00, 7)*thing.max(), zorder=i)
-		# if not transparent:
-		# 	plt.contour(y, z, thing.T, cmap=cmap, levels=np.linspace(0, 1.00, 7)*thing.max(), zorder=i+10)
+		if transparent:
+			plt.contour(y, z, thing.T, colors=color, levels=np.linspace(1/6, 1, 6)*np.max(thing), zorder=i)
+		else:
+			plt.contourf(y, z, thing.T, cmap=color, levels=np.linspace(0, 1, 7)*np.max(thing), zorder=i)
 	# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
 	plt.xlabel("y (cm)")
 	plt.ylabel("z (cm)")
@@ -163,7 +164,7 @@ if __name__ == '__main__':
 			# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 			# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
 			tru_production = 1e+26*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
-			tru_density = 10_000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*(Y - 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
+			tru_density = 10_000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*(Y + 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
 			tru_temperature = 1
 
 			np.savetxt("tmp/production.csv", tru_production.ravel())
