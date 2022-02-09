@@ -103,7 +103,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 			# plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), 'k--')
 	plt.axis('square')
 	if energy_cut != 'synth':
-		plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
@@ -117,7 +117,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	# plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 	plt.axis('square')
 	if energy_cut != 'synth':
-		plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
@@ -142,7 +142,7 @@ def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 	plt.xlabel("Radius (cm)")
 	plt.ylabel("Track density (10³/cm²)")
 	plt.legend()
-	plt.title(f"{energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+	plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.tight_layout()
 	save_current_figure(f'{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout')
 
@@ -175,7 +175,7 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	elif e_max is None:
 		plt.title("X-ray image")
 	else:
-		plt.title(f"{e_min:.1f} – {min(12.5, e_max):.1f} MeV")
+		plt.title(f"$E_\\mathrm{{d}}$ = {e_min:.1f} – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.axis([-PLOT_RADIUS, PLOT_RADIUS, -PLOT_RADIUS, PLOT_RADIUS])

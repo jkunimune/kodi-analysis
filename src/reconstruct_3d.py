@@ -29,6 +29,8 @@ m_DT = 3.34e-21 + 5.01e-21 # (mg)
 
 Э_min, Э_kod, Э_max = 3, 12.5, 13 # (MeV)
 
+r_max = 100
+
 
 def bin_centers(x):
 	return (x[1:] + x[:-1])/2
@@ -64,9 +66,9 @@ def plot_source(x, y, z, source, density, name):
 		contour_plot(thing[len(x)//2, :, :], *np.meshgrid(y, z, indexing='ij'),
 			offset=0, zdir='x', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 
-	ax.set_xlim(-100, 100)
-	ax.set_ylim(-100, 100)
-	ax.set_zlim(-100, 100)
+	ax.set_xlim(-r_max, r_max)
+	ax.set_ylim(-r_max, r_max)
+	ax.set_zlim(-r_max, r_max)
 	plt.tight_layout()
 	for extension in ['png', 'eps']:
 		plt.savefig(f"3d/{name}-xiti-holgrafe.{extension}", dpi=300)
@@ -88,6 +90,7 @@ def plot_source(x, y, z, source, density, name):
 	plt.ylabel("z (cm)")
 	# plt.colorbar()
 	plt.axis('square')
+	plt.axis([-r_max, r_max, -r_max, r_max])
 	plt.tight_layout()
 	for extension in ['png', 'eps']:
 		plt.savefig(f"3d/{name}-section.{extension}", dpi=300)
@@ -102,7 +105,8 @@ def plot_images(Э_cuts, ξ, υ, *image_sets, line_of_sight=0):
 				           vmin=min(0, np.min(image_set[0,h,:,:])),
 				           vmax=maximum)
 			plt.axis('square')
-			plt.title(f"{Э_cuts[h][0]:.1f} -- {Э_cuts[h][1]:.1f} MeV")
+			plt.axis([-r_max, r_max, -r_max, r_max])
+			plt.title(f"$E_\\mathrm{{d}}$ = {Э_cuts[h][0]:.1f} – {Э_cuts[h][1]:.1f} MeV")
 			plt.colorbar()
 			plt.tight_layout()
 

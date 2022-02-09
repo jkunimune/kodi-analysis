@@ -1297,7 +1297,7 @@ public class NumericalMethods {
 	 */
 	public static double[] matmul(double[][] A, double[] v) {
 		if (A[0].length != v.length)
-			throw new IllegalArgumentException("Multiply a "+A[0].length+"×"+A.length+" by a "+v.length+"×1? Don't you know how matrix multiplication works?");
+			throw new IllegalArgumentException("Multiply a "+A.length+"×"+A[0].length+" by a "+v.length+"×1? Don't you know how matrix multiplication works?");
 		double[] u = new double[A.length];
 		for (int i = 0; i < A.length; i ++)
 			for (int j = 0; j < A[i].length; j ++)
