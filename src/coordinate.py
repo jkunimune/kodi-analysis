@@ -19,6 +19,8 @@ TIM_LOCATIONS = {
 # 	[90, 90],
 # 	[1, 0],
 # 	None]
+for tim in list(TIM_LOCATIONS.keys()):
+	TIM_LOCATIONS[str(tim)] = TIM_LOCATIONS[tim]
 
 
 def tim_coordinates(tim):
@@ -66,4 +68,9 @@ def project(r, polar_angle, azimuthal_angle, basis):
 
 
 if __name__ == '__main__':
-	print(tim_direction(2))
+	tim2 = tim_direction(2)
+	tim4 = tim_direction(4)
+	tim5 = tim_direction(5)
+	print(np.degrees(np.arccos(np.sum(tim2*tim4))))
+	print(np.degrees(np.arccos(np.sum(tim4*tim5))))
+	print(np.degrees(np.arccos(np.sum(tim5*tim2))))

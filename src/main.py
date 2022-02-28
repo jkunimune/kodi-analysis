@@ -7,6 +7,8 @@ from matplotlib.colors import CenteredNorm, ListedColormap, LinearSegmentedColor
 import numpy as np
 import os
 import pandas as pd
+import scipy.optimize as optimize
+import scipy.special as special
 import time
 
 from cmap import REDS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, GREYS, COFFEE
@@ -22,18 +24,18 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 e_in_bounds = 2
 
 SKIP_RECONSTRUCTION = False
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 PLOT_THEORETICAL_PROJECTION = False
-PLOT_CONTOUR = True
+PLOT_CONTOUR = False
 PLOT_OFFSET = False
 
 OBJECT_SIZE = 200e-4 # (cm)
 RESOLUTION = 5e-4
 EXPANSION_FACTOR = 1.20
-CONTOUR_LEVEL = .25
-PLOT_RADIUS = 80 # (μm)
+CONTOUR_LEVEL = .50
+MIN_PLOT_RADIUS = 80 # (μm)
 APERTURE_CONFIGURATION = 'hex'
-CHARGE_FITTING = 'all'
+CHARGE_FITTING = 'none'
 MAX_NUM_PIXELS = 200
 
 SQUARE_FIGURE_SIZE = (6.4, 5.4)
@@ -85,6 +87,13 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	""" plot the data along with the initial fit to it, and the
 		reconstructed superaperture.
 	"""
+	if type(data) == str:
+		filename = data
+	elif SHOT in data and TIM in data:
+		filename = f"{data[SHOT]}-tim{data[TIM]}-{energy_cut}-projection"
+	else:
+		filename = "unknown-projection"
+
 	while xI_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
 		xC_bins, yC_bins, NC = resample(xC_bins, yC_bins, NC)
 		xI_bins, yI_bins, NI = resample(xI_bins, yI_bins, NI)
@@ -123,7 +132,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	bar = plt.colorbar()
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
-	save_current_figure(f'{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-projection')
+	save_current_figure(filename)
 
 	if SHOW_PLOTS:
 		plt.show()
@@ -132,6 +141,13 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 
 def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 		             δ, Q, energy_min, energy_max, energy_cut, data, **kwargs):
+	if type(data) == str:
+		filename = data
+	elif SHOT in data and TIM in data:
+		filename = f"{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout"
+	else:
+		filename = "unknown-penumbral-lineout"
+
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 4, 5, 10])
 	plt.fill_between(np.repeat(rI_bins, 2)[1:-1], 0, np.repeat(zI, 2)/1e3,  label="Data", color='#f9A72E')
@@ -144,7 +160,7 @@ def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 	plt.legend()
 	plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.tight_layout()
-	save_current_figure(f'{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout')
+	save_current_figure(filename)
 
 	if SHOW_PLOTS:
 		plt.show()
@@ -152,6 +168,13 @@ def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 
 
 def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
+	if type(data) == str:
+		filename = data
+	elif SHOT in data and TIM in data:
+		filename = f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction"
+	else:
+		filename = "unknown-reconstruction"
+
 	p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(
 			(x_bins[:-1] + x_bins[1:])/2,
 			(y_bins[:-1] + y_bins[1:])/2,
@@ -159,9 +182,17 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 
 	x0, y0 = p1*np.cos(θ1), p1*np.sin(θ1)
 
+	object_size = mysignal.shape_parameters(
+			(x_bins[:-1] + x_bins[1:])/2,
+			(y_bins[:-1] + y_bins[1:])/2,
+			Z, contour=1/6)[0]
+	plot_radius = MIN_PLOT_RADIUS
+	while object_size/1e-4 > plot_radius:
+		plot_radius *= 1.5
+
 	plt.figure(figsize=SQUARE_FIGURE_SIZE) # plot the reconstructed source image
 	plt.locator_params(steps=[1, 2, 5, 10])
-	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=CMAP[cut_name], vmin=0, rasterized=True)
+	plt.pcolormesh(x_bins/1e-4, y_bins/1e-4, Z.T, cmap=CMAP[cut_name], vmin=0, rasterized=True)
 	if PLOT_CONTOUR:
 		plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T,
 			        levels=[CONTOUR_LEVEL*np.max(Z)], colors='w', linestyle='dashed')
@@ -178,19 +209,31 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 		plt.title(f"$E_\\mathrm{{d}}$ = {e_min:.1f} – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
-	plt.axis([-PLOT_RADIUS, PLOT_RADIUS, -PLOT_RADIUS, PLOT_RADIUS])
+	plt.axis([-plot_radius, plot_radius, -plot_radius, plot_radius])
 	plt.tight_layout()
-	save_current_figure(f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction")
+	save_current_figure(filename)
 
 	j_lineout = np.argmax(np.sum(Z, axis=0))
-	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.plot((np.repeat(x_bins, 2)[1:-1] - x0)/1e-4, np.repeat(Z[:,j_lineout], 2))
+	scale = 1/Z[:,j_lineout].max()
+	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE) # plot a lineout
+	plt.plot(np.repeat(x_bins, 2)[1:-1]/1e-4, np.repeat(Z[:,j_lineout], 2)*scale)
+	if SHOT in data and 'disc' in data[SHOT]: # and fit a curve to it if it's a "disc"
+		def blurred_boxcar(x, A, d):
+			return A*special.erfc((x - 100e-4)/d)*special.erfc(-(x + 100e-4)/d)/4
+		x_centers = (x_bins[1:] + x_bins[:-1])/2
+		y_centers = (y_bins[1:] + y_bins[:-1])/2
+		r_centers = np.hypot(*np.meshgrid(x_centers, y_centers))
+		popt, pcov = optimize.curve_fit(
+			blurred_boxcar,
+			r_centers.ravel(), Z.ravel(),
+			[Z.max(), 10e-4])
+		plt.plot(x_centers/1e-4, blurred_boxcar(x_centers, *popt)*scale, '--')
 	plt.xlabel("x (μm)")
-	plt.ylabel("Fluence")
+	plt.ylabel("Intensity (normalized)")
 	plt.xlim(-150, 150)
 	plt.ylim(0, None)
 	plt.tight_layout()
-	save_current_figure(f"{data[SHOT]}-tim{data[TIM]}-{cut_name}-reconstruction-lineout")
+	save_current_figure(filename + "-lineout")
 
 	if SHOW_PLOTS:
 		plt.show()
@@ -199,6 +242,13 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 
 
 def plot_overlaid_contors(reconstructions, projected_offset, projected_flow, data):
+	if type(data) == str:
+		filename = data
+	if SHOT in data and TIM in data:
+		filename = f"{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction"
+	else:
+		filename = "unknown-overlaid-reconstruction"
+
 	for i, (x_bins, y_bins, N, cmap) in enumerate(reconstructions): # convert the x and y bin edges to pixel centers
 		x, y = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
 		X, Y = np.meshgrid(x, y, indexing='ij')
@@ -225,12 +275,12 @@ def plot_overlaid_contors(reconstructions, projected_offset, projected_flow, dat
 			z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
 			verticalalignment='top', transform=plt.gca().transAxes)
 	plt.axis('square')
-	plt.axis([-PLOT_RADIUS, PLOT_RADIUS, -PLOT_RADIUS, PLOT_RADIUS])
+	plt.axis([-MIN_PLOT_RADIUS, MIN_PLOT_RADIUS, -MIN_PLOT_RADIUS, MIN_PLOT_RADIUS])
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.title("TIM {} on shot {}".format(data[TIM], data[SHOT]))
 	plt.tight_layout()
-	save_current_figure(f"{data[SHOT]}-tim{data[TIM]}-overlaid-reconstruction")
+	save_current_figure(filename)
 
 	plt.close('all')
 

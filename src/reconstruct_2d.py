@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore")
 SHOW_RAW_DATA = False
 SHOW_CROPD_DATA = False
 SHOW_POINT_SPREAD_FUNCCION = False
-SHOW_GELFGAT_PLOTS = False
+SHOW_INTERMEDIATE_PLOTS = False
 
 MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -67,8 +67,12 @@ def hessian(f, x, args, epsilon=None):
 
 def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 	""" synthesize a simple analytic single-apeture penumbral image """
+	Δr = np.unique(np.abs(r - r0)) # get an idea for how close to the edge we must sample
+	required_resolution = max(δ/3, Q/e_max/10, Δr[1]/3) # resolution may be limited source size, charging, or the pixel distances
+
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
-	n_pixel = 72
+	
+	n_pixel = min(int(r.max()/required_resolution), rB.size)
 	# if 3*δ >= r.max(): # if 3*source size is bigger than the image radius
 	# 	raise ValueError("δ cannot be this big")
 	if 3*δ >= r.max()/n_pixel: # if 3*source size is smaller than the image radius but bigger than the pixel size
@@ -443,6 +447,12 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			del(track_y)
 			gc.collect()
 
+		elif mode == 'raster':
+			x0, y0 = 0, 0
+
+		else:
+			raise "not allowd."
+
 		save_as_hdf5(f'{output_filename}-{cut_name}-projection', x=xI_bins, y=yI_bins, z=NI)
 
 		if SHOW_CROPD_DATA:
@@ -498,14 +508,14 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		if δ_eff/δ > 1.1:
 			logging.info(f"  Charging artificially increased source size by {(δ_eff - δ)/M/1e-4:.3f} μm (a {δ_eff/δ:.3f}× change!)")
 
-		B, χ2_red = mysignal.gelfgat_deconvolve2d(
+		B, χ2_red = mysignal.gelfgat_deconvolve2d( # TODO: pyramid model
 			NI,
 			penumbral_kernel,
 			# g_inicial=np.exp(-((XS - x0/M)**2 + (YS - y0/M)**2)/(δ/M)**2),
 			where=data_bins,
 			illegal=np.logical_not(source_bins),
 			verbose=verbose,
-			show_plots=SHOW_GELFGAT_PLOTS) # deconvolve!
+			show_plots=SHOW_INTERMEDIATE_PLOTS) # deconvolve!
 
 		# B, χ2_red = np.ones(XS.shape), 0
 

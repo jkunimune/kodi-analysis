@@ -29,7 +29,7 @@ m_DT = 3.34e-21 + 5.01e-21 # (mg)
 
 Э_min, Э_kod, Э_max = 3, 12.5, 13 # (MeV)
 
-r_max = 100
+r_max = 100 # (μm)
 
 
 def bin_centers(x):
@@ -97,19 +97,25 @@ def plot_source(x, y, z, source, density, name):
 		plt.savefig(f"3d/{name}-section.{extension}", dpi=300)
 
 
-def plot_images(Э_cuts, ξ, υ, *image_sets, line_of_sight=0):
-	for h in range(image_sets[0].shape[1]):
-		maximum = np.amax([image_set[0,h,:,:] for image_set in image_sets])
-		for image_set in image_sets:
-			plt.figure(figsize=(6, 5))
-			plt.pcolormesh(ξ, υ, image_set[0,h,:,:].T,
-				           vmin=min(0, np.min(image_set[0,h,:,:])),
-				           vmax=maximum)
-			plt.axis('square')
-			plt.axis([-r_max, r_max, -r_max, r_max])
-			plt.title(f"$E_\\mathrm{{d}}$ = {Э_cuts[h][0]:.1f} – {Э_cuts[h][1]:.1f} MeV")
-			plt.colorbar()
-			plt.tight_layout()
+def plot_images(Э_cuts, ξ, υ, *image_sets):
+	pairs_plotted = 0
+	for l in range(len(image_sets[0])): # go thru every line of site
+		if pairs_plotted > 0 and pairs_plotted + len(image_sets[0][l]) > 6:
+			break # but stop when you think you're about to plot too many
+
+		for h in range(len(image_sets[0][l])):
+			maximum = np.amax([image_set[l][h] for image_set in image_sets])
+			for image_set in image_sets:
+				plt.figure(figsize=(6, 5))
+				plt.pcolormesh(ξ[l][h], υ[l][h], image_set[l][h].T,
+					           vmin=min(0, np.min(image_set[l][h])),
+					           vmax=maximum)
+				plt.axis('square')
+				plt.axis([-r_max, r_max, -r_max, r_max])
+				plt.title(f"$E_\\mathrm{{d}}$ = {Э_cuts[h][0]:.1f} – {Э_cuts[h][1]:.1f} MeV")
+				plt.colorbar()
+				plt.tight_layout()
+			pairs_plotted += 1
 
 
 if __name__ == '__main__':
@@ -117,42 +123,44 @@ if __name__ == '__main__':
 	name = sys.argv[1] if len(sys.argv) > 1 else "example"
 
 	if 'skip' in sys.argv:
+		# load the previous inputs and don't run the reconstruction
 		print(f"using previous reconstruction.")
 
 		lines_of_sight = np.loadtxt("tmp/lines_of_site.csv", delimiter=',')
+		Э_cuts = np.loadtxt("tmp/energy.csv", delimiter=',')
 		x = np.loadtxt("tmp/x.csv")
 		y = np.loadtxt("tmp/y.csv")
 		z = np.loadtxt("tmp/z.csv")
-		Э_cuts = np.loadtxt("tmp/energy.csv", delimiter=',')
-		ξ = np.loadtxt("tmp/xye.csv")
-		υ = np.loadtxt("tmp/ypsilon.csv")
 		N = x.size - 1
-		M = Э_cuts.shape[0]
-		H = ξ.size - 1
 		try:
 			tru_production = np.loadtxt("tmp/production.csv").reshape((N+1, N+1, N+1))
 			tru_density = np.loadtxt("tmp/density.csv").reshape((N+1, N+1, N+1))
 			tru_temperature = np.loadtxt("tmp/temperature.csv")
 		except OSError:
 			tru_production, tru_density, tru_temperature = None, None, None
-		tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H))
+
+		ξ, υ, tru_images = [], [], []
+		for l in range(lines_of_sight.shape[0]):
+			ξ.append([])
+			υ.append([])
+			tru_images.append([])
+			for h in range(Э_cuts.shape[0]):
+				ξ[l].append(np.loadtxt(f"tmp/xye-los{l}-cut{h}.csv"))
+				υ[l].append(np.loadtxt(f"tmp/ypsilon-los{l}-cut{h}.csv"))
+				tru_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}.csv", delimiter=','))
+		tru_images = np.array(tru_images)
 
 	else:
+		# generate or load a new input and run the reconstruction algorithm
 		if 'test' in sys.argv:
+			# generate a synthetic morphology
 			N = 21 # model spatial resolucion
 			M = 4 # image energy resolucion
 			print(f"testing synthetic morphology with N = {N} and M = {M}")
 
-			r_max = 110 # (μm)
-			x = np.linspace(-r_max, r_max, N+1)
-			y = np.linspace(-r_max, r_max, N+1)
-			z = np.linspace(-r_max, r_max, N+1)
-
-			Э = np.linspace(Э_min, Э_max, M+1)
-			Э_cuts = np.transpose([Э[:-1], Э[1:]])
-			ξ = expand_bins(x)
-			υ = expand_bins(y)
-			H = len(ξ) - 1
+			x = np.linspace(-r_max, r_max, N+1) # (μm)
+			y = np.linspace(-r_max, r_max, N+1) # (μm)
+			z = np.linspace(-r_max, r_max, N+1) # (μm)
 
 			lines_of_sight = np.array([
 				[1, 0, 0],
@@ -160,11 +168,16 @@ if __name__ == '__main__':
 				[0, 0, 1],
 			]) # ()
 
+			Э = np.linspace(Э_min, Э_max, M+1)
+			Э_cuts = np.transpose([Э[:-1], Э[1:]])
+			ξ = [[expand_bins(x)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
+			υ = [[expand_bins(y)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
+
 			X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 			# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 			# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
 			tru_production = 1e+26*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
-			tru_density = 10_000*np.exp(-(np.sqrt(1.5*X**2 + 1.5*(Y + 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
+			tru_density = 10_000*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
 			tru_temperature = 1
 
 			np.savetxt("tmp/production.csv", tru_production.ravel())
@@ -172,14 +185,16 @@ if __name__ == '__main__':
 			np.savetxt("tmp/temperature.csv", [tru_temperature])
 
 		else:
+			# load some real images and save them to disk in the correct format
 			print(f"reconstructing images marked '{name}'")
 
 			tru_production, tru_density, tru_temperature = None, None, None
 
-			x_bins, y_bins, H = None, None, None
+			H = None
 			first_tim_encountered = None
+			centroid = {}
 			Э_cuts = []
-			tru_image_dict = {}
+			data_dict = {} # load any images you can find into this dict of lists
 			for filename in os.listdir('images'): # search for files that match each row
 				filepath = os.path.join('images', filename)
 				filename, extension = os.path.splitext(filename)
@@ -198,62 +213,91 @@ if __name__ == '__main__':
 							э_min, э_max = 9, 13
 						elif metadatum == 'lo':
 							э_min, э_min = 2.4, 6
-					if tim not in tru_image_dict:
-						tru_image_dict[tim] = []
+					if tim not in data_dict:
+						data_dict[tim] = []
 					if first_tim_encountered is None:
 						first_tim_encountered = tim
 
 					if extension == '.csv': # load the image
 						image = np.loadtxt(filepath, delimiter=',')
+						ξ_bins = υ_bins = np.linspace(-100, 100, image.shape[0] + 1)
 					else:
-						x_bins, y_bins, image = load_hdf5(filepath)
-					while x_bins is None and image.size > 900: # scale it down if necessary
+						ξ_bins, υ_bins, image = load_hdf5(filepath)
+
+					image = image.T # assume they were loaded in with [y,x] indices and change to [x,y]
+					assert image.shape == (ξ_bins.size - 1, υ_bins.size - 1), (image.shape, ξ_bins.size, υ_bins.size)
+
+					if ξ_bins.max() - ξ_bins.min() < 1e-3: # automatically detect and convert meters
+						ξ_bins, υ_bins = ξ_bins*1e6, υ_bins*1e6
+					elif ξ_bins.max() - ξ_bins.min() < 1e-1: # automatically detect and convert centimeters
+						ξ_bins, υ_bins = ξ_bins*1e4, υ_bins*1e4
+					elif ξ_bins.max() - ξ_bins.min() < 1e-0: # automatically detect and convert millimeters
+						ξ_bins, υ_bins = ξ_bins*1e3, υ_bins*1e3
+
+					if tim not in centroid: # TODO: remove this once I make the 2D reconstruction algorithm fix this automatically
+						μξ = np.average((ξ_bins[:-1] + ξ_bins[1:])/2, weights=np.sum(image, axis=1))
+						μυ = np.average((υ_bins[:-1] + υ_bins[1:])/2, weights=np.sum(image, axis=0))
+						centroid[tim] = (μξ, μυ)
+					ξ_bins -= centroid[tim][0]
+					υ_bins -= centroid[tim][1]
+
+					ξ_in_bounds = (ξ_bins >= -r_max) & (ξ_bins <= r_max) # crop out excessive empty space
+					υ_in_bounds = (υ_bins >= -r_max) & (υ_bins <= r_max)
+					both_in_bounds = ξ_in_bounds[:,None] & υ_in_bounds[None,:]
+					pixel_in_bounds = both_in_bounds[:-1,:-1] & both_in_bounds[:-1,1:] & both_in_bounds[1:,:-1] & both_in_bounds[1:,1:]
+					ξ_bins, υ_bins = ξ_bins[ξ_in_bounds], υ_bins[υ_in_bounds]
+					image = image[pixel_in_bounds].reshape((ξ_bins.size - 1, υ_bins.size - 1))
+
+					while image.size > 1000: # scale it down if necessary
+						ξ_bins, υ_bins = ξ_bins[::2], υ_bins[::2]
 						image = (image[:-1:2,:-1:2] + image[:-1:2,1::2] + image[1::2,:-1:2] + image[1::2,1::2])
 
-					if H is None:
-						H = image.shape[0]
-					assert image.shape == (H, H), (H, image.shape)
-					tru_image_dict[tim].append(image)
+					data_dict[tim].append((ξ_bins, υ_bins, image)) # I sure hope these load in a consistent order
 					if tim == first_tim_encountered:
-						Э_cuts.append([э_min, э_max])
+						Э_cuts.append([э_min, э_max]) # get the energy cuts from whichever tim you see first
+						x = (ξ_bins[:-1] + ξ_bins[1:])/2 - ξ_bins.mean()
+						y = x
+						z = x
 
-			if len(tru_image_dict) == 0:
+			Э_cuts = np.array(Э_cuts)
+			N = x.size - 1
+			if len(data_dict) == 0:
 				raise ValueError("no images were found")
 
-			r_max = 150
-			if x_bins is None:
-				ξ = np.linspace(-r_max, r_max, H + 1)
-				υ = np.linspace(-r_max, r_max, H + 1)
-				x = bin_centers(ξ)
-			else:
-				ξ = x_bins
-				υ = x_bins
-				x = bin_centers(x_bins)
-			y = x
-			z = x
-			N = x.size - 1
-
-			M = len(Э_cuts)
 			lines_of_sight = []
-			tru_images = []
-			for tim in sorted(tru_image_dict.keys()):
-				assert len(tru_image_dict[tim]) == M, (len(tru_image_dict[tim]), M)
+			data = []
+			for tim in sorted(data_dict.keys()):
+				assert len(data_dict[tim]) == Э_cuts.shape[0], (data_dict[tim], Э_cuts)
 				lines_of_sight.append(coordinate.tim_direction(tim))
-				tru_images.append(tru_image_dict[tim])
+				data.append(data_dict[tim]) # convert the dict to a list
 			lines_of_sight = np.array(lines_of_sight)
-			tru_images = np.array(tru_images)
 
-			np.savetxt("tmp/images.csv", np.ravel(tru_images))
+			ξ, υ, tru_images = [], [], []
+			for l in range(len(data)):
+				ξ.append([])
+				υ.append([])
+				tru_images.append([])
+				for h in range(len(data[l])):
+					ξ_vector, υ_vector, image = data[l][h]
+					ξ[l].append(ξ_vector)
+					υ[l].append(υ_vector)
+					tru_images[l].append(image)
+					np.savetxt(f"tmp/image-los{l}-cut{h}.csv", image, delimiter=',')
 
+		# save the parameters that always need to be saved
 		np.savetxt("tmp/x.csv", x)
 		np.savetxt("tmp/y.csv", y)
 		np.savetxt("tmp/z.csv", z)
-		np.savetxt("tmp/energy.csv", Э_cuts, delimiter=',')
-		np.savetxt("tmp/xye.csv", ξ)
-		np.savetxt("tmp/ypsilon.csv", υ)
 
 		np.savetxt("tmp/lines_of_site.csv", lines_of_sight, delimiter=',')
+		np.savetxt("tmp/energy.csv", Э_cuts, delimiter=',')
 
+		for l in range(lines_of_sight.shape[0]):
+			for h in range(Э_cuts.shape[0]):
+				np.savetxt(f"tmp/xye-los{l}-cut{h}.csv", ξ[l][h])
+				np.savetxt(f"tmp/ypsilon-los{l}-cut{h}.csv", υ[l][h])
+
+		# run the reconstruction!
 		print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 		cmd = [shutil.which("java"), "-enableassertions", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", *sys.argv[1:]]
 		with subprocess.Popen(cmd, stderr=subprocess.PIPE, encoding='utf-8') as process:
@@ -264,18 +308,30 @@ if __name__ == '__main__':
 		print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 
 		if 'test' in sys.argv:
-			tru_images = np.loadtxt("tmp/images.csv").reshape((lines_of_sight.shape[0], M, H, H))
+			# load the images it generated if we don't already have them
+			tru_images = []
+			for l in range(lines_of_sight.shape[0]):
+				tru_images.append([])
+				for h in range(Э_cuts.shape[0]):
+					tru_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}.csv", delimiter=','))
 
-	if tru_production is not None:
-		plot_source(x, y, z, tru_production, tru_density, "synthetic")
-
-	images = np.loadtxt("tmp/images-recon.csv").reshape((lines_of_sight.shape[0], M, H, H))
+	# load the results
 	production = np.loadtxt("tmp/production-recon.csv").reshape((N+1, N+1, N+1))
 	density = np.loadtxt("tmp/density-recon.csv").reshape((N+1, N+1, N+1))
 	temperature = np.loadtxt("tmp/temperature-recon.csv")
+	images = []
+	for l in range(lines_of_sight.shape[0]):
+		images.append([])
+		for h in range(Э_cuts.shape[0]):
+			images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}-recon.csv", delimiter=','))
+
+	# show the results
+	if tru_production is not None:
+		plot_source(x, y, z, tru_production, tru_density, "synthetic")
 
 	plot_source(x, y, z, production, density, name)
 
 	plot_images(Э_cuts, ξ, υ, tru_images, images)
+
 	plt.show()
 

@@ -2,6 +2,12 @@ import numpy as np
 from scipy import integrate
 
 
+x_ref = np.linspace(0, 1, 2001)[:-1]
+E_ref = np.empty(x_ref.shape)
+for i, a in enumerate(x_ref):
+	E_ref[i] = integrate.quad(lambda b: np.sqrt(1 - b**2)/((a - b)*np.sqrt(1 - b**2 + (a - b)**2)), -1, 2*a-1)[0] + integrate.quad(lambda b: (np.sqrt(1 - b**2)/np.sqrt((a - b)**2 + 1 - b**2) - np.sqrt(1 - (2*a - b)**2)/np.sqrt((a - b)**2 + 1 - (2*a - b)**2))/(a - b), 2*a-1, a)[0]
+E_ref -= x_ref/x_ref[1]*E_ref[1]
+
 def normalize(x):
 	return x/x.max()
 
@@ -30,17 +36,11 @@ def get_analytic_brightness(r0, Q, e_min=1e-15, e_max=1):
 
 np.seterr(divide='ignore', invalid='ignore')
 
-x_ref = np.linspace(0, 1, 2001)[:-1]
-E_ref = np.empty(x_ref.shape)
-for i, a in enumerate(x_ref):
-	E_ref[i] = integrate.quad(lambda b: np.sqrt(1 - b**2)/((a - b)*np.sqrt(1 - b**2 + (a - b)**2)), -1, 2*a-1)[0] + integrate.quad(lambda b: (np.sqrt(1 - b**2)/np.sqrt((a - b)**2 + 1 - b**2) - np.sqrt(1 - (2*a - b)**2)/np.sqrt((a - b)**2 + 1 - (2*a - b)**2))/(a - b), 2*a-1, a)[0]
-E_ref -= x_ref/x_ref[1]*E_ref[1]
-
 R = np.linspace(0, 3, 3000) # the normalized position
 E = np.geomspace(1e-1, 1e6, 1000) # the sample energy
-K = 1/E
+K = 1/E # the sample lethargy
 index = np.log(E)
-N = np.empty((len(K), len(R)))
+N = np.empty((len(K), len(R))) # calculate the track density profile for an array of charge coefficients
 for i, k in enumerate(K):
 	rS = np.concatenate([np.linspace(0, .9, 50)[:-1], (1 - np.geomspace(.1, 1e-6, 50))])
 	rB = rS + k*e_field(rS)
@@ -60,12 +60,10 @@ if __name__ == '__main__':
 	plt.figure()
 	# x = np.linspace(0, 1, 1000)
 	# plt.plot(x, e_field(x)/6, label="Electric field")
-	x, y = get_analytic_brightness(1.5, .112, 2, 6)
-	plt.plot(x, y, label="Brightness")
-	plt.fill_between(x, 0, y, alpha=0.5, label="Brightness")
-	x, y = get_analytic_brightness(1.5, .112/4.3, 2, 6)
-	plt.plot(x, y, label="Brightness")
-	plt.fill_between(x, 0, y, alpha=0.5, label="Brightness")
+	for Q in [.112, .112/4.3, 0]:
+		x, y = get_analytic_brightness(1.5, Q, 2, 6)
+		plt.plot(x, y, label="Brightness")
+		plt.fill_between(x, 0, y, alpha=0.5, label="Brightness")
 	plt.xlim(0, 2.0)
 	plt.ylim(0, 1.2)
 	plt.xlabel("r/r0")

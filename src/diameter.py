@@ -11,18 +11,31 @@ def D(E, τ=5, vB=2.66, k=.8, n=1.2, a=1, z=1):
 
 
 if __name__ == '__main__':
-	plt.rcParams.update({'font.family': 'sans', 'font.size': 18})
-	x = np.linspace(1, 16)
-	plt.figure(figsize=(5.5,3.5))
+	plt.rcParams.update({'font.family': 'serif', 'font.size': 18})
+
+	deuteron = dict(a=2, z=1)
+	Es = np.linspace(2.2, 12.45)
+
+	hi_Es = np.linspace(9, 12.45)
+	lo_Es = np.linspace(2.2, 6)
+	significant_Es = [2.2, 6, 9, 12.45]
+
+	plt.figure()#figsize=(5.5, 4))
 
 	# for k, n in [(.849, .806), (.626, .867), (.651, .830), (.651, .779), (.868, 1.322)]:
 	# 	plt.plot(x, D(x, k=k, n=n), '-')
-	plt.plot(x, D(x, a=1, z=1), '-k', linewidth=3)
-	# print(x.min(), E(3), E(1.7), x.max())
-	# plt.fill_between([E(1.7), x.max()], [D(x.max()), D(x.max())], [1.7, 1.7], color='b', alpha=.2)
-	# plt.fill_between([E(3), x.min()], [3, 3], [D(x.min()), D(x.min())], color='r', alpha=.2)
+	plt.plot(Es, D(Es, **deuteron), '-k', linewidth=2)
+	for cut_Es, color in [(hi_Es, '#668afa'), (lo_Es, '#fd7f86')]:
+		plt.fill_between(cut_Es, np.zeros(cut_Es.shape), D(cut_Es, **deuteron), color=color, alpha=1)
+	for E0 in significant_Es:
+		D0 = D(E0, **deuteron)
+		plt.plot([0, E0, E0], [D0, D0, 0], '--k', linewidth=1)
 	# plt.title("Relationship between incident energy and track diameter")
+	plt.xlim(0, None)
+	plt.ylim(0, None)
 	plt.xlabel("Energy (MeV)")
 	plt.ylabel("Diameter (μm)")
 	plt.tight_layout()
+	plt.savefig("../dve.png", dpi=300)
+	plt.savefig("../dve.eps")
 	plt.show()

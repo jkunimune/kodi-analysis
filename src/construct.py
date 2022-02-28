@@ -5,17 +5,23 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pickle
 
+import main
+from main import plot_reconstruction
 from simulations import load_shot, make_image
 from perlin import perlin_generator, wave_generator
 from electric_field_model import e_field
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
+main.SHOW_PLOTS = True
+main.PLOT_CONTOUR = False
+
 
 NOISE_SCALE = 1.0 # [cm]
 
 GROUPS = 10 # larger numbers are better for memory but worse for speed
-SYNTH_RESOLUTION = 10e-4
+SYNTH_RESOLUTION = 1e-4
+CONVOLUTION_RESOLUTION = 5e-4
 
 M = 14
 L = 4.21 # cm
@@ -66,6 +72,8 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 		SNR:		the ratio of the umbra to the background
 		name:		the name as which to save the file, uses `shot` if `name` is not specified
 	"""
+	resolution = CONVOLUTION_RESOLUTION if mode == 'convolve' else SYNTH_RESOLUTION
+
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, xS_bins, yS_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[2], EIN_CUTS[3]])
@@ -75,15 +83,16 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 		xS, yS = (xS_bins[1:] + xS_bins[:-1])/2, (yS_bins[1:] + yS_bins[:-1])/2
 		XS, YS = np.meshgrid(xS, yS)
 	else:
-		n_bins = int(500e-4/SYNTH_RESOLUTION)//2*2
-		xS_bins = np.linspace(-SYNTH_RESOLUTION*n_bins/2, SYNTH_RESOLUTION*n_bins/2, n_bins+1)
-		yS_bins = np.linspace(-SYNTH_RESOLUTION*n_bins/2, SYNTH_RESOLUTION*n_bins/2, n_bins+1)
+		n_bins = int(500e-4/resolution)//2*2
+		xS_bins = np.linspace(-resolution*n_bins/2, resolution*n_bins/2, n_bins+1)
+		yS_bins = np.linspace(-resolution*n_bins/2, resolution*n_bins/2, n_bins+1)
+		dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
 		xS, yS = (xS_bins[1:] + xS_bins[:-1])/2, (yS_bins[1:] + yS_bins[:-1])/2
-		XS, YS = np.meshgrid(xS, yS)
+		XS, YS = np.meshgrid(xS, yS, indexing='ij')
 		if shot == 'square':
-			img_lo = np.where((np.absolute(XS) < 60e-4) & (np.absolute(YS) < 60e-4), 1, 0)
+			img_lo = np.where((np.absolute(XS) < 100e-4) & (np.absolute(YS) < 100e-4), 1, 0)
 			img_lo[(XS > 0) & (YS > 0)] = 0
-			img_lo[(XS < 0) & (YS > 0) & (XS > -30e-4)] *= 2
+			img_lo[(XS < 0) & (YS > 0) & (XS > -50e-4)] *= 2
 		elif shot == 'eclipse':
 			img_lo = np.where((np.hypot(XS-80e-4, YS+40e-4) < 80e-4) & (np.hypot(XS-96e-4, YS+32e-4) > 40e-4), 1, 0)
 		elif shot == 'gaussian':
@@ -97,7 +106,10 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 		elif shot == 'comet':
 			img_lo = np.maximum(np.exp(-(XS**2 + YS**2)/(2*25e-4**2)), np.where(XS > 0, np.exp(-XS/100e-4)*np.exp(-YS**2/(2*20e-4**2)), 0))
 		elif shot == 'disc':
-			img_lo = np.where(np.hypot(XS, YS) < 100e-4, 1, 0)
+			img_lo = np.zeros(XS.shape)
+			for di in [-.4, -.2, 0, .2, .4]:
+				for dj in [-.4, -.2, 0, .2, .4]:
+					img_lo += np.where(np.hypot(XS + di*dxS, YS + dj*dyS) < 100e-4, 1/25, 0)
 		else:
 			raise Error(shot)
 		img_md, img_hi = np.zeros(img_lo.shape), np.zeros(img_lo.shape)
@@ -154,6 +166,8 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 			for i in range(GROUPS):
 				pixel_index = np.random.choice(np.arange(len(XS.ravel())), N_signal, p=img.ravel()/img.sum()) # sample from the distribution
 				xJ, yJ = np.stack([XS.ravel(), YS.ravel()], axis=1)[pixel_index].T
+				xJ += np.random.uniform(-dxS/2, dxS/2, pixel_index.shape)
+				yJ += np.random.uniform(-dyS/2, dyS/2, pixel_index.shape)
 				aperture_index = np.random.choice(np.arange(len(apertures)), N_signal)
 				x0, y0 = apertures[aperture_index].T
 				energy = np.random.uniform(*energy_in_bin, len(xJ))
@@ -183,18 +197,20 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 				with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.txt', 'a') as f:
 					for i in range(len(x_list)):
 						f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[i], y_list[i], d_list[i], 1, 1, 1)) # note that cpsa y coordinates are inverted
+		
+		plot_reconstruction(xS_bins, yS_bins, img, None, None, 'synth', name+"-not-a")
 
 	elif mode == 'convolve': # in this mode, calculate bin counts directly using a convolution
 		r0 = (M + 1)*rA
 		d_img = 2*(r0 + M*xS_bins.max())
-		m_bins = int(d_img/M/SYNTH_RESOLUTION)//2*2
-		xI_bins = np.linspace(-SYNTH_RESOLUTION*M*m_bins/2, SYNTH_RESOLUTION*M*m_bins/2, m_bins + 1)
-		yI_bins = np.linspace(-SYNTH_RESOLUTION*M*m_bins/2, SYNTH_RESOLUTION*M*m_bins/2, m_bins + 1)
+		m_bins = int(d_img/M/resolution)//2*2
+		xI_bins = np.linspace(-resolution*M*m_bins/2, resolution*M*m_bins/2, m_bins + 1)
+		yI_bins = np.linspace(-resolution*M*m_bins/2, resolution*M*m_bins/2, m_bins + 1)
 		dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 
 		xK = xI_bins[n_bins//2:-n_bins//2]
 		yK = xK
-		XK, YK = np.meshgrid(xK, yK)
+		XK, YK = np.meshgrid(xK, yK, indexing='ij')
 		NK = np.zeros((xK.size, xK.size))
 		for cx in [-1/3, 0, 1/3]:
 			for cy in [-1/3, 0, 1/3]:
@@ -205,6 +221,9 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 		NI = np.random.poisson(NI)
 		with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.pkl', 'wb') as f:
 			pickle.dump((xI_bins, yI_bins, NI), f)
+
+		plot_reconstruction(xS_bins, yS_bins, img_lo, None, None, 'synth', name+"-not-a")
+		
 	else:
 		raise KeyError(mode)
 
@@ -215,19 +234,6 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 	# plt.tight_layout()
 	# plt.show()
 
-	plt.figure()
-	plt.locator_params(steps=[1, 2, 5, 10])
-	plt.hist2d(xJ/1e-4, yJ/1e-4, bins=(np.linspace(-100, 100, 21), np.linspace(-100, 100, 21)), cmap=GREYS, rasterized=True)
-	plt.xlabel("x (μm)")
-	plt.ylabel("y (μm)")
-	# plt.colorbar()
-	plt.axis('square')
-	plt.tight_layout()
-	plt.savefig("../simulated_shot_{}.png".format(shot))
-	plt.savefig("../simulated_shot_{}.eps".format(shot))
-	plt.show()
-	plt.close()
-
 
 if __name__ == '__main__':
 	# for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
@@ -236,4 +242,5 @@ if __name__ == '__main__':
 	# 	construct_data(shot, (1000, .1), N, SNR)
 	# construct_data('comet', 1000, 1000000, 8, name='comet', mode='mc')
 	# construct_data('gaussian', 'charged', 1000000, 8, name='charge1')
-	construct_data('square', 1000, 3_000_000, 10, 'test0_square', 'mc')
+	construct_data('disc', 1000, 10_000_000, 10, 'test4_disc', 'convolve')
+	construct_data('square', 1000, 30_000_000, 10, 'test0_square', 'convolve')

@@ -28,13 +28,12 @@ def linregress(x, y, weights=None):
 
 def covariance_from_harmonics(p0, p1, θ1, p2, θ2):
 	""" convert a circular harmonic representation of a conture to a covariance matrix """
-	return (
-		np.matmul(np.matmul(
+	Σ = np.matmul(np.matmul(
 			np.array([[np.cos(θ2), -np.sin(θ2)], [np.sin(θ2), np.cos(θ2)]]),
 			np.array([[(p0 + p2)**2, 0], [0, (p0 - p2)**2]])),
-			np.array([[np.cos(θ2), np.sin(θ2)], [-np.sin(θ2), np.cos(θ2)]])),
-		np.array([p1*np.cos(θ1), p1*np.sin(θ1)])
-	)
+			np.array([[np.cos(θ2), np.sin(θ2)], [-np.sin(θ2), np.cos(θ2)]]))
+	μ = np.array([p1*np.cos(θ1), p1*np.sin(θ1)])
+	return ((Σ + Σ.T)/2, μ)
 
 
 def harmonics_from_covariance(Σ, μ):
@@ -75,8 +74,8 @@ def fit_ellipse(x, y, f, contour):
 		contour_path = max(contour_paths, key=len)
 		x_contour = np.interp(contour_path[:,0], np.arange(x.size), x)
 		y_contour = np.interp(contour_path[:,1], np.arange(y.size), y)
-		x0 = X[np.unravel_index(np.argmax(f), f.shape)]
-		y0 = Y[np.unravel_index(np.argmax(f), f.shape)]
+		x0 = np.average(X, weights=f)
+		y0 = np.average(Y, weights=f)
 		r = np.hypot(x_contour - x0, y_contour - y0)
 		θ = np.arctan2(y_contour - y0, x_contour - x0)
 		θL, θR = np.concatenate([θ[1:], θ[:1]]), np.concatenate([θ[-1:], θ[:-1]])
@@ -199,7 +198,7 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 		g0 += h*δg0
 		s += h*δs
 		γ = g/η/np.sum(g/η)
-		α = N/F.size*SMOOTHING # this entropy weiting parameter was determined quasiempirically (it's essentially the strength of my prior)
+		α = np.sqrt(N*1e7)/F.size*SMOOTHING#N/F.size*SMOOTHING # this entropy weiting parameter was determined quasiempirically (it's essentially the strength of my prior)
 
 		L = N*np.sum(f*np.log(s), where=where) # compute likelihood
 		S = np.sum(γ*np.log(γ), where=γ!=0) # compute entropy
@@ -245,7 +244,7 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 		if np.argmax(scores) == len(scores) - 1: # keep track of the best we've found
 			best_G = N*g/η
 			best_S = N*s
-		elif np.argmax(scores) < len(scores) - 6: # if the value function decreases six times in a row, quit
+		elif np.argmax(scores) < len(scores) - 12: # if the value function decreases six times in a row, quit
 			break
 
 	np.seterr('warn')
