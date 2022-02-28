@@ -23,6 +23,8 @@
  */
 package main;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 
@@ -1060,14 +1062,24 @@ public class NumericalMethods {
 	/**
 	 * extract a colum from a matrix as a 1d array.
 	 * @param matrix the matrix of values
-	 * @param collumIndex the index of the colum to extract
+	 * @param j the index of the colum to extract
 	 */
-	public static double[] collum(double[][] matrix, int collumIndex) {
+	public static double[] collum(double[][] matrix, int j) {
 		double[] collum = new double[matrix.length];
 		for (int i = 0; i < matrix.length; i ++) {
-			if (collumIndex >= matrix[i].length)
-				throw new IllegalArgumentException("the given matrix does not have enuff collums");
-			collum[i] = matrix[i][collumIndex];
+			collum[i] = matrix[i][j];
+		}
+		return collum;
+	}
+
+	/**
+	 * extract a colum from a matrix as a 1d array.
+	 * @param matrix the matrix of values
+	 */
+	public static double[] collum(double[][][][] matrix, int j, int k, int l) {
+		double[] collum = new double[matrix.length];
+		for (int i = 0; i < matrix.length; i ++) {
+			collum[i] = matrix[i][j][k][l];
 		}
 		return collum;
 	}
@@ -1090,6 +1102,14 @@ public class NumericalMethods {
 		System.arraycopy(a, 0, c, 0, a.length);
 		System.arraycopy(b, 0, c, a.length, b.length);
 		return c;
+	}
+
+	public static double[][] transpose(double[][] a) {
+		double[][] at = new double[a[0].length][a.length];
+		for (int i = 0; i < at.length; i ++)
+			for (int j = 0; j < at[i].length; j ++)
+				at[i][j] = a[j][i];
+		return at;
 	}
 
 	/**
@@ -1225,6 +1245,24 @@ public class NumericalMethods {
 		}
 
 		return zO;
+	}
+
+	/**
+	 * create an iterable with a for loop bilt in
+	 * @param start the initial number, inclusive for forward iteration and
+	 *              exclusive for backward
+	 * @param end exclusive for forward and exclusive for backward
+	 * @return something you can plug into a for-each loop
+	 */
+	public static Iterable<Integer> iteration(int start, int end) {
+		List<Integer> values = new ArrayList<>(Math.abs(end - start));
+		if (end > start)
+			for (int i = start; i < end; i ++)
+				values.add(i);
+		else
+			for (int i = start - 1; i >= end; i --)
+				values.add(i);
+		return values;
 	}
 
 	/**

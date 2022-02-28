@@ -7,7 +7,6 @@ import main.Optimize.Optimum;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.logging.FileHandler;
 import java.util.logging.Formatter;
@@ -82,6 +81,68 @@ public class VoxelFit {
 				return true;
 		return false;
 	}
+
+	/**
+	 * read thru an array in the intuitive order and put it into a 1d list
+	 * @param input an m×n×o array
+	 */
+	private static double[] unravel(double[][][] input) {
+		int m = input.length;
+		int n = input[0].length;
+		int o = input[0][0].length;
+		double[] output = new double[m*n*o];
+		for (int i = 0; i < m; i ++)
+			for (int j = 0; j < n; j ++)
+				System.arraycopy(input[i][j], 0, output, (i*n + j)*o, o);
+		return output;
+	}
+
+	/**
+	 * read thru an array in the intuitive order and put it into a 1d list
+	 * @param input a 4D array of any size and shape (jagged is okey)
+	 */
+	private static double[] unravelRagged(double[][][][] input) {
+		List<Double> list = new ArrayList<>();
+		for (double[][][] stack: input)
+			for (double[][] row: stack)
+				for (double[] colum: row)
+					for (double v: colum)
+						list.add(v);
+		double[] array = new double[list.size()];
+		for (int i = 0; i < array.length; i ++)
+			array[i] = list.get(i);
+		return array;
+	}
+
+	/**
+	 * convert a 5D array to a 1D one such that
+	 * input[и][l][h][i][j] => output[l+H*(h+I*(i+J*j))][и] for a rectangular
+	 * array, but it also handles it correctly if the input is jagged on the
+	 * twoth, third, or fourth indeces (it needs to be rectangular on the first
+	 * index, obviously, or the transpose wouldn't work)
+	 */
+	private static double[][] unravelRaggedAndTranspose(double[][][][][] input) {
+		double[][] untransposed = new double[input.length][];
+		for (int i = 0; i < input.length; i ++) {
+			untransposed[i] = unravelRagged(input[i]);
+			if (i > 0 && untransposed[i].length != untransposed[i-1].length)
+				throw new IllegalArgumentException("the array is too jagged.");
+		}
+		return NumericalMethods.transpose(untransposed);
+	}
+
+	private static Formatter newFormatter(String format) {
+		return new SimpleFormatter() {
+			public String format(LogRecord record) {
+				return String.format(format,
+									 record.getMillis(),
+									 record.getLevel(),
+									 record.getMessage(),
+									 (record.getThrown() != null) ? record.getThrown() : "");
+			}
+		};
+	}
+
 
 	/**
 	 * Li-Petrasso stopping power (deuteron, weakly coupled)
@@ -170,7 +231,7 @@ public class VoxelFit {
 	 * return the matrix that turns an unraveled coefficient vector into a full
 	 * 3d mapping, using spherical harmonics and linear interpolation in the
 	 * radial direction
-	 * @return a matrix A such that A_ijkи = the derivative of the mapping at x_i,
+	 * @return a matrix A such that A_иijk = the derivative of the mapping at x_i,
 	 * y_j, z_k with respect to the иth basis function
 	 */
 	private static double[][][][] basis_functions(double[] r,
@@ -186,7 +247,7 @@ public class VoxelFit {
 			}
 		}
 
-		double[][][][] basis = new double[x.length][y.length][z.length][num_basis_functions];
+		double[][][][] basis = new double[num_basis_functions][x.length][y.length][z.length];
 		for (int i = 0; i < x.length; i ++) {
 			for (int j = 0; j < y.length; j ++) {
 				for (int k = 0; k < z.length; k ++) {
@@ -198,7 +259,7 @@ public class VoxelFit {
 							// if (l != 1) // skipping P1 TODO: should I bring back the shift for P1?  probably not.  it would be nonlinear.
 							for (int m = -l; m <= l; m ++) {
 								double weit = Math.max(0, 1 - Math.abs(s - s_partial));
-								basis[i][j][k][и] = weit*harmonics[l][l + m];
+								basis[и][i][j][k] = weit*harmonics[l][l + m];
 								и ++;
 							}
 						}
@@ -258,18 +319,20 @@ public class VoxelFit {
 	 * @param coefs a triangular array of spherical harmonick coefficients, where
 	 *              production_profiles[s][l][m] is the Y_l^m component of the
 	 *              profile at r[s]
-	 * @param basis the basis function matrix
+	 * @param basis the array of basis functions
 	 * @return values at the vertices
 	 */
 	private static double[][][] bild_3d_map(
 		  double[] coefs, double[][][][] basis) {
+		if (coefs.length != basis.length)
+			throw new IllegalArgumentException(coefs.length+" coefficients cannot convolve "+basis.length+" basis functions.");
 
-		double[][][] values = new double[basis.length][basis[0].length][basis[0][0].length];
-		for (int i = 0; i < basis.length; i ++)
-			for (int j = 0; j < basis[i].length; j ++)
-				for (int k = 0; k < basis[i][j].length; k ++)
-					for (int и = 0; и < coefs.length; и ++)
-						values[i][j][k] += basis[i][j][k][и]*coefs[и];
+		double[][][] values = new double[basis[0].length][basis[0][0].length][basis[0][0][0].length];
+		for (int и = 0; и < basis.length; и ++)
+			for (int i = 0; i < basis[и].length; i ++)
+				for (int j = 0; j < basis[и][i].length; j ++)
+					for (int k = 0; k < basis[и][i][j].length; k ++)
+						values[i][j][k] += coefs[и]*basis[и][i][j][k];
 
 		return values;
 	}
@@ -296,19 +359,19 @@ public class VoxelFit {
 		  double[] y,
 		  double[] z,
 		  double[] r,
-		  Interval[] Э_cuts,
-		  double[] ξ,
-		  double[] υ,
 		  Vector[] lines_of_sight,
+		  Interval[] Э_cuts,
+		  double[][][] ξ,
+		  double[][][] υ,
 		  double[][][][] basis_functions,
 		  double smoothing
 	) {
 		return NumericalMethods.vertically_stack(
-			  unravel(synthesize_image_response(
+			  unravelRaggedAndTranspose(synthesize_image_response(
 			  	  null, density, temperature, x, y, z,
-				  Э_cuts, ξ, υ, lines_of_sight, basis_functions,
+				  lines_of_sight, Э_cuts, ξ, υ, basis_functions,
 				  true, false)),
-			  list_bad_modes(r, basis_functions[0][0][0].length, smoothing));
+			  list_bad_modes(r, basis_functions.length, smoothing));
 	}
 
 	/**
@@ -334,19 +397,19 @@ public class VoxelFit {
 		  double[] y,
 		  double[] z,
 		  double[] r,
-		  Interval[] Э_cuts,
-		  double[] ξ,
-		  double[] υ,
 		  Vector[] lines_of_sight,
+		  Interval[] Э_cuts,
+		  double[][][] ξ,
+		  double[][][] υ,
 		  double[][][][] basis_functions,
 		  double smoothing
 	) {
 		return NumericalMethods.vertically_stack(
-			  unravel(synthesize_image_response(
+			  unravelRaggedAndTranspose(synthesize_image_response(
 				  production, density, temperature, x, y, z,
-				  Э_cuts, ξ, υ, lines_of_sight, basis_functions,
+				  lines_of_sight, Э_cuts, ξ, υ, basis_functions,
 				  false, true)),
-			  list_bad_modes(r, basis_functions[0][0][0].length, smoothing));
+			  list_bad_modes(r, basis_functions.length, smoothing));
 	}
 
 	/**
@@ -369,16 +432,16 @@ public class VoxelFit {
 		  double[] x,
 		  double[] y,
 		  double[] z,
+		  Vector[] lines_of_sight,
 		  Interval[] Э_cuts,
-		  double[] ξ,
-		  double[] υ,
-		  Vector[] lines_of_sight
+		  double[][][] ξ,
+		  double[][][] υ
 	) {
-		return remove_last_axis(synthesize_image_response(
+		return synthesize_image_response(
 			  production, density, temperature,
-			  x, y, z, Э_cuts, ξ, υ, lines_of_sight, null,
+			  x, y, z, lines_of_sight, Э_cuts, ξ, υ, null,
 			  false, false
-		));
+		)[0];
 	}
 
 
@@ -397,16 +460,19 @@ public class VoxelFit {
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
 	 * @param z the z bin edges (μm)
+	 * @param lines_of_sight the detector line of site direccions
 	 * @param Э_cuts the energy bin edges (MeV)
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
-	 * @param lines_of_sight the detector line of site direccions
+	 * @param basis_functions each element of the array is a 3D distribution
+	 *                        representing one independent mode in the space
 	 * @param respond_to_production whether the neutron production should be taken
 	 *                              to depend on the basis functions
 	 * @param respond_to_density whether the density should be taken to depend on
 	 *                           the basis functions (the matrix input will still
 	 *                           be used for ranging)
-	 * @return the grids of pixel gradients
+	 * @return the image response to each basis function. so output[и][l][h][i][j]
+	 * is the response of pixel i,j in cut h on line of sight l to basis function и
 	 */
 	private static double[][][][][] synthesize_image_response(
 		  double[][][] production,
@@ -415,10 +481,10 @@ public class VoxelFit {
 		  double[] x,
 		  double[] y,
 		  double[] z,
-		  Interval[] Э_cuts,
-		  double[] ξ,
-		  double[] υ,
 		  Vector[] lines_of_sight,
+		  Interval[] Э_cuts,
+		  double[][][] ξ,
+		  double[][][] υ,
 		  double[][][][] basis_functions,
 		  boolean respond_to_production,
 		  boolean respond_to_density
@@ -437,9 +503,13 @@ public class VoxelFit {
 		if (basis_functions == null)
 			num_basis_functions = 1;
 		else
-			num_basis_functions = basis_functions[0][0][0].length;
+			num_basis_functions = basis_functions.length;
 
-		double[][][][][] basis_images = new double[lines_of_sight.length][Э_cuts.length][ξ.length - 1][υ.length - 1][num_basis_functions];
+		double[][][][][] basis_images = new double[num_basis_functions][lines_of_sight.length][Э_cuts.length][][];
+		for (int и = 0; и < num_basis_functions; и ++)
+			for (int l = 0; l < lines_of_sight.length; l ++)
+				for (int h = 0; h < Э_cuts.length; h ++)
+					basis_images[и][l][h] = new double[ξ[l][h].length - 1][υ[l][h].length - 1];
 
 		for (int l = 0; l < lines_of_sight.length; l ++) { // for each line of sight
 			Vector ζ_hat = lines_of_sight[l];
@@ -451,12 +521,26 @@ public class VoxelFit {
 			Vector υ_hat = ζ_hat.cross(ξ_hat);
 
 			double[][][] ρL = new double[x.length][y.length][z.length]; // precompute the line-integrated densities
-			for (int i1 = x.length - 1; i1 >= 0; i1 --) {
-				for (int j1 = y.length - 1; j1 >= 0; j1 --) {
-					for (int k1 = z.length - 1; k1 >= 0; k1 --) {
-						Vector previous_pixel = new DenseVector(i1, j1, k1).plus(ζ_hat); // TODO: this should tie into the full integral.  it should solve for the stuff in each pixel one at a time
+			for (int i = 0; i < x.length; i ++)
+				for (int j = 0; j < y.length; j ++)
+					for (int k = 0; k < z.length; k ++)
+						ρL[i][j][k] = Double.NaN; // first mark them as NaN so that we notice any out-of-order issues
+
+			Iterable<Integer> xIteration;
+			if (ζ_hat.get(0) <= 0) xIteration = NumericalMethods.iteration(0, x.length);
+			else                   xIteration = NumericalMethods.iteration(x.length, 0);
+			Iterable<Integer> yIteration;
+			if (ζ_hat.get(1) <= 0) yIteration = NumericalMethods.iteration(0, y.length);
+			else                   yIteration = NumericalMethods.iteration(y.length, 0);
+			Iterable<Integer> zIteration;
+			if (ζ_hat.get(2) <= 0) zIteration = NumericalMethods.iteration(0, z.length);
+			else                   zIteration = NumericalMethods.iteration(z.length, 0);
+			for (int i1: xIteration) {
+				for (int j1: yIteration) {
+					for (int k1: zIteration) {
+						Vector previous_pixel = new DenseVector(i1, j1, k1).plus(ζ_hat); // TODO: this should tie into the full integral.  it should solve for the stuff in each pixel one at a time.  maybe.
 						int i0 = (int)Math.round(previous_pixel.get(0)); // look at the voxel one step toward the detector
-						int j0 = (int)Math.round(previous_pixel.get(1));
+						int j0 = (int)Math.round(previous_pixel.get(1)); // TODO: use interpolation here
 						int k0 = (int)Math.round(previous_pixel.get(2));
 						double ρ1 = density[i1][j1][k1]; // get the density here
 						double ρ0, ρL_beyond; // the density there and ρL from there
@@ -467,6 +551,7 @@ public class VoxelFit {
 							ρ0 = 0; // or not if this point is on the outer edge
 							ρL_beyond = 0;
 						}
+						assert !Double.isNaN(ρL_beyond) : String.format("%d,%d,%d tried to read %d,%d,%d, but it was nan", i1,j1,k1, i0,j0,k0);
 						ρL[i1][j1][k1] = ρL_beyond + (ρ0 + ρ1)/2.*L_pixel; // then cumulatively integrate it up
 					}
 				}
@@ -478,7 +563,8 @@ public class VoxelFit {
 
 						double[] local_production; // get the production
 						if (respond_to_production) // either by basing it on the basis function
-							local_production = basis_functions[iP][jP][kP];
+							local_production = NumericalMethods.collum(
+								  basis_functions, iP, jP, kP);
 						else // or by taking it from the provided production array
 							local_production = NumericalMethods.full(production[iP][jP][kP], num_basis_functions);
 						if (NumericalMethods.all_zero(local_production))
@@ -490,7 +576,8 @@ public class VoxelFit {
 
 									double[] local_density; // get the density
 									if (respond_to_density) // either by basing it on the basis function
-										local_density = basis_functions[iD][jD][kD];
+										local_density = NumericalMethods.collum(
+											  basis_functions, iD, jD, kD);
 									else // or by taking it from the provided density array
 										local_density = NumericalMethods.full(density[iD][jD][kD], num_basis_functions);
 									if (NumericalMethods.all_zero(local_density))
@@ -520,11 +607,11 @@ public class VoxelFit {
 									int hV = NumericalMethods.bin(ЭV, Э_cuts);
 									if (hV < 0 || hV >= Э_cuts.length)
 										continue;
-									int iV = NumericalMethods.bin(ξV, ξ);
-									if (iV < 0 || iV >= ξ.length - 1)
+									int iV = NumericalMethods.bin(ξV, ξ[l][hV]);
+									if (iV < 0 || iV >= ξ[l][hV].length - 1)
 										continue;
-									int jV = NumericalMethods.bin(υV, υ);
-									if (jV < 0 || jV >= υ.length - 1)
+									int jV = NumericalMethods.bin(υV, υ[l][hV]);
+									if (jV < 0 || jV >= υ[l][hV].length - 1)
 										continue;
 
 									double contribution =
@@ -534,7 +621,7 @@ public class VoxelFit {
 
 									for (int и = 0; и < num_basis_functions; и ++) // finally, iterate over the basis functions
 										if (local_production[и] != 0 && local_density[и] != 0) // TODO I feel like this line does noting
-											basis_images[l][hV][iV][jV][и] +=
+											basis_images[и][l][hV][iV][jV] +=
 												  local_production[и]*
 												  local_density[и]*
 												  contribution;
@@ -549,59 +636,6 @@ public class VoxelFit {
 		return basis_images;
 	}
 
-
-	private static double[] unravel(double[][][] input) {
-		int m = input.length;
-		int n = input[0].length;
-		int o = input[0][0].length;
-		double[] output = new double[m*n*o];
-		for (int i = 0; i < m; i ++)
-			for (int j = 0; j < n; j ++)
-				System.arraycopy(input[i][j], 0, output, (i*n + j)*o, o);
-		return output;
-	}
-
-	private static double[] unravel(double[][][][] input) {
-		int m = input.length;
-		int n = input[0].length;
-		int o = input[0][0].length;
-		int p = input[0][0][0].length;
-		double[] output = new double[m*n*o*p];
-		for (int i = 0; i < m; i ++)
-			for (int j = 0; j < n; j ++)
-				for (int k = 0; k < o; k ++)
-					System.arraycopy(input[i][j][k], 0, output, ((i*n + j)*o + k)*p, p);
-		return output;
-	}
-
-	private static double[][] unravel(double[][][][][] input) {
-		int m = input.length;
-		int n = input[0].length;
-		int o = input[0][0].length;
-		int p = input[0][0][0].length;
-		double[][] output = new double[m*n*o*p][];
-		for (int i = 0; i < m; i ++)
-			for (int j = 0; j < n; j ++)
-				for (int k = 0; k < o; k ++)
-					for (int l = 0; l < p; l ++)
-						output[((i*n + j)*o + k)*p + l] = Arrays.copyOf(input[i][j][k][l], input[i][j][k][l].length);
-		return output;
-	}
-
-	private static double[][][][] remove_last_axis(double[][][][][] input) {
-		assert input[0][0][0][0].length == 1;
-		int m = input.length;
-		int n = input[0].length;
-		int o = input[0][0].length;
-		int p = input[0][0][0].length;
-		double[][][][] output = new double[m][n][o][p];
-		for (int i = 0; i < m; i ++)
-			for (int j = 0; j < n; j ++)
-				for (int k = 0; k < o; k ++)
-					for (int l = 0; l < p; l ++)
-						output[i][j][k][l] = input[i][j][k][l][0];
-		return output;
-	}
 
 	/**
 	 * reconstruct the implosion morphology that corresponds to the given images.
@@ -622,27 +656,29 @@ public class VoxelFit {
 	 */
 	private static double[][][][] reconstruct_images(
 		  double[][][][] images, double[] r, double[] x, double[] y, double[] z,
-		  Interval[] Э_cuts, double[] ξ, double[] υ, Vector[] lines_of_sight) { // TODO: multithread?
+		  Vector[] lines_of_sight, Interval[] Э_cuts, double[][][] ξ, double[][][] υ) { // TODO: multithread?
 
-		VoxelFit.logger.info(String.format("reconstructing images of size %dx%dx%dx%d",
-										   images.length, images[0].length,
-										   images[0][0].length, images[0][0][0].length));
+		VoxelFit.logger.info(String.format("reconstructing %dx%d (%d total) images",
+										   images.length, images[0].length, images.length*images[0].length));
 
 		double[][][][] basis_functions = basis_functions(r, x, y, z);
-		int num_basis_functions = basis_functions[0][0][0].length;
+		int num_basis_functions = basis_functions.length;
 
 		int num_smoothing_parameters = list_bad_modes(
 			  r, num_basis_functions, 0).length;
 
+		double[] image_vector = unravelRagged(images);
+		int num_pixels = image_vector.length;
+
 		double[] data_vector = NumericalMethods.concatenate(
-			  unravel(images), new double[num_smoothing_parameters]); // unroll the data
+			  image_vector, new double[num_smoothing_parameters]); // unroll the data
 		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
 		double data_scale = NumericalMethods.max(data_vector)/6.;
-		for (int i = 0; i < data_vector.length - num_smoothing_parameters; i ++)
+		for (int i = 0; i < num_pixels; i ++)
 //			inverse_variance_vector[i] = 1./(data_scale*data_scale); // uniform
 			inverse_variance_vector[i] = 1/(data_scale*(data_vector[i] + data_scale/36)); // unitless Poisson
 //			inverse_variance_vector[i] = 1./(data_vector[i] + 1); // corrected Poisson
-		for (int i = data_vector.length - num_smoothing_parameters; i < data_vector.length; i ++)
+		for (int i = num_pixels; i < data_vector.length; i ++)
 			inverse_variance_vector[i] = 1;
 
 		double production_gess = NumericalMethods.sum(images)/1e-2/
@@ -677,8 +713,7 @@ public class VoxelFit {
 						density,
 						current_temperature,
 						x, y, z, r,
-						Э_cuts, ξ, υ,
-						lines_of_sight,
+						lines_of_sight, Э_cuts, ξ, υ,
 						basis_functions,
 						SMOOTHING/(production_gess/Math.sqrt(r[r.length-1]))),
 				  data_vector,
@@ -695,8 +730,7 @@ public class VoxelFit {
 						bild_3d_map(coefs, basis_functions),
 						current_temperature,
 						x, y, z, r,
-						Э_cuts, ξ, υ,
-						lines_of_sight,
+						lines_of_sight, Э_cuts, ξ, υ,
 						basis_functions,
 						SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length-1]))),
 				  data_vector,
@@ -717,17 +751,6 @@ public class VoxelFit {
 		return new double[][][][] { production, density, {{{temperature}}} };
 	}
 
-	private static Formatter newFormatter(String format) {
-		return new SimpleFormatter() {
-			public String format(LogRecord record) {
-				return String.format(format,
-									 record.getMillis(),
-									 record.getLevel(),
-									 record.getMessage(),
-									 (record.getThrown() != null) ? record.getThrown() : "");
-			}
-		};
-	}
 
 	public static void main(String[] args) throws IOException {
 		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM:%1tS | %2$s | %3$s%4$s%n"));
@@ -758,8 +781,6 @@ public class VoxelFit {
 		double[] x = CSV.readColumn(new File("tmp/x.csv")); // load the coordinate system (μm)
 		double[] y = CSV.readColumn(new File("tmp/y.csv")); // (μm)
 		double[] z = CSV.readColumn(new File("tmp/z.csv")); // (μm)
-		double[] ξ = CSV.readColumn(new File("tmp/xye.csv")); // (μm)
-		double[] υ = CSV.readColumn(new File("tmp/ypsilon.csv")); // (μm)
 		double[][] Э_array = CSV.read(new File("tmp/energy.csv"), ','); // (MeV)
 		Interval[] Э_cuts = new Interval[Э_array.length];
 		for (int i = 0; i < Э_cuts.length; i ++)
@@ -769,9 +790,17 @@ public class VoxelFit {
 		for (int s = 0; s < r.length; s ++)
 			r[s] = x[x.length - 1]*s/r.length;
 
-		double[][][][] images;
+		double[][][] ξ = new double[lines_of_sight.length][Э_cuts.length][];
+		double[][][] υ = new double[lines_of_sight.length][Э_cuts.length][];
+		double[][][][] images = new double[lines_of_sight.length][Э_cuts.length][][];
 
 		if (containsTheWordTest(args)) {
+			for (int l = 0; l < lines_of_sight.length; l ++) {
+				for (int h = 0; h < Э_cuts.length; h ++) {
+					ξ[l][h] = CSV.readColumn(new File("tmp/xye-los"+l+"-cut"+h+".csv"));
+					υ[l][h] = CSV.readColumn(new File("tmp/ypsilon-los"+l+"-cut"+h+".csv"));
+				}
+			}
 			String[] morphology_filenames = {"production", "density"};
 			double[][][][] anser = new double[2][x.length][y.length][z.length];
 			for (int q = 0; q < morphology_filenames.length; q++) {
@@ -787,33 +816,38 @@ public class VoxelFit {
 
 			images = synthesize_images(
 				  anser[0], anser[1], temperature,
-				  x, y, z, Э_cuts, ξ, υ, lines_of_site); // synthesize the true images
-			CSV.writeColumn(unravel(images), new File("tmp/images.csv"));
+				  x, y, z, lines_of_site, Э_cuts, ξ, υ); // synthesize the true images
+			for (int l = 0; l < lines_of_sight.length; l ++)
+				for (int h = 0; h < Э_cuts.length; h ++)
+					CSV.write(images[l][h], new File("tmp/image-los"+l+"-cut"+h+".csv"), ',');
 		}
 		else {
-			double[] images_as_colum = CSV.readColumn(new File("tmp/images.csv"));
-			images = new double[lines_of_site.length][Э_cuts.length][ξ.length - 1][υ.length - 1];
-			for (int l = 0; l < lines_of_site.length; l ++)
-				for (int h = 0; h < Э_cuts.length; h ++)
-					for (int i = 0; i < ξ.length - 1; i ++)
-						System.arraycopy(
-							  images_as_colum, ((l*Э_cuts.length + h)*(ξ.length - 1) + i)*(υ.length - 1),
-							  images[l][h][i], 0, υ.length - 1);
+			for (int l = 0; l < lines_of_sight.length; l ++) {
+				for (int h = 0; h < Э_cuts.length; h ++) {
+					ξ[l][h] = CSV.readColumn(new File("tmp/xye-los"+l+"-cut"+h+".csv"));
+					υ[l][h] = CSV.readColumn(new File("tmp/ypsilon-los"+l+"-cut"+h+".csv"));
+					images[l][h] = CSV.read(new File("tmp/image-los"+l+"-cut"+h+".csv"), ',');
+					int n = images[l][h].length, m = images[l][h][0].length;
+					if (n != ξ[l][h].length - 1 || m != υ[l][h].length - 1)
+						throw new IllegalArgumentException("image size "+n+"x"+m+" does not match array lengths ("+ξ[l][h].length+" for xi and "+υ[l][h].length+" for ypsilon)");
+				}
+			}
 		}
 
 		double[][][][] anser = reconstruct_images(
 			  images,
 			  r, x, y, z,
-			  Э_cuts, ξ, υ,
-			  lines_of_site); // reconstruct the morphology
+			  lines_of_site, Э_cuts, ξ, υ); // reconstruct the morphology
 
 		images = synthesize_images(
 			  anser[0], anser[1], anser[2][0][0][0],
-			  x, y, z, Э_cuts, ξ, υ, lines_of_site); // get the reconstructed morphologie's images
+			  x, y, z, lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphologie's images
 
 		CSV.writeColumn(unravel(anser[0]), new File("tmp/production-recon.csv"));
 		CSV.writeColumn(unravel(anser[1]), new File("tmp/density-recon.csv"));
 		CSV.writeScalar(anser[2][0][0][0], new File("tmp/temperature-recon.csv"));
-		CSV.writeColumn(unravel(images), new File("tmp/images-recon.csv"));
+		for (int l = 0; l < lines_of_sight.length; l ++)
+			for (int h = 0; h < Э_cuts.length; h ++)
+				CSV.write(images[l][h], new File("tmp/image-los"+l+"-cut"+h+"-recon.csv"), ',');
 	}
 }
