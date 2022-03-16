@@ -1,6 +1,3 @@
-import numpy as np
-import matplotlib.pyplot as plt
-
 from construct import construct_data
 
 if __name__ == '__main__':

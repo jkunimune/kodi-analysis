@@ -6,7 +6,7 @@ import pandas as pd
 import pickle
 
 import main
-from main import plot_reconstruction
+from main import plot_reconstruction, plot_cooked_data
 from simulations import load_shot, make_image
 from perlin import perlin_generator, wave_generator
 from electric_field_model import e_field
@@ -20,7 +20,7 @@ main.PLOT_CONTOUR = False
 NOISE_SCALE = 1.0 # [cm]
 
 GROUPS = 10 # larger numbers are better for memory but worse for speed
-SYNTH_RESOLUTION = 1e-4
+SAMPLE_RESOLUTION = 1e-4
 CONVOLUTION_RESOLUTION = 5e-4
 
 M = 14
@@ -60,7 +60,7 @@ Limits imposed on tracks listed below:
 """
 
 
-def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
+def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 	"""
 		shot:		either an int, the shot number of the LILAC simulation to use, or a str
 						from `['eclipse', 'gaussian', 'hypergaussian', 'ellipse',
@@ -68,18 +68,18 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 		aperture:	either an int for the radius in microns, or (int, float) where the twoth
 						float is the charging, or a str from `['big', 'small', 'multi',
 						'charged']`
-		N:			track density in cm^(-2)
+		yeeld:		total 4π yield of the implosion
 		SNR:		the ratio of the umbra to the background
 		name:		the name as which to save the file, uses `shot` if `name` is not specified
 	"""
-	resolution = CONVOLUTION_RESOLUTION if mode == 'convolve' else SYNTH_RESOLUTION
+	resolution = CONVOLUTION_RESOLUTION if mode == 'convolve' else SAMPLE_RESOLUTION
 
 	if type(shot) == int:
 		t, (R, ρ, P, V, Te, Ti) = load_shot(shot)
 		img_hi, xS_bins, yS_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[2], EIN_CUTS[3]])
 		img_md, xS_bins, yS_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[1], EIN_CUTS[2]])
 		img_lo, xS_bins, yS_bins = make_image(t, R, ρ, Ti, [EIN_CUTS[0], EIN_CUTS[1]])
-		xS_bins, yS_bins = x_bins*1e-4, y_bins*1e-4 # convert to cm
+		xS_bins, yS_bins = xS_bins*1e-4, yS_bins*1e-4 # convert to cm
 		xS, yS = (xS_bins[1:] + xS_bins[:-1])/2, (yS_bins[1:] + yS_bins[:-1])/2
 		XS, YS = np.meshgrid(xS, yS)
 	else:
@@ -110,8 +110,37 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 			for di in [-.4, -.2, 0, .2, .4]:
 				for dj in [-.4, -.2, 0, .2, .4]:
 					img_lo += np.where(np.hypot(XS + di*dxS, YS + dj*dyS) < 100e-4, 1/25, 0)
+		elif shot == 'mit':
+			lines = [
+				[(-12, -6), (-12, 6), (-11.5, 6), (-8, -2), (-4.5, 6), (-4, 6), (-4, -6)], # M
+				[(0, 6), (0, -6)], # I
+				[(4, 6), (12, 6)], [(8, 6), (8, -6)] # T
+			]
+			envelopes = [
+				[(-12, -6), (-11, -6), (-11, -1.5), (-5, -1.5), (-5, -6), (-4, -6), (-4, 6), (-12, 6)],
+				[(-12, -6), (12, -6), (12, 6), (-12, 6)],
+				[(-12, -6), (12, -6), (12, 6), (-12, 6)],
+				[(-12, -6), (12, -6), (12, 6), (-12, 6)],
+			]
+			img_lo = np.zeros(XS.shape)
+			for line, envelope in zip(lines, envelopes):
+				for i in range(len(line) - 1): # write out the letters
+					x0, y0 = np.multiply(line[i], 10e-4)
+					x1, y1 = np.multiply(line[i+1], 10e-4)
+					l = np.hypot(x1 - x0, y1 - y0)
+					s = (XS - x0)*(y1 - y0)/l - (YS - y0)*(x1 - x0)/l
+					t = (XS - x0)*(x1 - x0)/l + (YS - y0)*(y1 - y0)/l
+					img_lo[(abs(s) < 5e-4) & (t > -5e-4) & (t < l + 5e-4)] = 1
+				for i in range(len(envelope)): # then trim the edges
+					x0, y0 = np.multiply(envelope[i], 10e-4)
+					x1, y1 = np.multiply(envelope[(i+1)%len(envelope)], 10e-4)
+					l = np.hypot(x1 - x0, y1 - y0)
+					s = (XS - x0)*(y1 - y0)/l - (YS - y0)*(x1 - x0)/l
+					t = (XS - x0)*(x1 - x0)/l + (YS - y0)*(y1 - y0)/l
+					img_lo[(s > 5e-4) & (s < 18e-4) & (t > -5e-4) & (t < l + 5e-4)] = 0
+
 		else:
-			raise Error(shot)
+			raise ValueError(shot)
 		img_md, img_hi = np.zeros(img_lo.shape), np.zeros(img_lo.shape)
 
 	apertures = [(0, 0)] # cm
@@ -137,15 +166,17 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 		rA, Q = aperture[0]*1e-4, aperture[1]
 	apertures = np.array(apertures)
 
+	track_density = yeeld / (4*np.pi*L**2)
+
 	if mode == 'mc':
-		N /= GROUPS
+		number_on_detector = track_density * (len(apertures)*np.pi*rA**2) / GROUPS
 
-		δx_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, Q)
-		δy_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, Q)
+		# δx_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, Q)
+		# δy_noise = perlin_generator(-2, 2, -2, 2, NOISE_SCALE/M, Q)
 
-		xq, yq = np.meshgrid(np.linspace(-rA, rA, 12), np.linspace(-rA, rA, 12))
-		rq, θq = np.hypot(xq, yq), np.arctan2(yq, xq)
-		xq, yq, rq, θq = xq[rq < rA], yq[rq < rA], rq[rq < rA], θq[rq < rA]
+		# xq, yq = np.meshgrid(np.linspace(-rA, rA, 12), np.linspace(-rA, rA, 12))
+		# rq, θq = np.hypot(xq, yq), np.arctan2(yq, xq)
+		# xq, yq, rq, θq = xq[rq < rA], yq[rq < rA], rq[rq < rA], θq[rq < rA]
 
 		# plt.quiver(10*xq, 10*yq, (δx_noise(xq, yq) + δr*np.cos(θq))/6, (δy_noise(xq, yq) + δr*np.sin(θq))/6, scale=1)
 		# plt.axis('square')
@@ -161,14 +192,14 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 			if img.sum() == 0: # but skip synthetically empty bins
 				continue
 
-			N_signal = int(N*(np.sum(img)/np.sum(img_hi + img_md + img_lo)) * len(apertures)*(rA/1000e-4)**2)
+			number_in_bin = int(number_on_detector*(np.sum(img)/np.sum(img_hi + img_md + img_lo)))
 
 			for i in range(GROUPS):
-				pixel_index = np.random.choice(np.arange(len(XS.ravel())), N_signal, p=img.ravel()/img.sum()) # sample from the distribution
+				pixel_index = np.random.choice(np.arange(len(XS.ravel())), number_in_bin, p=img.ravel()/img.sum()) # sample from the distribution
 				xJ, yJ = np.stack([XS.ravel(), YS.ravel()], axis=1)[pixel_index].T
 				xJ += np.random.uniform(-dxS/2, dxS/2, pixel_index.shape)
 				yJ += np.random.uniform(-dyS/2, dyS/2, pixel_index.shape)
-				aperture_index = np.random.choice(np.arange(len(apertures)), N_signal)
+				aperture_index = np.random.choice(np.arange(len(apertures)), number_in_bin)
 				x0, y0 = apertures[aperture_index].T
 				energy = np.random.uniform(*energy_in_bin, len(xJ))
 
@@ -186,13 +217,13 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 
 				rD = np.hypot(xD, yD)
 
-				N_background = int(N_signal/(len(apertures)*np.pi*rA**2*(M + 1)**2)/SNR*8**2) #  compute the desired background
+				number_in_background = int(number_in_bin/(len(apertures)*np.pi*rA**2*(M + 1)**2)/SNR*8**2) #  compute the desired background
 
 				# x_list += list(xD[(np.hypot(xJ, yS) <= 60e-4*np.sqrt(2)) & ((rD <= (M+1)*rA/12) | (rD >= (M+1)*rA*.90))])
 				# y_list += list(yD[(np.hypot(xJ, yS) <= 60e-4*np.sqrt(2)) & ((rD <= (M+1)*rA/12) | (rD >= (M+1)*rA*.90))])
-				x_list = np.concatenate([xD, np.random.uniform(-4, 4, N_background)])
-				y_list = np.concatenate([yD, np.random.uniform(-4, 4, N_background)])
-				d_list = np.full(len(xJ) + N_background, diameter) # and add it in with the signal
+				x_list = np.concatenate([xD, np.random.uniform(-4, 4, number_in_background)])
+				y_list = np.concatenate([yD, np.random.uniform(-4, 4, number_in_background)])
+				d_list = np.full(len(xJ) + number_in_background, diameter) # and add it in with the signal
 
 				with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.txt', 'a') as f:
 					for i in range(len(x_list)):
@@ -216,13 +247,15 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 			for cy in [-1/3, 0, 1/3]:
 				NK += np.hypot(cx*dxI + XK, cy*dyI + YK) < r0
 		NK /= NK.max()
-		NI = N*(signal.convolve2d(NK, img_lo/img_lo.sum(), mode='full') + 1/SNR)*dxI*dyI*apertures.shape[0]
+		NI = track_density*(signal.convolve2d(NK, img_lo/img_lo.sum(), mode='full') + 1/SNR)*dxI*dyI*apertures.shape[0]
 		assert NI.shape == (xI_bins.size - 1, yI_bins.size - 1)
 		NI = np.random.poisson(NI)
 		with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.pkl', 'wb') as f:
 			pickle.dump((xI_bins, yI_bins, NI), f)
 
-		plot_reconstruction(xS_bins, yS_bins, img_lo, None, None, 'synth', name+"-not-a")
+		plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
+		                 x0, y0, M, energy_min, energy_max, energy_cut, data)
+		plot_reconstruction(xS_bins, yS_bins, img_lo, None, None, 'synth', name+"-synth-source")
 		
 	else:
 		raise KeyError(mode)
@@ -236,11 +269,11 @@ def construct_data(shot, aperture, N, SNR, name=None, mode='mc'):
 
 
 if __name__ == '__main__':
-	# for shot, N, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
-	# 	construct_data(shot, (1000, .05), N, SNR)
-	# for shot, N, SNR in [('ellipse', 200000, 8)]:
-	# 	construct_data(shot, (1000, .1), N, SNR)
-	# construct_data('comet', 1000, 1000000, 8, name='comet', mode='mc')
-	# construct_data('gaussian', 'charged', 1000000, 8, name='charge1')
-	construct_data('disc', 1000, 10_000_000, 10, 'test4_disc', 'convolve')
-	construct_data('square', 1000, 30_000_000, 10, 'test0_square', 'convolve')
+	# for shot, Y, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
+	# 	construct_data(shot, (1000, .05), Y, SNR)
+	# for shot, Y, SNR in [('ellipse', 200000, 8)]:
+	# 	construct_data(shot, (1000, .1), Y, SNR)
+	# construct_data('comet', 1000, 1e10, 8, name='comet', mode='mc')
+	# construct_data('gaussian', 'charged', 1e10, 8, name='charge1')
+	construct_data('mit', 1000, 1e7, 10, 'test5_mit', mode='mc')
+	construct_data('disc', 1000, 1e8, 10, 'test4_disc', mode='convolve')

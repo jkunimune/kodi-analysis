@@ -1,30 +1,30 @@
+import gc
 import logging
+import pickle
+import time
+import warnings
+
 import matplotlib.pyplot as plt
 import numpy as np
 import numdifftools as nd
 import pandas as pd
-import pickle
 import scipy.optimize as optimize
 import scipy.signal as pysignal
-from scipy.special import comb, erf, factorial
-from scipy.spatial import Delaunay
-import gc
-import re
-import warnings
+import scipy.spatial as spatial
 
 import diameter
-from hdf5_util import save_as_hdf5
 import segnal as mysignal
-from fake_srim import get_E_out, get_E_in
 from electric_field_model import get_analytic_brightness
+from fake_srim import get_E_out, get_E_in
+from hdf5_util import save_as_hdf5
 
 warnings.filterwarnings("ignore")
 
 
 SHOW_RAW_DATA = False
-SHOW_CROPD_DATA = False
-SHOW_POINT_SPREAD_FUNCCION = False
-SHOW_INTERMEDIATE_PLOTS = False
+SHOW_CROPD_DATA = True
+SHOW_POINT_SPREAD_FUNCCION = True
+SHOW_INTERMEDIATE_PLOTS = True
 
 MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -71,7 +71,7 @@ def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 	required_resolution = max(δ/3, Q/e_max/10, Δr[1]/3) # resolution may be limited source size, charging, or the pixel distances
 
 	rB, nB = get_analytic_brightness(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
-	
+
 	n_pixel = min(int(r.max()/required_resolution), rB.size)
 	# if 3*δ >= r.max(): # if 3*source size is bigger than the image radius
 	# 	raise ValueError("δ cannot be this big")
@@ -106,7 +106,7 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 
 	dr = 2*(X[1,0] - X[0,0])
 	x_eff = a*(X - x0) + b*(Y - y0)
-	y_eff = b*(X - x0) + c*(Y - y0) #TODO: this funccion take a lot of time... can I speed it at all?
+	y_eff = b*(X - x0) + c*(Y - y0) # TODO: this funccion take a lot of time... can I speed it at all?
 	teo = np.zeros(X.shape) # and build up the theoretical image
 	for xA, yA in get_relative_aperture_positions(s0, r_img, X.max(), mode=config): # go to each circle
 		r_rel = np.hypot(x_eff - xA, y_eff - yA)
@@ -130,7 +130,7 @@ def simple_fit(*args, a=1, b=0, c=1, plot=False):
 		scale = abs(np.sum(exp, where=where & (teo > 0)) - background*np.sum(where & (teo > 0)))/ \
 				np.sum(teo, where=where & (teo > 0)) # compute the best gess at the signal scale
 	else: # if the max and min are unspecified
-		scale, background = mysignal.linregress(teo, exp, 1/(1 + teo), where=where)
+		scale, background = mysignal.linregress(teo, exp, where/(1 + teo))
 		background = max(0, background)
 		scale = abs(scale)
 	teo = background + scale*teo
@@ -187,8 +187,9 @@ def minimize_repeated_nelder_mead(fun, x0, args, simplex_size, **kwargs):
 		for i in range(len(x0)):
 			assert not hasattr(x0[i], '__iter__'), "I haven't implemented scans for any combo other than the first two parameters"
 
+	opt = None
 	past_bests = []
-	while len(past_bests) < 2 or past_bests[-2] - past_bests[-1] >= 1:
+	while opt is None or len(past_bests) < 2 or past_bests[-2] - past_bests[-1] >= 1:
 		inicial_simplex = [x0]
 		for i in range(len(x0)):
 			inicial_simplex.append(np.copy(x0))
@@ -219,7 +220,7 @@ def convex_hull(x, y, N):
 	""" return an array of the same shape as z with pixels inside the convex hull
 		of the data markd True and those outside markd false.
 	"""
-	triangulacion = Delaunay(np.transpose([x[N > 0], y[N > 0]]))
+	triangulacion = spatial.Delaunay(np.transpose([x[N > 0], y[N > 0]]))
 	hull_object = triangulacion.find_simplex(np.transpose([x.ravel(), y.ravel()]))
 	inside = ~((N == 0) & (hull_object == -1).reshape(N.shape))
 	inside[:, 1:] &= inside[:, :-1] # erode hull by one pixel in all directions to ignore edge effects
@@ -260,7 +261,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		aperture_charge_fitting can be 'all', 'same', or 'none'
 	"""
 	assert rotation < 2*np.pi
-	
+
 	binsS = 2*object_size/resolution
 	r0 = (M + 1)*rA # calculate the penumbra parameters
 	s0 = (M + 1)*sA
@@ -342,8 +343,9 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 				plt.axvline(d_bounds[0], color='w')
 				plt.axvline(d_bounds[1], color='w')
 				plt.axhline(MAX_CONTRAST, color='w')
+				plt.title("N(d, c)")
 				plt.show()
-				
+
 			if aperture_charge_fitting == 'all': # forget the previous Q value if we want to fit it again
 				Q = None
 
@@ -370,6 +372,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		if SHOW_RAW_DATA:
 			plt.pcolormesh(xC_bins, yC_bins, NC)
 			plt.tight_layout()
+			plt.title("N(x, y)")
 			plt.show()
 
 		hullC = convex_hull(XC, YC, NC) # compute the convex hull for future uce
@@ -451,13 +454,14 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			x0, y0 = 0, 0
 
 		else:
-			raise "not allowd."
+			raise Exception("not allowd.")
 
 		save_as_hdf5(f'{output_filename}-{cut_name}-projection', x=xI_bins, y=yI_bins, z=NI)
 
 		if SHOW_CROPD_DATA:
 			plt.pcolormesh(xI_bins, yI_bins, NI)
 			plt.tight_layout()
+			plt.title("cropd data")
 			plt.show()
 
 		binsK = xI.size - 2*int(δ0/dxI) # now make the kernel (from here on, it's the same in both modes)

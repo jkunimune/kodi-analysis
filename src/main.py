@@ -1,20 +1,18 @@
 # main.py - do the thing.  I'll update the name when I think of something more descriptive.
 
 import logging
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib.colors import CenteredNorm, ListedColormap, LinearSegmentedColormap, LogNorm
-import numpy as np
 import os
+
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import scipy.optimize as optimize
 import scipy.special as special
-import time
 
+import segnal as mysignal
 from cmap import REDS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, GREYS, COFFEE
 from coordinate import tim_coordinates, project
 from hdf5_util import load_hdf5
-import segnal as mysignal
 from reconstruct_2d import reconstruct, get_relative_aperture_positions
 
 plt.rcParams["legend.framealpha"] = 1
@@ -29,7 +27,7 @@ PLOT_THEORETICAL_PROJECTION = False
 PLOT_CONTOUR = False
 PLOT_OFFSET = False
 
-OBJECT_SIZE = 200e-4 # (cm)
+OBJECT_SIZE = 300e-4 # (cm)
 RESOLUTION = 5e-4
 EXPANSION_FACTOR = 1.20
 CONTOUR_LEVEL = .50
@@ -83,7 +81,7 @@ def resample(x_bins, y_bins, N):
 
 
 def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
-					 x0, y0, M, energy_min, energy_max, energy_cut, data, **kwargs):
+                     x0, y0, M, energy_min, energy_max, energy_cut, data):
 	""" plot the data along with the initial fit to it, and the
 		reconstructed superaperture.
 	"""
@@ -104,7 +102,7 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.pcolormesh(xC_bins, yC_bins, NC.T,
-		           vmax=np.quantile(NC, 35/36), cmap=COFFEE, rasterized=True)
+	               vmax=np.quantile(NC, 35/36), cmap=COFFEE, rasterized=True)
 	T = np.linspace(0, 2*np.pi)
 	if PLOT_THEORETICAL_PROJECTION:
 		for dx, dy in get_relative_aperture_positions(s0, r0, xC_bins.max(), mode=APERTURE_CONFIGURATION):
@@ -186,16 +184,17 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 			(x_bins[:-1] + x_bins[1:])/2,
 			(y_bins[:-1] + y_bins[1:])/2,
 			Z, contour=1/6)[0]
+	print(object_size/1e-4)
 	plot_radius = MIN_PLOT_RADIUS
-	while object_size/1e-4 > plot_radius:
+	while object_size/1e-4 > .80*plot_radius:
 		plot_radius *= 1.5
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE) # plot the reconstructed source image
 	plt.locator_params(steps=[1, 2, 5, 10])
 	plt.pcolormesh(x_bins/1e-4, y_bins/1e-4, Z.T, cmap=CMAP[cut_name], vmin=0, rasterized=True)
 	if PLOT_CONTOUR:
-		plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4, ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4, Z.T,
-			        levels=[CONTOUR_LEVEL*np.max(Z)], colors='w', linestyle='dashed')
+		plt.contour((x_bins[1:] + x_bins[:-1])/2/1e-4, (y_bins[1:] + y_bins[:-1])/2/1e-4, Z.T,
+			        levels=[CONTOUR_LEVEL*np.max(Z)], colors='#ddd', linestyle='dashed')
 	# T = np.linspace(0, 2*np.pi, 144)
 	# R = p0 + p2*np.cos(2*(T - θ2))
 	# plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
@@ -249,6 +248,7 @@ def plot_overlaid_contors(reconstructions, projected_offset, projected_flow, dat
 	else:
 		filename = "unknown-overlaid-reconstruction"
 
+	x0, y0 = None, None
 	for i, (x_bins, y_bins, N, cmap) in enumerate(reconstructions): # convert the x and y bin edges to pixel centers
 		x, y = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
 		X, Y = np.meshgrid(x, y, indexing='ij')
@@ -285,7 +285,7 @@ def plot_overlaid_contors(reconstructions, projected_offset, projected_flow, dat
 	plt.close('all')
 
 
-def save_current_figure(filename, filetypes=['png', 'eps']):
+def save_current_figure(filename, filetypes=('png', 'eps')):
 	for filetype in filetypes:
 		extension = filetype if filetype.startswith('.') else '.' + filetype
 		filepath = OUTPUT_FOLDER + filename + extension
@@ -364,7 +364,7 @@ if __name__ == '__main__':
 				xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
 				xI_bins, yI_bins, NI = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-projection')
 				plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
-					data=data, **result)
+				                 data=data)
 
 				try:
 					rI, r1, r2, zI, z1, z2 = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-radial')
