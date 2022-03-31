@@ -9,7 +9,7 @@ for i, a in enumerate(x_ref):
 E_ref -= x_ref/x_ref[1]*E_ref[1]
 
 def normalize(x):
-	return x/x.max()
+	return x/x.max(where=np.isfinite(x), initial=0)
 
 def e_field(x):
 	""" dimensionless electric field as a function of normalized radius """
@@ -18,8 +18,10 @@ def e_field(x):
 		(np.log(1 - x) - np.log(1 - x_ref[-1]))/(np.log(1 - x_ref[-2]) - np.log(1 - x_ref[-1]))*(E_ref[-2] - E_ref[-1]) + E_ref[-1],
 		np.interp(x, x_ref, E_ref))
 
-def get_analytic_brightness(r0, Q, e_min=1e-15, e_max=1):
-	""" get the effective brightness as a function of radius, accounting for a point source and roughly boxcar energy spectrum """
+def get_analytic_brightness(r0: float, Q: float, e_min=1e-15, e_max=1):
+	""" get the effective brightness as a function of radius, accounting for a point
+	    source and roughly boxcar energy spectrum. the units can be whatever as long
+	    as they're consistent. """
 	if Q == 0:
 		return r0*R, normalize(np.where(R < 1, 1, 0))
 
