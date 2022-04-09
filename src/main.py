@@ -1,4 +1,5 @@
 # main.py - do the thing.  I'll update the name when I think of something more descriptive.
+from __future__ import annotations
 
 import logging
 import os
@@ -19,19 +20,18 @@ plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 
-e_in_bounds = 2
-
 SKIP_RECONSTRUCTION = False
 SHOW_PLOTS = True
 PLOT_THEORETICAL_PROJECTION = False
 PLOT_CONTOUR = False
 PLOT_OFFSET = False
 
-OBJECT_SIZE = 300e-4 # (cm)
+OBJECT_SIZE = 190e-4 # (cm)
 RESOLUTION = 5e-4
-EXPANSION_FACTOR = 1.20
+EXPANSION_FACTOR = 1.00
 CONTOUR_LEVEL = .50
-MIN_PLOT_RADIUS = 80 # (μm)
+MIN_PLOT_RADIUS = 100 # (μm)
+MAX_PLOT_RADIUS = 150 # (μm)
 APERTURE_CONFIGURATION = 'hex'
 CHARGE_FITTING = 'none'
 MAX_NUM_PIXELS = 200
@@ -80,8 +80,15 @@ def resample(x_bins, y_bins, N):
 	return x_bins, y_bins, Np
 
 
-def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
-                     x0, y0, M, energy_min, energy_max, energy_cut, data):
+def saturate(r, g, b, factor=2.0):
+	return (1 - factor*(1 - r),
+	        1 - factor*(1 - g),
+	        1 - factor*(1 - b))
+
+
+def plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
+                         x0, y0, M, energy_min, energy_max, energy_cut,
+                         data: str | dict | tuple = ()):
 	""" plot the data along with the initial fit to it, and the
 		reconstructed superaperture.
 	"""
@@ -96,15 +103,14 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 		xC_bins, yC_bins, NC = resample(xC_bins, yC_bins, NC)
 		xI_bins, yI_bins, NI = resample(xI_bins, yI_bins, NI)
 
-	s0 = data[APERTURE_SPACING]*1e-4
-	r0 = data[APERTURE_RADIUS]*1e-4*(M + 1)
-	r_img = (xI_bins.max() - xI_bins.min())/2
-
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.pcolormesh(xC_bins, yC_bins, NC.T,
 	               vmax=np.quantile(NC, 35/36), cmap=COFFEE, rasterized=True)
 	T = np.linspace(0, 2*np.pi)
 	if PLOT_THEORETICAL_PROJECTION:
+		s0 = data[APERTURE_SPACING]*1e-4
+		r0 = data[APERTURE_RADIUS]*1e-4*(M + 1)
+		r_img = (xI_bins.max() - xI_bins.min())/2
 		for dx, dy in get_relative_aperture_positions(s0, r0, xC_bins.max(), mode=APERTURE_CONFIGURATION):
 			plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    'k--')
 			# plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), 'k--')
@@ -118,8 +124,9 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	plt.tight_layout()
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
+	vmax = np.quantile(NI, (NI.size-6)/NI.size)
 	plt.pcolormesh(xI_bins, yI_bins, NI.T,
-		           vmax=np.quantile(NI, (NI.size-6)/NI.size), cmap=COFFEE, rasterized=True)
+		           vmax=vmax, cmap=COFFEE, rasterized=True)
 	T = np.linspace(0, 2*np.pi)
 	# plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), '--w')
 	plt.axis('square')
@@ -127,8 +134,9 @@ def plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	bar = plt.colorbar()
-	bar.ax.set_ylabel("Counts")
+	# if vmax < 1000:
+	# 	bar = plt.colorbar(fraction=0.046, pad=0.04)
+	# 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
 	save_current_figure(filename)
 
@@ -156,7 +164,7 @@ def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 	plt.xlabel("Radius (cm)")
 	plt.ylabel("Track density (10³/cm²)")
 	plt.legend()
-	plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+	# plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.tight_layout()
 	save_current_figure(filename)
 
@@ -165,7 +173,7 @@ def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 	plt.close('all')
 
 
-def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
+def plot_source(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	if type(data) == str:
 		filename = data
 	elif SHOT in data and TIM in data:
@@ -173,27 +181,31 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	else:
 		filename = "unknown-reconstruction"
 
+	x_centers, y_centers = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
 	p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(
-			(x_bins[:-1] + x_bins[1:])/2,
-			(y_bins[:-1] + y_bins[1:])/2,
+			x_centers,
+			y_centers,
 			Z, contour=CONTOUR_LEVEL) # compute the three number summary
 
-	x0, y0 = p1*np.cos(θ1), p1*np.sin(θ1)
+	x0 = np.average(x_centers, weights=np.sum(Z, axis=1))
+	y0 = np.average(y_centers, weights=np.sum(Z, axis=0))
 
 	object_size = mysignal.shape_parameters(
 			(x_bins[:-1] + x_bins[1:])/2,
 			(y_bins[:-1] + y_bins[1:])/2,
 			Z, contour=1/6)[0]
-	print(object_size/1e-4)
-	plot_radius = MIN_PLOT_RADIUS
-	while object_size/1e-4 > .80*plot_radius:
-		plot_radius *= 1.5
+	if object_size/1e-4 > .80*MIN_PLOT_RADIUS:
+		plot_radius = MAX_PLOT_RADIUS
+	else:
+		plot_radius = MIN_PLOT_RADIUS
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE) # plot the reconstructed source image
 	plt.locator_params(steps=[1, 2, 5, 10])
-	plt.pcolormesh(x_bins/1e-4, y_bins/1e-4, Z.T, cmap=CMAP[cut_name], vmin=0, rasterized=True)
+	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, Z.T, cmap=CMAP[cut_name], vmin=0, rasterized=True)
 	if PLOT_CONTOUR:
-		plt.contour((x_bins[1:] + x_bins[:-1])/2/1e-4, (y_bins[1:] + y_bins[:-1])/2/1e-4, Z.T,
+		plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4,
+		            ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4,
+		            Z.T,
 			        levels=[CONTOUR_LEVEL*np.max(Z)], colors='#ddd', linestyle='dashed')
 	# T = np.linspace(0, 2*np.pi, 144)
 	# R = p0 + p2*np.cos(2*(T - θ2))
@@ -216,9 +228,10 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	scale = 1/Z[:,j_lineout].max()
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE) # plot a lineout
 	plt.plot(np.repeat(x_bins, 2)[1:-1]/1e-4, np.repeat(Z[:,j_lineout], 2)*scale)
+
 	if SHOT in data and 'disc' in data[SHOT]: # and fit a curve to it if it's a "disc"
 		def blurred_boxcar(x, A, d):
-			return A*special.erfc((x - 100e-4)/d)*special.erfc(-(x + 100e-4)/d)/4
+			return A*special.erfc((x - 100e-4)/d/np.sqrt(2))*special.erfc(-(x + 100e-4)/d/np.sqrt(2))/4
 		x_centers = (x_bins[1:] + x_bins[:-1])/2
 		y_centers = (y_bins[1:] + y_bins[:-1])/2
 		r_centers = np.hypot(*np.meshgrid(x_centers, y_centers))
@@ -226,7 +239,9 @@ def plot_reconstruction(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 			blurred_boxcar,
 			r_centers.ravel(), Z.ravel(),
 			[Z.max(), 10e-4])
+		logging.info(f"  1σ resolution = {popt[1]/1e-4} μm")
 		plt.plot(x_centers/1e-4, blurred_boxcar(x_centers, *popt)*scale, '--')
+
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
 	plt.xlim(-150, 150)
@@ -263,10 +278,11 @@ def plot_overlaid_contors(reconstructions, projected_offset, projected_flow, dat
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
 	for X, Y, N, cmap in reconstructions:
+		color = saturate(*cmap.colors[-1], factor=1.5)
 		if len(reconstructions) > 3:
-			plt.contour((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[CONTOUR_LEVEL], colors=[cmap.colors[-1]])
+			plt.contour((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[CONTOUR_LEVEL], colors=[color])
 		else:
-			plt.contourf((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[CONTOUR_LEVEL, 1], colors=[cmap.colors[-1]])
+			plt.contourf((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[CONTOUR_LEVEL, 1], colors=[color])
 	if PLOT_OFFSET:
 		plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 		plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
@@ -289,7 +305,7 @@ def save_current_figure(filename, filetypes=('png', 'eps')):
 	for filetype in filetypes:
 		extension = filetype if filetype.startswith('.') else '.' + filetype
 		filepath = OUTPUT_FOLDER + filename + extension
-		plt.savefig(filepath)
+		plt.savefig(filepath, transparent=filetype!='png')
 		logging.debug(f"  saving {filepath}")
 
 
@@ -303,12 +319,15 @@ if __name__ == '__main__':
 			logging.StreamHandler(),
 		]
 	)
+	logging.getLogger('matplotlib.font_manager').disabled = True
+
 	try:
 		results = pd.read_csv(OUTPUT_FOLDER+"summary.csv", dtype={'shot': str}) # start by reading the existing data or creating a new file
 	except IOError:
 		results = pd.DataFrame(data={"shot": ['placeholder'], "tim": [0], "energy_cut": ['placeholder']}) # be explicit that shots can be str, but usually look like int
 
 	shot_list = pd.read_csv('../shot_list.csv', dtype={SHOT: str})
+	shot_list = shot_list.rename(columns=lambda s: s.strip())
 	for i, data in shot_list.iterrows(): # iterate thru the shot list
 		input_filename = None
 		for fname in os.listdir(INPUT_FOLDER): # search for filenames that match each row
@@ -358,13 +377,15 @@ if __name__ == '__main__':
 		logging.info("  Updating plots for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 
 		images_on_this_los = (results.shot == data[SHOT]) & (results.tim == data[TIM])
-		for i, result in results[images_on_this_los].iterrows(): # plot the reconstruction in each energy cut
+		for _, result in results[images_on_this_los].iterrows(): # plot the reconstruction in each energy cut
 			if result.energy_cut != 'xray':
 				cut = result.energy_cut
 				xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
 				xI_bins, yI_bins, NI = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-projection')
-				plot_cooked_data(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
-				                 data=data)
+				plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
+				                     result.x0, result.y0, result.M,
+				                     result.energy_min, result.energy_max, cut,
+				                     data=data)
 
 				try:
 					rI, r1, r2, zI, z1, z2 = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-radial')
@@ -373,7 +394,7 @@ if __name__ == '__main__':
 					pass
 
 				x_bins, y_bins, B = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstruction')
-				plot_reconstruction(x_bins, y_bins, B, result.energy_min, result.energy_max, result.energy_cut, data)
+				plot_source(x_bins, y_bins, B, result.energy_min, result.energy_max, result.energy_cut, data)
 		
 		for cut_set in [['0', '1', '2', '3', '4', '5', '6', '7'], ['lo', 'hi']]: # create the nested plots
 			filenames = []
@@ -411,7 +432,7 @@ if __name__ == '__main__':
 		if xray is not None:
 			logging.info("x-ray image")
 			xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
-			p0, (p2, θ2) = plot_reconstruction(xX_bins, yX_bins, xray, None, None, "xray", data)
+			p0, (p2, θ2) = plot_source(xX_bins, yX_bins, xray, None, None, "xray", data)
 			results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM]) | (results.energy_cut != 'xray')] # clear any previous versions of this reconstruction
 			results = results.append( # and save the new ones to the dataframe
 				dict(

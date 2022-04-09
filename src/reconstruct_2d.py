@@ -5,8 +5,8 @@ import time
 import warnings
 
 import matplotlib.pyplot as plt
-import numpy as np
 import numdifftools as nd
+import numpy as np
 import pandas as pd
 import scipy.optimize as optimize
 import scipy.signal as pysignal
@@ -22,8 +22,8 @@ warnings.filterwarnings("ignore")
 
 
 SHOW_RAW_DATA = False
-SHOW_CROPD_DATA = True
-SHOW_POINT_SPREAD_FUNCCION = True
+SHOW_CROPD_DATA = False
+SHOW_POINT_SPREAD_FUNCCION = False
 SHOW_INTERMEDIATE_PLOTS = True
 
 MAX_NUM_PIXELS = 1000
@@ -254,7 +254,7 @@ def get_relative_aperture_positions(spacing, r_img, r_max, mode='hex'):
 def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 	etch_time, object_size, resolution, expansion_factor,
 	aperture_configuration, aperture_charge_fitting,
-	only_1d=False, verbose=False, ask_for_help=False, show_plots=False):
+	only_1d=False, verbose=True, ask_for_help=False, show_plots=False):
 	""" reconstruct a penumbral KOD image.
 		length parameters should be given in cm, and rotation in radians.
 		aperture_configuration can be 'hex' or 'square'.
@@ -277,7 +277,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		Q, dQ = None, None
 
 	if input_filename.endswith('.txt'): # if it is a typical CPSA-derived text file
-		mode = 'hist'
+		mode = 'tracks'
 		track_list = pd.read_csv(input_filename, sep=r'\s+', header=20, skiprows=[24], encoding='Latin-1', dtype='float32') # load all track coordinates
 
 		x_temp, y_temp = track_list['x(cm)'].copy(), track_list['y(cm)'].copy()
@@ -300,6 +300,8 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		mode = 'raster'
 		with open(input_filename, 'rb') as f:
 			xI_bins, yI_bins, NI = pickle.load(f)
+		if np.ptp(xI_bins)/2 < r_img:
+			raise ValueError(f"the object size ({object_size}) is too big for these data ({np.ptp(xI_bins)}).")
 		dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 		xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 		XI, YI = np.meshgrid(xI, yI, indexing='ij')
@@ -326,7 +328,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		if np.isnan(d_bounds[1]):
 			d_bounds[1] = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
 
-		if mode == 'hist': # if we still need to tally the histogram
+		if mode == 'tracks': # if we still need to tally the histogram
 
 			logging.info(f"d in [{d_bounds[0]:5.2f}, {d_bounds[1]:5.2f}] μm") # do the contrast and diameter cuts
 			track_x = track_list['x(cm)'][hicontrast & (track_list['d(µm)'] >= d_bounds[0]) & (track_list['d(µm)'] < d_bounds[1])].to_numpy()
@@ -378,9 +380,9 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		hullC = convex_hull(XC, YC, NC) # compute the convex hull for future uce
 
 		spacial_scan = np.linspace(-r0, r0, 5)
-		gess = [ spacial_scan, spacial_scan, .20*min(δ0, r0), .5*np.mean(NC)]
-		step = [        .2*r0,        .2*r0, .16*min(δ0, r0), .3*np.mean(NC)]
-		bounds = [(None,None), (None,None), (0,None), (0,None)]
+		gess = [ spacial_scan + x0, spacial_scan + y0, .20*min(δ0, r0), .5*np.mean(NC)]
+		step = [             .2*r0,             .2*r0, .16*min(δ0, r0), .3*np.mean(NC)]
+		bounds = [(None, None), (None, None), (0, None), (0, None)]
 		args = (r0, s0, r_img, XC, YC, NC, hullC, *e_in_bounds, aperture_configuration)
 		if Q is None: # decide whether to fit the electric field
 			logging.info("  fitting electric field")
@@ -395,36 +397,37 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			x0=gess,
 			args=args,
 			simplex_size=step
-		)
+		).x
 
 		for i in range(len(step)): # adjust the step value for use in Hessian-estimacion
 			for bound in bounds[i]:
-				if bound != None:
-					step[i] = min(step[i], abs(opt.x[i] - bound)/2)
+				if bound is not None:
+					step[i] = min(step[i], abs(opt[i] - bound)/2)
 		hess = hessian( # and then get the hessian
-			simple_fit, x=opt.x, args=args,
+			simple_fit, x=opt, args=args,
 			epsilon=np.concatenate([[1e-3, 1e-3], .1*np.array(step[2:])]),
 		)
 
+		if Q is None:
+			x0, y0, δ, _, Q = opt
+		else:
+			x0, y0, δ, _ = opt
 		try:
 			if Q is None: # and use it to get error bars
-				x0, y0, δ, _, Q = opt.x
 				dx0, dy0, dδ, _, dQ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
 			else:
-				x0, y0, δ, _ = opt.x
 				dx0, dy0, dδ, _ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
 				dQ = 0
 		except np.linalg.LinAlgError:
 			dx0, dy0, dδ, dQ = 0, 0, 0, 0
 
-		logging.debug(f"  {simple_fit(opt.x, *args, plot=show_plots)}")
-		logging.debug(f"  {opt}")
+		logging.debug(f"  {simple_fit(opt, *args, plot=show_plots)}")
 
-		# x0, y0, δ, Q, dx0, dy0, dδ, dQ = 0, 0, .01, .1, 0, 0, 0, 0
+		# x0, y0, δ, Q, dx0, dy0, dδ, dQ = 0, 0, .01, 0, 0, 0, 0, 0
 
 		δ_eff = δ + 2.0*Q/e_in_bounds[0]
 
-		if mode == 'hist':
+		if mode == 'tracks':
 			xI_bins, yI_bins = np.linspace(x0 - r_img, x0 + r_img, binsI+1), np.linspace(y0 - r_img, y0 + r_img, binsI+1) # this is the CR39 coordinate system, but encompassing a single superpenumbrum
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 			xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
@@ -524,17 +527,10 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		# B, χ2_red = np.ones(XS.shape), 0
 
 		logging.info(f"  χ^2/n = {χ2_red}")
-		if χ2_red >= 1.5: # throw it away if it looks unreasonable
-			logging.info("  Could not find adequate fit")
-			continue
+		# if χ2_red >= 1.5: # throw it away if it looks unreasonable
+		# 	logging.info("  Could not find adequate fit")
+		# 	continue
 		B = np.maximum(0, B) # we know this must be nonnegative
-
-		# def func(x, A, mouth):
-		# 	return A*(1 + erf((100e-4 - x)/mouth))/2
-		# real = source_bins
-		# cx, cy = np.average(XS, weights=B), np.average(YS, weights=B)
-		# (A, mouth), _ = optimize.curve_fit(func, np.hypot(XS - cx, YS - cy)[real], B[real], p0=(2*np.average(B), 10e-4)) # fit to a circle thing
-		# logging.debug(f"  XXX {mouth/1e-4:.1f}")
 
 		save_as_hdf5(f'{output_filename}-{cut_name}-reconstruction', x=xS_bins, y=yS_bins, z=B)
 

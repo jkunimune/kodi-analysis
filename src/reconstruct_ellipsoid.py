@@ -7,7 +7,7 @@ import pandas as pd
 import segnal
 from coordinate import tim_coordinates
 
-images = pd.read_csv('../results/summary.csv', sep=r'\s*,\s*', engine='python')
+images = pd.read_csv('../images/summary.csv', sep=r'\s*,\s*', engine='python')
 images = images[images['energy_cut'] == 'hi'] # for now, we only worry about hot spot images
 
 separations = []

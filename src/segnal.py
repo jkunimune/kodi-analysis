@@ -1,15 +1,9 @@
 """ some signal utility functions, including the all-important Gelfgat reconstruction """
-import numpy as np
-import scipy.signal as pysignal
-from scipy.special import comb, erf, factorial
-import scipy.stats as stats
-import scipy.interpolate as interpolate
-from skimage import measure
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+import numpy as np
+from skimage import measure
 
 from cmap import GREYS
-
 
 SMOOTHING = 100 # entropy weight
 
@@ -129,7 +123,7 @@ def convolve2d(a, b, where=None):
 def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose=False, show_plots=False):
 	""" perform the algorithm outlined in
 			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
-			data…" in *Computer Physics Communications* 74 (1993)
+			data…" in *Comput. Phys. Commun.* 74 (1993)
 		to deconvolve the simple discrete 2d kernel q from the full histogrammed measurement
 		F. a background value will be automatically inferred. a mask with the same shape as
 		F can be applied; if so, only bins where where[i,j]>0 will be considered valid for
@@ -145,6 +139,8 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 
 	N = F.sum(where=where)
 	f = F/N # make sure the counts are normalized
+
+	α = np.sqrt(1e7*N)/F.size*SMOOTHING # this entropy weiting parameter was determined quasiempirically (it's essentially the strength of my prior)
 
 	if g_inicial is not None:
 		assert g_inicial.shape == (n, m), g_inicial.shape
@@ -164,9 +160,15 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 	s = convolve2d(g/η, q, where=where) + g0/η0 # get the starting thing
 
 	np.seterr('ignore')
+
+	if show_plots:
+		fig = plt.figure(figsize=(5.0, 7.5))
+	else:
+		fig = None
+
 	L0 = N*np.sum(f*np.log(f), where=where & (f > 0))
-	scores, best_G, best_S = [], None, None
-	while len(scores) < 200:
+	likelihoods, scores, best_G, best_S = [], [], None, None
+	while len(scores) < 5000: # iterate
 		gsum = g.sum() + g0
 		g, g0, s = g/gsum, g0/gsum, s/gsum
 
@@ -193,62 +195,55 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 			h = -g0/δg0*5/6
 		assert h > 0, h
 
-		g += h*δg # step # take the step
+		g += h*δg # take the step
 		g[abs(g) < 1e-17] = 0 # and immediately correct for roundoff
 		g0 += h*δg0
 		s += h*δs
 		γ = g/η/np.sum(g/η)
-		α = np.sqrt(N*1e7)/F.size*SMOOTHING#N/F.size*SMOOTHING # this entropy weiting parameter was determined quasiempirically (it's essentially the strength of my prior)
 
 		L = N*np.sum(f*np.log(s), where=where) # compute likelihood
 		S = np.sum(γ*np.log(γ), where=γ!=0) # compute entropy
 		assert np.all(np.isfinite(S))
+		likelihoods.append(L)
 		scores.append(L - α*S) # the score is a combination of both
-		if verbose: print(f"[{L - L0}, {S}, {scores[-1] - L0}],")
-		if show_plots and len(scores)%10 == 1:
-			fig, axes = plt.subplots(3, 2, figsize=(6, 9))
-			fig.subplots_adjust(top=0.95, bottom=0.05, hspace=.05, wspace=.05)
-			axes[0,0].set_title("Previous step")
-			plot = axes[0,0].pcolormesh(N*h/2*δg/η, cmap='plasma')
-			axes[0,0].axis('square')
-			fig.colorbar(plot, ax=axes[0,0])
-			axes[0,1].set_title("Fit source image")
-			axes[0,1].set_title(f"Iteration {len(scores)}")
-			plot = axes[0,1].pcolormesh(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap=GREYS)
-			axes[0,1].axis('square')
-			axes[0,1].set_xticks([])
-			axes[0,1].set_yticks([])
-			fig.colorbar(plot, ax=axes[0,1])
-			axes[1,0].set_title("Penumbral image")
-			plot = axes[1,0].pcolormesh(np.where(where, F, np.nan).T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
-			axes[1,0].axis('square')
-			fig.colorbar(plot, ax=axes[1,0])
-			axes[1,1].set_title("Fit penumbral image")
-			plot = axes[1,1].pcolormesh(N*s.T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
-			axes[1,1].axis('square')
-			axes[1,1].set_xticks([])
-			axes[1,1].set_yticks([])
-			fig.colorbar(plot, ax=axes[1,1])
-			axes[2,0].set_title("Point spread function")
-			plot = axes[2,0].pcolormesh(q, vmin=0, vmax=q.max(), cmap='viridis')
-			axes[2,0].axis('square')
-			fig.colorbar(plot, ax=axes[2,0])
-			axes[2,1].set_title("Chi squared")
-			plot = axes[2,1].pcolormesh(np.where(where&(s>0), N*s - F*np.log(N*s) + np.log(factorial(F)), 0).T, vmin= 0, vmax=6, cmap='inferno')
-			axes[2,1].axis('square')
-			fig.colorbar(plot, ax=axes[2,1])
-			gs1 = gridspec.GridSpec(4, 4)
-			gs1.update(wspace= 0, hspace=0) # set the spacing between axes.
-			plt.show()
+
+		if verbose: print(f"[{len(scores)}, {L - L0}, {S}, {scores[-1] - L0}],") # print things
+		if show_plots: # plot things
+			fig.clear()
+			axes = fig.subplots(nrows=3, ncols=2)
+			fig.subplots_adjust(top=.95, bottom=.04, left=.05, hspace=.05)
+			axes[0,0].set_title("Source")
+			axes[0,0].pcolormesh(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap=GREYS)
+			axes[0,1].set_title("Floor")
+			axes[0,1].pcolormesh(g, vmin=np.min(g), vmax=np.min(g, where=(g>0), initial=np.inf)*6, cmap=GREYS)
+			axes[1,0].set_title("Data")
+			axes[1,0].pcolormesh(np.where(where, F, np.nan).T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			axes[1,1].set_title("Synthetic")
+			axes[1,1].pcolormesh(np.where(where, N*s, np.nan).T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			axes[2,0].set_title("Convergence")
+			axes[2,0].plot(np.subtract(scores[-36:], scores[-1] - likelihoods[-1]), linestyle='solid')
+			axes[2,0].plot(likelihoods[-36:], linestyle='dashed')
+			axes[2,1].set_title("χ^2")
+			axes[2,1].pcolormesh(np.where(where&(s>0), N*s - F*np.log(N*s) - F + F*np.log(F), 0).T, vmin= 0, vmax=6, cmap='inferno')
+			for row in axes:
+				for axis in row:
+					if axis != axes[2,0]:
+						axis.axis('square')
+						axis.set_xticks([])
+						axis.set_yticks([])
+			plt.pause(1e-3)
 
 		if np.argmax(scores) == len(scores) - 1: # keep track of the best we've found
 			best_G = N*g/η
 			best_S = N*s
-		elif np.argmax(scores) < len(scores) - 12: # if the value function decreases six times in a row, quit
+		elif np.argmax(scores) < len(scores) - 12: # if the value function decreases twelve times in a row, quit
 			break
 
 	np.seterr('warn')
-	return best_G, np.sum((best_S - N*f)**2/best_S, where=where)/np.sum(where)
+	plt.close(fig)
+
+	best_χ2 = np.sum((best_S - N*f)**2/best_S, where=where)/np.sum(where)
+	return best_G, best_χ2
 
 
 if __name__ == '__main__':

@@ -103,13 +103,24 @@ def plot_images(Э_cuts, ξ, υ, *image_sets):
 		if pairs_plotted > 0 and pairs_plotted + len(image_sets[0][l]) > 6:
 			break # but stop when you think you're about to plot too many
 
-		for h in range(len(image_sets[0][l])):
+		num_cuts = len(image_sets[0][l])
+		if num_cuts == 1:
+			cmaps = [GREYS]
+		elif num_cuts < 7:
+			cmap_priorities = [(0, REDS), (5, ORANGES), (3, YELLOWS), (2, GREENS), (6, CYANS), (1, BLUES), (4, VIOLETS)]
+			cmaps = [cmap if priority < num_cuts for priority, cmap in cmap_priorities]
+		else:
+			cmaps = ['plasma']*num_cuts
+		assert len(cmaps) == num_cuts
+
+		for h in range(num_cuts):
 			maximum = np.amax([image_set[l][h] for image_set in image_sets])
 			for image_set in image_sets:
 				plt.figure(figsize=(6, 5))
 				plt.pcolormesh(ξ[l][h], υ[l][h], image_set[l][h].T,
 					           vmin=min(0, np.min(image_set[l][h])),
-					           vmax=maximum)
+					           vmax=maximum,
+					           cmap=cmaps[h])
 				plt.axis('square')
 				plt.axis([-r_max, r_max, -r_max, r_max])
 				plt.title(f"$E_\\mathrm{{d}}$ = {Э_cuts[h][0]:.1f} – {Э_cuts[h][1]:.1f} MeV")

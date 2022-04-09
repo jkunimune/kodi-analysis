@@ -5,8 +5,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pickle
 
+from matplotlib import path
+
 import main
-from main import plot_reconstruction, plot_cooked_data
+from main import plot_source, plot_penumbral_image
 from simulations import load_shot, make_image
 from perlin import perlin_generator, wave_generator
 from electric_field_model import e_field
@@ -116,34 +118,13 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 				for dj in [-.4, -.2, 0, .2, .4]:
 					img += np.where(np.hypot(XS + di*dxS, YS + dj*dyS) < 100e-4, 1/25, 0)
 		elif shot == 'mit':
-			lines = [
-				[(-12, -6), (-12, 6), (-11.5, 6), (-8, -2), (-4.5, 6), (-4, 6), (-4, -6)], # M
-				[(0, 6), (0, -6)], # I
-				[(4, 6), (12, 6)], [(8, 6), (8, -6)] # T
-			]
-			envelopes = [
-				[(-12, -6), (-11, -6), (-11, -1.5), (-5, -1.5), (-5, -6), (-4, -6), (-4, 6), (-12, 6)],
-				[(-12, -6), (12, -6), (12, 6), (-12, 6)],
-				[(-12, -6), (12, -6), (12, 6), (-12, 6)],
-				[(-12, -6), (12, -6), (12, 6), (-12, 6)],
-			]
-			img = np.zeros(XS.shape)
-			for line, envelope in zip(lines, envelopes):
-				for i in range(len(line) - 1): # write out the letters
-					x0, y0 = np.multiply(line[i], 10e-4)
-					x1, y1 = np.multiply(line[i+1], 10e-4)
-					l = np.hypot(x1 - x0, y1 - y0)
-					s = (XS - x0)*(y1 - y0)/l - (YS - y0)*(x1 - x0)/l
-					t = (XS - x0)*(x1 - x0)/l + (YS - y0)*(y1 - y0)/l
-					img[(abs(s) < 5e-4) & (t > -5e-4) & (t < l + 5e-4)] = 1
-				for i in range(len(envelope)): # then trim the edges
-					x0, y0 = np.multiply(envelope[i], 10e-4)
-					x1, y1 = np.multiply(envelope[(i+1)%len(envelope)], 10e-4)
-					l = np.hypot(x1 - x0, y1 - y0)
-					s = (XS - x0)*(y1 - y0)/l - (YS - y0)*(x1 - x0)/l
-					t = (XS - x0)*(x1 - x0)/l + (YS - y0)*(y1 - y0)/l
-					img[(s > 5e-4) & (s < 18e-4) & (t > -5e-4) & (t < l + 5e-4)] = 0
-
+			polygon = path.Path(np.multiply([
+				(3, -3), (3, 3), (1.5, 3), (0, 0.5), (-1.5, 3), (-3, 3), (-3, -3),
+				(-2, -3), (-2, 1.5), (-0.5, -1), (0.5, -1), (2, 1.5), (2, -3),
+			], 100e-4/3))
+			img = np.where(
+				polygon.contains_points(np.transpose([XS.ravel(), YS.ravel()])).reshape(XS.shape),
+				1, 0)
 		else:
 			raise ValueError(shot)
 		images = [(img, 1, [0, 12.5])]
@@ -182,6 +163,7 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 	image_size = 2*(r0 + M*xS_bins.max())
 
 	track_density = yeeld / (4*np.pi*L**2)
+	print(f"track density = {track_density:.3g} cm^2")
 	number_on_detector = track_density * (len(apertures)*np.pi*rA**2)
 	number_in_background = track_density * image_size**2
 
@@ -213,6 +195,7 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 				f.write(short_header)
 
 			for i in range(GROUPS):
+				print(f"{i}/{GROUPS}")
 				number_in_group = number_in_bin//GROUPS
 				number_in_background_in_group = int(number_in_background_in_bin//GROUPS)
 
@@ -244,11 +227,12 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 				y_list = np.concatenate([yD, np.random.uniform(-image_size/2, image_size/2, number_in_background_in_group)])
 				d_list = np.full(len(xJ) + number_in_background_in_group, diameter) # and add it in with the signal
 
+				print("saving...")
 				with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.txt', 'a') as f:
 					for j in range(len(x_list)):
 						f.write("{:.5f}  {:.5f}  {:.3f}  {:.0f}  {:.0f}  {:.0f}\n".format(x_list[j], y_list[j], d_list[j], 1, 1, 1)) # note that cpsa y coordinates are inverted
 			
-			plot_reconstruction(xS_bins, yS_bins, img, None, None, 'synth', name+"-not-a")
+			plot_source(xS_bins, yS_bins, img, None, None, 'synth', name + "-not-a")
 			plt.show()
 
 		elif mode == 'convolve': # in this mode, calculate bin counts directly using a convolution
@@ -276,9 +260,9 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 			with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.pkl', 'wb') as f:
 				pickle.dump((xI_bins, yI_bins, NI), f)
 
-			plot_cooked_data(xI_bins, yI_bins, NI, xI_bins, yI_bins, NI,
-			                 0, 0, M, None, None, "synth")
-			plot_reconstruction(xS_bins, yS_bins, img, None, None, 'synth', name+"-synth-source")
+			plot_penumbral_image(xI_bins, yI_bins, NI, xI_bins, yI_bins, NI,
+			                     0, 0, M, None, None, "synth")
+			plot_source(xS_bins, yS_bins, img, None, None, 'synth', name + "-synth-source")
 			
 		else:
 			raise KeyError(mode)
@@ -296,8 +280,7 @@ if __name__ == '__main__':
 	# 	construct_data(shot, (1000, .05), Y, SNR)
 	# for shot, Y, SNR in [('ellipse', 200000, 8)]:
 	# 	construct_data(shot, (1000, .1), Y, SNR)
-	# construct_data('comet', 1000, 1e10, 8, name='comet', mode='mc')
-	# construct_data('gaussian', 'charged', 1e10, 8, name='charge1')
-	construct_data('mit', 1000, 1e14, 10, 'test5_mit', mode='convolve')
-	construct_data('disc', 1000, 1e12, 10, 'test4_disc', mode='convolve')
-	construct_data('disc', 1000, 1e10, 10, 'test6_disc', mode='convolve')
+	# construct_data('mit', 1000, 1e12, 10, 'test5_mit', mode='convolve')
+	# construct_data('disc', 1000, 1e12, 10, 'test4_disc', mode='convolve')
+	# construct_data('mit', 1000, 1e10, 10, 'test7_mit', mode='convolve')
+	construct_data('disc', 1000, 1e9, 10, 'test6_disc', mode='convolve')
