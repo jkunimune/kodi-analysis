@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 
+from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS
 from hdf5_util import load_hdf5
 import coordinate
 
@@ -108,7 +109,7 @@ def plot_images(Э_cuts, ξ, υ, *image_sets):
 			cmaps = [GREYS]
 		elif num_cuts < 7:
 			cmap_priorities = [(0, REDS), (5, ORANGES), (3, YELLOWS), (2, GREENS), (6, CYANS), (1, BLUES), (4, VIOLETS)]
-			cmaps = [cmap if priority < num_cuts for priority, cmap in cmap_priorities]
+			cmaps = [cmap for priority, cmap in cmap_priorities if priority < num_cuts]
 		else:
 			cmaps = ['plasma']*num_cuts
 		assert len(cmaps) == num_cuts
@@ -177,6 +178,9 @@ if __name__ == '__main__':
 				[1, 0, 0],
 				[0, 1, 0],
 				[0, 0, 1],
+				# [-1, 0, 0],
+				# [0, -1, 0],
+				# [0, 0, -1],
 			]) # ()
 
 			Э = np.linspace(Э_min, Э_max, M+1)

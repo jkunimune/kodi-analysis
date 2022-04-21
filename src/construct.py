@@ -261,7 +261,7 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 				pickle.dump((xI_bins, yI_bins, NI), f)
 
 			plot_penumbral_image(xI_bins, yI_bins, NI, xI_bins, yI_bins, NI,
-			                     0, 0, M, None, None, "synth")
+			                     0, 0, None, None, "synth")
 			plot_source(xS_bins, yS_bins, img, None, None, 'synth', name + "-synth-source")
 			
 		else:

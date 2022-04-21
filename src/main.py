@@ -20,7 +20,7 @@ plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 
-SKIP_RECONSTRUCTION = False
+SKIP_RECONSTRUCTION = True
 SHOW_PLOTS = True
 PLOT_THEORETICAL_PROJECTION = False
 PLOT_CONTOUR = False
@@ -87,7 +87,7 @@ def saturate(r, g, b, factor=2.0):
 
 
 def plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
-                         x0, y0, M, energy_min, energy_max, energy_cut,
+                         x0, y0, energy_min, energy_max, energy_cut,
                          data: str | dict | tuple = ()):
 	""" plot the data along with the initial fit to it, and the
 		reconstructed superaperture.
@@ -99,18 +99,23 @@ def plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	else:
 		filename = "unknown-projection"
 
+	try:
+		M = data[MAGNIFICATION]
+		s0 = data[APERTURE_SPACING]*1e-4
+		r0 = data[APERTURE_RADIUS]*1e-4*(M + 1)
+	except KeyError:
+		M, s0, r0 = 14, np.inf, 1.5
+
 	while xI_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
 		xC_bins, yC_bins, NC = resample(xC_bins, yC_bins, NC)
 		xI_bins, yI_bins, NI = resample(xI_bins, yI_bins, NI)
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.pcolormesh(xC_bins, yC_bins, NC.T,
-	               vmax=np.quantile(NC, 35/36), cmap=COFFEE, rasterized=True)
+	               cmap=COFFEE, rasterized=True)
 	T = np.linspace(0, 2*np.pi)
 	if PLOT_THEORETICAL_PROJECTION:
-		s0 = data[APERTURE_SPACING]*1e-4
-		r0 = data[APERTURE_RADIUS]*1e-4*(M + 1)
-		r_img = (xI_bins.max() - xI_bins.min())/2
+		# r_img = (xI_bins.max() - xI_bins.min())/2
 		for dx, dy in get_relative_aperture_positions(s0, r0, xC_bins.max(), mode=APERTURE_CONFIGURATION):
 			plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    'k--')
 			# plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), 'k--')
@@ -123,8 +128,10 @@ def plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
 
+	A_circle, A_square = np.pi*r0**2, xI_bins.ptp()*yI_bins.ptp()
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	vmax = np.quantile(NI, (NI.size-6)/NI.size)
+	vmax = max(np.quantile(NI, (NI.size-6)/NI.size),
+	           np.quantile(NI, 1 - A_circle/A_square/2)*1.25)
 	plt.pcolormesh(xI_bins, yI_bins, NI.T,
 		           vmax=vmax, cmap=COFFEE, rasterized=True)
 	T = np.linspace(0, 2*np.pi)
@@ -227,7 +234,7 @@ def plot_source(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	j_lineout = np.argmax(np.sum(Z, axis=0))
 	scale = 1/Z[:,j_lineout].max()
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE) # plot a lineout
-	plt.plot(np.repeat(x_bins, 2)[1:-1]/1e-4, np.repeat(Z[:,j_lineout], 2)*scale)
+	plt.plot(x_centers/1e-4, Z[:,j_lineout]*scale)
 
 	if SHOT in data and 'disc' in data[SHOT]: # and fit a curve to it if it's a "disc"
 		def blurred_boxcar(x, A, d):
@@ -383,7 +390,7 @@ if __name__ == '__main__':
 				xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
 				xI_bins, yI_bins, NI = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-projection')
 				plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
-				                     result.x0, result.y0, result.M,
+				                     result.x0, result.y0,
 				                     result.energy_min, result.energy_max, cut,
 				                     data=data)
 

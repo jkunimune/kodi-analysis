@@ -1,5 +1,6 @@
 # reconstruct_ellipsoid.py
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -7,12 +8,19 @@ import pandas as pd
 import segnal
 from coordinate import tim_coordinates
 
+matplotlib.rc('font', family='serif', size=18)
+matplotlib.rc('legend', framealpha=1)
+matplotlib.rc('axes', axisbelow=True)
+
 images = pd.read_csv('../images/summary.csv', sep=r'\s*,\s*', engine='python')
 images = images[images['energy_cut'] == 'hi'] # for now, we only worry about hot spot images
 
+shot_numbers = []
+offset_magnitudes = []
 separations = []
 prolatenesses = []
 oblatenesses = []
+errorbars = []
 
 for shot in images['shot'].unique(): # go thru each shot
 	print(shot)
@@ -22,34 +30,38 @@ for shot in images['shot'].unique(): # go thru each shot
 		print(f"skipping {shot} because it only has {number_of_tims} lines of site")
 		continue
 
+	errors = []
+
 	coordinate_2d_matrix = []
 	covariance_vector = []
 	coordinate_1d_matrix = []
 	separation_vector = []
 
-	for i, line_of_site in relevant_images.iterrows(): # on each los we have
-		# image, x, y = load_hdf5(f'../results/{line_of_site.shot}-{line_of_site.tim}-hi-reconstruction')
+	for i, image in relevant_images.iterrows(): # on each los we have
+		# image, x, y = load_hdf5(f'../results/{image.shot}-{image.tim}-hi-reconstruction')
 		# [[a, b], [c, d]] = segnal.fit_ellipse(x, y, image)
 
-		basis = tim_coordinates(int(line_of_site['tim'])) # get the absolute direccion of the axes of this image
+		basis = tim_coordinates(int(image['tim'])) # get the absolute direccion of the axes of this image
 
 		cov, _ = segnal.covariance_from_harmonics(
-			line_of_site.P0_magnitude,
+			image.P0_magnitude,
 			0, 0,
-			line_of_site.P2_magnitude,
-			np.radians(line_of_site.P2_angle)) # get the covariance matrix from the reconstructed image
+			image.P2_magnitude,
+			np.radians(image.P2_angle)) # get the covariance matrix from the reconstructed image
 
 		for j in range(2):
 			for k in range(2):
 				coordinate_2d_matrix.append(np.ravel(np.outer(basis[:,j], basis[:,k])))
 				covariance_vector.append(cov[j,k])
 
-		dr = [line_of_site.offset_magnitude*np.cos(np.radians(line_of_site.offset_angle)),
-		      line_of_site.offset_magnitude*np.sin(np.radians(line_of_site.offset_angle))]
+		dr = [image.offset_magnitude*np.cos(np.radians(image.offset_angle)),
+		      image.offset_magnitude*np.sin(np.radians(image.offset_angle))]
 
 		for j in range(2):
 			coordinate_1d_matrix.append(basis[:,j])
 			separation_vector.append(dr[j])
+
+		errors.append(np.maximum(image.dP0_magnitude, 10**2/image.P0_magnitude))
 
 	ellipsoid_covariances = np.linalg.lstsq(coordinate_2d_matrix, covariance_vector, rcond=None)[0]
 	ellipsoid_covariances = ellipsoid_covariances.reshape((3, 3))
@@ -70,11 +82,15 @@ for shot in images['shot'].unique(): # go thru each shot
 		continue#offset = [[80, 40, 0, 80][int(shot)-97385], 63.44, 342.00]
 	else:
 		continue
+	offset_magnitudes.append(offset[0])
 	r, θ, ɸ = offset[0], *np.radians(offset[1:])
 	x = r*np.cos(ɸ)*np.sin(θ)
 	y = r*np.sin(ɸ)*np.sin(θ)
 	z = r*np.cos(θ)
 	offset = [x, y, z]
+
+	shot_numbers.append(shot)
+	errorbars.append(np.hypot(errors[0], errors[-1]))
 
 	fig = plt.figure(figsize=(5, 5))  # Square figure
 	ax = fig.add_subplot(111, projection='3d')
@@ -108,7 +124,7 @@ for shot in images['shot'].unique(): # go thru each shot
 		tim_direction = tim_coordinates(tim)[:,2]
 		plt.plot([0, max_radius*tim_direction[0]], [0, max_radius*tim_direction[1]], [0, max_radius*tim_direction[2]], f'C{tim}--', label=f"To TIM{tim}")
 
-	plt.title(line_of_site.shot)
+	plt.title(shot)
 
 	separation_in_offset_disha = np.dot(absolute_separation, offset)/np.sqrt(np.dot(offset, offset))
 	separations.append([
@@ -156,18 +172,36 @@ plt.ylabel("Separation along offset (μm)")
 plt.tight_layout()
 # plt.xlim(0, 50)
 
-plt.figure(figsize=(6,5))
+plt.figure()
 plt.grid()
-for indices, marker, color, label in [([2], 'o', '#f2ab23', "No offset"), ([0,1,3], 'D', '#118acd', "40 μm offset"), ([4], 'v', '#79098c', "80 μm offset")]:
-	plt.scatter(prolatenesses[indices,1], prolatenesses[indices,0], c=[color]*len(indices), marker=marker, zorder=100, label=label, s=60)
-plt.legend(loc="upper right")
-for i in range(len(prolatenesses)):
-	plt.plot([0, prolatenesses[i,1]], [0, prolatenesses[i,0]], 'k-', linewidth=1)
+plt.scatter(x=offset_magnitudes, y=separations[:,0], s=70, color='C2', marker='o', zorder=100, label=label)
+plt.errorbar(x=offset_magnitudes, y=separations[:,0], yerr=errorbars, color='C2', linestyle='', zorder=100, label=label)
+for i in range(len(shot_numbers)):
+	if i < 3:
+		plt.text(offset_magnitudes[i], separations[i,0], f" {shot_numbers[i]}", horizontalalignment="left")
+	else:
+		plt.text(offset_magnitudes[i], separations[i,0], f"{shot_numbers[i]} ", horizontalalignment="right")
 plt.axis('equal')
-plt.xlabel("Prolateness perpendicular to offset (μm)")
-plt.ylabel("Prolateness along offset (μm)")
+# plt.yticks([-10, 0, 10, 20])
+plt.xlabel("Imposed offset (μm)")
+plt.ylabel("Separation along offset (μm)")
 plt.tight_layout()
-# plt.xlim(0, 80)
+plt.savefig("scatter-p1.png", dpi=150)
+plt.savefig("scatter-p1.eps")
+# plt.xlim(0, 50)
+
+# plt.figure(figsize=(6,5))
+# plt.grid()
+# for indices, marker, color, label in [([2], 'o', '#f2ab23', "No offset"), ([0,1,3], 'D', '#118acd', "40 μm offset"), ([4], 'v', '#79098c', "80 μm offset")]:
+# 	plt.scatter(prolatenesses[indices,1], prolatenesses[indices,0], c=[color]*len(indices), marker=marker, zorder=100, label=label, s=60)
+# plt.legend(loc="upper right")
+# for i in range(len(prolatenesses)):
+# 	plt.plot([0, prolatenesses[i,1]], [0, prolatenesses[i,0]], 'k-', linewidth=1)
+# plt.axis('equal')
+# plt.xlabel("Prolateness perpendicular to offset (μm)")
+# plt.ylabel("Prolateness along offset (μm)")
+# plt.tight_layout()
+# # plt.xlim(0, 80)
 
 plt.figure(figsize=(6,5))
 plt.grid()
