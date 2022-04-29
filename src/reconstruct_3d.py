@@ -61,11 +61,11 @@ def plot_source(x, y, z, source, density, name):
 
 		levels = np.linspace(0.17, 1.00, 4)*thing.max()
 		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
-			offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
+		             offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 		contour_plot(np.meshgrid(x, z, indexing='ij')[0], thing[:, len(y)//2, :], np.meshgrid(x, z, indexing='ij')[1],
-			offset=0, zdir='y', levels=levels, cmap=cmap, vmin=-thing.max()/6)
+		             offset=0, zdir='y', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 		contour_plot(thing[len(x)//2, :, :], *np.meshgrid(y, z, indexing='ij'),
-			offset=0, zdir='x', levels=levels, cmap=cmap, vmin=-thing.max()/6)
+		             offset=0, zdir='x', levels=levels, cmap=cmap, vmin=-thing.max()/6)
 
 	ax.set_xlim(-r_max, r_max)
 	ax.set_ylim(-r_max, r_max)
@@ -114,14 +114,14 @@ def plot_images(Э_cuts, ξ, υ, *image_sets):
 			cmaps = ['plasma']*num_cuts
 		assert len(cmaps) == num_cuts
 
-		for h in range(num_cuts):
+		for h in [0, num_cuts - 1]:
 			maximum = np.amax([image_set[l][h] for image_set in image_sets])
 			for image_set in image_sets:
 				plt.figure(figsize=(6, 5))
 				plt.pcolormesh(ξ[l][h], υ[l][h], image_set[l][h].T,
-					           vmin=min(0, np.min(image_set[l][h])),
-					           vmax=maximum,
-					           cmap=cmaps[h])
+				               vmin=min(0, np.min(image_set[l][h])),
+				               vmax=maximum,
+				               cmap=cmaps[h])
 				plt.axis('square')
 				plt.axis([-r_max, r_max, -r_max, r_max])
 				plt.title(f"$E_\\mathrm{{d}}$ = {Э_cuts[h][0]:.1f} – {Э_cuts[h][1]:.1f} MeV")
@@ -216,7 +216,7 @@ if __name__ == '__main__':
 
 				metadata = filename.split('_') if '_' in filename else filename.split('-')
 				if (extension == '.csv' and name in metadata) or \
-					(extension == '.h5' and name in metadata and 'reconstruction' in metadata): # only take csv and h5 files
+						(extension == '.h5' and name in metadata and 'reconstruction' in metadata): # only take csv and h5 files
 					for metadatum in metadata: # pull out the different peces of information from the filename
 						if metadatum.startswith('tim'):
 							tim = metadatum[3:]

@@ -106,7 +106,8 @@ public class Optimize {
 	}
 
 	/**
-	 * find a local minimum of the funccion f(state) = Σ residuals(state)[i]^2,
+	 * find the minimum of the function f(x) = Σ (y[i] - y_target[i])^2 assuming
+	 * it satisfies the condition y = J x where J is _weakly_ dependent on x
 	 * using the Levenberg-Marquardt formula as defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
 	 *     System". Journal of Research of the National Institute of Standards and Technology
@@ -195,13 +196,17 @@ public class Optimize {
 	/**
 	 * find the minimum of the function f(x) = Σ (y[i] - y_target[i])^2 assuming
 	 * it satisfies the condition y = J x where J is _weakly_ dependent on x
+	 * uses a modified form of the Levenberg-Marquardt formula defined in
+	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
+	 *     System". Journal of Research of the National Institute of Standards and Technology
+	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
 	 * @param compute_local_jacobian compute the matrix J that gives y for this x
 	 * @param data_values the correct y values to which we are minimizing the error
 	 * @param data_weights the relative importance of each residual (i.e. inverse variance)
 	 * @param initial_input the inicial gess for the minimizacion
 	 * @param tolerance the maximum acceptable value of the components of the gradient of the
-	 * 	 *              sum of squares, normalized by the norm of the errors and the norm of
-	 * 	 *              the gradients of the individual errors.
+	 * 	                sum of squares, normalized by the norm of the errors and the norm of
+	 * 	                the gradients of the individual errors.
 	 * 	                an infinite tolerance indicates that the problem is actually linear.
 	 * @param logger the optional logger object
 	 * @return the solucion to the least-squares problem
@@ -242,17 +247,19 @@ public class Optimize {
 		while (true) { // then start searching for a solution
 			Vector gradient = jacobian.trans().times(weights.times(residuals)); // calculate a step using Gauss-Newton
 			Matrix hessian = jacobian.trans().times(weights.times(jacobian));
-			Vector step = hessian.smart_inverse().times(gradient).neg();
-			if (Double.isNaN(step.get(0)))
-				throw new RuntimeException("singular hessian");
 
 			if (logger != null)
 				logger.info("beginning line search");
 
-			for (double step_scale = 1; true; step_scale -= Math.max(0.2, step_scale/2.)) { // do a backtracking line search
-				// side note: 99 times out of 100 this for-loop should resolve on
-				// the first iteration, but a little robustness never hurt anyone
-				Vector new_input = input.plus(step.times(step_scale));
+			for (double λ = 0; true; λ = λ*6 + .1) { // do a Levenberg-marquardt-like backtrack
+				Matrix modified_hessian = hessian.copy();
+				for (int i = 0; i < hessian.getN(); i ++)
+					modified_hessian.set(i, i, (1 + λ)*hessian.get(i, i));
+
+				Vector step = modified_hessian.smart_inverse().times(gradient).neg();
+				if (Double.isNaN(step.get(0)))
+					throw new RuntimeException("singular hessian");
+				Vector new_input = input.plus(step);
 
 				if (Double.isFinite(tolerance))
 					jacobian = new Matrix(compute_local_jacobian.apply(new_input.getValues())); // get the updating jacobian if there mite be more
@@ -272,7 +279,7 @@ public class Optimize {
 					input = new_input;
 					break;
 				}
-				if (step_scale < 1e-14) { // check iterations
+				if (λ > 1e6) { // check iterations
 					if (logger != null)
 						logger.warning("the line search did not converge");
 					break;
