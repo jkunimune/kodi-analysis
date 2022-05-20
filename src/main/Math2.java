@@ -33,7 +33,7 @@ import java.util.Random;
  * 
  * @author Justin Kunimune
  */
-public class NumericalMethods {
+public class Math2 {
 
 	/**
 	 * draw a boolean from a Bernoulli distribution.
@@ -196,31 +196,23 @@ public class NumericalMethods {
 		}
 	}
 
-	/**
-	 * generate a generic unimodal distribution with a handful of parameters with which to play.
-	 * it will be the linear combination of an erf stepping from yL to yR with a generalized
-	 * skew normal distribution with height ~yPeak, and skew and kurtosis-adjustment given by
-	 * tilt and fatten
-	 * @param x the x axis on which to generate it
-	 * @param yL the limit for negative x
-	 * @param yR the limit for positive x
-	 * @param yPeak the signed magnitude of the peak in the middle
-	 * @param xPeak the location of the center of the function
-	 * @param std the standard deviation of the peak
-	 * @param tilt the amount to skew the peak (0 is no skew)
-	 * @param fatten the exponent on the peak (2 is normal gaussian)
-	 * @return y values corresponding to the x values
-	 */
-	public static double[] unimode(double[] x, double yL, double yR, double yPeak,
-								   double xPeak, double std, double tilt, double fatten) {
-		final double yS = (yL - yR), yG = yPeak - (yL + yR)/2;
-		double[] y = new double[x.length];
-		for (int i = 0; i < x.length; i ++) {
-			double ξ = (x[i] - xPeak)/std;
-			y[i] = yR + yS*erfc(ξ)/2 +
-					yG*Math.exp(-Math.pow(Math.abs(ξ), 4/fatten)/2)*erfc(-tilt*ξ);
+	public static double iiintegral(double[][][] n, double[] x, double[] y, double[] z) {
+		double sum = 0;
+		for (int i = 0; i < x.length - 1; i ++) {
+			for (int j = 0; j < y.length - 1; j ++) {
+				for (int k = 0; k < z.length - 1; k ++) {
+					double nijk = 0;
+					for (int di = 0; di <= 1; di ++)
+						for (int dj = 0; dj <= 1; dj ++)
+							for (int dk = 0; dk <= 1; dk ++)
+								nijk += n[i + di][j + dj][k + dk]/8.;
+					double dV =
+							(x[i + 1] - x[i])*(y[j + 1] - y[j])*(z[k + 1] - z[k]);
+					sum += nijk*dV;
+				}
+			}
 		}
-		return y;
+		return sum;
 	}
 
 	/**
@@ -1328,6 +1320,19 @@ public class NumericalMethods {
 	}
 
 	/**
+	 * multiply a vector by a vector
+	 * @return u.v scalar
+	 */
+	public static double dot(double[] u, double[] v) {
+		if (u.length != v.length)
+			throw new IllegalArgumentException("Dot a "+u.length+" vector by a "+v.length+" vector?  baka!");
+		double s = 0;
+		for (int i = 0; i < u.length; i ++)
+			s += u[i] * v[i];
+		return s;
+	}
+
+	/**
 	 * multiply a vector by a matrix
 	 * @param A matrix
 	 * @param v vector
@@ -1378,6 +1383,62 @@ public class NumericalMethods {
 		for (int i = 0; i < A.length; i ++)
 			for (int j = i+1; j < A.length; j ++)
 				A[i][j] = A[j][i] = (A[i][j] + A[j][i])/2;
+	}
+
+	/**
+	 * produce an array of n - m vectors of length n, all of which are orthogonal
+	 * to each other and to each input vector, given an array of m input vectors
+	 * of length n
+	 * @param subspace the linearly independent row vectors to complement
+	 */
+	public static double[][] orthogonalComplement(double[][] subspace) {
+		final int n = subspace[0].length;
+		if (subspace.length > n)
+			throw new IllegalArgumentException("subspace must have more columns than rows");
+		for (double[] vector: subspace) {
+			if (vector.length != n)
+				throw new IllegalArgumentException("subspace must not be jagged");
+			if (Math2.sqr(vector) == 0 || !Double.isFinite(Math2.sqr(vector)))
+				throw new IllegalArgumentException("subspace must be nonsingular");
+		}
+
+		// start by filling out the full n-space
+		double[][] space = new double[n][];
+		System.arraycopy(subspace, 0, space, 0, subspace.length);
+
+		int seedsUsed = 0;
+		// for each missing row
+		for (int i = subspace.length; i < n; i ++) {
+			do {
+				// pick a unit vector
+				space[i] = new double[n];
+				space[i][seedsUsed] = 1;
+				seedsUsed ++;
+				// and make it orthogonal to every previous vector
+				for (int j = 0; j < i; j ++) {
+					double u_dot_v = Math2.dot(space[j], space[i]);
+					double u_dot_u = Math2.sqr(space[j]);
+					for (int k = 0; k < n; k ++)
+						space[i][k] -= space[j][k]*u_dot_v/u_dot_u;
+					if (Math2.sqr(space[i]) < 1e-10) { // it's possible you chose a seed in the span of the space that's already coverd
+						space[i] = null; // give up and try agen if so
+						break;
+					}
+				}
+			} while (space[i] == null);
+
+			// normalize it
+			double v_magn = Math.sqrt(Math2.sqr(space[i]));
+			for (int k = 0; k < n; k ++)
+				space[i][k] /= v_magn;
+		}
+
+		// finally, transfer the new rows to their own matrix
+		double[][] complement = new double[n - subspace.length][n];
+		System.arraycopy(space, subspace.length,
+		                 complement, 0,
+		                 complement.length);
+		return complement;
 	}
 
 	/**

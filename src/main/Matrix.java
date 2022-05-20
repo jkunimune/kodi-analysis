@@ -28,30 +28,60 @@ import java.util.Arrays;
 import java.util.List;
 
 public class Matrix {
+	public final int n;
+	public final int m;
 	private final double[][] values;
 
 	/**
 	 * generate a new matrix by specifying all of its values explicitly.
 	 */
 	public Matrix(double[][] values) {
+		this.n = values.length;
+		if (values.length == 0)
+			throw new IllegalArgumentException("if you want to create an array with height 0, you need to specify the width.");
+		this.m = values[0].length;
+		for (double[] row: values)
+			if (row.length != m)
+				throw new IllegalArgumentException("do not accept jagged arrays.");
 		this.values = values;
+
 	}
 
 	/**
 	 * generate a square diagonal matrix, given the diagonal values.
 	 */
 	public Matrix(double[] values) {
+		this.n = this.m = values.length;
 		this.values = new double[values.length][values.length];
 		for (int i = 0; i < values.length; i ++)
 			this.values[i][i] = values[i];
 	}
 
+	/**
+	 * generate an identity matrix.
+	 */
+	public Matrix(int n) {
+		this.n = this.m = n;
+		this.values = new double[n][n];
+		for (int i = 0; i < values.length; i ++)
+			this.values[i][i] = 1;
+	}
+
+	/**
+	 * generate a zero matrix.
+	 */
+	public Matrix(int n, int m) {
+		this.n = n;
+		this.m = m;
+		this.values = new double[n][m];
+	}
+
 	public Vector times(Vector v) {
-		if (v.getLength() != this.getM())
+		if (v.getLength() != this.m)
 			throw new IllegalArgumentException("the dimensions don't match.");
-		double[] product = new double[this.getN()];
-		for (int i = 0; i < this.getN(); i ++)
-			for (int j = 0; j < this.getM(); j ++)
+		double[] product = new double[this.n];
+		for (int i = 0; i < this.n; i ++)
+			for (int j = 0; j < this.m; j ++)
 				if (this.values[i][j] != 0 && v.get(j) != 0) // 0s override Infs and NaNs in this product
 					product[i] += this.values[i][j]*v.get(j);
 		return new DenseVector(product);
@@ -72,7 +102,7 @@ public class Matrix {
 	 * @return the inverse of this matrix
 	 */
 	public Matrix inverse() {
-		return new Matrix(NumericalMethods.matinv(values));
+		return new Matrix(Math2.matinv(values));
 	}
 
 	/**
@@ -80,11 +110,11 @@ public class Matrix {
 	 * inversion and then filld in with zeros afterward.
 	 */
 	public Matrix smart_inverse() {
-		if (this.getN() != this.getM())
-			throw new IllegalArgumentException("this makes even less sense than taking the regular inverse of "+this.getN()+"×"+this.getM());
-		List<Integer> nonzero = new ArrayList<>(this.getN());
-		for (int i = 0; i < this.getN(); i ++) {
-			for (int j = 0; j < this.getN(); j++) {
+		if (this.n != this.m)
+			throw new IllegalArgumentException("this makes even less sense than taking the regular inverse of "+this.n+"×"+this.m);
+		List<Integer> nonzero = new ArrayList<>(this.n);
+		for (int i = 0; i < this.n; i ++) {
+			for (int j = 0; j < this.n; j ++) {
 				if (this.get(i, j) != 0 || this.get(j, i) != 0) {
 					nonzero.add(i);
 					break;
@@ -97,14 +127,46 @@ public class Matrix {
 			for (int j = 0; j < pruned_values[i].length; j ++)
 				pruned_values[i][j] = values[nonzero.get(i)][nonzero.get(j)];
 
-		double[][] pruned_inverse = NumericalMethods.matinv(pruned_values);
+		double[][] pruned_inverse = Math2.matinv(pruned_values);
 
-		double[][] inverse = new double[this.getN()][this.getN()];
+		double[][] inverse = new double[this.n][this.n];
 		for (int i = 0; i < pruned_inverse.length; i ++)
 			for (int j = 0; j < pruned_inverse[i].length; j ++)
 				inverse[nonzero.get(i)][nonzero.get(j)] = pruned_inverse[i][j];
 
 		return new Matrix(inverse);
+	}
+
+	/**
+	 * calculate the pseudo-inverse of a matrix with more columns than rows,
+	 * given an orthogonal complement of its row-space
+	 * @param complement a set of rows, each of which is linearly independent from
+	 *                   the rows of this.  provided solely so that we don't haff
+	 *                   to waste time computing it ourselves
+	 * @return a m×n matrix which, multiplied by an n vector, produces the vector
+	 *         in the span of this's rows v that comes closest to satisfying
+	 *         inverse \cdot this \cdot v = v
+	 */
+	public Matrix pseudo_inverse(Matrix complement) {
+		if (this.n > this.m)
+			throw new IllegalArgumentException("I've only implemented pseudoinverses of matrices with more colums than rows");
+		if (this.m != complement.m)
+			throw new IllegalArgumentException("these row spaces aren't compatible.");
+		if (this.n + complement.n != this.m)
+			throw new IllegalArgumentException("this obviously is not actually an orthogonal complement");
+		double[][] square_matrix = new double[this.m][];
+		System.arraycopy(this.values, 0,
+		                 square_matrix, 0, this.n);
+		System.arraycopy(complement.values, 0,
+		                 square_matrix, this.n, complement.n);
+
+		double[][] inverse = Math2.matinv(square_matrix);
+
+		double[][] output = new double[this.m][this.n];
+		for (int i = 0; i < this.m; i ++)
+			System.arraycopy(inverse[i], 0,
+			                 output[i], 0, this.n);
+		return new Matrix(output);
 	}
 
 	public Matrix trans() {
@@ -131,31 +193,28 @@ public class Matrix {
 	}
 
 	public double[][] getValues() {
-		double[][] copy = new double[this.getN()][];
-		for (int i = 0; i < this.getN(); i ++)
-			copy[i] = Arrays.copyOf(this.values[i], this.getM());
+		double[][] copy = new double[this.n][];
+		for (int i = 0; i < this.n; i ++)
+			copy[i] = Arrays.copyOf(this.values[i], this.m);
 		return copy;
-	}
-
-	public int getN() {
-		return this.values.length;
-	}
-
-	public int getM() {
-		return this.values[0].length;
 	}
 
 	@Override
 	public String toString() {
-		StringBuilder s = new StringBuilder("Matrix [ ");
-		for (int i = 0; i < this.getN(); i ++) {
-			for (int j = 0; j < this.getM(); j ++) {
-				s.append(String.format("%8.4g", this.get(i, j)));
-				s.append("  ");
+		if (this.n*this.m < 1000) {
+			StringBuilder s = new StringBuilder(String.format("Matrix %d×%d [\n  ", n, m));
+			for (int i = 0; i < this.n; i++) {
+				for (int j = 0; j < this.m; j++) {
+					s.append(String.format("%8.4g", this.get(i, j)));
+					s.append("  ");
+				}
+				s.append("\n  ");
 			}
-			s.append("\n         ");
+			return s.toString();
 		}
-		return s.toString();
+		else {
+			return String.format("Matrix %d×%d [ … ]", n, m);
+		}
 	}
 
 }

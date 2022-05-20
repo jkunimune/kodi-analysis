@@ -194,7 +194,7 @@ public class Optimize {
 
 
 	/**
-	 * find the minimum of the function f(x) = Σ (y[i] - y_target[i])^2 assuming
+	 * find the minimum x* of the function f(x) = Σ (y[i] - y_target[i])^2 assuming
 	 * it satisfies the condition y = J x where J is _weakly_ dependent on x
 	 * uses a modified form of the Levenberg-Marquardt formula defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
@@ -209,6 +209,8 @@ public class Optimize {
 	 * 	                the gradients of the individual errors.
 	 * 	                an infinite tolerance indicates that the problem is actually linear.
 	 * @param logger the optional logger object
+	 * @param constraints for each constraint vector c, the optimization will ensure that
+	 *                    x*⋅c = x0⋅c
 	 * @return the solucion to the least-squares problem
 	 */
 	public static Optimum quasilinear_least_squares(
@@ -217,7 +219,8 @@ public class Optimize {
 		  double[] data_weights,
 		  double[] initial_input,
 		  double tolerance,
-		  Logger logger) {
+		  Logger logger,
+		  double[]... constraints) {
 		if (data_values.length != data_weights.length)
 			throw new IllegalArgumentException("there must be the same number of residuals as weights");
 		double[][] initial_jacobian = compute_local_jacobian.apply(initial_input);
@@ -225,6 +228,9 @@ public class Optimize {
 			throw new IllegalArgumentException("there must be the same number of gradients as residuals");
 		if (initial_jacobian[0].length != initial_input.length)
 			throw new IllegalArgumentException("the jacobian width must match the initial gess");
+		for (double[] constraint: constraints)
+			if (constraint.length != initial_input.length)
+				throw new IllegalArgumentException("each constraint length must match the initial gess");
 
 		data_values = Arrays.copyOf(data_values, data_values.length); // copy this inputs, just in case
 		data_weights = Arrays.copyOf(data_weights, data_weights.length);
@@ -237,32 +243,49 @@ public class Optimize {
 		Vector output = jacobian.times(input); // compute inicial residuals
 		Vector residuals = output.minus(data);
 		Matrix weights = new Matrix(data_weights);
+		Matrix constrained, free;
+		if (constraints.length > 0) {
+			constrained = new Matrix(constraints);
+			free = new Matrix(Math2.orthogonalComplement(constraints));
+		}
+		else {
+			constrained = new Matrix(0, initial_input.length);
+			free = new Matrix(initial_input.length);
+		}
 
 		double zai_error = 1/2.*residuals.dot(weights.times(residuals)); // compute the inicial total error ("zai" is the Pandunia word for "current")
 		if (logger != null)
 			logger.info(String.format("inicial value: %.8e", zai_error));
 		double new_error;
 
+		// then start searching for a solution
 		int iter = 0;
-		while (true) { // then start searching for a solution
-			Vector gradient = jacobian.trans().times(weights.times(residuals)); // calculate a step using Gauss-Newton
+		while (true) {
+			// calculate the hessian using linear algebra
+			Vector gradient = jacobian.trans().times(weights.times(residuals));
 			Matrix hessian = jacobian.trans().times(weights.times(jacobian));
 
 			if (logger != null)
 				logger.info("beginning line search");
 
-			for (double λ = 0; true; λ = λ*6 + .1) { // do a Levenberg-marquardt-like backtrack
+			// do a Levenberg-Marquardt-like backtrack
+			for (double λ = 0; true; λ = λ*7 + .125) {
 				Matrix modified_hessian = hessian.copy();
-				for (int i = 0; i < hessian.getN(); i ++)
+				for (int i = 0; i < hessian.n; i ++)
 					modified_hessian.set(i, i, (1 + λ)*hessian.get(i, i));
 
-				Vector step = modified_hessian.smart_inverse().times(gradient).neg();
+				// calculate the step given the normalization λ and limited freedom
+				Matrix reduced_hessian = free.times(modified_hessian);
+				Vector reduced_gradient = free.times(gradient);
+				Vector step = reduced_hessian.pseudo_inverse(constrained).times(reduced_gradient).neg();
 				if (Double.isNaN(step.get(0)))
 					throw new RuntimeException("singular hessian");
 				Vector new_input = input.plus(step);
 
+				// get the updated jacobian if there mite be more
 				if (Double.isFinite(tolerance))
-					jacobian = new Matrix(compute_local_jacobian.apply(new_input.getValues())); // get the updating jacobian if there mite be more
+					jacobian = new Matrix(compute_local_jacobian.apply(new_input.getValues()));
+				// figure out the new sum of squares
 				output = jacobian.times(new_input);
 				residuals = output.minus(data);
 				new_error = 1/2.*residuals.dot(weights.times(residuals));
@@ -275,11 +298,13 @@ public class Optimize {
 					return new Optimum(new_input.getValues()); // that means we can just stop here
 				}
 
-				if (new_error <= zai_error) { // infinite tolerances aside, the termination condition on the line search is pretty lax
+				// infinite tolerances aside, the termination condition on the line search is pretty lax
+				if (new_error <= zai_error) {
 					input = new_input;
 					break;
 				}
-				if (λ > 1e6) { // check iterations
+				// check iterations
+				if (λ > 1e6) {
 					if (logger != null)
 						logger.warning("the line search did not converge");
 					break;

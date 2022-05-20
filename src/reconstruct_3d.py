@@ -9,17 +9,17 @@
 # и is the index of a basis function
 
 import datetime
-import matplotlib.pyplot as plt
-import numpy as np
 import os
-import scipy.optimize as optimize
 import shutil
 import subprocess
 import sys
 
+import matplotlib.pyplot as plt
+import numpy as np
+
+import coordinate
 from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS
 from hdf5_util import load_hdf5
-import coordinate
 
 plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
@@ -108,7 +108,7 @@ def plot_images(Э_cuts, ξ, υ, *image_sets):
 		if num_cuts == 1:
 			cmaps = [GREYS]
 		elif num_cuts < 7:
-			cmap_priorities = [(0, REDS), (5, ORANGES), (3, YELLOWS), (2, GREENS), (6, CYANS), (1, BLUES), (4, VIOLETS)]
+			cmap_priorities = [(0, REDS), (5, ORANGES), (2, YELLOWS), (3, GREENS), (6, CYANS), (1, BLUES), (4, VIOLETS)]
 			cmaps = [cmap for priority, cmap in cmap_priorities if priority < num_cuts]
 		else:
 			cmaps = ['plasma']*num_cuts
@@ -132,9 +132,9 @@ def plot_images(Э_cuts, ξ, υ, *image_sets):
 
 if __name__ == '__main__':
 	os.chdir("..")
-	name = sys.argv[1] if len(sys.argv) > 1 else "example"
+	name = sys.argv[1] if len(sys.argv) > 1 else "test"
 
-	if 'skip' in sys.argv:
+	if name == "skip":
 		# load the previous inputs and don't run the reconstruction
 		print(f"using previous reconstruction.")
 
@@ -164,7 +164,7 @@ if __name__ == '__main__':
 
 	else:
 		# generate or load a new input and run the reconstruction algorithm
-		if 'test' in sys.argv:
+		if name == 'test':
 			# generate a synthetic morphology
 			N = 21 # model spatial resolucion
 			M = 4 # image energy resolucion
@@ -189,9 +189,9 @@ if __name__ == '__main__':
 			υ = [[expand_bins(y)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
 
 			X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
-			# tru_source = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
+			# tru_production = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 			# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
-			tru_production = 1e+26*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
+			tru_production = 1e+15*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
 			tru_density = 10_000*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
 			tru_temperature = 1
 
@@ -203,13 +203,18 @@ if __name__ == '__main__':
 			# load some real images and save them to disk in the correct format
 			print(f"reconstructing images marked '{name}'")
 
+			try:
+				total_yield = float(sys.argv[2]) # TODO: figure out a way for it to automatically look this up
+			except IndexError:
+				raise ValueError("please specify the DT yield")
+
 			tru_production, tru_density, tru_temperature = None, None, None
 
 			H = None
 			first_tim_encountered = None
-			centroid = {}
-			Э_cuts = []
-			data_dict = {} # load any images you can find into this dict of lists
+			centroid: dict[str, tuple[float, float]] = {}
+			Э_cuts: list[list[float]] = []
+			data_dict: dict[str, list[tuple[list[float], list[float], list[list[float]]]]] = {} # load any images you can find into this dict of lists
 			for filename in os.listdir('images'): # search for files that match each row
 				filepath = os.path.join('images', filename)
 				filename, extension = os.path.splitext(filename)
@@ -242,11 +247,12 @@ if __name__ == '__main__':
 					image = image.T # assume they were loaded in with [y,x] indices and change to [x,y]
 					assert image.shape == (ξ_bins.size - 1, υ_bins.size - 1), (image.shape, ξ_bins.size, υ_bins.size)
 
-					if ξ_bins.max() - ξ_bins.min() < 1e-3: # automatically detect and convert meters
+					# automatically detect and correct the SI prefix
+					if ξ_bins.max() - ξ_bins.min() < 1e-3:
 						ξ_bins, υ_bins = ξ_bins*1e6, υ_bins*1e6
-					elif ξ_bins.max() - ξ_bins.min() < 1e-1: # automatically detect and convert centimeters
+					elif ξ_bins.max() - ξ_bins.min() < 1e-1:
 						ξ_bins, υ_bins = ξ_bins*1e4, υ_bins*1e4
-					elif ξ_bins.max() - ξ_bins.min() < 1e-0: # automatically detect and convert millimeters
+					elif ξ_bins.max() - ξ_bins.min() < 1e-0:
 						ξ_bins, υ_bins = ξ_bins*1e3, υ_bins*1e3
 
 					if tim not in centroid: # TODO: remove this once I make the 2D reconstruction algorithm fix this automatically
@@ -299,6 +305,8 @@ if __name__ == '__main__':
 					tru_images[l].append(image)
 					np.savetxt(f"tmp/image-los{l}-cut{h}.csv", image, delimiter=',')
 
+			np.savetxt("tmp/total-yield.csv", [total_yield])
+
 		# save the parameters that always need to be saved
 		np.savetxt("tmp/x.csv", x)
 		np.savetxt("tmp/y.csv", y)
@@ -314,7 +322,7 @@ if __name__ == '__main__':
 
 		# run the reconstruction!
 		print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-		cmd = [shutil.which("java"), "-enableassertions", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", *sys.argv[1:]]
+		cmd = [shutil.which("java"), "-enableassertions", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", name]
 		with subprocess.Popen(cmd, stderr=subprocess.PIPE, encoding='utf-8') as process:
 			for line in process.stderr:
 				print(line, end='')
@@ -322,7 +330,7 @@ if __name__ == '__main__':
 				raise ValueError("see above.")
 		print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 
-		if 'test' in sys.argv:
+		if name == "test":
 			# load the images it generated if we don't already have them
 			tru_images = []
 			for l in range(lines_of_sight.shape[0]):
