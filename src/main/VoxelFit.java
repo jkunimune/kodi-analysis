@@ -735,7 +735,6 @@ public class VoxelFit {
 				  basis_volumes); // TODO: do shell temperature
 			production_coefs = production_solution.location;
 			double[][][] production = bild_3d_map(production_coefs, basis_functions);
-			System.out.println("the total yield is now "+Math2.iiintegral(production, x, y, z));
 
 			// then optimize the cold fuel (fully unconstraind)
 			Optimum density_solution = Optimize.quasilinear_least_squares(

@@ -47,55 +47,58 @@ def integrate(y, x):
 	return (cumsum[:-1] + cumsum[1:] - cumsum[1])/2
 
 
-def plot_source(x, y, z, source, density, name):
-	ax = plt.figure(figsize=(5.5, 5)).add_subplot(projection='3d')
-	ax.set_box_aspect([1,1,1])
+def plot_morphologies(x, y, z, *morphologies):
+	# for i, (density, source) in enumerate(morphologies): TODO: make an actually good 3d representation
+	# 	ax = plt.figure(figsize=(5.5, 5)).add_subplot(projection='3d')
+	# 	ax.set_box_aspect([1, 1, 1])
+	#
+	# 	for thing, contour_plot, cmap in [(density, ax.contour, 'Reds'), (source, ax.contour, 'Blues')]:
+	# 		if thing.max() <= 0 and thing.min() < 0:
+	# 			print(f"warning: the {cmap[:-1]} stuff is negative!")
+	# 			thing = -thing
+	# 		elif thing.max() == 0 and thing.min() == 0:
+	# 			print(f"warning: the {cmap[:-1]} stuff is zero!")
+	# 			continue
+	#
+	# 		levels = np.linspace(0.17, 1.00, 4)*thing.max()
+	# 		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
+	# 		             offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
+	# 		contour_plot(np.meshgrid(x, z, indexing='ij')[0], thing[:, len(y)//2, :], np.meshgrid(x, z, indexing='ij')[1],
+	# 		             offset=0, zdir='y', levels=levels, cmap=cmap, vmin=-thing.max()/6)
+	# 		contour_plot(thing[len(x)//2, :, :], *np.meshgrid(y, z, indexing='ij'),
+	# 		             offset=0, zdir='x', levels=levels, cmap=cmap, vmin=-thing.max()/6)
+	#
+	# 	ax.set_xlim(-r_max, r_max)
+	# 	ax.set_ylim(-r_max, r_max)
+	# 	ax.set_zlim(-r_max, r_max)
+	# 	plt.tight_layout()
+	# 	for extension in ['png', 'eps']:
+	# 		plt.savefig(f"3d/hologram-{i}.{extension}", dpi=300)
 
-	for thing, contour_plot, cmap in [(density, ax.contour, 'Reds'), (source, ax.contour, 'Blues')]:
-		if thing.max() <= 0 and thing.min() < 0:
-			print(f"warning: the {cmap[:-1]} stuff is negative!")
-			thing = -thing
-		elif thing.max() == 0 and thing.min() == 0:
-			print(f"warning: the {cmap[:-1]} stuff is zero!")
-			continue
-
-		levels = np.linspace(0.17, 1.00, 4)*thing.max()
-		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
-		             offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
-		contour_plot(np.meshgrid(x, z, indexing='ij')[0], thing[:, len(y)//2, :], np.meshgrid(x, z, indexing='ij')[1],
-		             offset=0, zdir='y', levels=levels, cmap=cmap, vmin=-thing.max()/6)
-		contour_plot(thing[len(x)//2, :, :], *np.meshgrid(y, z, indexing='ij'),
-		             offset=0, zdir='x', levels=levels, cmap=cmap, vmin=-thing.max()/6)
-
-	ax.set_xlim(-r_max, r_max)
-	ax.set_ylim(-r_max, r_max)
-	ax.set_zlim(-r_max, r_max)
-	plt.tight_layout()
-	for extension in ['png', 'eps']:
-		plt.savefig(f"3d/{name}-xiti-holgrafe.{extension}", dpi=300)
-
-	plt.figure(figsize=(5.5, 5))
-	for i, (thing, transparent, color) in enumerate([(density, False, 'Reds'), (source, True, '#1f7bbb')]):
-		thing = thing[len(x)//2,:,:]
-		if thing.max() <= 0 and thing.min() < 0:
-			print(f"warning: the {color[:-1]} flat stuff is negative!")
-			thing = -thing
-		elif thing.max() == 0 and thing.min() == 0:
-			print(f"warning: the {color[:-1]} flat stuff is zero!")
-			continue
-		if transparent:
-			plt.contour(y, z, thing.T, colors=color, levels=np.linspace(1/6, 1, 6)*np.max(thing), zorder=i)
-		else:
-			plt.contourf(y, z, thing.T, cmap=color, levels=np.linspace(0, 1, 7)*np.max(thing), zorder=i)
-	# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
-	plt.xlabel("y (cm)")
-	plt.ylabel("z (cm)")
-	# plt.colorbar()
-	plt.axis('square')
-	plt.axis([-r_max, r_max, -r_max, r_max])
-	plt.tight_layout()
-	for extension in ['png', 'eps']:
-		plt.savefig(f"3d/{name}-section.{extension}", dpi=300)
+	peak_source = np.amax([source for source, density in morphologies])
+	peak_density = np.amax([density for source, density in morphologies])
+	for i, (source, density) in enumerate(morphologies):
+		plt.figure(figsize=(8, 5))
+		plt.contour(y, z,
+		            np.maximum(0, source[len(x)//2,:,:].T),
+		            vmin=0, vmax=peak_source, levels=6,
+		            colors='#1f7bbb',
+		            zorder=1)
+		plt.colorbar().set_label("Neutron source (m^3)")
+		plt.contourf(y, z,
+		             np.maximum(0, density[len(x)//2,:,:].T),
+		             vmin=0, vmax=peak_density, levels=6,
+		             cmap='Reds',
+		             zorder=0)
+		plt.colorbar().set_label("Density (g/cc)")
+		# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
+		plt.xlabel("y (cm)")
+		plt.ylabel("z (cm)")
+		plt.axis('square')
+		plt.axis([-r_max, r_max, -r_max, r_max])
+		plt.tight_layout()
+		for extension in ['png', 'eps']:
+			plt.savefig(f"3d/section-{i}.{extension}", dpi=300)
 
 
 def plot_images(Э_cuts, ξ, υ, *image_sets):
@@ -116,7 +119,7 @@ def plot_images(Э_cuts, ξ, υ, *image_sets):
 
 		for h in [0, num_cuts - 1]:
 			maximum = np.amax([image_set[l][h] for image_set in image_sets])
-			for image_set in image_sets:
+			for i, image_set in enumerate(image_sets):
 				plt.figure(figsize=(6, 5))
 				plt.pcolormesh(ξ[l][h], υ[l][h], image_set[l][h].T,
 				               vmin=min(0, np.min(image_set[l][h])),
@@ -127,6 +130,8 @@ def plot_images(Э_cuts, ξ, υ, *image_sets):
 				plt.title(f"$E_\\mathrm{{d}}$ = {Э_cuts[h][0]:.1f} – {Э_cuts[h][1]:.1f} MeV")
 				plt.colorbar()
 				plt.tight_layout()
+				for extension in ['png', 'eps']:
+					plt.savefig(f"3d/image-{i}-{h}.{extension}", dpi=300)
 			pairs_plotted += 1
 
 
@@ -140,10 +145,10 @@ if __name__ == '__main__':
 
 		lines_of_sight = np.loadtxt("tmp/lines_of_site.csv", delimiter=',')
 		Э_cuts = np.loadtxt("tmp/energy.csv", delimiter=',')
-		x = np.loadtxt("tmp/x.csv")
-		y = np.loadtxt("tmp/y.csv")
-		z = np.loadtxt("tmp/z.csv")
-		N = x.size - 1
+		x_model = np.loadtxt("tmp/x.csv")
+		y_model = np.loadtxt("tmp/y.csv")
+		z_model = np.loadtxt("tmp/z.csv")
+		N = x_model.size - 1
 		try:
 			tru_production = np.loadtxt("tmp/production.csv").reshape((N+1, N+1, N+1))
 			tru_density = np.loadtxt("tmp/density.csv").reshape((N+1, N+1, N+1))
@@ -151,14 +156,14 @@ if __name__ == '__main__':
 		except OSError:
 			tru_production, tru_density, tru_temperature = None, None, None
 
-		ξ, υ, tru_images = [], [], []
+		ξ_bins, υ_bins, tru_images = [], [], []
 		for l in range(lines_of_sight.shape[0]):
-			ξ.append([])
-			υ.append([])
+			ξ_bins.append([])
+			υ_bins.append([])
 			tru_images.append([])
 			for h in range(Э_cuts.shape[0]):
-				ξ[l].append(np.loadtxt(f"tmp/xye-los{l}-cut{h}.csv"))
-				υ[l].append(np.loadtxt(f"tmp/ypsilon-los{l}-cut{h}.csv"))
+				ξ_bins[l].append(np.loadtxt(f"tmp/xye-los{l}-cut{h}.csv"))
+				υ_bins[l].append(np.loadtxt(f"tmp/ypsilon-los{l}-cut{h}.csv"))
 				tru_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}.csv", delimiter=','))
 		tru_images = np.array(tru_images)
 
@@ -166,13 +171,13 @@ if __name__ == '__main__':
 		# generate or load a new input and run the reconstruction algorithm
 		if name == 'test':
 			# generate a synthetic morphology
-			N = 21 # model spatial resolucion
+			N = 11 # model spatial resolucion
 			M = 4 # image energy resolucion
 			print(f"testing synthetic morphology with N = {N} and M = {M}")
 
-			x = np.linspace(-r_max, r_max, N+1) # (μm)
-			y = np.linspace(-r_max, r_max, N+1) # (μm)
-			z = np.linspace(-r_max, r_max, N+1) # (μm)
+			x_model = np.linspace(-r_max, r_max, N+1) # (μm)
+			y_model = np.linspace(-r_max, r_max, N+1) # (μm)
+			z_model = np.linspace(-r_max, r_max, N+1) # (μm)
 
 			lines_of_sight = np.array([
 				[1, 0, 0],
@@ -185,10 +190,10 @@ if __name__ == '__main__':
 
 			Э = np.linspace(Э_min, Э_max, M+1)
 			Э_cuts = np.transpose([Э[:-1], Э[1:]])
-			ξ = [[expand_bins(x)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
-			υ = [[expand_bins(y)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
+			ξ_bins = [[expand_bins(x_model)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
+			υ_bins = [[expand_bins(y_model)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
 
-			X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+			X, Y, Z = np.meshgrid(x_model, y_model, z_model, indexing='ij')
 			# tru_production = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
 			# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
 			tru_production = 1e+15*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
@@ -276,12 +281,12 @@ if __name__ == '__main__':
 					data_dict[tim].append((ξ_bins, υ_bins, image)) # I sure hope these load in a consistent order
 					if tim == first_tim_encountered:
 						Э_cuts.append([э_min, э_max]) # get the energy cuts from whichever tim you see first
-						x = (ξ_bins[:-1] + ξ_bins[1:])/2 - ξ_bins.mean()
-						y = x
-						z = x
+						x_model = (ξ_bins[:-1] + ξ_bins[1:])/2 - ξ_bins.mean()
+						y_model = x_model
+						z_odel = x_model
 
 			Э_cuts = np.array(Э_cuts)
-			N = x.size - 1
+			N = x_model.size - 1
 			if len(data_dict) == 0:
 				raise ValueError("no images were found")
 
@@ -293,32 +298,32 @@ if __name__ == '__main__':
 				data.append(data_dict[tim]) # convert the dict to a list
 			lines_of_sight = np.array(lines_of_sight)
 
-			ξ, υ, tru_images = [], [], []
+			ξ_bins, υ_bins, tru_images = [], [], []
 			for l in range(len(data)):
-				ξ.append([])
-				υ.append([])
+				ξ_bins.append([])
+				υ_bins.append([])
 				tru_images.append([])
 				for h in range(len(data[l])):
 					ξ_vector, υ_vector, image = data[l][h]
-					ξ[l].append(ξ_vector)
-					υ[l].append(υ_vector)
+					ξ_bins[l].append(ξ_vector)
+					υ_bins[l].append(υ_vector)
 					tru_images[l].append(image)
 					np.savetxt(f"tmp/image-los{l}-cut{h}.csv", image, delimiter=',')
 
 			np.savetxt("tmp/total-yield.csv", [total_yield])
 
 		# save the parameters that always need to be saved
-		np.savetxt("tmp/x.csv", x)
-		np.savetxt("tmp/y.csv", y)
-		np.savetxt("tmp/z.csv", z)
+		np.savetxt("tmp/x.csv", x_model)
+		np.savetxt("tmp/y.csv", y_model)
+		np.savetxt("tmp/z.csv", z_model)
 
 		np.savetxt("tmp/lines_of_site.csv", lines_of_sight, delimiter=',')
 		np.savetxt("tmp/energy.csv", Э_cuts, delimiter=',')
 
 		for l in range(lines_of_sight.shape[0]):
 			for h in range(Э_cuts.shape[0]):
-				np.savetxt(f"tmp/xye-los{l}-cut{h}.csv", ξ[l][h])
-				np.savetxt(f"tmp/ypsilon-los{l}-cut{h}.csv", υ[l][h])
+				np.savetxt(f"tmp/xye-los{l}-cut{h}.csv", ξ_bins[l][h])
+				np.savetxt(f"tmp/ypsilon-los{l}-cut{h}.csv", υ_bins[l][h])
 
 		# run the reconstruction!
 		print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
@@ -339,22 +344,22 @@ if __name__ == '__main__':
 					tru_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}.csv", delimiter=','))
 
 	# load the results
-	production = np.loadtxt("tmp/production-recon.csv").reshape((N+1, N+1, N+1))
-	density = np.loadtxt("tmp/density-recon.csv").reshape((N+1, N+1, N+1))
-	temperature = np.loadtxt("tmp/temperature-recon.csv")
-	images = []
+	recon_production = np.loadtxt("tmp/production-recon.csv").reshape((N+1, N+1, N+1))
+	recon_density = np.loadtxt("tmp/density-recon.csv").reshape((N+1, N+1, N+1))
+	recon_temperature = np.loadtxt("tmp/temperature-recon.csv")
+	recon_images = []
 	for l in range(lines_of_sight.shape[0]):
-		images.append([])
+		recon_images.append([])
 		for h in range(Э_cuts.shape[0]):
-			images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}-recon.csv", delimiter=','))
+			recon_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}-recon.csv", delimiter=','))
 
 	# show the results
 	if tru_production is not None:
-		plot_source(x, y, z, tru_production, tru_density, "synthetic")
+		plot_morphologies(x_model, y_model, z_model, (tru_production, tru_density), (recon_production, recon_density))
+	else:
+		plot_morphologies(x_model, y_model, z_model, (recon_production, recon_density))
 
-	plot_source(x, y, z, production, density, name)
-
-	plot_images(Э_cuts, ξ, υ, tru_images, images)
+	plot_images(Э_cuts, ξ_bins, υ_bins, tru_images, recon_images)
 
 	plt.show()
 
