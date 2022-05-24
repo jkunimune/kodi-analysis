@@ -1246,7 +1246,7 @@ public class Math2 {
 	 * @param end exclusive for forward and exclusive for backward
 	 * @return something you can plug into a for-each loop
 	 */
-	public static Iterable<Integer> iteration(int start, int end) {
+	public static Iterable<Integer> range(int start, int end) {
 		List<Integer> values = new ArrayList<>(Math.abs(end - start));
 		if (end > start)
 			for (int i = start; i < end; i ++)

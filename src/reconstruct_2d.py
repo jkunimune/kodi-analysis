@@ -483,7 +483,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		for dx in [-dxK/3, 0, dxK/3]: # sampling over a few pixels
 			for dy in [-dyK/3, 0, dyK/3]:
 				penumbral_kernel += simple_penumbra(np.hypot(XK+dx, YK+dy), 0, Q, r0, 0, 1, *e_in_bounds)
-		penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel)
+		penumbral_kernel = penumbral_kernel/np.sum(penumbral_kernel) # TODO: these units are nonsense.  it should be cm^2/srad/bin
 
 		source_bins = np.hypot(XS - x0/M, YS - y0/M) <= (xS_bins[-1] - xS_bins[0])/2
 		reach = pysignal.convolve2d(source_bins, penumbral_kernel, mode='full')
@@ -524,13 +524,12 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			verbose=verbose,
 			show_plots=SHOW_INTERMEDIATE_PLOTS) # deconvolve!
 
-		# B, χ2_red = np.ones(XS.shape), 0
-
 		logging.info(f"  χ^2/n = {χ2_red}")
 		# if χ2_red >= 1.5: # throw it away if it looks unreasonable
 		# 	logging.info("  Could not find adequate fit")
 		# 	continue
-		B = np.maximum(0, B) # we know this must be nonnegative
+		B = np.maximum(0, B) # we know this must be nonnegative (counts/cm^2/srad)
+		logging.info(f"  ∫B = {np.sum(B*dxS*dyS)*4*np.pi:.4g} deuterons")
 
 		save_as_hdf5(f'{output_filename}-{cut_name}-reconstruction', x=xS_bins, y=yS_bins, z=B)
 

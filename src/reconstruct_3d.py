@@ -84,7 +84,7 @@ def plot_morphologies(x, y, z, *morphologies):
 		            vmin=0, vmax=peak_source, levels=6,
 		            colors='#1f7bbb',
 		            zorder=1)
-		plt.colorbar().set_label("Neutron source (m^3)")
+		plt.colorbar().set_label("Neutron source (μm^-3)")
 		plt.contourf(y, z,
 		             np.maximum(0, density[len(x)//2,:,:].T),
 		             vmin=0, vmax=peak_density, levels=6,
@@ -144,15 +144,15 @@ if __name__ == '__main__':
 		print(f"using previous reconstruction.")
 
 		lines_of_sight = np.loadtxt("tmp/lines_of_site.csv", delimiter=',')
-		Э_cuts = np.loadtxt("tmp/energy.csv", delimiter=',')
-		x_model = np.loadtxt("tmp/x.csv")
-		y_model = np.loadtxt("tmp/y.csv")
-		z_model = np.loadtxt("tmp/z.csv")
+		Э_cuts = np.loadtxt("tmp/energy.csv", delimiter=',') # (MeV)
+		x_model = np.loadtxt("tmp/x.csv") # (μm)
+		y_model = np.loadtxt("tmp/y.csv") # (μm)
+		z_model = np.loadtxt("tmp/z.csv") # (μm)
 		N = x_model.size - 1
 		try:
-			tru_production = np.loadtxt("tmp/production.csv").reshape((N+1, N+1, N+1))
-			tru_density = np.loadtxt("tmp/density.csv").reshape((N+1, N+1, N+1))
-			tru_temperature = np.loadtxt("tmp/temperature.csv")
+			tru_production = np.loadtxt("tmp/production.csv").reshape((N+1, N+1, N+1)) # (μm^-3)
+			tru_density = np.loadtxt("tmp/density.csv").reshape((N+1, N+1, N+1)) # (g/cc)
+			tru_temperature = np.loadtxt("tmp/temperature.csv") # (keV)
 		except OSError:
 			tru_production, tru_density, tru_temperature = None, None, None
 
@@ -162,16 +162,16 @@ if __name__ == '__main__':
 			υ_bins.append([])
 			tru_images.append([])
 			for h in range(Э_cuts.shape[0]):
-				ξ_bins[l].append(np.loadtxt(f"tmp/xye-los{l}-cut{h}.csv"))
-				υ_bins[l].append(np.loadtxt(f"tmp/ypsilon-los{l}-cut{h}.csv"))
-				tru_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}.csv", delimiter=','))
+				ξ_bins[l].append(np.loadtxt(f"tmp/xye-los{l}-cut{h}.csv")) # (μm)
+				υ_bins[l].append(np.loadtxt(f"tmp/ypsilon-los{l}-cut{h}.csv")) # (μm)
+				tru_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}.csv", delimiter=',')) # (d/μm^2/srad)
 		tru_images = np.array(tru_images)
 
 	else:
 		# generate or load a new input and run the reconstruction algorithm
 		if name == 'test':
 			# generate a synthetic morphology
-			N = 11 # model spatial resolucion
+			N = 26 # model spatial resolucion
 			M = 4 # image energy resolucion
 			print(f"testing synthetic morphology with N = {N} and M = {M}")
 
@@ -189,20 +189,20 @@ if __name__ == '__main__':
 			]) # ()
 
 			Э = np.linspace(Э_min, Э_max, M+1)
-			Э_cuts = np.transpose([Э[:-1], Э[1:]])
+			Э_cuts = np.transpose([Э[:-1], Э[1:]]) # (MeV)
 			ξ_bins = [[expand_bins(x_model)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
 			υ_bins = [[expand_bins(y_model)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
 
 			X, Y, Z = np.meshgrid(x_model, y_model, z_model, indexing='ij')
-			# tru_production = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e15, 0) # (reactions/cm^3)
+			# tru_production = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e8, 0) # (reactions/μm^3)
 			# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
-			tru_production = 1e+15*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
-			tru_density = 10_000*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
+			tru_production = 1e+8*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
+			tru_density = 10*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
 			tru_temperature = 1
 
-			np.savetxt("tmp/production.csv", tru_production.ravel())
-			np.savetxt("tmp/density.csv", tru_density.ravel())
-			np.savetxt("tmp/temperature.csv", [tru_temperature])
+			np.savetxt("tmp/production.csv", tru_production.ravel()) # (μm^-3)
+			np.savetxt("tmp/density.csv", tru_density.ravel()) # (g/cc)
+			np.savetxt("tmp/temperature.csv", [tru_temperature]) # (keV)
 
 		else:
 			# load some real images and save them to disk in the correct format
@@ -252,7 +252,9 @@ if __name__ == '__main__':
 					image = image.T # assume they were loaded in with [y,x] indices and change to [x,y]
 					assert image.shape == (ξ_bins.size - 1, υ_bins.size - 1), (image.shape, ξ_bins.size, υ_bins.size)
 
-					# automatically detect and correct the SI prefix
+					image *= 1e-4**4 # assume they were loaded in (d/cm^2/srad) and convert to (d/μm^2/srad)
+
+					# automatically detect and convert the spatial units to (μm)
 					if ξ_bins.max() - ξ_bins.min() < 1e-3:
 						ξ_bins, υ_bins = ξ_bins*1e6, υ_bins*1e6
 					elif ξ_bins.max() - ξ_bins.min() < 1e-1:
@@ -308,22 +310,22 @@ if __name__ == '__main__':
 					ξ_bins[l].append(ξ_vector)
 					υ_bins[l].append(υ_vector)
 					tru_images[l].append(image)
-					np.savetxt(f"tmp/image-los{l}-cut{h}.csv", image, delimiter=',')
+					np.savetxt(f"tmp/image-los{l}-cut{h}.csv", image, delimiter=',') # (d/μm^2/srad)
 
 			np.savetxt("tmp/total-yield.csv", [total_yield])
 
 		# save the parameters that always need to be saved
-		np.savetxt("tmp/x.csv", x_model)
-		np.savetxt("tmp/y.csv", y_model)
-		np.savetxt("tmp/z.csv", z_model)
+		np.savetxt("tmp/x.csv", x_model) # (μm)
+		np.savetxt("tmp/y.csv", y_model) # (μm)
+		np.savetxt("tmp/z.csv", z_model) # (μm)
 
 		np.savetxt("tmp/lines_of_site.csv", lines_of_sight, delimiter=',')
-		np.savetxt("tmp/energy.csv", Э_cuts, delimiter=',')
+		np.savetxt("tmp/energy.csv", Э_cuts, delimiter=',') # (MeV)
 
 		for l in range(lines_of_sight.shape[0]):
 			for h in range(Э_cuts.shape[0]):
-				np.savetxt(f"tmp/xye-los{l}-cut{h}.csv", ξ_bins[l][h])
-				np.savetxt(f"tmp/ypsilon-los{l}-cut{h}.csv", υ_bins[l][h])
+				np.savetxt(f"tmp/xye-los{l}-cut{h}.csv", ξ_bins[l][h]) # (μm)
+				np.savetxt(f"tmp/ypsilon-los{l}-cut{h}.csv", υ_bins[l][h]) # (μm)
 
 		# run the reconstruction!
 		print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
@@ -341,17 +343,17 @@ if __name__ == '__main__':
 			for l in range(lines_of_sight.shape[0]):
 				tru_images.append([])
 				for h in range(Э_cuts.shape[0]):
-					tru_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}.csv", delimiter=','))
+					tru_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}.csv", delimiter=',')) # d/μm^2/srad
 
 	# load the results
-	recon_production = np.loadtxt("tmp/production-recon.csv").reshape((N+1, N+1, N+1))
-	recon_density = np.loadtxt("tmp/density-recon.csv").reshape((N+1, N+1, N+1))
-	recon_temperature = np.loadtxt("tmp/temperature-recon.csv")
+	recon_production = np.loadtxt("tmp/production-recon.csv").reshape((N+1, N+1, N+1)) # (μm^-3)
+	recon_density = np.loadtxt("tmp/density-recon.csv").reshape((N+1, N+1, N+1)) # (g/cc)
+	recon_temperature = np.loadtxt("tmp/temperature-recon.csv") # (keV)
 	recon_images = []
 	for l in range(lines_of_sight.shape[0]):
 		recon_images.append([])
 		for h in range(Э_cuts.shape[0]):
-			recon_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}-recon.csv", delimiter=','))
+			recon_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}-recon.csv", delimiter=',')) # (d/μm^2/srad)
 
 	# show the results
 	if tru_production is not None:

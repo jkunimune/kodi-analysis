@@ -7,7 +7,6 @@ import main.Optimize.Optimum;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.logging.FileHandler;
 import java.util.logging.Formatter;
@@ -20,7 +19,7 @@ public class VoxelFit {
 	public static final int MAX_MODE = 2;
 	public static final int STOPPING_POWER_RESOLUTION = 126;
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
-	public static final double SHELL_DENSITY_GESS = 1_000; // (g/L)
+	public static final double SHELL_DENSITY_GESS = 20; // (g/cm^3)
 	public static final double SHELL_RADIUS_GESS = 50;
 	public static final double SMOOTHING = 0;
 	public static final double TOLERANCE = 1e-3;
@@ -30,9 +29,12 @@ public class VoxelFit {
 	public static final Vector UNIT_K = new DenseVector(0, 0, 1);
 
 	private static final double Da = 1.66e-27; // (kg)
+	private static final double g = 1e-3; // (kg)
+	private static final double cm = 1e-2; // (m)
+	private static final double μm = 1e-6; // (m)
+	private static final double b = 1e-28; // (m^2)
 	private static final double e = 1.6e-19; // (C)
 	private static final double ɛ0 = 8.85e-12; // (F/m)
-	private static final double μm = 1e-6; // (m)
 	private static final double keV = 1e3*e; // (J)
 	private static final double MeV = 1e6*e; // (J)
 	private static final double m_DT = (2.014 + 3.017)*Da; // (kg)
@@ -43,7 +45,7 @@ public class VoxelFit {
 
 	private static final double Э_KOD = 12.45;
 
-	private static final DiscreteFunction σ_nD; // (MeV -> m^2/srad)
+	private static final DiscreteFunction σ_nD; // (MeV -> μm^2/srad)
 	static {
 		double[][] cross_sections = new double[0][];
 		try {
@@ -56,7 +58,7 @@ public class VoxelFit {
 		for (int i = 0; i < cross_sections.length; i ++) {
 			int j = cross_sections.length - 1 - i;
 			Э_data[j] = 14.1*4/9.*(1 - cross_sections[i][0]); // (MeV)
-			σ_data[j] = .64e-28/(4*Math.PI)*2*cross_sections[i][1]; // (m^2/srad)
+			σ_data[j] = .64*b/μm/μm/(4*Math.PI)*2*cross_sections[i][1]; // (μm^2/srad)
 		}
 		σ_nD = new DiscreteFunction(Э_data, σ_data).indexed(20);
 	}
@@ -149,7 +151,7 @@ public class VoxelFit {
 	 * Li-Petrasso stopping power (deuteron, weakly coupled)
 	 * @param Э the energy of the test particle (MeV)
 	 * @param T the local ion and electron temperature of the field (keV)
-	 * @return the stopping power on a deuteron (MeV/(kg/m^2))
+	 * @return the stopping power on a deuteron (MeV/(g/cm^2))
 	 */
 	private static double dЭdρL(double Э, double T) {
 		double dЭdx_per_ρ = 0;
@@ -169,7 +171,7 @@ public class VoxelFit {
 //				throw new IllegalArgumentException("hecc.  m/m = "+(mf/m_D)+", E = "+Э.value+"MeV, T = "+T.value+"keV, x = "+x.value+", μ(x) = "+μ.value+", μ’(x) = "+dμdx.value+", G(x) = "+Gx.value);
 			dЭdx_per_ρ += -lnΛ*q_D*q_D/(4*Math.PI*ɛ0) * Gx * ωpf2_per_ρ/vt2;
 		}
-		return dЭdx_per_ρ/MeV;
+		return dЭdx_per_ρ/MeV*g/cm/cm;
 	}
 
 	/**
@@ -182,13 +184,13 @@ public class VoxelFit {
 		  double temperature) {
 		double[] energy = new double[STOPPING_POWER_RESOLUTION];
 		for (int i = 0; i < energy.length; i ++)
-			energy[i] = Э_KOD*i/(energy.length - 1);
+			energy[i] = Э_KOD*i/(energy.length - 1); // (MeV)
 		double[] range = new double[energy.length];
 		range[0] = 0;
 		for (int i = 1; i < energy.length; i ++) {
 			double dЭ = energy[i] - energy[i-1];
 			double Э_mean = (energy[i-1] + energy[i])/2;
-			range[i] = range[i - 1] - 1/dЭdρL(Э_mean, temperature)*dЭ;
+			range[i] = range[i - 1] - 1/dЭdρL(Э_mean, temperature)*dЭ; // (g/cm^2)
 		}
 		DiscreteFunction range_of_energy = new DiscreteFunction(energy, range, true);
 		DiscreteFunction energy_of_range = new DiscreteFunction(range, energy).indexed(STOPPING_POWER_RESOLUTION);
@@ -341,7 +343,7 @@ public class VoxelFit {
 
 	/**
 	 * calculate the transfer matrix that can convert a density array to images
-	 * @param density the density vertex values in (g/L)
+	 * @param density the density vertex values in (g/cm^3)
 	 * @param temperature the temperature in the shell (keV) to be used for ranging
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
@@ -377,8 +379,8 @@ public class VoxelFit {
 
 	/**
 	 * calculate the transfer matrix that can convert a density array to images
-	 * @param production the neutron production vertex values in (d/m^3)
-	 * @param density the density vertex values in (g/L) to be used for ranging
+	 * @param production the neutron production vertex values in (n/μm^3)
+	 * @param density the density vertex values in (g/cm^3) to be used for ranging
 	 * @param temperature the temperature in the shell (keV) to be used for ranging
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
@@ -415,8 +417,8 @@ public class VoxelFit {
 
 	/**
 	 * calculate the image pixel fluences with respect to the inputs
-	 * @param production the reactivity vertex values in (d/m^3)
-	 * @param density the density vertex values in (g/L)
+	 * @param production the reactivity vertex values in (n/μm^3)
+	 * @param density the density vertex values in (g/cm^3)
 	 * @param temperature the electron temperature, taken to be uniform (keV)
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
@@ -425,7 +427,7 @@ public class VoxelFit {
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
 	 * @param lines_of_sight the detector line of site direccions
-	 * @return the image in (#/srad/bin)
+	 * @return the image in (#/srad/μm^2)
 	 */
 	private static double[][][][] synthesize_images(
 		  double[][][] production,
@@ -457,8 +459,8 @@ public class VoxelFit {
 	 * density, not the neutron source (and assuming that the effect of ranging
 	 * is fixed).  if neither is null, you will get a single actual image
 	 * wrapped in an array.
-	 * @param production the production vertex values in (d/m^3)
-	 * @param density the density vertex values in (g/L)
+	 * @param production the production vertex values in (n/μm^3)
+	 * @param density the density vertex values in (g/cm^3)
 	 * @param x the x bin edges (μm)
 	 * @param y the y bin edges (μm)
 	 * @param z the z bin edges (μm)
@@ -495,11 +497,11 @@ public class VoxelFit {
 			throw new IllegalArgumentException("you need basis functions to get responses");
 
 		DiscreteFunction[] ranging_curves = calculate_ranging_curves(temperature);
-		DiscreteFunction stopping_distance = ranging_curves[0];
-		DiscreteFunction penetrating_energy = ranging_curves[1];
+		DiscreteFunction stopping_distance = ranging_curves[0]; // (MeV -> g/cm^2)
+		DiscreteFunction penetrating_energy = ranging_curves[1]; // (g/cm^2 -> MeV)
 
-		double L_pixel = (x[1] - x[0])*μm; // (m)
-		double V_voxel = Math.pow(L_pixel, 3); // (m^3)
+		double L_pixel = x[1] - x[0]; // (μm)
+		double V_voxel = Math.pow(L_pixel, 3); // (μm^3)
 
 		int num_basis_functions;
 		if (basis_functions == null)
@@ -522,21 +524,22 @@ public class VoxelFit {
 				ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
 			Vector υ_hat = ζ_hat.cross(ξ_hat);
 
-			double[][][] ρL = new double[x.length][y.length][z.length]; // precompute the line-integrated densities
+			double[][][] ρL = new double[x.length][y.length][z.length]; // precompute the line-integrated densities (g/cm^2)
 			for (int i = 0; i < x.length; i ++)
 				for (int j = 0; j < y.length; j ++)
 					for (int k = 0; k < z.length; k ++)
 						ρL[i][j][k] = Double.NaN; // first mark them as NaN so that we notice any out-of-order issues
 
 			Iterable<Integer> xIteration;
-			if (ζ_hat.get(0) <= 0) xIteration = Math2.iteration(0, x.length);
-			else                   xIteration = Math2.iteration(x.length, 0);
+			if (ζ_hat.get(0) <= 0) xIteration = Math2.range(0, x.length);
+			else                   xIteration = Math2.range(x.length, 0);
 			Iterable<Integer> yIteration;
-			if (ζ_hat.get(1) <= 0) yIteration = Math2.iteration(0, y.length);
-			else                   yIteration = Math2.iteration(y.length, 0);
+			if (ζ_hat.get(1) <= 0) yIteration = Math2.range(0, y.length);
+			else                   yIteration = Math2.range(y.length, 0);
 			Iterable<Integer> zIteration;
-			if (ζ_hat.get(2) <= 0) zIteration = Math2.iteration(0, z.length);
-			else                   zIteration = Math2.iteration(z.length, 0);
+			if (ζ_hat.get(2) <= 0) zIteration = Math2.range(0, z.length);
+			else                   zIteration = Math2.range(z.length, 0);
+			int warningsPrinted = 0;
 			for (int i1: xIteration) {
 				for (int j1: yIteration) {
 					for (int k1: zIteration) {
@@ -545,7 +548,7 @@ public class VoxelFit {
 						int j0 = (int)Math.round(previous_pixel.get(1)); // TODO: use interpolation here
 						int k0 = (int)Math.round(previous_pixel.get(2));
 						double ρ1 = density[i1][j1][k1]; // get the density here
-						double ρ0, ρL_beyond; // the density there and ρL from there
+						double ρ0, ρL_beyond; // the density there and ρL from there (g/cm^3)
 						try {
 							ρ0 = density[i0][j0][k0];
 							ρL_beyond = ρL[i0][j0][k0];
@@ -554,7 +557,15 @@ public class VoxelFit {
 							ρL_beyond = 0;
 						}
 						assert !Double.isNaN(ρL_beyond) : String.format("%d,%d,%d tried to read %d,%d,%d, but it was nan", i1,j1,k1, i0,j0,k0);
-						ρL[i1][j1][k1] = ρL_beyond + (ρ0 + ρ1)/2.*L_pixel; // then cumulatively integrate it up
+						double dρL = (ρ0 + ρ1)/2.*L_pixel*μm/cm; // (g/cm^2)
+						ρL[i1][j1][k1] = ρL_beyond + dρL; // then cumulatively integrate it up
+						if (warningsPrinted < 3 && dρL > 50e-3) {
+							logger.warning(String.format(
+									"WARNING: the rhoL in a single pixel (%.3g mg/cm^2) is too hi.  you probably need a" +
+									"hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
+									dρL*1e3, ρ0, 20e-3/ρ0*cm/μm));
+							warningsPrinted ++;
+						}
 					}
 				}
 			}
@@ -588,23 +599,23 @@ public class VoxelFit {
 									Vector rP = new DenseVector(x[iP], y[jP], z[kP]);
 									Vector rD = new DenseVector(x[iD], y[jD], z[kD]);
 
-									double Δζ = rD.minus(rP).dot(ζ_hat)*μm; // (m)
+									double Δζ = rD.minus(rP).dot(ζ_hat); // (μm)
 									if (Δζ <= 0) // make sure the scatter is physickly possible
 										continue;
 
-									double Δr2 = (rD.minus(rP)).sqr()*1e-12; // (m^2)
+									double Δr2 = (rD.minus(rP)).sqr(); // (μm^2)
 									double cosθ2 = Math.pow(Δζ, 2)/Δr2;
 									double ЭD = Э_KOD*cosθ2;
 
 									double ЭV = penetrating_energy.evaluate(
-										  stopping_distance.evaluate(ЭD) - ρL[iD][jD][kD]);
+										  stopping_distance.evaluate(ЭD) - ρL[iD][jD][kD]); // (MeV)
 									if (ЭV <= 0) // make sure it doesn't range out
 										continue;
 
 									double ξV = rD.dot(ξ_hat);
 									double υV = rD.dot(υ_hat);
 
-									double σ = σ_nD.evaluate(ЭD); // (m^2)
+									double σ = σ_nD.evaluate(ЭD); // (μm^2)
 
 									int hV = Math2.bin(ЭV, Э_cuts);
 									if (hV < 0 || hV >= Э_cuts.length)
@@ -619,7 +630,7 @@ public class VoxelFit {
 									double contribution =
 										  1./m_DT*
 										  σ/(4*Math.PI*Δr2)*
-										  V_voxel*V_voxel; // (d/srad/(n/m^3)/(g/L))
+										  V_voxel*V_voxel*Math.pow(μm/cm, 3); // (d/srad/(n/μm^3)/(g/cc))
 
 									for (int и = 0; и < num_basis_functions; и ++) // finally, iterate over the basis functions
 										if (local_production[и] != 0 && local_density[и] != 0) // TODO I feel like this line does noting
@@ -670,7 +681,7 @@ public class VoxelFit {
 		int num_basis_functions = basis_functions.length;
 		double[] basis_volumes = new double[num_basis_functions];
 		for (int i = 0; i < num_basis_functions; i ++)
-			basis_volumes[i] = Math2.iiintegral(basis_functions[i], x, y, z)/1e18; // m^3
+			basis_volumes[i] = Math2.iiintegral(basis_functions[i], x, y, z); // μm^3
 
 		int num_smoothing_parameters = list_bad_modes(
 			  r, num_basis_functions, 0).length;
@@ -689,8 +700,8 @@ public class VoxelFit {
 		for (int i = num_pixels; i < data_vector.length; i ++)
 			inverse_variance_vector[i] = 1;
 
-		double production_gess = Math2.sum(images)/1e-2/
-			  (4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS*1e-6, 3))/(4*Math.PI);
+		double production_gess = totalYield/
+			  (4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3));
 
 		VoxelFit.logger.info(String.format("using %d 3d basis functions on %dx%dx%d point array",
 										   num_basis_functions,
@@ -819,23 +830,23 @@ public class VoxelFit {
 			double[][][][] anser = new double[2][x.length][y.length][z.length];
 			for (int q = 0; q < morphology_filenames.length; q++) {
 				double[] anser_as_colum = CSV.readColumn(new File(
-					  String.format("tmp/%s.csv", morphology_filenames[q]))); // load the input morphology (μm^-3, g/L, keV)
+					  String.format("tmp/%s.csv", morphology_filenames[q]))); // load the input morphology (μm^-3, g/cm^3)
 				for (int i = 0; i < x.length; i++)
 					for (int j = 0; j < y.length; j++)
 						System.arraycopy(
 							  anser_as_colum, (i*y.length + j)*z.length,
 							  anser[q][i][j], 0, z.length);
 			}
-			double temperature = CSV.readScalar(new File("tmp/temperature.csv"));
+			double temperature = CSV.readScalar(new File("tmp/temperature.csv")); // (keV)
 
 			images = synthesize_images(
 				  anser[0], anser[1], temperature,
-				  x, y, z, lines_of_site, Э_cuts, ξ, υ); // synthesize the true images
+				  x, y, z, lines_of_site, Э_cuts, ξ, υ); // synthesize the true images (d/μm^2/srad)
 			for (int l = 0; l < lines_of_sight.length; l ++)
 				for (int h = 0; h < Э_cuts.length; h ++)
 					CSV.write(images[l][h], new File("tmp/image-los"+l+"-cut"+h+".csv"), ',');
 
-			neutronYield = Math2.iiintegral(anser[0], x, y, z)/1e18;
+			neutronYield = Math2.iiintegral(anser[0], x, y, z);
 			CSV.writeScalar(neutronYield, new File("tmp/total-yield.csv"));
 		}
 		else {
