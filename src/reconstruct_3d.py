@@ -16,6 +16,7 @@ import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import ticker
 
 import coordinate
 from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS
@@ -81,7 +82,9 @@ def plot_morphologies(x, y, z, *morphologies):
 		plt.figure(figsize=(8, 5))
 		plt.contour(y, z,
 		            np.maximum(0, source[len(x)//2,:,:].T),
-		            vmin=0, vmax=peak_source, levels=6,
+		            locator=ticker.MaxNLocator(
+			            nbins=8*np.max(source[len(x)//2,:,:])/peak_source,
+			            prune='lower'),
 		            colors='#1f7bbb',
 		            zorder=1)
 		plt.colorbar().set_label("Neutron source (μm^-3)")
@@ -181,8 +184,8 @@ if __name__ == '__main__':
 
 			lines_of_sight = np.array([
 				[1, 0, 0],
-				[0, 1, 0],
 				[0, 0, 1],
+				[0, 1, 0],
 				# [-1, 0, 0],
 				# [0, -1, 0],
 				# [0, 0, -1],

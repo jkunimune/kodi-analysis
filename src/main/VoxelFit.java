@@ -21,7 +21,7 @@ public class VoxelFit {
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SHELL_DENSITY_GESS = 20; // (g/cm^3)
 	public static final double SHELL_RADIUS_GESS = 50;
-	public static final double SMOOTHING = 0;
+	public static final double SMOOTHING = 1e+1;
 	public static final double TOLERANCE = 1e-3;
 
 	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
