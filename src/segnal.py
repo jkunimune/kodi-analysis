@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage import measure
 
-from cmap import GREYS
+from cmap import GREYS, SPIRAL
 
 SMOOTHING = 100 # entropy weight
 
@@ -129,6 +129,7 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 		F can be applied; if so, only bins where where[i,j]>0 will be considered valid for
 		the deconvolution. pixels in the deconvolved image marked with illegal will be
 		coerced to zero.
+		:return: the reconstructed source, the reconstructed projection, and the χ^2
 	"""
 	assert len(F.shape) == 2 and F.shape[0] == F.shape[1], "I don't kno how too doo that."
 	n = m = F.shape[0] - q.shape[0] + 1
@@ -140,7 +141,7 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 	N = F.sum(where=where)
 	f = F/N # make sure the counts are normalized
 
-	α = np.sqrt(1e7*N)/F.size*SMOOTHING # this entropy weiting parameter was determined quasiempirically (it's essentially the strength of my prior)
+	α = N/F.size*SMOOTHING # this entropy weiting parameter was determined quasiempirically (it's essentially the strength of my prior)
 
 	if g_inicial is not None:
 		assert g_inicial.shape == (n, m), g_inicial.shape
@@ -217,14 +218,15 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 			axes[0,1].set_title("Floor")
 			axes[0,1].pcolormesh(g, vmin=np.min(g), vmax=np.min(g, where=(g>0), initial=np.inf)*6, cmap=GREYS)
 			axes[1,0].set_title("Data")
-			axes[1,0].pcolormesh(np.where(where, F, np.nan).T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			axes[1,0].pcolormesh(np.where(where, F, np.nan).T, vmin=0, vmax=F.max(where=where, initial=0), cmap=SPIRAL)
 			axes[1,1].set_title("Synthetic")
-			axes[1,1].pcolormesh(np.where(where, N*s, np.nan).T, vmin=0, vmax=F.max(where=where, initial=0), cmap='viridis')
+			axes[1,1].pcolormesh(np.where(where, N*s, np.nan).T, vmin=0, vmax=F.max(where=where, initial=0), cmap=SPIRAL)
 			axes[2,0].set_title("Convergence")
 			axes[2,0].plot(np.subtract(scores[-36:], scores[-1] - likelihoods[-1]), linestyle='solid')
 			axes[2,0].plot(likelihoods[-36:], linestyle='dashed')
 			axes[2,1].set_title("χ^2")
-			axes[2,1].pcolormesh(np.where(where&(s>0), N*s - F*np.log(N*s) - F + F*np.log(F), 0).T, vmin= 0, vmax=6, cmap='inferno')
+			# axes[2,1].pcolormesh(np.where(where&(s>0), (N*s - F)**2/(N*s + 1)/2, 0).T, vmin= 0, vmax=6, cmap='inferno')
+			axes[2,1].pcolormesh(np.where(where&(s>0), N*s - F*np.log(s) - (F - F*np.log(np.maximum(1e-20, f))), 0).T, vmin= 0, vmax=6, cmap='inferno')
 			for row in axes:
 				for axis in row:
 					if axis != axes[2,0]:
@@ -235,7 +237,7 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 
 		if np.argmax(scores) == len(scores) - 1: # keep track of the best we've found
 			best_G = N*g/η
-			best_S = N*s
+			best_S = N*(convolve2d(g/η, q) + g0/η0)
 		elif np.argmax(scores) < len(scores) - 12: # if the value function decreases twelve times in a row, quit
 			break
 
@@ -243,7 +245,7 @@ def gelfgat_deconvolve2d(F, q, g_inicial=None, where=None, illegal=None, verbose
 	plt.close(fig)
 
 	best_χ2 = np.sum((best_S - N*f)**2/best_S, where=where)/np.sum(where)
-	return best_G, best_χ2
+	return best_G, best_S, best_χ2
 
 
 if __name__ == '__main__':
@@ -262,7 +264,7 @@ if __name__ == '__main__':
 	signal = convolve2d(source, kernel) + 10
 	signal = np.random.poisson(signal)
 
-	reconstruction, χ2 = gelfgat_deconvolve2d(signal, kernel, verbose=True)
+	reconstruction, synthetic, χ2 = gelfgat_deconvolve2d(signal, kernel, verbose=True)
 
 	plt.figure()
 	plt.pcolormesh(source, vmin=0, vmax=source.max())

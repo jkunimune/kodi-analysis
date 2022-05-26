@@ -20,20 +20,20 @@ plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 
-SKIP_RECONSTRUCTION = True
+SKIP_RECONSTRUCTION = False
 SHOW_PLOTS = True
 PLOT_THEORETICAL_PROJECTION = False
-PLOT_CONTOUR = False
+PLOT_CONTOUR = True
 PLOT_OFFSET = False
 
-OBJECT_SIZE = 190e-4 # (cm)
+OBJECT_SIZE = 100e-4 # (cm)
 RESOLUTION = 5e-4
-EXPANSION_FACTOR = 1.00
+EXPANSION_FACTOR = 1.15
 CONTOUR_LEVEL = .50
 MIN_PLOT_RADIUS = 100 # (μm)
 MAX_PLOT_RADIUS = 150 # (μm)
 APERTURE_CONFIGURATION = 'hex'
-CHARGE_FITTING = 'none'
+CHARGE_FITTING = 'all'
 MAX_NUM_PIXELS = 200
 
 SQUARE_FIGURE_SIZE = (6.4, 5.4)
@@ -86,7 +86,7 @@ def saturate(r, g, b, factor=2.0):
 	        1 - factor*(1 - b))
 
 
-def plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
+def plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, NI_reconstruct,
                          x0, y0, energy_min, energy_max, energy_cut,
                          data: str | dict | tuple = ()):
 	""" plot the data along with the initial fit to it, and the
@@ -95,9 +95,9 @@ def plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	if type(data) == str:
 		filename = data
 	elif SHOT in data and TIM in data:
-		filename = f"{data[SHOT]}-tim{data[TIM]}-{energy_cut}-projection"
+		filename = f"{data[SHOT]}-tim{data[TIM]}-{energy_cut}"
 	else:
-		filename = "unknown-projection"
+		filename = "unknown"
 
 	try:
 		M = data[MAGNIFICATION]
@@ -108,7 +108,8 @@ def plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 
 	while xI_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
 		xC_bins, yC_bins, NC = resample(xC_bins, yC_bins, NC)
-		xI_bins, yI_bins, NI = resample(xI_bins, yI_bins, NI)
+		_      , _      , NI = resample(xI_bins, yI_bins, NI)
+		xI_bins, yI_bins, NI_reconstruct = resample(xI_bins, yI_bins, NI_reconstruct)
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.pcolormesh(xC_bins, yC_bins, NC.T,
@@ -145,7 +146,19 @@ def plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
 	# 	bar = plt.colorbar(fraction=0.046, pad=0.04)
 	# 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
-	save_current_figure(filename)
+	save_current_figure(filename+"-projection")
+
+	if NI_reconstruct is not None:
+		plt.figure(figsize=SQUARE_FIGURE_SIZE)
+		plt.pcolormesh(xI_bins, yI_bins, (NI_reconstruct - NI).T,
+		               cmap='RdBu', vmin=-vmax/3, vmax=vmax/3)
+		plt.axis('square')
+		plt.xlabel("x (cm)")
+		plt.ylabel("y (cm)")
+		bar = plt.colorbar()
+		bar.ax.set_ylabel("Reconstruction - data")
+		plt.tight_layout()
+		save_current_figure(filename+"-residual")
 
 	if SHOW_PLOTS:
 		plt.show()
@@ -234,7 +247,7 @@ def plot_source(x_bins, y_bins, Z, e_min, e_max, cut_name, data):
 	j_lineout = np.argmax(np.sum(Z, axis=0))
 	scale = 1/Z[:,j_lineout].max()
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE) # plot a lineout
-	plt.plot(x_centers/1e-4, Z[:,j_lineout]*scale)
+	plt.plot((x_centers - x0)/1e-4, Z[:,j_lineout]*scale)
 
 	if SHOT in data and 'disc' in data[SHOT]: # and fit a curve to it if it's a "disc"
 		def blurred_boxcar(x, A, d):
@@ -357,7 +370,6 @@ if __name__ == '__main__':
 				output_filename = OUTPUT_FOLDER+output_filename,
 				rA = data[APERTURE_RADIUS]/1.e4,
 				sA = data[APERTURE_SPACING]/1.e4,
-				L  = data[APERTURE_DISTANCE],
 				M  = data[MAGNIFICATION],
 				rotation  = np.radians(data[ROTATION]),
 				etch_time = float(data[ETCH_TIME].strip(' h')),
@@ -389,7 +401,8 @@ if __name__ == '__main__':
 				cut = result.energy_cut
 				xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw')
 				xI_bins, yI_bins, NI = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-projection')
-				plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI,
+				_, _, NI_recon = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstructed-projection')
+				plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, NI_recon,
 				                     result.x0, result.y0,
 				                     result.energy_min, result.energy_max, cut,
 				                     data=data)
@@ -402,7 +415,7 @@ if __name__ == '__main__':
 
 				x_bins, y_bins, B = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstruction')
 				plot_source(x_bins, y_bins, B, result.energy_min, result.energy_max, result.energy_cut, data)
-		
+
 		for cut_set in [['0', '1', '2', '3', '4', '5', '6', '7'], ['lo', 'hi']]: # create the nested plots
 			filenames = []
 			for cut_name in cut_set:

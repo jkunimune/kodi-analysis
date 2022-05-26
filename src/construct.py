@@ -260,7 +260,7 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 			with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.pkl', 'wb') as f:
 				pickle.dump((xI_bins, yI_bins, NI), f)
 
-			plot_penumbral_image(xI_bins, yI_bins, NI, xI_bins, yI_bins, NI,
+			plot_penumbral_image(xI_bins, yI_bins, NI, xI_bins, yI_bins, NI, None,
 			                     0, 0, None, None, "synth")
 			plot_source(xS_bins, yS_bins, img, None, None, 'synth', name + "-synth-source")
 			

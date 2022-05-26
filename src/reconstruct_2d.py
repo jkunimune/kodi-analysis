@@ -251,10 +251,10 @@ def get_relative_aperture_positions(spacing, r_img, r_max, mode='hex'):
 		raise Exception(f"what in davy jones's locker is a {mode}")
 
 
-def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
-	etch_time, object_size, resolution, expansion_factor,
-	aperture_configuration, aperture_charge_fitting,
-	only_1d=False, verbose=True, ask_for_help=False, show_plots=False):
+def reconstruct(input_filename, output_filename, rA, sA, M, rotation,
+                etch_time, object_size, resolution, expansion_factor,
+                aperture_configuration, aperture_charge_fitting,
+                verbose=True, ask_for_help=False, show_plots=False):
 	""" reconstruct a penumbral KOD image.
 		length parameters should be given in cm, and rotation in radians.
 		aperture_configuration can be 'hex' or 'square'.
@@ -292,21 +292,21 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		r_full = max(np.max(track_list['x(cm)']), np.max(track_list['y(cm)']))
 		binsC = int(min(2*MAX_NUM_PIXELS, binsI*r_full/r_img))
 		xC_bins, yC_bins = np.linspace(-r_full, r_full, binsC+1), np.linspace(-r_full, r_full, binsC+1) # this is the CR39 coordinate system, centered at 0,0
-		dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
+		# dxC, dyC = xC_bins[1] - xC_bins[0], yC_bins[1] - yC_bins[0] # get the bin widths
 		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2 # change these to bin centers
 		XC, YC = np.meshgrid(xC, yC, indexing='ij') # change these to matrices
 
 	else: # if it is a pickle file, load the histogram directly like a raster image
 		mode = 'raster'
 		with open(input_filename, 'rb') as f:
-			xI_bins, yI_bins, NI = pickle.load(f)
+			xI_bins, yI_bins, NI_data = pickle.load(f)
 		if np.ptp(xI_bins)/2 < r_img:
 			raise ValueError(f"the object size ({object_size}) is too big for these data ({np.ptp(xI_bins)}).")
 		dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 		xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 		XI, YI = np.meshgrid(xI, yI, indexing='ij')
 
-		xC_bins, yC_bins, NC = xI_bins, yI_bins, NI
+		xC_bins, yC_bins, NC = xI_bins, yI_bins, NI_data
 		XC, YC = XI, YI
 
 	image_layers, X_layers, Y_layers = [], [], []
@@ -408,10 +408,6 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			epsilon=np.concatenate([[1e-3, 1e-3], .1*np.array(step[2:])]),
 		)
 
-		if Q is None:
-			x0, y0, δ, _, Q = opt
-		else:
-			x0, y0, δ, _ = opt
 		try:
 			if Q is None: # and use it to get error bars
 				dx0, dy0, dδ, _, dQ = np.sqrt(np.diagonal(np.linalg.inv(hess)))
@@ -420,6 +416,10 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 				dQ = 0
 		except np.linalg.LinAlgError:
 			dx0, dy0, dδ, dQ = 0, 0, 0, 0
+		if Q is None:
+			x0, y0, δ, _, Q = opt
+		else:
+			x0, y0, δ, _ = opt
 
 		logging.debug(f"  {simple_fit(opt, *args, plot=show_plots)}")
 
@@ -432,9 +432,9 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 			xI, yI = (xI_bins[:-1] + xI_bins[1:])/2, (yI_bins[:-1] + yI_bins[1:])/2
 			XI, YI = np.meshgrid(xI, yI, indexing='ij')
-			NI = np.zeros(XI.shape) # and N combines all penumbra on that square
+			NI_data = np.zeros(XI.shape) # and N combines all penumbra on that square
 			for dx, dy in get_relative_aperture_positions(s0, r_img, xC_bins.max(), mode=aperture_configuration):
-				NI += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
+				NI_data += np.histogram2d(track_x, track_y, bins=(xI_bins + dx, yI_bins + dy))[0] # do that histogram
 
 			if s0 == 0: # also do a radial histogram because that might be useful
 				e_min, e_max = e_in_bounds
@@ -459,10 +459,10 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		else:
 			raise Exception("not allowd.")
 
-		save_as_hdf5(f'{output_filename}-{cut_name}-projection', x=xI_bins, y=yI_bins, z=NI)
+		save_as_hdf5(f'{output_filename}-{cut_name}-projection', x=xI_bins, y=yI_bins, z=NI_data)
 
 		if SHOW_CROPD_DATA:
-			plt.pcolormesh(xI_bins, yI_bins, NI)
+			plt.pcolormesh(xI_bins, yI_bins, NI_data)
 			plt.tight_layout()
 			plt.title("cropd data")
 			plt.show()
@@ -479,6 +479,8 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
 		XS, YS = np.meshgrid(xS, yS, indexing='ij')
 
+		logging.info(f"  deconvolving {xI.size}x{yI.size} image into a {xS.size}x{yS.size} source")
+
 		penumbral_kernel = np.zeros(XK.shape) # build the point spread function
 		for dx in [-dxK/3, 0, dxK/3]: # sampling over a few pixels
 			for dy in [-dyK/3, 0, dyK/3]:
@@ -489,12 +491,12 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		reach = pysignal.convolve2d(source_bins, penumbral_kernel, mode='full')
 		penumbra_low = .005*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
 		penumbra_hih = .99*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
-		data_bins = (np.hypot(XI - x0, YI - y0) <= r_img) & np.isfinite(NI) & \
+		data_bins = (np.hypot(XI - x0, YI - y0) <= r_img) & np.isfinite(NI_data) & \
 				(reach > penumbra_low) & (reach < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
 		# data_bins = np.full(XI.shape, True)
 
 		try:
-			data_bins &= convex_hull(XI, YI, NI) # crop it at the convex hull where counts go to zero
+			data_bins &= convex_hull(XI, YI, NI_data) # crop it at the convex hull where counts go to zero
 		except MemoryError:
 			logging.warning("  could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
 
@@ -510,19 +512,20 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 			plt.show()
 
 		logging.info(
-			f"  n = {np.sum(NI[data_bins]):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
+			f"  n = {np.sum(NI_data[data_bins]):.4g}, (x0, y0) = ({x0:.3f}, {y0:.3f}) ± {np.hypot(dx0, dy0):.3f} cm, "+\
 			f"δ = {δ/M/1e-4:.2f} ± {dδ/M/1e-4:.2f} μm, Q = {Q:.3f} ± {dQ:.3f} cm*MeV, M = {M:.2f}")
 		if δ_eff/δ > 1.1:
 			logging.info(f"  Charging artificially increased source size by {(δ_eff - δ)/M/1e-4:.3f} μm (a {δ_eff/δ:.3f}× change!)")
 
-		B, χ2_red = mysignal.gelfgat_deconvolve2d( # TODO: pyramid model
-			NI,
+		B, NI_reconstruct, χ2_red = mysignal.gelfgat_deconvolve2d( # TODO: pyramid model
+			NI_data,
 			penumbral_kernel,
 			# g_inicial=np.exp(-((XS - x0/M)**2 + (YS - y0/M)**2)/(δ/M)**2),
 			where=data_bins,
 			illegal=np.logical_not(source_bins),
 			verbose=verbose,
 			show_plots=SHOW_INTERMEDIATE_PLOTS) # deconvolve!
+		assert NI_reconstruct.shape == NI_data.shape
 
 		logging.info(f"  χ^2/n = {χ2_red}")
 		# if χ2_red >= 1.5: # throw it away if it looks unreasonable
@@ -532,6 +535,7 @@ def reconstruct(input_filename, output_filename, rA, sA, L, M, rotation,
 		logging.info(f"  ∫B = {np.sum(B*dxS*dyS)*4*np.pi:.4g} deuterons")
 
 		save_as_hdf5(f'{output_filename}-{cut_name}-reconstruction', x=xS_bins, y=yS_bins, z=B)
+		save_as_hdf5(f'{output_filename}-{cut_name}-reconstructed-projection', x=xI_bins, y=yI_bins, z=NI_reconstruct)
 
 		p0, (p1, θ1), (p2, θ2) = mysignal.shape_parameters(
 			xS, yS, B, contour=CONTOUR) # compute the three number summary
