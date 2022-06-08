@@ -490,7 +490,7 @@ def reconstruct(input_filename, output_filename, rA, sA, M, rotation,
 		source_bins = np.hypot(XS - x0/M, YS - y0/M) <= (xS_bins[-1] - xS_bins[0])/2
 		reach = pysignal.convolve2d(source_bins, penumbral_kernel, mode='full')
 		penumbra_low = .005*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-		penumbra_hih = .99*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+		penumbra_hih = .98*np.sum(source_bins)*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
 		data_bins = (np.hypot(XI - x0, YI - y0) <= r_img) & np.isfinite(NI_data) & \
 				(reach > penumbra_low) & (reach < penumbra_hih) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
 		# data_bins = np.full(XI.shape, True)

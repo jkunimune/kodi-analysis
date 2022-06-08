@@ -26,10 +26,7 @@ plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 
-
-m_DT = 3.34e-21 + 5.01e-21 # (mg)
-
-Э_min, Э_kod, Э_max = 3, 12.5, 13 # (MeV)
+Э_min, Э_max = 3, 13 # (MeV)
 
 r_max = 100 # (μm)
 
@@ -134,7 +131,7 @@ def plot_images(Э_cuts, ξ, υ, *image_sets):
 				plt.colorbar()
 				plt.tight_layout()
 				for extension in ['png', 'eps']:
-					plt.savefig(f"3d/image-{i}-{h}.{extension}", dpi=300)
+					plt.savefig(f"3d/image-{i}-{l}-{h}.{extension}", dpi=300)
 			pairs_plotted += 1
 
 

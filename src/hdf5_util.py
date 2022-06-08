@@ -15,12 +15,12 @@ def save_as_hdf5(filename, **kwargs):
 			dataset = f.create_dataset(col_name, col_values.shape)
 			dataset[...] = col_values	
 
-def load_hdf5(filename):
+def load_hdf5(filename: str, keys: list[str]):
 	if not filename.endswith('.h5'):
 		filename += '.h5'
 	objects = []
 	with h5py.File(filename, 'r') as f:
-		for key in sorted(f.keys()):
+		for key in keys:
 			objects.append(np.array(f[key]))
 	return objects
 

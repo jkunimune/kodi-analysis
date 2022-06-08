@@ -8,6 +8,15 @@ from cmap import GREYS, SPIRAL
 SMOOTHING = 100 # entropy weight
 
 
+def median(x, weights=None):
+	""" weited median"""
+	if weights is None:
+		weights = np.ones(x.shape)
+	y = np.cumsum(weights)
+	y /= y[-1]
+	return np.interp(1/2, y, x)
+
+
 def linregress(x, y, weights=None):
 	""" fit a line to y(x) using least squares. """
 	if weights is None:

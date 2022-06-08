@@ -12,12 +12,21 @@ matplotlib.rc('font', family='serif', size=18)
 matplotlib.rc('legend', framealpha=1)
 matplotlib.rc('axes', axisbelow=True)
 
+def to_cartesian(v):
+	r, θ, ɸ = v[0], *np.radians(v[1:])
+	x = r*np.cos(ɸ)*np.sin(θ)
+	y = r*np.sin(ɸ)*np.sin(θ)
+	z = r*np.cos(θ)
+	return [x, y, z]
+
 images = pd.read_csv('../images/summary.csv', sep=r'\s*,\s*', engine='python')
 images = images[images['energy_cut'] == 'hi'] # for now, we only worry about hot spot images
 
 shot_numbers = []
 offset_magnitudes = []
-separations = []
+velocity_magnitudes = []
+seps_wrt_offset = []
+seps_wrt_velocity = []
 prolatenesses = []
 oblatenesses = []
 errorbars = []
@@ -78,16 +87,21 @@ for shot in images['shot'].unique(): # go thru each shot
 
 	if shot.startswith('9552'):
 		offset = [[39.9, 80.3, 28.9], [40.3, 101.4, 212.3], [.3, 84, 23], [39.6, 79.7, 29.9], [76.6, 115.5, 151.3]][int(shot)-95520]
+		velocity = [[57.13408, 102.8962,  56.3785], [69.11829, 117.4682, 191.7521], [0, 0, 0], [0, 0, 0], [0, 0, 0]][int(shot)-95520]
 	elif shot.startswith('9738'):
 		continue#offset = [[80, 40, 0, 80][int(shot)-97385], 63.44, 342.00]
 	else:
 		continue
 	offset_magnitudes.append(offset[0])
-	r, θ, ɸ = offset[0], *np.radians(offset[1:])
-	x = r*np.cos(ɸ)*np.sin(θ)
-	y = r*np.sin(ɸ)*np.sin(θ)
-	z = r*np.cos(θ)
-	offset = [x, y, z]
+	offset = to_cartesian(offset)
+	velocity_magnitudes.append(velocity[0])
+	velocity = to_cartesian(velocity)
+
+	print("  angle between offset and HS velocity: {:.2f}°".format(
+		np.degrees(np.arccos(
+			np.dot(offset, velocity)/np.sqrt(np.dot(offset, offset)*np.dot(velocity, velocity))
+		))
+	))
 
 	shot_numbers.append(shot)
 	errorbars.append(np.hypot(errors[0], errors[-1]))
@@ -126,24 +140,30 @@ for shot in images['shot'].unique(): # go thru each shot
 
 	plt.title(shot)
 
-	separation_in_offset_disha = np.dot(absolute_separation, offset)/np.sqrt(np.dot(offset, offset))
-	separations.append([
-		-separation_in_offset_disha,
-		np.sqrt(np.dot(absolute_separation, absolute_separation) - separation_in_offset_disha**2)
+	separation_along_offset = np.dot(absolute_separation, offset)/np.sqrt(np.dot(offset, offset))
+	seps_wrt_offset.append([
+		-separation_along_offset,
+		np.sqrt(np.dot(absolute_separation, absolute_separation) - separation_along_offset**2)
+	])
+
+	separation_along_velocity = np.dot(absolute_separation, velocity)/np.sqrt(np.dot(velocity, velocity))
+	seps_wrt_velocity.append([
+		-separation_along_velocity,
+		np.sqrt(np.dot(absolute_separation, absolute_separation) - separation_along_velocity**2)
 	])
 
 	prolateness = (np.sqrt(eigval[order[2]]) - np.mean(np.sqrt(eigval)))*eigvec[:,order[2]]
-	prolateness_in_offset_disha = np.dot(prolateness, offset)/np.sqrt(np.dot(offset, offset))
+	prolateness_along_offset = np.dot(prolateness, offset)/np.sqrt(np.dot(offset, offset))
 	prolatenesses.append([
-		abs(prolateness_in_offset_disha),
-		np.sqrt(np.dot(prolateness, prolateness) - prolateness_in_offset_disha**2)
+		abs(prolateness_along_offset),
+		np.sqrt(np.dot(prolateness, prolateness) - prolateness_along_offset**2)
 	])
 
 	oblateness = (np.mean(np.sqrt(eigval)) - np.sqrt(eigval[order[0]]))*eigvec[:,order[0]]
-	oblateness_in_offset_disha = np.dot(oblateness, offset)/np.sqrt(np.dot(offset, offset))
+	oblateness_along_offset = np.dot(oblateness, offset)/np.sqrt(np.dot(offset, offset))
 	oblatenesses.append([
-		abs(oblateness_in_offset_disha),
-		np.sqrt(np.dot(oblateness, oblateness) - oblateness_in_offset_disha**2)
+		abs(oblateness_along_offset),
+		np.sqrt(np.dot(oblateness, oblateness) - oblateness_along_offset**2)
 	])
 	print(f"the semimajor axis is {np.sqrt(eigval.max()):.3f} μm")
 	print(f"the mean radius is {np.mean(np.sqrt(eigval)):.3f} μm")
@@ -154,41 +174,43 @@ for shot in images['shot'].unique(): # go thru each shot
 plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
-separations = np.array(separations)
+seps_wrt_offset = np.array(seps_wrt_offset)
+seps_wrt_velocity = np.array(seps_wrt_velocity)
 prolatenesses = np.array(prolatenesses)
 oblatenesses = np.array(oblatenesses)
 
-plt.figure(figsize=(6,5))
-plt.grid()
-for indices, marker, color, label in [([2], 'o', '#f2ab23', "No offset"), ([0,1,3], 'D', '#118acd', "40 μm offset"), ([4], 'v', '#79098c', "80 μm offset")]:
-	plt.scatter(separations[indices,1], separations[indices,0], c=[color]*len(indices), marker=marker, zorder=100, label=label, s=60)
-plt.legend(loc="upper right")
-for i in range(len(separations)):
-	plt.plot([0, separations[i,1]], [0, separations[i,0]], 'k-', linewidth=1)
-plt.axis('equal')
-plt.yticks([-10, 0, 10, 20])
-plt.xlabel("Separation perpendicular to offset (μm)")
-plt.ylabel("Separation along offset (μm)")
-plt.tight_layout()
-# plt.xlim(0, 50)
+for xs, xlabel, seps, ylabel in [(offset_magnitudes, "Imposed offset (μm)", seps_wrt_offset, "offset"), (velocity_magnitudes, "HS velocity (km/s)", seps_wrt_velocity, "velocity")]:
+	plt.figure(figsize=(6,5))
+	plt.grid()
+	for indices, marker, color, label in [([2], 'o', '#f2ab23', "No offset"), ([0,1,3], 'D', '#118acd', "40 μm offset"), ([4], 'v', '#79098c', "80 μm offset")]:
+		plt.scatter(seps[indices,1], seps[indices,0], c=[color]*len(indices), marker=marker, zorder=100, label=label, s=60)
+	plt.legend(loc="upper right")
+	for i in range(len(seps_wrt_offset)):
+		plt.plot([0, seps[i,1]], [0, seps[i,0]], 'k-', linewidth=1)
+	print("angles:", np.degrees(np.arctan2(seps[:, 1], seps[:, 0])))
+	plt.axis('equal')
+	plt.yticks([-10, 0, 10, 20])
+	plt.xlabel(f"Separation perpendicular to {ylabel} (μm)")
+	plt.ylabel(f"Separation along {ylabel} (μm)")
+	plt.tight_layout()
+	# plt.xlim(0, 50)
 
-plt.figure()
-plt.grid()
-plt.scatter(x=offset_magnitudes, y=separations[:,0], s=70, color='C2', marker='o', zorder=100, label=label)
-plt.errorbar(x=offset_magnitudes, y=separations[:,0], yerr=errorbars, color='C2', linestyle='', zorder=100, label=label)
-for i in range(len(shot_numbers)):
-	if i < 3:
-		plt.text(offset_magnitudes[i], separations[i,0], f" {shot_numbers[i]}", horizontalalignment="left")
-	else:
-		plt.text(offset_magnitudes[i], separations[i,0], f"{shot_numbers[i]} ", horizontalalignment="right")
-plt.axis('equal')
-# plt.yticks([-10, 0, 10, 20])
-plt.xlabel("Imposed offset (μm)")
-plt.ylabel("Separation along offset (μm)")
-plt.tight_layout()
-plt.savefig("scatter-p1.png", dpi=150)
-plt.savefig("scatter-p1.eps")
-# plt.xlim(0, 50)
+	plt.figure()
+	plt.grid()
+	plt.scatter(x=xs, y=seps[:,0], s=70, color='C2', marker='o', zorder=100, label=label)
+	plt.errorbar(x=xs, y=seps[:,0], yerr=errorbars, color='C2', linestyle='', zorder=100, label=label)
+	for i in range(len(shot_numbers)):
+		if i < 3:
+			plt.text(xs[i], seps[i,0], f" {shot_numbers[i]}", horizontalalignment="left")
+		else:
+			plt.text(xs[i], seps[i,0], f"{shot_numbers[i]} ", horizontalalignment="right")
+	plt.axis('equal')
+	# plt.yticks([-10, 0, 10, 20])
+	plt.xlabel(xlabel)
+	plt.ylabel(f"Separation along {ylabel} (μm)")
+	plt.tight_layout()
+	plt.savefig("scatter-p1.png", dpi=150)
+	plt.savefig("scatter-p1.eps")
 
 # plt.figure(figsize=(6,5))
 # plt.grid()
