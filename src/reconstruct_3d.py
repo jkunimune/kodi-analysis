@@ -138,6 +138,7 @@ def plot_images(Э_cuts, ξ, υ, *image_sets):
 if __name__ == '__main__':
 	os.chdir("..")
 	name = sys.argv[1] if len(sys.argv) > 1 else "test"
+	# TODO: clear the 3d directory
 
 	if name == "skip":
 		# load the previous inputs and don't run the reconstruction
@@ -171,7 +172,7 @@ if __name__ == '__main__':
 		# generate or load a new input and run the reconstruction algorithm
 		if name == 'test':
 			# generate a synthetic morphology
-			N = 26 # model spatial resolucion
+			N = 21 # model spatial resolucion
 			M = 4 # image energy resolucion
 			print(f"testing synthetic morphology with N = {N} and M = {M}")
 
@@ -184,7 +185,7 @@ if __name__ == '__main__':
 				[0, 0, 1],
 				[0, 1, 0],
 				# [-1, 0, 0],
-				# [0, -1, 0],
+				[0, -1, 0],
 				# [0, 0, -1],
 			]) # ()
 
@@ -218,7 +219,8 @@ if __name__ == '__main__':
 			H = None
 			first_tim_encountered = None
 			centroid: dict[str, tuple[float, float]] = {}
-			Э_cuts: list[list[float]] = []
+			Э_cut_list: list[list[float]] = []
+			x_model, y_model, z_model = None, None, None
 			data_dict: dict[str, list[tuple[list[float], list[float], list[list[float]]]]] = {} # load any images you can find into this dict of lists
 			for filename in os.listdir('images'): # search for files that match each row
 				filepath = os.path.join('images', filename)
@@ -247,7 +249,7 @@ if __name__ == '__main__':
 						image = np.loadtxt(filepath, delimiter=',')
 						ξ_bins = υ_bins = np.linspace(-100, 100, image.shape[0] + 1)
 					else:
-						ξ_bins, υ_bins, image = load_hdf5(filepath)
+						ξ_bins, υ_bins, image = load_hdf5(filepath, ["x", "y", "z"])
 
 					image = image.T # assume they were loaded in with [y,x] indices and change to [x,y]
 					assert image.shape == (ξ_bins.size - 1, υ_bins.size - 1), (image.shape, ξ_bins.size, υ_bins.size)
@@ -282,12 +284,12 @@ if __name__ == '__main__':
 
 					data_dict[tim].append((ξ_bins, υ_bins, image)) # I sure hope these load in a consistent order
 					if tim == first_tim_encountered:
-						Э_cuts.append([э_min, э_max]) # get the energy cuts from whichever tim you see first
+						Э_cut_list.append([э_min, э_max]) # get the energy cuts from whichever tim you see first
 						x_model = (ξ_bins[:-1] + ξ_bins[1:])/2 - ξ_bins.mean()
 						y_model = x_model
-						z_odel = x_model
+						z_model = x_model
 
-			Э_cuts = np.array(Э_cuts)
+			Э_cuts = np.array(Э_cut_list)
 			N = x_model.size - 1
 			if len(data_dict) == 0:
 				raise ValueError("no images were found")
