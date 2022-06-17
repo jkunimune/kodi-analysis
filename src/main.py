@@ -22,7 +22,7 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 
 SKIP_RECONSTRUCTION = True
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 PLOT_THEORETICAL_PROJECTION = False
 PLOT_CONTOUR = True
 PLOT_OFFSET = False
@@ -69,9 +69,22 @@ def center_of_mass(x_bins, y_bins, N):
 		np.average((y_bins[:-1] + y_bins[1:])/2, weights=N.sum(axis=0))])
 
 
-def resample(x_bins, y_bins, N):
+def resample_1d(x_bins, N):
+	""" double the bin size of this 1d histogram """
+	assert N.shape == (x_bins.size - 1,)
+	n = (x_bins.size - 1)//2
+	x_bins = x_bins[::2]
+	Np = N[0:2*n:2] + N[1:2*n:2]
+	return x_bins, Np
+
+
+def resample_2d(x_bins, y_bins, N):
 	""" double the bin size of this 2d histogram """
-	assert N.shape == (x_bins.size - 1, y_bins.size - 1)
+	if x_bins is None:
+		x_bins = np.arange(N.shape[0] + 1)
+	if y_bins is None:
+		y_bins = np.arange(N.shape[1] + 1)
+	assert N.shape == (x_bins.size - 1, y_bins.size - 1), (N.shape, x_bins.size - 1, y_bins.size - 1)
 	n = (x_bins.size - 1)//2
 	m = (y_bins.size - 1)//2
 	x_bins = x_bins[::2]
@@ -113,7 +126,7 @@ def plot_penumbral_image(xC_bins: np.ndarray, yC_bins: np.ndarray, NC: np.ndarra
 		M, s0, r0 = 14, np.inf, 1.5
 
 	while xC_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
-		xC_bins, yC_bins, NC = resample(xC_bins, yC_bins, NC)
+		xC_bins, yC_bins, NC = resample_2d(xC_bins, yC_bins, NC)
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.pcolormesh(xC_bins, yC_bins, NC.T,
@@ -125,7 +138,9 @@ def plot_penumbral_image(xC_bins: np.ndarray, yC_bins: np.ndarray, NC: np.ndarra
 			plt.plot(x0 + dx + r0*np.cos(T),    y0 + dy + r0*np.sin(T),    'k--')
 			# plt.plot(x0 + dx + r_img*np.cos(T), y0 + dy + r_img*np.sin(T), 'k--')
 	plt.axis('square')
-	if energy_cut != 'synth':
+	if energy_cut == "xray":
+		plt.title("X-ray image")
+	elif energy_cut != 'synth':
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
@@ -133,11 +148,32 @@ def plot_penumbral_image(xC_bins: np.ndarray, yC_bins: np.ndarray, NC: np.ndarra
 	bar.ax.set_ylabel("Counts")
 	plt.tight_layout()
 
+	if r0 is not None:
+		plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
+		plt.locator_params(steps=[1, 2, 4, 5, 10])
+		xL_bins, NL = xC_bins, NC[:, NC.shape[1]//2]/1e3
+		while xL_bins.size > MAX_NUM_PIXELS/3 + 1:
+			xL_bins, NL = resample_1d(xL_bins, NL)
+		xL = (xL_bins[:-1] + xL_bins[1:])/2
+		plt.fill_between(np.repeat(xL_bins, 2)[1:-1], 0, np.repeat(NL, 2), color='#f9A72E')
+		def ideal_profile(x, A, d, c, b):
+			return A*special.erfc((x - c - r0)/d)*special.erfc(-(x - c + r0)/d) + b
+		popt, pcov = optimize.curve_fit(ideal_profile, xL, NL, [100, .1, 0, 0])
+		x_bins = xI_bins if xI_bins is not None else xC_bins
+		plt.plot(x_bins, ideal_profile(x_bins, *popt), '--', color='#0F71F0', linewidth=2)
+		plt.xlim(x_bins.min(), x_bins.max())
+		plt.ylim(0, None)
+		plt.xlabel("x (cm)")
+		plt.ylabel("Track density (10³/cm²)")
+		plt.tight_layout()
+		save_current_figure(filename+"-projection-lineout")
+
 	if NI is not None:
+		assert xI_bins is not None and yI_bins is not None
 		while xI_bins.size > MAX_NUM_PIXELS+1: # resample these ones as well
-			_      , _      , NI = resample(xI_bins, yI_bins, NI)
+			xI_bins, yI_bins, NI = resample_2d(xI_bins, yI_bins, NI)
 			if NI_reconstruct is not None:
-				xI_bins, yI_bins, NI_reconstruct = resample(xI_bins, yI_bins, NI_reconstruct)
+				_, _, NI_reconstruct = resample_2d(None, None, NI_reconstruct)
 
 		A_circle, A_square = np.pi*r0**2, xI_bins.ptp()*yI_bins.ptp()
 		plt.figure(figsize=SQUARE_FIGURE_SIZE)
@@ -170,7 +206,17 @@ def plot_penumbral_image(xC_bins: np.ndarray, yC_bins: np.ndarray, NC: np.ndarra
 			plt.tight_layout()
 			save_current_figure(filename+"-residual")
 
-	else:
+	else: # use NC as NI
+		plt.figure(figsize=SQUARE_FIGURE_SIZE)
+		plt.pcolormesh(xC_bins, yC_bins, NC.T,
+		               cmap=COFFEE, rasterized=True)
+		plt.axis('square')
+		if energy_cut == 'xray':
+			plt.title(f"X-ray image")
+		plt.axis([-2.5, 2.5, -2.5, 2.5])
+		plt.xlabel("x (cm)")
+		plt.ylabel("y (cm)")
+		plt.tight_layout()
 		save_current_figure(filename+"-projection")
 
 	if SHOW_PLOTS:
@@ -183,26 +229,23 @@ def plot_radial_data(rI_bins, zI, r_actual, z_actual, r_uncharged, z_uncharged,
 	if type(data) == str:
 		filename = data
 	elif SHOT in data and TIM in data:
-		filename = f"{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-penumbral-lineout"
+		filename = f"{data[SHOT]}-tim{data[TIM]}-{energy_cut:s}-projection-radial-lineout"
 	else:
-		filename = "unknown-penumbral-lineout"
+		filename = "unknown-projection-radial-lineout"
 
-	for with_fit in [True, False]:
-		plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-		plt.locator_params(steps=[1, 2, 4, 5, 10])
-		plt.fill_between(np.repeat(rI_bins, 2)[1:-1], 0, np.repeat(zI, 2)/1e3,  label="Data", color='#f9A72E')
-		if with_fit:
-			plt.plot(r_actual, z_actual/1e3, '-', color='#0C6004', linewidth=2, label="Fit with charging")
-		plt.plot(r_uncharged, z_uncharged/1e3, '--', color='#0F71F0', linewidth=2, label="Fit without charging")
-		plt.xlim(0, rI_bins.max())
-		plt.ylim(0, min(zI.max()*1.05, z_actual.max()*1.20)/1e3)
-		plt.xlabel("Radius (cm)")
-		plt.ylabel("Track density (10³/cm²)")
-		if with_fit:
-			plt.legend()
-		# plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
-		plt.tight_layout()
-		save_current_figure(filename + ("" if with_fit else "-bare"))
+	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
+	plt.locator_params(steps=[1, 2, 4, 5, 10])
+	plt.fill_between(np.repeat(rI_bins, 2)[1:-1], 0, np.repeat(zI, 2)/1e3,  label="Data", color='#f9A72E')
+	plt.plot(r_actual, z_actual/1e3, '-', color='#0C6004', linewidth=2, label="Fit with charging")
+	plt.plot(r_uncharged, z_uncharged/1e3, '--', color='#0F71F0', linewidth=2, label="Fit without charging")
+	plt.xlim(0, rI_bins.max())
+	plt.ylim(0, min(zI.max()*1.05, z_actual.max()*1.20)/1e3)
+	plt.xlabel("Radius (cm)")
+	plt.ylabel("Track density (10³/cm²)")
+	plt.legend()
+	# plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+	plt.tight_layout()
+	save_current_figure(filename)
 
 	if SHOW_PLOTS:
 		plt.show()
@@ -346,6 +389,14 @@ def save_current_figure(filename, filetypes=('png', 'eps')):
 
 
 if __name__ == '__main__':
+	# what it should do:
+	# go thru the raw data
+	# separate the cpsa files into diameter cuts, cross-calibrating with CPS
+	# reconstruct each deuteron bin and also each x-ray, immediately loggind the source characteristics and plotting it
+	#   start by fitting a circle to the image
+	#   then do a 1d reconstruction to determine the extent of the source
+	#   only then do the full slow 2d reconstruction
+
 	logging.basicConfig(
 		level=logging.INFO,
 		format="{asctime:s} |{levelname:4.4s}| {message:s}", style='{',
@@ -409,6 +460,24 @@ if __name__ == '__main__':
 					ignore_index=True)
 			results = results[results.shot != 'placeholder']
 
+		try: # try to load Patrick's x-ray reconstructions # TODO: do this in house
+			xray = np.loadtxt(INPUT_FOLDER+'KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T
+		except (ValueError, OSError):
+			xray = None
+		if xray is not None:
+			logging.info("x-ray image")
+			xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
+			p0, (p2, θ2) = plot_source(xX_bins, yX_bins, xray, None, None, "xray", data)
+			results = results.append( # and save the new ones to the dataframe
+				dict(
+					shot=data[SHOT],
+					tim=data[TIM],
+					energy_cut='xray',
+					P0_magnitude=p0/1e-4,
+					P2_magnitude=p2/1e-4,
+					P2_angle=θ2),
+				ignore_index=True)
+
 		logging.info("  Updating plots for TIM {} on shot {}".format(data[TIM], data[SHOT]))
 
 		images_on_this_los = (results.shot == data[SHOT]) & (results.tim == data[TIM])
@@ -417,7 +486,11 @@ if __name__ == '__main__':
 				cut = result.energy_cut
 				xC_bins, yC_bins, NC = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-raw', ['x', 'y', 'z'])
 				xI_bins, yI_bins, NI = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-projection', ['x', 'y', 'z'])
-				_, _, NI_recon = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstructed-projection', ['x', 'y', 'z'])
+				try:
+					_, _, NI_recon = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-{cut}-reconstructed-projection', ['x', 'y', 'z'])
+				except IOError:
+					print(f"didn't find reconstructed projection for {output_filename}")
+					NI_recon = None
 				plot_penumbral_image(xC_bins, yC_bins, NC, xI_bins, yI_bins, NI, NI_recon,
 				                     result.x0, result.y0,
 				                     result.energy_min, result.energy_max, cut,
@@ -433,37 +506,14 @@ if __name__ == '__main__':
 				plot_source(x_bins, y_bins, B, result.energy_min, result.energy_max, result.energy_cut, data)
 
 			else:
-				try:
-					xX, yX, NX = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-xray-projection', ['x', 'y', 'z'])
-				except IOError:
-					xX, yX, NX = None, None, None
-					print(f"didn't find x-ray image for {output_filename}")
-				if NX is not None:
-					xX_bins = expand_bins(xX)
-					yX_bins = expand_bins(yX)
-					NX = NX.T
-					print(xX_bins.shape, yX_bins.shape, NX.shape)
-					plot_penumbral_image(xX_bins, yX_bins, NX, None, None, None, None,
-					                     0, 0, 0, 0, "xray", data=data) # TODO fix patrick's bad indexing
-
-				try:
-					xray = np.loadtxt(INPUT_FOLDER+'KoDI_xray_data1 - {:d}-TIM{:d}-{:d}.mat.csv'.format(int(data[SHOT]), int(data[TIM]), [2,4,5].index(int(data[TIM]))+1), delimiter=',').T
-				except (ValueError, OSError):
-					xray = None
-				if xray is not None:
-					logging.info("x-ray image")
-					xX_bins, yX_bins = np.linspace(-100e-4, 100e-4, 101), np.linspace(-100e-4, 100e-4, 101)
-					p0, (p2, θ2) = plot_source(xX_bins, yX_bins, xray, None, None, "xray", data)
-					results = results[(results.shot != data[SHOT]) | (results.tim != data[TIM]) | (results.energy_cut != 'xray')] # clear any previous versions of this reconstruction
-					results = results.append( # and save the new ones to the dataframe
-						dict(
-							shot=data[SHOT],
-							tim=data[TIM],
-							energy_cut='xray',
-							P0_magnitude=p0/1e-4,
-							P2_magnitude=p2/1e-4,
-							P2_angle=θ2),
-						ignore_index=True)
+				xX, yX, NX = load_hdf5(f'{OUTPUT_FOLDER}{output_filename}-xray-projection', ['x', 'y', 'z'])
+				# xX, yX, NX = None, None, None
+				# print(f"didn't find x-ray image for {output_filename}")
+				xX_bins = expand_bins(xX)
+				yX_bins = expand_bins(yX)
+				NX = NX.T
+				plot_penumbral_image(xX_bins, yX_bins, NX, None, None, None, None,
+				                     0, 0, 0, 0, "xray", data=data)
 
 		for cut_set in [['0', '1', '2', '3', '4', '5', '6', '7'], ['lo', 'hi']]: # create the nested plots
 			filenames = []
