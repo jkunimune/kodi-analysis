@@ -705,6 +705,13 @@ public class Math2 {
 		}
 	}
 
+	public static double index(double x, double[] arr) {
+		double[] index = new double[arr.length];
+		for (int i = 0; i < index.length; i ++)
+			index[i] = i;
+		return interp(x, arr, index);
+	}
+
 	/**
 	 * take the floating-point index of an array using linear interpolation.
 	 * @param x the array of values
@@ -749,6 +756,13 @@ public class Math2 {
 			throw new IndexOutOfBoundsException("Even partial indices have limits: "+i);
 		int i0 = Math.max(0, Math.min(x.length-2, (int) i.value));
 		return i.minus(i0).times(x[i0+1]).minus(i.minus(i0+1).times(x[i0]));
+	}
+
+	public static double interp(double x0, double[] x, double[] y) {
+		Quantity[] x_q = new Quantity[x.length];
+		for (int i = 0; i < x_q.length; i ++)
+			x_q[i] = new FixedQuantity(x[i]);
+		return interp(x0, x_q, y).value;
 	}
 
 	public static Quantity interp(double x0, Quantity[] x, double[] y) {
@@ -828,6 +842,13 @@ public class Math2 {
 				for (int dk = 0; dk <= 1; dk ++)
 					value = value.plus(values[i0+di][j0+dj][k0+dk].times(ci0.minus(di).abs()).times(cj0.minus(dj).abs()).times(ck0.minus(dk).abs()));
 		return value;
+	}
+
+	public static double interp3d(double[][][] values, double[] x, double[] y, double[] z, Vector r, boolean smooth) {
+		double i = Math2.index(r.get(0), x);
+		double j = Math2.index(r.get(1), y);
+		double k = Math2.index(r.get(2), z);
+		return interp3d(values, i, j, k, smooth);
 	}
 
 	public static double interp3d(double[][][] values, double i, double j, double k, boolean smooth) {

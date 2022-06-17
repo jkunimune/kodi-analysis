@@ -502,6 +502,7 @@ public class VoxelFit {
 
 		double L_pixel = x[1] - x[0]; // (μm)
 		double V_voxel = Math.pow(L_pixel, 3); // (μm^3)
+		double radius = Math.max(Math.max(x[x.length - 1], y[y.length - 1]), z[z.length - 1]);
 
 		int num_basis_functions;
 		if (basis_functions == null)
@@ -515,7 +516,9 @@ public class VoxelFit {
 				for (int h = 0; h < Э_cuts.length; h ++)
 					basis_images[и][l][h] = new double[ξ[l][h].length - 1][υ[l][h].length - 1];
 
-		for (int l = 0; l < lines_of_sight.length; l ++) { // for each line of sight
+		// for each line of sight
+		for (int l = 0; l < lines_of_sight.length; l ++) {
+			// define the rotated coordinate system (ζ points toward the TIM; ξ and υ are orthogonal)
 			Vector ζ_hat = lines_of_sight[l];
 			Vector ξ_hat = UNIT_K.cross(ζ_hat);
 			if (ξ_hat.sqr() == 0)
@@ -523,48 +526,65 @@ public class VoxelFit {
 			else
 				ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
 			Vector υ_hat = ζ_hat.cross(ξ_hat);
+			double[] ζ = new double[Math.max(ξ[l][0].length, υ[l][0].length)]; // (these coordinates aren't too important, so just using the bins from the lowest energy bin should be fine
+			for (int k = 0; k < ζ.length; k ++)
+				ζ[k] = radius*(2*k/(ζ.length - 1.) - 1);
 
-			double[][][] ρL = new double[x.length][y.length][z.length]; // precompute the line-integrated densities (g/cm^2)
-			for (int i = 0; i < x.length; i ++)
-				for (int j = 0; j < y.length; j ++)
-					for (int k = 0; k < z.length; k ++)
-						ρL[i][j][k] = Double.NaN; // first mark them as NaN so that we notice any out-of-order issues
-
-			Iterable<Integer> xIteration;
-			if (ζ_hat.get(0) <= 0) xIteration = Math2.range(0, x.length);
-			else                   xIteration = Math2.range(x.length, 0);
-			Iterable<Integer> yIteration;
-			if (ζ_hat.get(1) <= 0) yIteration = Math2.range(0, y.length);
-			else                   yIteration = Math2.range(y.length, 0);
-			Iterable<Integer> zIteration;
-			if (ζ_hat.get(2) <= 0) zIteration = Math2.range(0, z.length);
-			else                   zIteration = Math2.range(z.length, 0);
+			// then build the ρL map in TIM-oriented coordinates
+			double[][][] ρL_skew = new double[ξ[l][0].length][υ[l][0].length][ζ.length];
 			int warningsPrinted = 0;
-			for (int i1: xIteration) {
-				for (int j1: yIteration) {
-					for (int k1: zIteration) {
-						Vector previous_pixel = new DenseVector(i1, j1, k1).plus(ζ_hat); // TODO: this should tie into the full integral.  it should solve for the stuff in each pixel one at a time.  maybe.
-						int i0 = (int)Math.round(previous_pixel.get(0)); // look at the voxel one step toward the detector
-						int j0 = (int)Math.round(previous_pixel.get(1)); // TODO: use interpolation here
-						int k0 = (int)Math.round(previous_pixel.get(2));
-						double ρ1 = density[i1][j1][k1]; // get the density here
-						double ρ0, ρL_beyond; // the density there and ρL from there (g/cm^3)
+			for (int i = 0; i < ξ[l][0].length; i ++) {
+				for (int j = 0; j < υ[l][0].length; j ++) {
+					for (int k = ζ.length - 1; k >= 0; k --) { // TODO: maybe this should tie into the full integral – solve for the stuff in each pixel one at a time
+						// get the density here and the density there and the ρL up to there
+						Vector r1 = ξ_hat.times(ξ[l][0][i]).plus(υ_hat.times(υ[l][0][j])).plus(ζ_hat.times(ζ[k])); // (μm)
+						double ρ1;
 						try {
-							ρ0 = density[i0][j0][k0];
-							ρL_beyond = ρL[i0][j0][k0];
-						} catch (ArrayIndexOutOfBoundsException e) {
-							ρ0 = 0; // or not if this point is on the outer edge
+							ρ1 = Math2.interp3d(density, x, y, z, r1, false); // (g/cm^3)
+						} catch (IndexOutOfBoundsException e) {
+							ρ1 = 0;
+						}
+						double ρ0, ρL_beyond;
+						if (k + 1 < ζ.length) {
+							Vector r0 = ξ_hat.times(ξ[l][0][i]).plus(υ_hat.times(υ[l][0][j])).plus(ζ_hat.times(ζ[k + 1]));
+							try {
+								ρ0 = Math2.interp3d(density, x, y, z, r0, false); // (g/cm^3)
+							} catch (IndexOutOfBoundsException e) {
+								ρ0 = 0;
+							}
+							ρL_beyond = ρL_skew[i][j][k + 1]; // (g/cm^2)
+						}
+						else { // or not if this point is on the outer edge
+							ρ0 = 0;
 							ρL_beyond = 0;
 						}
-						assert !Double.isNaN(ρL_beyond) : String.format("%d,%d,%d tried to read %d,%d,%d, but it was nan", i1,j1,k1, i0,j0,k0);
+						// then cumulatively integrate it up
 						double dρL = (ρ0 + ρ1)/2.*L_pixel*μm/cm; // (g/cm^2)
-						ρL[i1][j1][k1] = ρL_beyond + dρL; // then cumulatively integrate it up
+						ρL_skew[i][j][k] = ρL_beyond + dρL;
 						if (warningsPrinted < 3 && dρL > 50e-3) {
 							logger.warning(String.format(
-									"WARNING: the rhoL in a single pixel (%.3g mg/cm^2) is too hi.  you probably need a" +
-									"hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
+									"WARNING: the rhoL in a single pixel (%.3g mg/cm^2) is too hi.  you probably need " +
+											"a hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
 									dρL*1e3, ρ0, 20e-3/ρ0*cm/μm));
-							warningsPrinted ++;
+							warningsPrinted++;
+						}
+					}
+				}
+			}
+
+			// remap this onto the absolutely oriented grid
+			double[][][] ρL = new double[x.length][y.length][z.length];
+			for (int i = 0; i < x.length; i ++) {
+				for (int j = 0; j < y.length; j ++) {
+					for (int k = 0; k < z.length; k ++) {
+						Vector r = new DenseVector(x[i], y[j], z[k]);
+						Vector r_skew = new DenseVector(
+								r.dot(ξ_hat), r.dot(υ_hat), r.dot(ζ_hat));
+						try {
+							ρL[i][j][k] = Math2.interp3d(
+									ρL_skew, ξ[l][0], υ[l][0], ζ, r_skew, false);
+						} catch (IndexOutOfBoundsException e) {
+							ρL[i][j][k] = 0;
 						}
 					}
 				}
