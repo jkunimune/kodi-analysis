@@ -14,6 +14,8 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 
+import static main.Math2.containsTheWordTest;
+
 public class VoxelFit {
 
 	public static final int MAX_MODE = 2;
@@ -49,7 +51,7 @@ public class VoxelFit {
 	static {
 		double[][] cross_sections = new double[0][];
 		try {
-			cross_sections = CSV.read(new File("endf-6[58591].txt"), ',');
+			cross_sections = CSV.read(new File("data/tables/endf-6[58591].txt"), ',');
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -77,13 +79,6 @@ public class VoxelFit {
 	}
 
 	private static final Logger logger = Logger.getLogger("root");
-
-	private static boolean containsTheWordTest(String[] arr) {
-		for (String s: arr)
-			if (s.equals("test"))
-				return true;
-		return false;
-	}
 
 	/**
 	 * read thru an array in the intuitive order and put it into a 1d list
@@ -132,18 +127,6 @@ public class VoxelFit {
 				throw new IllegalArgumentException("the array is too jagged.");
 		}
 		return Math2.transpose(untransposed);
-	}
-
-	private static Formatter newFormatter(String format) {
-		return new SimpleFormatter() {
-			public String format(LogRecord record) {
-				return String.format(format,
-									 record.getMillis(),
-									 record.getLevel(),
-									 record.getMessage(),
-									 (record.getThrown() != null) ? record.getThrown() : "");
-			}
-		};
 	}
 
 
@@ -797,24 +780,11 @@ public class VoxelFit {
 
 
 	public static void main(String[] args) throws IOException {
-		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM:%1tS | %2$s | %3$s%4$s%n"));
-		try {
-			String filename;
-			if (args.length == 6)
-				filename = String.format("images/log-3d-%3$s-%4$s-%5$s-%6$s.log", (Object[]) args);
-			else
-				filename = "images/log-3d.log";
-			FileHandler handler = new FileHandler(
-				  filename,
-				  true);
-			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM:%1$tS | %2$s | %3$s%4$s%n"));
-			logger.addHandler(handler);
-			System.out.println("logging to `"+filename+"`");
-		} catch (IOException e) {
-			e.printStackTrace();
-			System.exit(1);
-		}
-
+		Logging.configureLogger(
+				logger,
+				(args.length == 6) ?
+						String.format("3d-%3$s-%4$s-%5$s-%6$s", (Object[]) args) :
+						"3d");
 		logger.info("starting...");
 
 		double[][] lines_of_sight = CSV.read(new File("tmp/lines_of_site.csv"), ',');

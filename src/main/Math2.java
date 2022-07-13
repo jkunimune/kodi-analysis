@@ -24,6 +24,7 @@
 package main;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
@@ -445,6 +446,14 @@ public class Math2 {
 		return s;
 	}
 
+	public static int sum(int[][] arr) {
+		int s = 0;
+		for (int[] row: arr)
+			for (double x: row)
+				s += x;
+		return s;
+	}
+
 	public static double sum(double[][][][] arr) {
 		double s = 0;
 		for (double[][][] mat: arr)
@@ -462,6 +471,15 @@ public class Math2 {
 				for (Quantity[] row: lvl)
 					for (Quantity x: row)
 						s = s.plus(x);
+		return s;
+	}
+
+	public static int count(boolean[][] arr) {
+		int s = 0;
+		for (boolean[] row: arr)
+			for (boolean b: row)
+				if (b)
+					s ++;
 		return s;
 	}
 
@@ -567,6 +585,12 @@ public class Math2 {
 		return argmax;
 	}
 
+	public static int argmax(List<Double> x) {
+		double[] arr = new double[x.size()];
+		for (int i = 0; i < arr.length; i ++)
+			arr[i] = x.get(i);
+		return argmax(arr);
+	}
 
 	/**
 	 * find the last index of the second highest value
@@ -1123,6 +1147,20 @@ public class Math2 {
 			for (int j = 0; j < at[i].length; j ++)
 				at[i][j] = a[j][i];
 		return at;
+	}
+
+	public static double[][] deepCopy(double[][] a) {
+		double[][] b = new double[a.length][];
+		for (int i = 0; i < a.length; i ++)
+			b[i] = Arrays.copyOf(a[i], a[i].length);
+		return b;
+	}
+
+	public static int[][] deepCopy(int[][] a) {
+		int[][] b = new int[a.length][];
+		for (int i = 0; i < a.length; i ++)
+			b[i] = Arrays.copyOf(a[i], a[i].length);
+		return b;
 	}
 
 	/**
@@ -1713,6 +1751,13 @@ public class Math2 {
 		}
 
 		throw new IllegalArgumentException("I don't know Legendre polynomials that high (_"+l+"^"+m+").");
+	}
+
+	public static boolean containsTheWordTest(String[] arr) {
+		for (String s: arr)
+			if (s.equals("test"))
+				return true;
+		return false;
 	}
 
 

@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from electric_field_model import get_analytic_brightness
+from electric_field import get_modified_point_spread
 
 cm = 1e-2 # (m)
 e = 1.9e-16 # (C)
@@ -15,7 +15,7 @@ Edz = q*MeV/(L2*e/2)/1e+3 # kV
 for R in [10e-6, 100e-6, 1e-3, 10e-3]:
 	w = np.empty(q.shape)
 	for i in range(q.size):
-		r, s = get_analytic_brightness(R*M_radio, q[i], e_min=10, e_max=12.5)
+		r, s = get_modified_point_spread(R*M_radio, q[i], e_min=10, e_max=12.5)
 		dsdr = -np.gradient(s, r)
 		w[i] = 1/dsdr.max() # (m)
 

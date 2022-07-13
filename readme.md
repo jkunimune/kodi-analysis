@@ -1,15 +1,52 @@
 KODI analysis
 =============
 
+Code for analyzing penumbral imaging, and in particular knock-on deuteron & x-ray imaging.
+
+The file structure goes like this:
+- `src` – various Python scripts
+    - `main` – Java files for some of the more time-consuming operations
+- `data` – input files (including the file `shots.csv`)
+  - `scans` – CR-39 and image plate scan files
+  - `tables` – stopping power and cross section tables
+- `results` – outputs from the analysis (including logs and tables and stuff)
+  - `plots` – pretty pictures of the reconstructions
+  - `data` – HDF files of the reconstructions
+- `tmp` – dump for temporary files used to communicate between Java and Python
+
 The typical workflow for doing 2D reconstructions looks like this:
 1. Get `.cpsa` files from the LLE or MIT etch/scan lab.
-2. Open them in AnalyzeCR39 and export the track data to a `.txt` file.
+2. Open them in AnalyzeCR39 and export the track data to a `.txt` file. (in the future I will have this automatically read cpsa)
 3. Create a `shot_list.csv` file in the root kodi-analysis directory that lists the shots and lines of sight to analyze.
    It should have "Shot number", "TIM", "L1", "Magnification", "Aperture Radius",
    "Aperture Separation", "Rotation", "Filtering", and "Etch time" columns.
-4. Run `src/main.py`, which reads `shot_list.csv`, looks for the `.txt` files in the `scans/` directory,
-   and calls functions from `src/reconstruct_2d.py` to perform the reconstruction.
+4. Run `src/reconstruct_2d.py` with the shots you want to analyze passed as an argument.
+   This looks for the `.txt` files in the `scans/` directory and performs the reconstruction.
+   1. The first argument should be a comma-separated list of shot numbers.
+      You can also specify specific TIMs to analyze; for example, "95520tim4,95521tim2"
+   2. You can also add "skip" as an argument to tell it to reload the previous reconstructions and simply update the plots.
 5. It automatically outputs a bunch of plots, HDF5 files, and log messages.
 
-For 3D reconstruction, just run `src/reconstruct_3d.py`,
-which will call the java program in the `src/main/` folder on synthetic data.
+For 3D reconstruction, run `src/reconstruct_3d.py`,
+and it will automaticly run on the reconstructed 2d images.
+There are some command-line arguments probably, but I haven't gotten that far yet.
+
+All output files follow the naming convention `results/{shot_number}(-{tim})-{quantity}-{coordinates}(-{operation}).{filetype}`.
+The shot number is an integer prepended by `synth` if based on synthetic data.
+The quantity is one of:
+- `morphology` for combined mass density and neutron source
+- `deuteron` for combined deuteron sources
+- `hi` for high-energy deuteron source
+- `lo` for low-energy deuteron source
+- `xray` for x-ray source
+
+the coordinates are one of:
+- `map` for 3D reconstructed (or synthetic) quantities
+- `penumbra` for 2D measured penumbral images
+- `source` for 2D reconstructed (or synthetic) images
+
+and the operation is up to one of:
+- `section` for 2D cross-sections of 3D quantities
+- `lineout` for 1D cartesian lineouts of multidimensional quantities
+- `profile` for 1D polar lineouts of multidimensional quantities
+- `residual` for comparisons of measured and reconstructed images

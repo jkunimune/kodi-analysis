@@ -1,17 +1,17 @@
 # data files
 LILAC_sims/*
-scans/*
-images/*
-3d/*
-*.png
-*.eps
-*.csv
+data/*
+results/*
+tmp/*
 
 # basic intellij stuff
 .idea/*
 out/*
 
-# Byte-compiled / optimized / DLL files
+# compiled java
+*.class
+
+# compiled python
 __pycache__/
 *.py[cod]
 *$py.class

@@ -11,7 +11,7 @@ import main
 from main import plot_source, plot_penumbral_image
 from simulations import load_shot, make_image
 from perlin import perlin_generator, wave_generator
-from electric_field_model import e_field
+from electric_field import e_field
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 

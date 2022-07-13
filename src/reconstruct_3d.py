@@ -8,19 +8,17 @@
 # Э stands for Энергия
 # и is the index of a basis function
 
-import datetime
 import os
-import shutil
-import subprocess
 import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import ticker
 
 import coordinate
-from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS
 from hdf5_util import load_hdf5
+from plots import save_and_plot_morphologies, plot_source_set
+from util import execute_java
+
 
 plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
@@ -45,98 +43,11 @@ def integrate(y, x):
 	return (cumsum[:-1] + cumsum[1:] - cumsum[1])/2
 
 
-def plot_morphologies(x, y, z, *morphologies):
-	# for i, (density, source) in enumerate(morphologies): TODO: make an actually good 3d representation
-	# 	ax = plt.figure(figsize=(5.5, 5)).add_subplot(projection='3d')
-	# 	ax.set_box_aspect([1, 1, 1])
-	#
-	# 	for thing, contour_plot, cmap in [(density, ax.contour, 'Reds'), (source, ax.contour, 'Blues')]:
-	# 		if thing.max() <= 0 and thing.min() < 0:
-	# 			print(f"warning: the {cmap[:-1]} stuff is negative!")
-	# 			thing = -thing
-	# 		elif thing.max() == 0 and thing.min() == 0:
-	# 			print(f"warning: the {cmap[:-1]} stuff is zero!")
-	# 			continue
-	#
-	# 		levels = np.linspace(0.17, 1.00, 4)*thing.max()
-	# 		contour_plot(*np.meshgrid(x, y, indexing='ij'), thing[:, :, len(z)//2],
-	# 		             offset=0, zdir='z', levels=levels, cmap=cmap, vmin=-thing.max()/6)
-	# 		contour_plot(np.meshgrid(x, z, indexing='ij')[0], thing[:, len(y)//2, :], np.meshgrid(x, z, indexing='ij')[1],
-	# 		             offset=0, zdir='y', levels=levels, cmap=cmap, vmin=-thing.max()/6)
-	# 		contour_plot(thing[len(x)//2, :, :], *np.meshgrid(y, z, indexing='ij'),
-	# 		             offset=0, zdir='x', levels=levels, cmap=cmap, vmin=-thing.max()/6)
-	#
-	# 	ax.set_xlim(-r_max, r_max)
-	# 	ax.set_ylim(-r_max, r_max)
-	# 	ax.set_zlim(-r_max, r_max)
-	# 	plt.tight_layout()
-	# 	for extension in ['png', 'eps']:
-	# 		plt.savefig(f"3d/hologram-{i}.{extension}", dpi=300)
-
-	peak_source = np.amax([source for source, density in morphologies])
-	peak_density = np.amax([density for source, density in morphologies])
-	for i, (source, density) in enumerate(morphologies):
-		plt.figure(figsize=(8, 5))
-		plt.contour(y, z,
-		            np.maximum(0, source[len(x)//2,:,:].T),
-		            locator=ticker.MaxNLocator(
-			            nbins=8*np.max(source[len(x)//2,:,:])/peak_source,
-			            prune='lower'),
-		            colors='#1f7bbb',
-		            zorder=1)
-		plt.colorbar().set_label("Neutron source (μm^-3)")
-		plt.contourf(y, z,
-		             np.maximum(0, density[len(x)//2,:,:].T),
-		             vmin=0, vmax=peak_density, levels=6,
-		             cmap='Reds',
-		             zorder=0)
-		plt.colorbar().set_label("Density (g/cc)")
-		# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
-		plt.xlabel("y (cm)")
-		plt.ylabel("z (cm)")
-		plt.axis('square')
-		plt.axis([-r_max, r_max, -r_max, r_max])
-		plt.tight_layout()
-		for extension in ['png', 'eps']:
-			plt.savefig(f"3d/section-{i}.{extension}", dpi=300)
-
-
-def plot_images(Э_cuts, ξ, υ, *image_sets):
-	pairs_plotted = 0
-	for l in range(len(image_sets[0])): # go thru every line of site
-		if pairs_plotted > 0 and pairs_plotted + len(image_sets[0][l]) > 6:
-			break # but stop when you think you're about to plot too many
-
-		num_cuts = len(image_sets[0][l])
-		if num_cuts == 1:
-			cmaps = [GREYS]
-		elif num_cuts < 7:
-			cmap_priorities = [(0, REDS), (5, ORANGES), (2, YELLOWS), (3, GREENS), (6, CYANS), (1, BLUES), (4, VIOLETS)]
-			cmaps = [cmap for priority, cmap in cmap_priorities if priority < num_cuts]
-		else:
-			cmaps = ['plasma']*num_cuts
-		assert len(cmaps) == num_cuts
-
-		for h in [0, num_cuts - 1]:
-			maximum = np.amax([image_set[l][h] for image_set in image_sets])
-			for i, image_set in enumerate(image_sets):
-				plt.figure(figsize=(6, 5))
-				plt.pcolormesh(ξ[l][h], υ[l][h], image_set[l][h].T,
-				               vmin=min(0, np.min(image_set[l][h])),
-				               vmax=maximum,
-				               cmap=cmaps[h])
-				plt.axis('square')
-				plt.axis([-r_max, r_max, -r_max, r_max])
-				plt.title(f"$E_\\mathrm{{d}}$ = {Э_cuts[h][0]:.1f} – {Э_cuts[h][1]:.1f} MeV")
-				plt.colorbar()
-				plt.tight_layout()
-				for extension in ['png', 'eps']:
-					plt.savefig(f"3d/image-{i}-{l}-{h}.{extension}", dpi=300)
-			pairs_plotted += 1
-
-
 if __name__ == '__main__':
-	os.chdir("..")
+	# set it to work from the base directory regardless of whence we call the file
+	if os.path.basename(os.getcwd()) == "src":
+		os.chdir(os.path.dirname(os.getcwd()))
+
 	name = sys.argv[1] if len(sys.argv) > 1 else "test"
 	# TODO: clear the 3d directory
 
@@ -205,6 +116,8 @@ if __name__ == '__main__':
 			np.savetxt("tmp/density.csv", tru_density.ravel()) # (g/cc)
 			np.savetxt("tmp/temperature.csv", [tru_temperature]) # (keV)
 
+			tru_images = None # we won't have the input images until after the Java runs
+
 		else:
 			# load some real images and save them to disk in the correct format
 			print(f"reconstructing images marked '{name}'")
@@ -229,6 +142,7 @@ if __name__ == '__main__':
 				metadata = filename.split('_') if '_' in filename else filename.split('-')
 				if (extension == '.csv' and name in metadata) or \
 						(extension == '.h5' and name in metadata and 'reconstruction' in metadata): # only take csv and h5 files
+					tim, э_min, э_max = None, None, None
 					for metadatum in metadata: # pull out the different peces of information from the filename
 						if metadatum.startswith('tim'):
 							tim = metadatum[3:]
@@ -239,7 +153,7 @@ if __name__ == '__main__':
 						elif metadatum == 'hi':
 							э_min, э_max = 9, 13
 						elif metadatum == 'lo':
-							э_min, э_min = 2.4, 6
+							э_min, э_max = 2.4, 6
 					if tim not in data_dict:
 						data_dict[tim] = []
 					if first_tim_encountered is None:
@@ -330,14 +244,7 @@ if __name__ == '__main__':
 				np.savetxt(f"tmp/ypsilon-los{l}-cut{h}.csv", υ_bins[l][h]) # (μm)
 
 		# run the reconstruction!
-		print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
-		cmd = [shutil.which("java"), "-enableassertions", "-classpath", "out/production/kodi-analysis/", "main/VoxelFit", name]
-		with subprocess.Popen(cmd, stderr=subprocess.PIPE, encoding='utf-8') as process:
-			for line in process.stderr:
-				print(line, end='')
-			if process.wait() > 0:
-				raise ValueError("see above.")
-		print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
+		execute_java("VoxelFit", name)
 
 		if name == "test":
 			# load the images it generated if we don't already have them
@@ -359,11 +266,10 @@ if __name__ == '__main__':
 
 	# show the results
 	if tru_production is not None:
-		plot_morphologies(x_model, y_model, z_model, (tru_production, tru_density), (recon_production, recon_density))
+		save_and_plot_morphologies(x_model, y_model, z_model, (tru_production, tru_density), (recon_production, recon_density))
 	else:
-		plot_morphologies(x_model, y_model, z_model, (recon_production, recon_density))
+		save_and_plot_morphologies(x_model, y_model, z_model, (recon_production, recon_density))
 
-	plot_images(Э_cuts, ξ_bins, υ_bins, tru_images, recon_images)
+	plot_source_set(name, Э_cuts, ξ_bins, υ_bins, tru_images, *recon_images)
 
 	plt.show()
-

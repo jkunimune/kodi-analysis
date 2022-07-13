@@ -1,7 +1,3 @@
-import numpy as np
-import matplotlib.pyplot as plt
-
-
 def perlin_generator(x_min, x_max, y_min, y_max, wavelength, amplitude):
 	""" return random values with the same shapes as x and y """
 	node_x = np.arange(x_min - wavelength/2, x_max + wavelength, wavelength)
@@ -49,8 +45,20 @@ def wave_generator(x_min, x_max, y_min, y_max, wavelength, amplitude, dimensions
 
 
 if __name__ == '__main__':
-	X, Y = np.meshgrid(np.linspace(-5, 5, 216), np.linspace(-5, 5, 216))
-	Z = perlin(X, Y, np.pi/2, 1)
-	plt.contourf(X, Y, Z)
-	plt.colorbar()
+	import matplotlib.pyplot as plt
+	import numpy as np
+
+	r = np.sqrt(np.random.random(1000000))
+	t = 2*np.pi*np.random.random(1000000)
+
+	x, y = r*np.cos(t), r*np.sin(t)
+
+	dx, dy = np.zeros(x.shape), np.zeros(y.shape)
+	for n in range(0, 3):
+		dx += perlin(x, y, 2**(-n), 0.1*2**(-2*n))
+		dy += perlin(x, y, 2**(-n), 0.1*2**(-2*n))
+
+	plt.hist2d(x + dx, y + dy, bins=72, range=[[-1.1, 1.1], [-1.1, 1.1]])
+	plt.axis('square')
 	plt.show()
+

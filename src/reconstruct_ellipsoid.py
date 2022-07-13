@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-import segnal
+import util
 from coordinate import tim_coordinates
 
 matplotlib.rc('font', family='serif', size=18)

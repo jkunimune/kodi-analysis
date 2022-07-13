@@ -79,8 +79,12 @@ public class CSV {
 					break;
 				String[] elements = line.split("\\s*" + delimiter + "\\s*");
 				double[] row = new double[elements.length];
-				for (int j = 0; j < elements.length; j++)
-					row[j] = Double.parseDouble(elements[j]);
+				for (int j = 0; j < elements.length; j++) {
+					if (elements[j].equals("nan"))
+						row[j] = Double.NaN;
+					else
+						row[j] = Double.parseDouble(elements[j]);
+				}
 				list.add(row);
 			}
 		}
