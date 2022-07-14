@@ -13,9 +13,9 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import scipy.optimize as optimize
 import scipy.signal as signal
 import scipy.spatial as spatial
+from skimage import measure
 
 import coordinate
 import diameter
@@ -23,8 +23,7 @@ import electric_field
 import fake_srim
 from hdf5_util import load_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, save_and_plot_source, save_and_plot_overlaid_penumbra
-from util import center_of_mass, execute_java, shape_parameters, find_intercept, get_relative_aperture_positions, \
-	linregress
+from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle
 
 
 warnings.filterwarnings("ignore")
@@ -99,125 +98,6 @@ def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 		raise ValueError("δ cannot be negative")
 	w = np.interp(r, r_point, penumbra/np.max(penumbra), right=0) # map to the requested r values
 	return minimum + (maximum-minimum)*w
-
-
-def simple_fit(*args, a=1, b=0, c=1, plot=False):
-	""" quantify how close these data are to this penumbral image """
-	if len(args[0]) == 4 and len(args) == 12: # first, parse the parameters
-		(x0, y0, δ, background), Q, r0, s0, r_img, X, Y, exp, where, e_min, e_max, config = args
-	elif len(args[0]) == 5 and len(args) == 11:
-		(x0, y0, δ, background, Q), r0, s0, r_img, X, Y, exp, where, e_min, e_max, config = args
-	elif len(args[0]) == 5 and len(args) == 10:
-		(x0, y0, δ, background, r0), s0, r_img, X, Y, exp, where, e_min, e_max, config = args
-		Q = 0
-	else:
-		raise ValueError("unsupported set of arguments")
-	if Q < 0 or δ <= 0: return float('inf') # and reject impossible ones
-
-	dr = 2*(X[1,0] - X[0,0])
-	x_eff = a*(X - x0) + b*(Y - y0)
-	y_eff = b*(X - x0) + c*(Y - y0) # TODO: this funccion take a lot of time... can I speed it at all?
-	teo = np.zeros(X.shape) # and build up the theoretical image
-	for xA, yA in get_relative_aperture_positions(s0, r_img, X.max()): # go to each circle
-		r_rel = np.hypot(x_eff - xA, y_eff - yA)
-		in_penumbra = (r_rel <= r_img + dr)
-		antialiasing = np.minimum(1, (r_img + dr - r_rel[in_penumbra])/dr) # apply a beveld edge to make sure it is continuous
-		for dx in [-dr/6, dr/6]:
-			for dy in [-dr/6, dr/6]:
-				r_rel = np.hypot(x_eff - xA - dx, y_eff - yA - dy)
-				try:
-					teo[in_penumbra] += simple_penumbra(r_rel[in_penumbra], δ, Q, r0, 0, 1, e_min, e_max) # and add in its penumbrum
-				except ValueError:
-					return np.inf
-		teo[in_penumbra] *= antialiasing
-
-	if np.any(np.isnan(teo)):
-		return np.inf
-
-	if background is not None: # if the min is specified
-		scale = abs(np.sum(exp, where=where & (teo > 0)) - background*np.sum(where & (teo > 0)))/ \
-				np.sum(teo, where=where & (teo > 0)) # compute the best gess at the signal scale
-	else: # if the max and min are unspecified
-		scale, background = linregress(teo, exp, where/(1 + teo))
-		background = max(0, background)
-		scale = abs(scale)
-	teo = background + scale*teo
-
-	penalty = \
-		+ (np.sqrt(a*c - b**2) - 1)**2/(4*EXPECTED_MAGNIFICATION_ACCURACY**2)
-
-	where &= (teo != 0) # from now on, ignore problematic pixels
-
-	if np.any((teo == 0) & (exp != 0)): # if they are truly problematic, quit now
-		return np.inf
-	elif NON_STATISTICAL_NOISE > 1/6*np.max(exp, where=where, initial=0)**(-1/2):
-		α = 1/NON_STATISTICAL_NOISE**2 # use a poisson error model with a gamma-distributed rate
-		error = (α + exp)*np.log(α/teo + 1) - α*np.log(α/teo) #- np.log(comb(α + exp - 1, exp))
-	else: # but you can just use plain poisson if it's all the same to you
-		error = -exp*np.log(teo) + teo #+ np.log(factorial(exp))
-
-	if plot:
-		plt.figure()
-		plt.pcolormesh(np.where(where, error, 2), vmin=0, vmax=6, cmap='inferno')
-		# plt.pcolormesh(np.where(where, (teo - exp)/np.sqrt(teo), 0), cmap='RdBu', vmin=-5, vmax=5)#, norm=CenteredNorm())
-		plt.colorbar()
-		plt.axis('square')
-		plt.title(f"r0 = ({x0:.2f}, {y0:.2f}), δ = {δ:.3f}, Q = {Q:.3f}")
-		plt.text(0, 0, f"ɛ = {np.sum(error, where=where) + penalty:.1f} Np")
-		plt.show()
-
-	return np.sum(error, where=where) + penalty
-
-
-def minimize_repeated_nelder_mead(fun, x0, args, simplex_size, **kwargs):
-	""" it's like scipy.optimize.minimize(method='Nelder-Mead'),
-		but it tries harder. """
-	if hasattr(x0[0], '__iter__'):
-		assert hasattr(x0[1], '__iter__'), "I haven't implemented scans for any combo other than the first two parameters"
-		for i in range(2, len(x0)):
-			assert not hasattr(x0[i], '__iter__'), "I haven't implemented scans for any combo other than the first two parameters"
-		best_x0 = None
-		best_fun = np.inf
-		for x00_test in x0[0]: # do an inicial scan over the first two variables
-			for x01_test in x0[1]:
-				x0_test = np.concatenate([[x00_test, x01_test], x0[2:]])
-				fun_test = fun(x0_test, *args, plot=False)
-				if fun_test < best_fun:
-					best_fun = fun_test
-					best_x0 = x0_test
-		assert best_x0 is not None, x0
-		x0 = best_x0
-	else:
-		for i in range(len(x0)):
-			assert not hasattr(x0[i], '__iter__'), "I haven't implemented scans for any combo other than the first two parameters"
-
-	opt = None
-	past_bests = []
-	while opt is None or len(past_bests) < 2 or past_bests[-2] - past_bests[-1] >= 1:
-		inicial_simplex = [x0]
-		for i in range(len(x0)):
-			inicial_simplex.append(np.copy(x0))
-			inicial_simplex[i+1][i] += simplex_size[i]
-
-		opt = optimize.minimize( # do the 1D fit
-			fun=fun,
-			x0=x0,
-			args=args,
-			method='Nelder-Mead',
-			options=dict(
-				initial_simplex=inicial_simplex,
-			),
-			**kwargs,
-		)
-		if not opt.success:
-			logging.warning(f"  could not find good fit because {opt.message}")
-			opt.x = x0
-			return opt
-
-		x0 = opt.x
-		past_bests.append(opt.fun)
-
-	return opt
 
 
 def convex_hull(x, y, N):
@@ -307,7 +187,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 	"""
 	if filename.endswith(".txt"): # if it's a cpsa-derived text file
 		x_tracks, y_tracks = load_cr39_scan_file(filename) # load all track coordinates
-		n_bins = int(min(r_nominal*200, np.sqrt(x_tracks.size/10))) # get the image resolution needed to resolve the circle
+		n_bins = max(6, int(min(MAX_NUM_PIXELS, np.sqrt(x_tracks.size)/10))) # get the image resolution needed to resolve the circle
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
 		relative_bins = np.linspace(-r_data, r_data, n_bins + 1)
 		x_bins = (np.min(x_tracks) + np.max(x_tracks))/2 + relative_bins
@@ -320,9 +200,9 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 			try: # ask the user for help finding the center
 				x0, y0 = where_is_the_ocean(x_bins, y_bins, N, "Please click on the center of a penumbrum.", timeout=8.64)
 			except:
-				x0, y0 = (np.mean(x_tracks), np.mean(y_tracks))
+				x0, y0 = None, None
 		else:
-			x0, y0 = (np.mean(x_tracks), np.mean(y_tracks))
+			x0, y0 = None, None
 
 	elif filename.endswith(".pkl"): # if it's a pickle file
 		with open(filename, 'rb') as f:
@@ -332,23 +212,43 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
-	x, y = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2 # change these to bin centers
-	X, Y = np.meshgrid(x, y, indexing='ij') # change these to matrices
+	x_centers, y_centers = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
+	X_pixels, Y_pixels = np.meshgrid(x_centers, y_centers, indexing="ij")
+	# if we don't have a good gess, do a scan
+	if x0 is None or y0 is None:
+		x0, y0 = x_bins.mean(), y_bins.mean()
+		scale = max(x_bins.ptp(), y_bins.ptp())/2
+		while scale > .5*r_nominal:
+			best_umbra = -np.inf
+			x_scan = np.linspace(x0 - scale, x0 + scale, 7)
+			y_scan = np.linspace(y0 - scale, y0 + scale, 7)
+			for x in x_scan:
+				for y in y_scan:
+					umbra_counts = np.sum(N, where=np.hypot(X_pixels - x, Y_pixels - y) < .7*r_nominal)
+					if umbra_counts > best_umbra:
+						best_umbra = umbra_counts
+						x0, y0 = x, y
+			scale /= 6
 
-	hullC = convex_hull(X, Y, N) # compute the convex hull for future uce
+	# now that's squared away, find the largest 50% conture
+	max_density = np.mean(N, where=np.hypot(X_pixels - x0, Y_pixels - y0) < .7*r_nominal)
+	haff_density = max_density/2
+	contours = measure.find_contours(N, haff_density)
+	if len(contours) == 0:
+		raise ValueError("there were no tracks.  we should have caut that by now.")
+	ij_contour = max(contours, key=len)
+	x_contour = np.interp(ij_contour[:, 0], np.arange(x_centers.size), x_centers)
+	y_contour = np.interp(ij_contour[:, 1], np.arange(y_centers.size), y_centers)
+	x0, y0, r0 = fit_circle(x_contour, y_contour)
 
-	spacial_scan = np.linspace(-r_nominal, r_nominal, 5)
-	gess = [ x0 + spacial_scan, y0 + spacial_scan, .20*r_nominal, .5*np.mean(N)]
-	step = [      .2*r_nominal,      .2*r_nominal, .16*r_nominal, .3*np.mean(N)]
-	args = (0, r_nominal, s_nominal, r_nominal*1.5, X, Y, N, hullC, 0, 1, "hex")
-	opt = minimize_repeated_nelder_mead( # then do the fit
-		simple_fit,
-		x0=gess,
-		args=args,
-		simplex_size=step
-	).x # TODO: fit a contour instead
+	plt.figure()
+	plt.pcolormesh(x_bins, y_bins, N.T)
+	θ = np.linspace(0, 2*np.pi, 145)
+	plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "w--")
+	plt.plot(x_contour, y_contour, "C1")
+	plt.axis("equal")
+	plt.show()
 
-	logging.debug(f"  {simple_fit(opt, *args)}")
 	return x0, y0, 1
 
 

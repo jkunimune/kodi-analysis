@@ -4,6 +4,7 @@ import shutil
 import subprocess
 
 import numpy as np
+from scipy import optimize
 from skimage import measure
 
 SMOOTHING = 100 # entropy weight
@@ -163,6 +164,25 @@ def fit_ellipse(x, y, f, contour):
 def shape_parameters(x, y, f, contour=None):
 	""" get some scalar parameters that describe the shape of this distribution. """
 	return harmonics_from_covariance(*fit_ellipse(x, y, f, contour))
+
+
+def fit_circle(x_data: np.ndarray, y_data: np.ndarray) -> tuple[float, float, float]:
+	""" fit a circle to a list of points """
+	def residuals(state: np.ndarray) -> np.ndarray:
+		x0, y0, r = state
+		return np.hypot(x_data - x0, y_data - y0) - r
+	def jacobian(state: np.ndarray) -> np.ndarray:
+		x0, y0, r = state
+		d = residuals(state)
+		return np.stack([-(x_data - x0)/(d + r),
+		                 -(y_data - y0)/(d + r),
+		                 -np.ones(d.shape)], axis=-1)
+	x0_gess, y0_gess = x_data.mean(), y_data.mean()
+	r_gess = np.mean(np.hypot(x_data - x0_gess, y_data - y0_gess))
+	(x0, y0, r), _ = optimize.leastsq(func=residuals,
+	                                  Dfun=jacobian,
+	                                  x0=np.array([x0_gess, y0_gess, r_gess]))
+	return x0, y0, r
 
 
 def find_intercept(x: np.ndarray, y: np.ndarray):
