@@ -74,12 +74,26 @@ def where_is_the_ocean(x, y, z, title, timeout=None):
 		raise TimeoutError
 
 
-def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
+def convex_hull(x, y, N):
+	""" return an array of the same shape as z with pixels inside the convex hull
+		of the data markd True and those outside markd false.
+	"""
+	triangulacion = spatial.Delaunay(np.transpose([x[N > 0], y[N > 0]]))
+	hull_object = triangulacion.find_simplex(np.transpose([x.ravel(), y.ravel()]))
+	inside = ~((N == 0) & (hull_object == -1).reshape(N.shape))
+	inside[:, 1:] &= inside[:, :-1] # erode hull by one pixel in all directions to ignore edge effects
+	inside[:, :-1] &= inside[:, 1:]
+	inside[1:, :] &= inside[:-1, :]
+	inside[:-1, :] &= inside[1:, :]
+	return inside
+
+
+def simple_penumbra(r, δ, Q, r0, minimum, maximum, з_min=0., з_max=1.):
 	""" synthesize a simple analytic single-apeture penumbral image """
 	Δr = np.unique(np.abs(r - r0)) # get an idea for how close to the edge we must sample
-	required_resolution = max(δ/3, Q/e_max/10, Δr[1]/3) # resolution may be limited source size, charging, or the pixel distances
+	required_resolution = max(δ/3, Q/з_max/10, Δr[1]/3) # resolution may be limited source size, charging, or the pixel distances
 
-	rB, nB = electric_field.get_modified_point_spread(r0, Q, e_min=e_min, e_max=e_max) # start by accounting for aperture charging but not source size
+	rB, nB = electric_field.get_modified_point_spread(r0, Q, energy_min=з_min, energy_max=з_max) # start by accounting for aperture charging but not source size
 
 	n_pixel = min(int(r.max()/required_resolution), rB.size)
 	# if 3*δ >= r.max(): # if 3*source size is bigger than the image radius
@@ -100,22 +114,8 @@ def simple_penumbra(r, δ, Q, r0, minimum, maximum, e_min=0, e_max=1):
 	return minimum + (maximum-minimum)*w
 
 
-def convex_hull(x, y, N):
-	""" return an array of the same shape as z with pixels inside the convex hull
-		of the data markd True and those outside markd false.
-	"""
-	triangulacion = spatial.Delaunay(np.transpose([x[N > 0], y[N > 0]]))
-	hull_object = triangulacion.find_simplex(np.transpose([x.ravel(), y.ravel()]))
-	inside = ~((N == 0) & (hull_object == -1).reshape(N.shape))
-	inside[:, 1:] &= inside[:, :-1] # erode hull by one pixel in all directions to ignore edge effects
-	inside[:, :-1] &= inside[:, 1:]
-	inside[1:, :] &= inside[:-1, :]
-	inside[:-1, :] &= inside[1:, :]
-	return inside
-
-
 def point_spread_function(XK: np.ndarray, YK: np.ndarray,
-                          Q: float, r0: float, e_in_bounds: tuple[float, float]) -> np.ndarray:
+                          Q: float, r0: float, з_min: float, з_max: float) -> np.ndarray:
 	""" build the point spread function """
 	dxK = XK[1, 0] - XK[0, 0]
 	dyK = YK[0, 1] - YK[0, 0]
@@ -123,7 +123,7 @@ def point_spread_function(XK: np.ndarray, YK: np.ndarray,
 	for dx in [-dxK/3, 0, dxK/3]: # sampling over a few pixels
 		for dy in [-dyK/3, 0, dyK/3]:
 			func += simple_penumbra(
-				np.hypot(XK + dx, YK + dy), 0, Q, r0, 0, 1, *e_in_bounds)
+				np.hypot(XK + dx, YK + dy), 0, Q, r0, 0, 1, з_min, з_max)
 	func = func/np.sum(func) # TODO: these units are nonsense.  it should be cm^2/srad/bin
 	return func
 
@@ -361,10 +361,10 @@ def analyze_scan(input_filename: str,
 		energy_cuts = DEUTERON_ENERGY_CUTS
 
 	results = []
-	for cut_name, (energy_min, energy_max) in energy_cuts.items():
-		e_out_bounds = fake_srim.get_E_out(1, 2, [energy_min, energy_max], ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
-		e_in_bounds = fake_srim.get_E_in(1, 2, e_out_bounds, ['Ta'], 16) # convert back to exclude particles that are ranged out
-		diameter_max, diameter_min = diameter.D(e_out_bounds, τ=etch_time, a=2, z=1) # convert to diameters
+	for cut_name, ideal_energies in energy_cuts.items():
+		detection_energies = fake_srim.get_E_out(1, 2, ideal_energies, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
+		diameter_max, diameter_min = diameter.D(detection_energies, τ=etch_time, a=2, z=1) # convert to diameters
+		kinematic_energies = fake_srim.get_E_in(1, 2, detection_energies, ['Ta'], 16) # convert back to exclude particles that are ranged out
 		if np.isnan(diameter_max):
 			diameter_max = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
 
@@ -391,8 +391,8 @@ def analyze_scan(input_filename: str,
 				logging.info(f"observed a magnification discrepancy of {M_eff/M - 1:.3f}")
 				Q = 0
 			else:
-				Q = electric_field.get_charging_parameter(M_eff/M, r0, energy_min, energy_max)
-			r_psf = electric_field.get_expansion_factor(Q, r0, energy_min, energy_max)
+				Q = electric_field.get_charging_parameter(M_eff/M, r0, *kinematic_energies)
+			r_psf = electric_field.get_expansion_factor(Q, r0, *kinematic_energies)
 
 			if input_filename.endswith(".txt"): # if it's a cpsa-derived text file
 				x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
@@ -419,7 +419,7 @@ def analyze_scan(input_filename: str,
 
 		save_and_plot_penumbra(f"{shot}-tim{tim}-{cut_name}", show_plots,
 		                       xI_bins, yI_bins, NI_data, xI0, yI0,
-		                       energy_min=energy_min, energy_max=energy_max,
+		                       energy_min=kinematic_energies[0], energy_max=kinematic_energies[1],
 		                       r0=rA*M, s0=sA*M)
 
 		if skip_reconstruction:
@@ -446,7 +446,7 @@ def analyze_scan(input_filename: str,
 
 			logging.info(f"  generating a {XK.shape} point spread function with Q={Q}")
 
-			penumbral_kernel = point_spread_function(XK, YK, Q, r0, e_in_bounds)
+			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *kinematic_energies)
 
 			max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
 			max_source = max_source/np.sum(max_source)
@@ -498,15 +498,15 @@ def analyze_scan(input_filename: str,
 		# save and plot the results
 		save_and_plot_source(f"{shot}-tim{tim}-{cut_name}", show_plots,
 		                     xS_bins, yS_bins, B, CONTOUR_LEVEL,
-		                     energy_min, energy_max)
+		                     *kinematic_energies)
 		save_and_plot_overlaid_penumbra(f"{shot}-{tim}-{cut_name}", show_plots,
 		                                xI_bins, yI_bins, NI_reconstruct, NI_data)
 
 		results.append(dict(
 			shot=shot, tim=tim,
 			energy_cut=cut_name,
-			energy_min=e_in_bounds[0],
-			energy_max=e_in_bounds[1],
+			energy_min=kinematic_energies[0],
+			energy_max=kinematic_energies[1],
 			x0=xI0, dx0=0,
 			y0=yI0, dy0=0,
 			Q=Q, dQ=0,

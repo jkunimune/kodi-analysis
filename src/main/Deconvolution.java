@@ -141,7 +141,7 @@ public class Deconvolution {
 		double[][] best_G = null;
 
 		// do the iteration
-		while (scores.size() < 5000) {
+		for (int t = 0; t < 200; t ++) {
 			// always start by renormalizing
 			double g_error_factor = g0 + Math2.sum(g);
 			g0 /= g_error_factor;
@@ -227,19 +227,20 @@ public class Deconvolution {
 					if (G[k][l] != 0)
 						entropy += G[k][l]/M*Math.log(G[k][l]/M);
 			scores.add(likelihood - α*entropy);
-			logger.info(String.format("[%.3f, %.3f, %.3f],", likelihood, entropy, scores.get(scores.size() - 1)));
-			if (Double.isNaN(scores.get(scores.size() - 1)))
+			logger.info(String.format("[%d, %.3f, %.3f, %.3f],", t, likelihood, entropy, scores.get(t)));
+			if (Double.isNaN(scores.get(t)))
 				throw new RuntimeException("something's gone horribly rong.");
 
 			// finally, do the termination condition
 			int best_index = Math2.argmax(scores);
-			if (best_index == scores.size() - 1)
+			if (best_index == t)
 				best_G = G;
-			else if (best_index < scores.size() - 12)
+			else if (best_index < t - 12)
 				return best_G;
 		}
 
-		throw new RuntimeException("reached the maximum iterations.");
+		logger.warning("The maximum number of iterations was reached.  Here, have a pity reconstruction.");
+		return best_G;
 	}
 
 	public static void main(String[] args) throws IOException {
