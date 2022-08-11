@@ -4,7 +4,7 @@ import matplotlib.colors as colors
 
 plt.rcParams.update({'font.family': 'sans', 'font.size': 14})
 
-import diameter
+import detector
 import fake_srim
 from cmap import COFFEE
 
@@ -39,10 +39,10 @@ if __name__ == '__main__':
 	e1_t = fake_srim.get_E_out(1, 3, e0_t, ['Al'], 25)
 	e2_d = fake_srim.get_E_out(1, 2, e1_d, ['C']*12+['H']*18+['O']*7, depth + 2.7*time2, 1320, 55)
 	e2_t = fake_srim.get_E_out(1, 3, e1_t, ['C']*12+['H']*18+['O']*7, depth + 2.7*time2, 1320, 55)
-	d1_d = diameter.D(e1_d, time1, m=2)
-	d1_t = diameter.D(e1_t, time1, m=3)
-	d2_d = diameter.D(e2_d, time2, m=2)
-	d2_t = diameter.D(e2_t, time2, m=3)
+	d1_d = detector.track_diameter(e1_d, time1, a=2)
+	d1_t = detector.track_diameter(e1_t, time1, a=3)
+	d2_d = detector.track_diameter(e2_d, time2, a=2)
+	d2_t = detector.track_diameter(e2_t, time2, a=3)
 	e0 = np.concatenate([e0_d, e0_t])
 	e1 = np.concatenate([e1_d, e1_t])
 	e2 = np.concatenate([e2_d, e2_t])

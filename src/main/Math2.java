@@ -367,7 +367,7 @@ public class Math2 {
 	}
 
 	/**
-	 * find the full-width at half-maximum of a distribucion. if it is very noisy, this will
+	 * find the full-width at half-maximum of a curve. if it is very noisy, this will
 	 * underestimate the width.
 	 * @param x the bin edges
 	 * @param y the number in each bin
@@ -825,6 +825,18 @@ public class Math2 {
 		return y[l].times(x0.minus(x[r]).over(x[l].minus(x[r]))).plus(y[r].times(x0.minus(x[l]).over(x[r].minus(x[l]))));
 	}
 
+	public static double interp2d(double[][] x, double i, double j) {
+		int i_l = (int) Math.floor(i);
+		int j_b = (int) Math.floor(j);
+		int i_r = i_l + 1, j_t = j_b + 1;
+		double c_r = i - i_l, c_l = i_r - i;
+		double c_t = j - j_b, c_b = j_t - j;
+		return c_l*(c_b*x[i_l][j_b] +
+				    c_t*x[i_l][j_t]) +
+			   c_r*(c_b*x[i_r][j_b] +
+					c_t*x[i_r][j_t]);
+	}
+
 	public static Quantity interp3d(Quantity[][][] values, Vector index, boolean smooth) {
 		return interp3d(values, index.get(0), index.get(1), index.get(2), smooth);
 	}
@@ -1005,9 +1017,6 @@ public class Math2 {
 			else
 				weights[i] = new FixedQuantity(0);
 		}
-//		for (int i = 0; i < x.length; i ++)
-//			System.out.print(weights[i].value+", ");
-//		System.out.println();
 		
 		double[] xMoments = new double[5];
 		Quantity[] yMoments = new Quantity[3];
@@ -1413,13 +1422,9 @@ public class Math2 {
 	 * elements if they don't.
 	 */
 	public static void coercePositiveSemidefinite(double[][] A) {
-		for (double[] doubles: A) {
+		for (double[] doubles: A)
 			if (doubles.length != A.length)
 				throw new IllegalArgumentException("this method only works with square matrices.");
-			//			for (int j = 0; j < A[i].length; j ++)
-			//				if (Double.isFinite(A[i][j]) && A[i][j] != A[j][i])
-			//					throw new IllegalArgumentException("this method only works with symmetric matrices.");
-		}
 
 		for (int i = 0; i < A.length; i ++)
 			if (A[i][i] < 0)
@@ -1642,6 +1647,20 @@ public class Math2 {
 	};
 
 	/**
+	 * erf(b) - erf(a) (but slitely more precise than doing it as a 2-step process)
+	 */
+	public static double erf_difference(double a, double b) {
+		if (a > b)
+			return -erf_difference(b, a);
+		else if (a >= 0)// both nonnegative
+			return erfccheb(a) - erfccheb(b);
+		else if (b <= 0)// both nonpositive
+			return erfccheb(-b) - erfccheb(-a);
+		else // one positive one negative
+			return 2 - erfccheb(-a) - erfccheb(b);
+	}
+
+	/**
 	 * The Gauss error function.
 	 */
 	public static double erf(double x) {
@@ -1656,7 +1675,11 @@ public class Math2 {
 	 * the complementary Gauss error function
 	 */
 	public static double erfc(double x) {
-		return 1 - erf(x);
+		if (x >= 0.) {
+			return erfccheb(x);
+		} else {
+			return 2 - erfccheb(-x);
+		}
 	}
 
 	private static double erfccheb(double z) {
@@ -2005,15 +2028,5 @@ public class Math2 {
 			k += d[2]*.025;
 			System.out.printf("%.4f,\n", interp3d(test, i, j, k, false).value);
 		}
-//		double[][] cov = {{1, 0}, {0, 1}};
-//		Quantity x = new Quantity(5, new double[] {1, 0});
-//		Quantity y = new Quantity(12, new double[] {0, 1});
-//		System.out.println(x.toString(cov));
-//		System.out.println(y.toString(cov));
-//		System.out.println(x.plus(y).toString(cov));
-//		System.out.println(x.minus(y).toString(cov));
-//		System.out.println(x.times(y).toString(cov));
-//		System.out.println(x.over(y).toString(cov));
-//		System.out.println(x.mod(4).toString(cov));
 	}
 }

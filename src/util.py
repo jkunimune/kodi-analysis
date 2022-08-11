@@ -1,10 +1,11 @@
 """ some signal utility functions, including the all-important Gelfgat reconstruction """
 import datetime
+import os
 import shutil
 import subprocess
 
 import numpy as np
-from scipy import optimize
+from scipy import optimize, interpolate
 from skimage import measure
 
 SMOOTHING = 100 # entropy weight
@@ -38,7 +39,7 @@ def linregress(x, y, weights=None):
 	return m, b
 
 
-def resample_1d(x_bins, N):
+def downsample_1d(x_bins, N):
 	""" double the bin size of this 1d histogram """
 	assert N.shape == (x_bins.size - 1,)
 	n = (x_bins.size - 1)//2
@@ -47,7 +48,7 @@ def resample_1d(x_bins, N):
 	return x_bins, Np
 
 
-def resample_2d(x_bins, y_bins, N):
+def downsample_2d(x_bins, y_bins, N):
 	""" double the bin size of this 2d histogram """
 	if x_bins is None:
 		x_bins = np.arange(N.shape[0] + 1)
@@ -63,6 +64,18 @@ def resample_2d(x_bins, y_bins, N):
 		for j in range(0, 2):
 			Np += N[i:2*n:2,j:2*m:2]
 	return x_bins, y_bins, Np
+
+
+def resample_2d(N_old, x_old, y_old, x_new, y_new):
+	""" apply new bins to a 2d function, preserving quality and accuraccy as much as possible """
+	x_old, y_old = (x_old[:-1] + x_old[1:])/2, (y_old[:-1] + y_old[1:])/2
+	x_new, y_new = (x_new[:-1] + x_new[1:])/2, (y_new[:-1] + y_new[1:])/2
+	λ = max(x_old[1] - x_old[0], x_new[1] - x_new[0])
+	kernel_x = np.maximum(0, (1 - abs(x_new[:, np.newaxis] - x_old[np.newaxis, :])/λ)) # do this bilinear-type-thing
+	N_mid = np.matmul(kernel_x, N_old)
+	kernel_y = np.maximum(0, (1 - abs(y_new[:, np.newaxis] - y_old[np.newaxis, :])/λ))
+	N_new = np.matmul(kernel_y, N_mid.transpose()).transpose()
+	return N_new
 
 
 def saturate(r, g, b, factor=2.0):
@@ -193,16 +206,21 @@ def find_intercept(x: np.ndarray, y: np.ndarray):
 	return x[i] - y[i]/(y[i + 1] - y[i])*(x[i + 1] - x[i])
 
 
-def execute_java(script: str, *args: str) -> None:
+def execute_java(script: str, *args: str, classpath="out/production/kodi-analysis/") -> None:
 	""" execute a Java class from the Java part of the code, printing out its output in real-time
 	"""
+	try:
+		os.mkdir(classpath)
+	except IOError:
+		pass
+
 	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 	statements = [
-		[shutil.which("javac"), "-classpath", "out/production/kodi-analysis/", "-encoding", "utf8", f"src/main/{script}.java"],
-		[shutil.which("java"), "-classpath", "out/production/kodi-analysis/", f"main/{script}", *args]
+		[shutil.which("javac"), "-sourcepath", "src", "-d", classpath, "-encoding", "utf8", f"src/main/{script}.java"],
+		[shutil.which("java"), "-classpath", classpath, f"main/{script}", *(str(arg) for arg in args)]
 	]
 	for statement in statements:
-		with subprocess.Popen(statement, stderr=subprocess.PIPE, encoding='utf-8') as process:
+		with subprocess.Popen(statement, stderr=subprocess.PIPE, encoding="cp850") as process: # what is this encoding and why does Java use it??
 			for line in process.stderr:
 				print(line, end='')
 			if process.wait() > 0:

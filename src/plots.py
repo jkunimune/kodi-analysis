@@ -7,7 +7,7 @@ from scipy import special
 
 from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS, COFFEE
 from hdf5_util import save_as_hdf5
-from util import resample_2d, get_relative_aperture_positions, resample_1d, median, saturate
+from util import downsample_2d, get_relative_aperture_positions, downsample_1d, median, saturate
 
 
 PLOT_THEORETICAL_PROJECTION = True
@@ -91,7 +91,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	plt.locator_params(steps=[1, 2, 4, 5, 10])
 	xL_bins, NL = x_bins, N[:, N.shape[1]//2]/1e3
 	while xL_bins.size > MAX_NUM_PIXELS/3 + 1:
-		xL_bins, NL = resample_1d(xL_bins, NL)
+		xL_bins, NL = downsample_1d(xL_bins, NL)
 	xL = (xL_bins[:-1] + xL_bins[1:])/2
 	plt.fill_between(np.repeat(xL_bins, 2)[1:-1], 0, np.repeat(NL, 2), color='#f9A72E')
 	def ideal_profile(x, A, d, c, b):
@@ -116,8 +116,8 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	save_as_hdf5(f'results/data/{filename}-penumbra-residual', x=x_bins, y=y_bins, z=N_top - N_bottom)
 
 	while x_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
-		_, _, N_top = resample_2d(x_bins, y_bins, N_top)
-		x_bins, y_bins, N_bottom = resample_2d(x_bins, y_bins, N_bottom)
+		_, _, N_top = downsample_2d(x_bins, y_bins, N_top)
+		x_bins, y_bins, N_bottom = downsample_2d(x_bins, y_bins, N_bottom)
 
 	vmax = np.quantile(N_bottom, (N_bottom.size-6)/N_bottom.size)
 
@@ -202,6 +202,7 @@ def save_and_plot_source(filename: str, show: bool,
 	plt.ylabel("Intensity (normalized)")
 	plt.xlim(-150, 150)
 	plt.ylim(0, None)
+	plt.yscale("symlog", linthresh=1e-2, linscale=1/np.log(10))
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source-lineout")
 

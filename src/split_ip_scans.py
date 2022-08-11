@@ -12,19 +12,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colors
 
+from util import downsample_2d, downsample_1d
+
 
 SCAN_DIRECTORY = "../data/scans"
 
 
-def downsample(x_bins, y_bins, z, max_size):
-	while z.size > max_size:
-		x_bins = x_bins[0::2]
-		y_bins = y_bins[0::2]
-		z = (z[:-1:2, :-1:2] + z[:-1:2, 1::2] + z[1::2, :-1:2] + z[1::2, 1::2])/4
-	return x_bins, y_bins, z
-
-
-def main():
+if __name__ == "__main__":
 	# first get info about the tims on each scan
 	tim_sets: dict[str, list[int]] = {}
 	try:
@@ -54,7 +48,9 @@ def main():
 			x_bins = dx*np.arange(psl.shape[0] + 1)
 			y_bins = dy*np.arange(psl.shape[1] + 1)
 
-			x_bins_reduc, y_bins_reduc, psl_reduc = downsample(x_bins, y_bins, psl, 100000)
+			x_bins_reduc, y_bins_reduc, psl_reduc = x_bins, y_bins, psl
+			while psl_reduc.size > 100000:
+				x_bins_reduc, y_bins_reduc, psl_reduc = downsample_2d(x_bins_reduc, y_bins_reduc, psl_reduc)
 
 			# show the data on a plot
 			fig = plt.figure(figsize=(9, 5))
@@ -80,22 +76,21 @@ def main():
 			# then split it up and save the image plate scans as separate files
 			cut_positions = np.round(np.interp(sorted(cut_positions), x_bins, np.arange(x_bins.size))).astype(int)
 			for i in range(1, len(cut_positions)):
-				if cut_positions[i] - cut_positions[i - 1] >= psl.shape[1]/2:
+				width = cut_positions[i] - cut_positions[i - 1]
+				if width >= psl.shape[1]/2:
 					if len(tim_set) == 0:
 						raise ValueError(f"there were too many image plates here; I was expecting {len(tim_sets[shot])}")
 					tim = tim_set.pop()
 
 					new_filename = filename.replace(".h5", f"_tim{tim}.h5")
-					cropd_psl = psl[cut_positions[i - 1]:cut_positions[i], :].transpose()
 					with h5py.File(os.path.join(SCAN_DIRECTORY, new_filename), "w") as f:
-						dataset = f.create_dataset("PSL_per_px", cropd_psl.shape, dtype="f")
-						dataset.attrs["scan_delay"] = scan_delay
-						dataset.attrs["pixel_size"] = dx
-						dataset[:, :] = cropd_psl
+						f.attrs["scan_delay"] = scan_delay
+						x_dataset = f.create_dataset("x", (width + 1,), dtype="f")
+						x_dataset[:] = x_bins[cut_positions[i - 1]:cut_positions[i] + 1]
+						y_dataset = f.create_dataset("y", (psl.shape[1] + 1,), dtype="f")
+						y_dataset[:] = y_bins
+						z_dataset = f.create_dataset("PSL_per_px", (width, psl.shape[1]), dtype="f")
+						z_dataset[:, :] = psl[cut_positions[i - 1]:cut_positions[i], :]
 
 			if len(tim_set) > 0:
 				raise ValueError(f"there weren't enuff image plates here; I was expecting {len(tim_sets[shot])}")
-
-
-if __name__ == "__main__":
-	main()

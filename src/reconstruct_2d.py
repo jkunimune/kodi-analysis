@@ -10,6 +10,7 @@ import sys
 import time
 import warnings
 
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -18,12 +19,12 @@ import scipy.spatial as spatial
 from skimage import measure
 
 import coordinate
-import diameter
+import detector
 import electric_field
 import fake_srim
 from hdf5_util import load_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, save_and_plot_source, save_and_plot_overlaid_penumbra
-from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle
+from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d
 
 
 warnings.filterwarnings("ignore")
@@ -119,9 +120,11 @@ def point_spread_function(XK: np.ndarray, YK: np.ndarray,
 	""" build the point spread function """
 	dxK = XK[1, 0] - XK[0, 0]
 	dyK = YK[0, 1] - YK[0, 0]
+	assert dxK == dyK, f"{dxK} != {dyK}"
 	func = np.zeros(XK.shape) # build the point spread function
-	for dx in [-dxK/3, 0, dxK/3]: # sampling over a few pixels
-		for dy in [-dyK/3, 0, dyK/3]:
+	offsets = np.linspace(-dxK/2, dxK/2, 5)[1:-1:2]
+	for dx in offsets: # sampling over a few pixels
+		for dy in offsets:
 			func += simple_penumbra(
 				np.hypot(XK + dx, YK + dy), 0, Q, r0, 0, 1, з_min, з_max)
 	func = func/np.sum(func) # TODO: these units are nonsense.  it should be cm^2/srad/bin
@@ -149,7 +152,7 @@ def load_cr39_scan_file(filename: str,
 
 def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float) -> int:
 	""" open a scan file and simply count the total number of tracks without putting
-	    anything additional in memory
+	    anything additional in memory.  if the scan file is an image plate scan, return inf
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param diameter_min: the minimum diameter to count (μm)
 	    :param diameter_max: the maximum diameter to count (μm)
@@ -168,9 +171,11 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 						pass
 		return n
 	elif filename.endswith(".pkl"):
-		with open(filename, 'rb') as f:
+		with open(filename, "rb") as f:
 			x_bins, y_bins, N = pickle.load(f)
 		return int(np.sum(N))
+	elif filename.endswith(".h5"):
+		return np.inf
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
@@ -205,9 +210,16 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 			x0, y0 = None, None
 
 	elif filename.endswith(".pkl"): # if it's a pickle file
-		with open(filename, 'rb') as f:
+		with open(filename, "rb") as f:
 			x_bins, y_bins, N = pickle.load(f)
 		x0, y0 = (0, 0)
+
+	elif filename.endswith(".h5"): # if it's an h5 file
+		with h5py.File(filename, "r") as f:
+			x_bins = f["x"][:]
+			y_bins = f["y"][:]
+			N = f["PSL_per_px"][:, :]
+		x0, y0 = center_of_mass(x_bins, y_bins, N)
 
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
@@ -231,7 +243,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 			scale /= 6
 
 	# now that's squared away, find the largest 50% conture
-	max_density = np.mean(N, where=np.hypot(X_pixels - x0, Y_pixels - y0) < .7*r_nominal)
+	max_density = np.mean(N, where=np.hypot(X_pixels - x0, Y_pixels - y0) < .5*r_nominal)
 	haff_density = max_density/2
 	contours = measure.find_contours(N, haff_density)
 	if len(contours) == 0:
@@ -244,8 +256,8 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 	plt.figure()
 	plt.pcolormesh(x_bins, y_bins, N.T)
 	θ = np.linspace(0, 2*np.pi, 145)
+	plt.plot(x_contour, y_contour, "C1", linewidth=.5)
 	plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "w--")
-	plt.plot(x_contour, y_contour, "C1")
 	plt.axis("equal")
 	plt.show()
 
@@ -269,18 +281,24 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 		r_bins = np.linspace(0, 1.7*r0, int(np.sum(r_tracks <= r0)/1000))
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
 
-	elif filename.endswith(".pkl"): # if it's a pickle file
-		with open(filename, 'rb') as f:
-			xC_bins, yC_bins, NC = pickle.load(f)
+	else:
+		if filename.endswith(".pkl"): # if it's a pickle file
+			with open(filename, 'rb') as f:
+				xC_bins, yC_bins, NC = pickle.load(f)
+		elif filename.endswith(".h5"): # if it's an HDF5 file
+			with h5py.File(filename, "r") as f:
+				xC_bins = f["x"][:]
+				yC_bins = f["y"][:]
+				NC = f["PSL_per_px"][:, :]
+		else:
+			raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
+
 		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2
 		XC, YC = np.meshgrid(xC, yC, indexing='ij')
 		RC = np.hypot(XC - x0, YC - y0)
 		dr = (xC_bins[1] - xC_bins[0] + yC_bins[1] - yC_bins[0])/2
 		r_bins = np.linspace(0, 1.7*r0, int(r0/(dr*2)))
 		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
-
-	else:
-		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 	r = (r_bins[:-1] + r_bins[1:])/2
 	A = np.pi*(r_bins[1:]**2 - r_bins[:-1]**2)
@@ -296,11 +314,11 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 
 	if SHOW_ELECTRIC_FIELD_CALCULATION:
 		plt.plot(r, ρ, 'C0-o')
-		r, ρ = electric_field.get_modified_point_spread(
+		r, ρ_charged = electric_field.get_modified_point_spread(
 			r0,
 			electric_field.get_charging_parameter(r_50/r0, r0, 5., 10.),
 			5., 10.)
-		plt.plot(r, ρ*(ρ_max - ρ_min) + ρ_min, 'C1--')
+		plt.plot(r, ρ_charged*(ρ_max - ρ_min) + ρ_min, 'C1--')
 		plt.axhline(ρ_max, color="C2", linestyle="dashed")
 		plt.axhline(ρ_min, color="C2", linestyle="dashed")
 		plt.axhline(ρ_50, color="C3")
@@ -353,7 +371,7 @@ def analyze_scan(input_filename: str,
 	M *= scale
 	r0 = M*rA
 
-	if "xray" in input_filename:
+	if input_filename.endswith(".h5"):
 		energy_cuts = {"xray": [None, None]}
 	elif shot.startswith("synth"):
 		energy_cuts = {"synth": [None, None]}
@@ -363,7 +381,7 @@ def analyze_scan(input_filename: str,
 	results = []
 	for cut_name, ideal_energies in energy_cuts.items():
 		detection_energies = fake_srim.get_E_out(1, 2, ideal_energies, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
-		diameter_max, diameter_min = diameter.D(detection_energies, τ=etch_time, a=2, z=1) # convert to diameters
+		diameter_max, diameter_min = detector.track_diameter(detection_energies, τ=etch_time, a=2, z=1) # convert to diameters
 		kinematic_energies = fake_srim.get_E_in(1, 2, detection_energies, ['Ta'], 16) # convert back to exclude particles that are ranged out
 		if np.isnan(diameter_max):
 			diameter_max = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
@@ -373,7 +391,7 @@ def analyze_scan(input_filename: str,
 			r0_eff, r_max = 0, 0
 			Q, num_bins_K = 0, 0 # TODO: load previous value of Q from summary.csv
 			xI_bins, yI_bins, NI_data = load_hdf5(
-				f"../results/data/{shot}-tim{tim}-{cut_name}-penumbra", ["x", "y", "z"])
+				f"results/data/{shot}-tim{tim}-{cut_name}-penumbra", ["x", "y", "z"])
 
 		else:
 			logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
@@ -388,34 +406,46 @@ def analyze_scan(input_filename: str,
 
 			M_eff = r0_eff/rA
 			if cut_name == "xray":
-				logging.info(f"observed a magnification discrepancy of {M_eff/M - 1:.3f}")
+				logging.info(f"observed a magnification discrepancy of {(M_eff/M - 1)*1e2:.2f}%")
 				Q = 0
 			else:
 				Q = electric_field.get_charging_parameter(M_eff/M, r0, *kinematic_energies)
 			r_psf = electric_field.get_expansion_factor(Q, r0, *kinematic_energies)
 
+			r_object = (r_max - r_psf)/(M - 1) # (cm)
+			if r_object <= 0:
+				raise ValueError("something is rong but I don't understand what it is rite now.  check on the coordinate definitions.")
+
+			num_bins_S = math.ceil(r_object/RESOLUTION)*2 + 1
+			num_bins_K = math.ceil(r_psf/(M - 1)/RESOLUTION)*2 + 3
+			num_bins_I = num_bins_S + num_bins_K - 1
+			xI_bins = np.linspace(xI0 - r_max, xI0 + r_max, num_bins_I + 1)
+			yI_bins = np.linspace(yI0 - r_max, yI0 + r_max, num_bins_I + 1)
+
 			if input_filename.endswith(".txt"): # if it's a cpsa-derived text file
 				x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
-
-				r_object = (r_max - r_psf)/(M - 1) # (cm)
-				if r_object <= 0:
-					raise ValueError("something is rong but I don't understand what it is rite now.  check on the coordinate definitions.")
-				num_bins_S = math.ceil(r_object/RESOLUTION)*2 + 1
-				num_bins_K = math.ceil(r_psf/(M - 1)/RESOLUTION)*2 + 3
-				num_bins_I = num_bins_S + num_bins_K - 1
-
-				xI_bins = np.linspace(xI0 - r_max, xI0 + r_max, num_bins_I + 1)
-				yI_bins = np.linspace(yI0 - r_max, yI0 + r_max, num_bins_I + 1)
 				NI_data, xI_bins, yI_bins = np.histogram2d(x_tracks, y_tracks, bins=(xI_bins, yI_bins))
 
-			elif input_filename.endswith(".pkl"): # if it's a pickle file
-				with open(input_filename, 'rb') as f:
-					xI_bins, yI_bins, NI_data = pickle.load(f)
-				dxI = xI_bins[1] - xI_bins[0]
-				num_bins_K = round(r_psf/dxI)
-
 			else:
-				raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
+				if input_filename.endswith(".pkl"): # if it's a pickle file
+					with open(input_filename, "rb") as f:
+						xI_bins, yI_bins, NI_data = pickle.load(f)
+
+				elif input_filename.endswith(".h5"): # if it's an HDF5 file
+					with h5py.File(input_filename, "r") as f:
+						x_scan_bins = f["x"][:]
+						y_scan_bins = f["y"][:]
+						N_scan = f["PSL_per_px"][:, :]
+						fade_time = f.attrs["scan_delay"]
+					N_scan /= detector.psl_fade(fade_time)
+
+				else:
+					raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
+
+				if x_scan_bins[1] - x_scan_bins[0] > (M - 1)*RESOLUTION:
+					logging.warning("The scan resolution of this image plate scan is insufficient to support the "
+					                "requested reconstruction resolution; it will be zoomed and enhanced.")
+				NI_data = resample_2d(N_scan, x_scan_bins, y_scan_bins, xI_bins, yI_bins)
 
 		save_and_plot_penumbra(f"{shot}-tim{tim}-{cut_name}", show_plots,
 		                       xI_bins, yI_bins, NI_data, xI0, yI0,
@@ -424,10 +454,10 @@ def analyze_scan(input_filename: str,
 
 		if skip_reconstruction:
 			xS_bins, yS_bins, B = load_hdf5(
-				f"../results/data/{shot}-tim{tim}-{cut_name}-source", ["x", "y", "z"])
+				f"results/data/{shot}-tim{tim}-{cut_name}-source", ["x", "y", "z"])
 			xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
 			NI_residu = load_hdf5(
-				f"../results/data/{shot}-tim{tim}-{cut_name}-penumbra-residual", ["z"])
+				f"results/data/{shot}-tim{tim}-{cut_name}-penumbra-residual", ["z"])
 			NI_reconstruct = NI_data - NI_residu
 
 		else:
@@ -473,14 +503,24 @@ def analyze_scan(input_filename: str,
 				plt.show()
 
 			# perform the reconstruction
+			method = "seguin" if cut_name == "xray" else "gelfgat"
 			np.savetxt("tmp/penumbra.csv", np.where(data_region, NI_data, np.nan), delimiter=',')
 			np.savetxt("tmp/pointspread.csv", penumbral_kernel, delimiter=',')
-			execute_java("Deconvolution", "gelfgat")
+			execute_java("Deconvolution", method, r0/dxI)
 			B = np.loadtxt("tmp/source.csv", delimiter=',')
 			B = np.maximum(0, B) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
 
 			# back-calculate the reconstructed penumbral image
 			NI_reconstruct = signal.convolve2d(B, penumbral_kernel)
+
+			# plot some debug plots from the reconstruction
+			for filename in ["sinogram", "sinogram_gradient", "sinogram_gradient_prime"]:
+				sinogram = np.loadtxt(f"tmp/{filename}.csv", delimiter=",")
+				plt.figure()
+				plt.pcolormesh(sinogram)
+				plt.colorbar()
+				plt.title(filename)
+			plt.show()
 
 		dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
 		logging.info(f"  ∫B = {np.sum(B*dxS*dyS)*4*np.pi:.4g} deuterons")
@@ -523,7 +563,7 @@ def analyze_scan(input_filename: str,
 		for cut_name in cut_set:
 			for result in results:
 				if result["energy_cut"] == cut_name:
-					filenames.append((f"../results/data/{shot}-tim{tim}-{cut_name}-reconstruction", cut_name))
+					filenames.append((f"results/data/{shot}-tim{tim}-{cut_name}-reconstruction", cut_name))
 					break
 		if len(filenames) >= len(cut_set)*3/4:
 			reconstructions: list[tuple[np.ndarray, np.ndarray, np.ndarray, str]] = []
@@ -601,27 +641,34 @@ if __name__ == '__main__':
 	# iterate thru the shots we're supposed to analyze and make a list of scan files
 	all_scans_to_analyze: list[tuple[str, str, float, str]] = []
 	for specifier in shots_to_reconstruct:
-		match = re.fullmatch(r"([A-Z]?[0-9]+)t(im)?([0-9]+)", specifier)
+		match = re.fullmatch(r"([A-Z]?[0-9]+)(tim|t)([0-9]+)", specifier)
 		if match:
-			shot, tims = match.groups()
+			shot, tim = match.group(1, 3)
 		else:
-			shot, tims = specifier, None
+			shot, tim = specifier, None
 
 		matching_scans: list[tuple[str, str, float, str]] = []
 		for fname in os.listdir("data/scans"): # search for filenames that match each row
-			if (fname.endswith('.txt') or fname.endswith('.pkl')) \
-					and shot in fname and (f'tim{tims}' in fname.lower() or tims is None):
-				tim = re.search(r"tim([0-9]+)", fname, re.IGNORECASE).group(1) # these regexes would be much nicer if _ wasn't a word haracter
-				etch_time = float(re.search(r"([0-9]+)hr?", fname, re.IGNORECASE).group(1))
-				matching_scans.append((shot, tim, etch_time, f"data/scans/{fname}"))
-				break
+			shot_match = re.search(rf"{shot}", fname, re.IGNORECASE)
+			etch_match = re.search(r"([0-9]+)hr?", fname, re.IGNORECASE)
+			if tim is None:
+				tim_match = re.search(r"tim([0-9]+)", fname, re.IGNORECASE)
+			else:
+				tim_match = re.search(rf"tim({tim})", fname, re.IGNORECASE)
+			if (fname.endswith('.txt') or fname.endswith('.pkl') or fname.endswith('.h5')) \
+					and shot_match is not None and tim_match is not None:
+				matching_tim = tim_match.group(1) # these regexes would work much nicer if _ wasn't a word haracter
+				etch_time = float(etch_match.group(1)) if etch_match is not None else np.nan
+				matching_scans.append((shot, matching_tim, etch_time, f"data/scans/{fname}"))
 		if len(matching_scans) == 0:
-			logging.info("  Could not find any text file for TIM {} on shot {}".format(tims, shot))
+			logging.info("  Could not find any text file for TIM {} on shot {}".format(tim, shot))
 		else:
 			all_scans_to_analyze += matching_scans
 
+	logging.info(f"Planning to reconstruct {', '.join(filename for _, _, _, filename in all_scans_to_analyze)}")
+
 	# then iterate thru that list and do the analysis
-	for shot, tim, etch_time, filename in all_scans_to_analyze:
+	for shot, tim, etch_time, filename in all_scans_to_analyze[::-1]:
 		print()
 		logging.info("Beginning reconstruction for TIM {} on shot {}".format(tim, shot))
 
