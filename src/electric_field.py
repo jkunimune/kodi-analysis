@@ -9,11 +9,6 @@ for i, a in enumerate(x_ref):
 	E_ref[i] = integrate.quad(lambda b: np.sqrt(1 - b**2)/((a - b)*np.sqrt(1 - b**2 + (a - b)**2)), -1, 2*a-1)[0] + integrate.quad(lambda b: (np.sqrt(1 - b**2)/np.sqrt((a - b)**2 + 1 - b**2) - np.sqrt(1 - (2*a - b)**2)/np.sqrt((a - b)**2 + 1 - (2*a - b)**2))/(a - b), 2*a-1, a)[0]
 
 
-def normalize(x: np.ndarray):
-	""" scale a vector so that its maximum value is 1 """
-	return x/np.nanmax(x)
-
-
 def e_field(x):
 	""" dimensionless electric field as a function of normalized radius """
 	# return np.log((1 + 1/(1 - x)**2)/(1 + 1/(1 + x)**2)) - 2*x
@@ -22,7 +17,7 @@ def e_field(x):
 		np.interp(x, x_ref, E_ref))
 
 
-def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max=1.,
+def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max=1., normalize=False,
                               ) -> tuple[np.ndarray, np.ndarray]:
 	""" get the effective brightness as a function of radius, accounting for a point
 	    source and roughly boxcar energy spectrum. the units can be whatever as long
@@ -32,10 +27,11 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 	              units and e_min’s units.
 	    :param energy_min: the minimum deuteron energy in the image. must be greater than 0.
 	    :param energy_max: the maximum deuteron energy in the image. must be greater than e_min.
+	    :param normalize: if true, scale so the peak value is 1.
 	    :return: array of radii and array of corresponding brightnesses
 	"""
 	if Q == 0:
-		return r0*R, normalize(np.where(R < 1, 1, 0))
+		return r0*R, np.where(R < 1, 1, 0)
 
 	d_index = index[1] - index[0]
 	min_bound = min(np.log(energy_min*r0/Q) - d_index/2, np.log(energy_max*r0/Q) - d_index)
@@ -45,12 +41,16 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 		index < min_bound + d_index, (index - min_bound)/d_index, np.where(
 		index < max_bound - d_index, 1, np.where(
 		index < max_bound, (max_bound - index)/d_index, 0))))
-	return r0*R, normalize(np.sum(weights[:, None]*N[:, :], axis=0))
+	unscaled = np.average(N[:, :], weights=weights*dE, axis=0)
+	if normalize:
+		return r0*R, unscaled/unscaled.max()
+	else:
+		return r0*R, unscaled
 
 
 def get_dilation_factor(Q: float, r0: float, energy_min: float, energy_max: float) -> float:
 	""" get the factor by which the 50% radius of the penumbra increases due to aperture charging """
-	r, z = get_modified_point_spread(r0, Q, energy_min, energy_max)
+	r, z = get_modified_point_spread(r0, Q, energy_min, energy_max, normalize=True)
 	return find_intercept(r, z - z[0]*.50)/r0
 
 
@@ -97,7 +97,7 @@ for i, k in enumerate(K):
 	nB[rS > 1] = 0
 	nB[0] = nB[1] # deal with this singularity
 	N[i,:] = np.interp(R, rB, nB, right=0)
-N *= np.gradient(E)[:,np.newaxis] # weigh for uniform energy distribution
+dE = np.gradient(E) # weights for uniform energy distribution
 
 np.seterr(divide='warn', invalid='warn')
 

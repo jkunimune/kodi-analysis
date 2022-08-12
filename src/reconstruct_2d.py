@@ -9,6 +9,7 @@ import re
 import sys
 import time
 import warnings
+from typing import Any
 
 import h5py
 import matplotlib.pyplot as plt
@@ -89,45 +90,35 @@ def convex_hull(x, y, N):
 	return inside
 
 
-def simple_penumbra(r, δ, Q, r0, minimum, maximum, з_min=0., з_max=1.):
-	""" synthesize a simple analytic single-apeture penumbral image """
+def simple_penumbra(r, Q, r0, з_min=1.e-15, з_max=1.):
+	""" synthesize a simple analytic single-apeture penumbral image. its peak value will
+	    be 1 in the absence of an electric field and slitely less than 1 in the presence
+	    of an electric field
+	"""
 	Δr = np.unique(np.abs(r - r0)) # get an idea for how close to the edge we must sample
-	required_resolution = max(δ/3, Q/з_max/10, Δr[1]/3) # resolution may be limited source size, charging, or the pixel distances
+	charging_width = Q/з_max/10 if Q > 0 else 0
+	required_resolution = max(charging_width, Δr[1]/3) # resolution may be limited by charging or the pixel distances
 
 	rB, nB = electric_field.get_modified_point_spread(r0, Q, energy_min=з_min, energy_max=з_max) # start by accounting for aperture charging but not source size
-
 	n_pixel = min(int(r.max()/required_resolution), rB.size)
-	# if 3*δ >= r.max(): # if 3*source size is bigger than the image radius
-	# 	raise ValueError("δ cannot be this big")
-	if 3*δ >= r.max()/n_pixel: # if 3*source size is smaller than the image radius but bigger than the pixel size
-		r_kernel = np.linspace(-3*δ, 3*δ, int(3*δ/r.max()*n_pixel)*2+1) # make a little kernel
-		n_kernel = np.exp(-r_kernel**2/δ**2)
-		r_point = np.arange(-3*δ, r.max() + 3*δ, r_kernel[1] - r_kernel[0]) # rebin the existing image to match the kernel spacing
-		n_point = np.interp(r_point, rB, nB, right=0)
-		assert len(n_point) >= len(n_kernel)
-		penumbra = np.convolve(n_point, n_kernel, mode='same') # and convolve
-	elif δ >= 0: # if 3*source size is smaller than one pixel and nonnegative
-		r_point = np.linspace(0, r.max(), n_pixel) # use a dirac kernel instead of a gaussian
-		penumbra = np.interp(r_point, rB, nB, right=0)
-	else:
-		raise ValueError("δ cannot be negative")
-	w = np.interp(r, r_point, penumbra/np.max(penumbra), right=0) # map to the requested r values
-	return minimum + (maximum-minimum)*w
+	r_point = np.linspace(0, r.max(), n_pixel) # use a dirac kernel instead of a gaussian
+	penumbra = np.interp(r_point, rB, nB, right=0)
+	return np.interp(r, r_point, penumbra/np.max(penumbra), right=0) # map to the requested r values
 
 
 def point_spread_function(XK: np.ndarray, YK: np.ndarray,
                           Q: float, r0: float, з_min: float, з_max: float) -> np.ndarray:
-	""" build the point spread function """
+	""" build the dimensionless point spread function """
 	dxK = XK[1, 0] - XK[0, 0]
 	dyK = YK[0, 1] - YK[0, 0]
 	assert dxK == dyK, f"{dxK} != {dyK}"
 	func = np.zeros(XK.shape) # build the point spread function
-	offsets = np.linspace(-dxK/2, dxK/2, 5)[1:-1:2]
+	offsets = np.linspace(-dxK/2, dxK/2, 15)[1:-1:2]
 	for dx in offsets: # sampling over a few pixels
 		for dy in offsets:
 			func += simple_penumbra(
-				np.hypot(XK + dx, YK + dy), 0, Q, r0, 0, 1, з_min, з_max)
-	func = func/np.sum(func) # TODO: these units are nonsense.  it should be cm^2/srad/bin
+				np.hypot(XK + dx, YK + dy), Q, r0, з_min, з_max)
+	func /= offsets.size**2 # divide by the number of samples
 	return func
 
 
@@ -317,7 +308,7 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 		r, ρ_charged = electric_field.get_modified_point_spread(
 			r0,
 			electric_field.get_charging_parameter(r_50/r0, r0, 5., 10.),
-			5., 10.)
+			5., 10., normalize=True)
 		plt.plot(r, ρ_charged*(ρ_max - ρ_min) + ρ_min, 'C1--')
 		plt.axhline(ρ_max, color="C2", linestyle="dashed")
 		plt.axhline(ρ_min, color="C2", linestyle="dashed")
@@ -332,8 +323,8 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 
 
 def analyze_scan(input_filename: str,
-                 shot: str, tim: str, rA: float, sA: float, M: float, rotation: float,
-                 etch_time: float, skip_reconstruction: bool, show_plots: bool
+                 shot: str, tim: str, rA: float, sA: float, M: float, L1: float,
+                 rotation: float, etch_time: float, skip_reconstruction: bool, show_plots: bool
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct a penumbral KOD image.
 		:param input_filename: the location of the scan file in data/scans/
@@ -343,6 +334,7 @@ def analyze_scan(input_filename: str,
 		:param sA: the aperture spacing in cm, which also encodes the shape of the aperture array. a positive number
 		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
 		           center-to-center distance in a rectangular array. a 0 means that there is only one aperture.
+		:param L1: the distance between the aperture and the implosion
 		:param M: the nominal radiography magnification (L1 + L2)/L1
 		:param rotation: the rotational error in the scan in degrees (if the detector was fielded correctly such that
 		                 the top of the scan is the top of the detector as it was oriented in the target chamber, then
@@ -378,7 +370,7 @@ def analyze_scan(input_filename: str,
 	else:
 		energy_cuts = DEUTERON_ENERGY_CUTS
 
-	results = []
+	results: list[dict[str, Any]] = []
 	for cut_name, ideal_energies in energy_cuts.items():
 		detection_energies = fake_srim.get_E_out(1, 2, ideal_energies, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
 		diameter_max, diameter_min = detector.track_diameter(detection_energies, τ=etch_time, a=2, z=1) # convert to diameters
@@ -392,6 +384,7 @@ def analyze_scan(input_filename: str,
 			Q, num_bins_K = 0, 0 # TODO: load previous value of Q from summary.csv
 			xI_bins, yI_bins, NI_data = load_hdf5(
 				f"results/data/{shot}-tim{tim}-{cut_name}-penumbra", ["x", "y", "z"])
+			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 
 		else:
 			logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
@@ -421,6 +414,7 @@ def analyze_scan(input_filename: str,
 			num_bins_I = num_bins_S + num_bins_K - 1
 			xI_bins = np.linspace(xI0 - r_max, xI0 + r_max, num_bins_I + 1)
 			yI_bins = np.linspace(yI0 - r_max, yI0 + r_max, num_bins_I + 1)
+			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 
 			if input_filename.endswith(".txt"): # if it's a cpsa-derived text file
 				x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
@@ -429,7 +423,7 @@ def analyze_scan(input_filename: str,
 			else:
 				if input_filename.endswith(".pkl"): # if it's a pickle file
 					with open(input_filename, "rb") as f:
-						xI_bins, yI_bins, NI_data = pickle.load(f)
+						x_scan_bins, y_scan_bins, N_scan = pickle.load(f)
 
 				elif input_filename.endswith(".h5"): # if it's an HDF5 file
 					with h5py.File(input_filename, "r") as f:
@@ -437,15 +431,18 @@ def analyze_scan(input_filename: str,
 						y_scan_bins = f["y"][:]
 						N_scan = f["PSL_per_px"][:, :]
 						fade_time = f.attrs["scan_delay"]
-					N_scan /= detector.psl_fade(fade_time)
+					N_scan /= detector.psl_fade(fade_time) # J of psl per bin
 
 				else:
 					raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
 
-				if x_scan_bins[1] - x_scan_bins[0] > (M - 1)*RESOLUTION:
+				dx_scan = x_scan_bins[1] - x_scan_bins[0]
+				dy_scan = y_scan_bins[1] - y_scan_bins[0]
+				if x_scan_bins[1] - x_scan_bins[0] > (M - 1)*resolution:
 					logging.warning("The scan resolution of this image plate scan is insufficient to support the "
 					                "requested reconstruction resolution; it will be zoomed and enhanced.")
-				NI_data = resample_2d(N_scan, x_scan_bins, y_scan_bins, xI_bins, yI_bins)
+				NI_data = resample_2d(N_scan, x_scan_bins, y_scan_bins, xI_bins, yI_bins) # resample to the chosen bin size
+				NI_data *= dxI*dyI/(dx_scan*dy_scan) # since these are in signal/bin, this factor is needed
 
 		save_and_plot_penumbra(f"{shot}-tim{tim}-{cut_name}", show_plots,
 		                       xI_bins, yI_bins, NI_data, xI0, yI0,
@@ -456,12 +453,12 @@ def analyze_scan(input_filename: str,
 			xS_bins, yS_bins, B = load_hdf5(
 				f"results/data/{shot}-tim{tim}-{cut_name}-source", ["x", "y", "z"])
 			xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
+			dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
 			NI_residu = load_hdf5(
 				f"results/data/{shot}-tim{tim}-{cut_name}-penumbra-residual", ["z"])
 			NI_reconstruct = NI_data - NI_residu
 
 		else:
-			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 			XI, YI = np.meshgrid((xI_bins[:-1] + xI_bins[1:])/2,
 			                     (yI_bins[:-1] + yI_bins[1:])/2, indexing='ij')
 
@@ -473,16 +470,18 @@ def analyze_scan(input_filename: str,
 			yS_bins = yI_bins[num_bins_K//2:-(num_bins_K//2)]/(M - 1) # this is the source coordinate system.
 			xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
 			XS, YS = np.meshgrid(xS, yS, indexing='ij')
+			dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
 
 			logging.info(f"  generating a {XK.shape} point spread function with Q={Q}")
 
-			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *kinematic_energies)
 
 			max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
 			max_source = max_source/np.sum(max_source)
 			reach = signal.convolve2d(max_source, penumbral_kernel, mode='full')
 			lower_cutoff = .005*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
 			upper_cutoff = .98*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *kinematic_energies) # get the dimensionless shape of the penumbra
+			penumbral_kernel *= dxS*dyS*dxI*dyI/(M*L1)**2 # scale by the solid angle subtended by each image pixel
 
 			data_region = (np.hypot(XI - xI0, YI - yI0) <= r_max) & np.isfinite(NI_data) & \
 			              (reach > lower_cutoff) & (reach < upper_cutoff) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
@@ -686,6 +685,7 @@ if __name__ == '__main__':
 			tim                 = tim,
 			rA                  = shot_info["aperture radius"]*1e-4,
 			sA                  = shot_info["aperture spacing"]*1e-4,
+			L1                  = shot_info["standoff"]*1e-4,
 			M                   = shot_info["magnification"],
 			etch_time           = etch_time,
 			rotation            = math.radians(shot_info["rotation"]),

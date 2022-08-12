@@ -296,10 +296,11 @@ public class Deconvolution {
 	 * be automatically inferred.
 	 * @param F the convolved image (counts/bin)
 	 * @param r0 the radius of the point-spread function (pixels)
+	 * @param η the sum of the point-spread function
 	 * @param data_region a mask for the data; only pixels marked as true will be considered
 	 * @return the reconstructed image G such that Math2.convolve(G, q) \approx F
 	 */
-	public static double[][] seguin(double[][] F, double r0,
+	public static double[][] seguin(double[][] F, double r0, double η,
 	                                boolean[][] data_region, boolean[][] source_region) {
 		if (F.length != F[0].length)
 			throw new IllegalArgumentException("I haven't implemented non-square images");
@@ -396,7 +397,7 @@ public class Deconvolution {
 						double R0 = Math.sqrt(r0*r0 - Math.pow(x*sinф - y*cosф, 2));
 						double w = 1 - (x*cosф + y*sinф)/R0;
 						if (w*R0 < dFdr.length)
-							G[i][j] += -w * Math2.interp2d(
+							G[i][j] += -2*w*r0*r0/η*dф * Math2.interp2d(
 									dFdr_weited, w*R0, ф/(θ[1] - θ[0]));
 					}
 				}
@@ -486,8 +487,10 @@ public class Deconvolution {
 		}
 		else if (method.equals("seguin")) {
 			double point_spread_radius = Double.parseDouble(args[1]);
+			double point_spread_sum = Math2.sum(point_spread);
 			source_image = seguin(penumbral_image,
 								  point_spread_radius,
+								  point_spread_sum,
 			                      data_region,
 			                      source_region);
 		}
