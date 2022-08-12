@@ -94,9 +94,9 @@ def save_and_plot_penumbra(filename: str, show: bool,
 		xL_bins, NL = downsample_1d(xL_bins, NL)
 	xL = (xL_bins[:-1] + xL_bins[1:])/2
 	plt.fill_between(np.repeat(xL_bins, 2)[1:-1], 0, np.repeat(NL, 2), color='#f9A72E')
-	def ideal_profile(x, A, d, c, b):
-		return A*special.erfc((x - c - r0)/d)*special.erfc(-(x - c + r0)/d) + b
-	popt, pcov = optimize.curve_fit(ideal_profile, xL, NL, [100, .1, 0, 0])
+	def ideal_profile(x, A, d, b):
+		return A*special.erfc((x - x0 - r0)/d)*special.erfc(-(x - x0 + r0)/d) + b
+	popt, pcov = optimize.curve_fit(ideal_profile, xL, NL, [100, .1, 0])
 	plt.plot(x_bins, ideal_profile(x_bins, *popt), '--', color='#0F71F0', linewidth=2)
 	plt.xlim(x_bins.min(), x_bins.max())
 	plt.ylim(0, None)

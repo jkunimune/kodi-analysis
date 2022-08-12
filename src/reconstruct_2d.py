@@ -44,12 +44,14 @@ MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
-RESOLUTION = 5e-4
-CONTOUR_LEVEL = .50
-# SMOOTHING = 1e-3
+DEUTERON_RESOLUTION = 5e-4
+X_RAY_RESOLUTION = 2e-4
+DEUTERON_CONTOUR = .50
+X_RAY_CONTOUR = .17
+MAX_OBJECT_SIZE = 100
+MAX_CONVOLUTION = 1e+9
 MAX_CONTRAST = 40
 MAX_ECCENTRICITY = 15
-CONTOUR = .25
 
 
 def where_is_the_ocean(x, y, z, title, timeout=None):
@@ -372,6 +374,9 @@ def analyze_scan(input_filename: str,
 
 	results: list[dict[str, Any]] = []
 	for cut_name, ideal_energies in energy_cuts.items():
+		resolution = X_RAY_RESOLUTION if cut_name == "xray" else DEUTERON_RESOLUTION
+		contour = X_RAY_CONTOUR if cut_name == "xray" else DEUTERON_CONTOUR
+
 		detection_energies = fake_srim.get_E_out(1, 2, ideal_energies, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
 		diameter_max, diameter_min = detector.track_diameter(detection_energies, τ=etch_time, a=2, z=1) # convert to diameters
 		kinematic_energies = fake_srim.get_E_in(1, 2, detection_energies, ['Ta'], 16) # convert back to exclude particles that are ranged out
@@ -396,6 +401,10 @@ def analyze_scan(input_filename: str,
 
 			# start with a 1D reconstruction
 			r0_eff, r_max = find_circle_radius(input_filename, diameter_min, diameter_max, xI0, yI0, M*rA)
+			if r_max > r0 + (M - 1)*MAX_OBJECT_SIZE*resolution:
+				logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
+				                f"but I'm cropping it at {MAX_OBJECT_SIZE*resolution/1e-4:.0f}μm to save time")
+				r_max = r0 + (M - 1)*MAX_OBJECT_SIZE*resolution
 
 			M_eff = r0_eff/rA
 			if cut_name == "xray":
@@ -409,8 +418,8 @@ def analyze_scan(input_filename: str,
 			if r_object <= 0:
 				raise ValueError("something is rong but I don't understand what it is rite now.  check on the coordinate definitions.")
 
-			num_bins_S = math.ceil(r_object/RESOLUTION)*2 + 1
-			num_bins_K = math.ceil(r_psf/(M - 1)/RESOLUTION)*2 + 3
+			num_bins_S = math.ceil(r_object/resolution)*2 + 1
+			num_bins_K = math.ceil(r_psf/(M - 1)/resolution)*2 + 3
 			num_bins_I = num_bins_S + num_bins_K - 1
 			xI_bins = np.linspace(xI0 - r_max, xI0 + r_max, num_bins_I + 1)
 			yI_bins = np.linspace(yI0 - r_max, yI0 + r_max, num_bins_I + 1)
@@ -474,17 +483,27 @@ def analyze_scan(input_filename: str,
 
 			logging.info(f"  generating a {XK.shape} point spread function with Q={Q}")
 
-
-			max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
-			max_source = max_source/np.sum(max_source)
-			reach = signal.convolve2d(max_source, penumbral_kernel, mode='full')
-			lower_cutoff = .005*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-			upper_cutoff = .98*penumbral_kernel.max()# np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
 			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *kinematic_energies) # get the dimensionless shape of the penumbra
 			penumbral_kernel *= dxS*dyS*dxI*dyI/(M*L1)**2 # scale by the solid angle subtended by each image pixel
 
+			if XS.size*penumbral_kernel.size < MAX_CONVOLUTION:
+				max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
+				max_source = max_source/np.sum(max_source)
+				reach = signal.convolve2d(max_source, penumbral_kernel, mode='full')
+				lower_cutoff = .005*penumbral_kernel.max() # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
+				upper_cutoff = .98*penumbral_kernel.max() # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+				contains_information = (reach > lower_cutoff) & (reach < upper_cutoff)
+			elif Q == 0:
+				RI = np.hypot(XI - xI0, YI - yI0)
+				contains_information = (RI >= 2*r0 - r_max) & (RI <= r_max)
+			else:
+				logging.warning("it would be computationally inefficient to compute the reach of these data, so I'm "
+				                "setting the data region to be everywhere")
+				contains_information = True
+
 			data_region = (np.hypot(XI - xI0, YI - yI0) <= r_max) & np.isfinite(NI_data) & \
-			              (reach > lower_cutoff) & (reach < upper_cutoff) # exclude bins that are NaN and bins that are touched by all or none of the source pixels
+			              contains_information # exclude bins that are NaN and bins that are touched by all or none of the source pixels
+
 			try:
 				data_region &= convex_hull(XI, YI, NI_data) # crop it at the convex hull where counts go to zero
 			except MemoryError:
@@ -493,12 +512,9 @@ def analyze_scan(input_filename: str,
 			if SHOW_POINT_SPREAD_FUNCCION:
 				plt.figure()
 				plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
+				plt.contour(XI - xI0, YI - yI0, np.where(data_region, 1, 0), levels=[0.5], colors="k")
 				plt.axis('square')
 				plt.title("Point spread function")
-				plt.figure()
-				plt.pcolormesh(xI_bins, yI_bins, np.where(data_region, reach, np.nan))
-				plt.axis('square')
-				plt.title("Maximum convolution")
 				plt.show()
 
 			# perform the reconstruction
@@ -509,11 +525,8 @@ def analyze_scan(input_filename: str,
 			B = np.loadtxt("tmp/source.csv", delimiter=',')
 			B = np.maximum(0, B) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
 
-			# back-calculate the reconstructed penumbral image
-			NI_reconstruct = signal.convolve2d(B, penumbral_kernel)
-
 			# plot some debug plots from the reconstruction
-			for filename in ["sinogram", "sinogram_gradient", "sinogram_gradient_prime"]:
+			for filename in ["smooth_image", "sinogram", "sinogram_gradient", "sinogram_gradient_prime"]:
 				sinogram = np.loadtxt(f"tmp/{filename}.csv", delimiter=",")
 				plt.figure()
 				plt.pcolormesh(sinogram)
@@ -521,7 +534,14 @@ def analyze_scan(input_filename: str,
 				plt.title(filename)
 			plt.show()
 
-		dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
+			if B.size*penumbral_kernel.size < MAX_CONVOLUTION:
+				# back-calculate the reconstructed penumbral image
+				NI_reconstruct = signal.convolve2d(B, penumbral_kernel)
+				# and estimate background as whatever makes it fit best
+				NI_reconstruct += np.mean(NI_data - NI_reconstruct, where=data_region)
+			else:
+				NI_reconstruct = np.full(NI_data.shape, np.nan)
+
 		logging.info(f"  ∫B = {np.sum(B*dxS*dyS)*4*np.pi:.4g} deuterons")
 		χ2_red = np.sum((NI_reconstruct - NI_data)**2/NI_reconstruct)
 		logging.info(f"  χ^2/n = {χ2_red}")
@@ -530,13 +550,13 @@ def analyze_scan(input_filename: str,
 		# 	continue
 
 		p0, (p1, θ1), (p2, θ2) = shape_parameters(
-			xS, yS, B, contour=CONTOUR) # compute the three number summary
+			xS, yS, B, contour=contour) # compute the three number summary
 		logging.info(f"  P0 = {p0/1e-4:.2f} μm")
 		logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 		# save and plot the results
 		save_and_plot_source(f"{shot}-tim{tim}-{cut_name}", show_plots,
-		                     xS_bins, yS_bins, B, CONTOUR_LEVEL,
+		                     xS_bins, yS_bins, B, contour,
 		                     *kinematic_energies)
 		save_and_plot_overlaid_penumbra(f"{shot}-{tim}-{cut_name}", show_plots,
 		                                xI_bins, yI_bins, NI_reconstruct, NI_data)
@@ -587,7 +607,7 @@ def analyze_scan(input_filename: str,
 				tim_basis)
 
 			plot_overlaid_contors(
-				f"{shot}-{tim}-deuteron", reconstructions, CONTOUR_LEVEL,
+				f"{shot}-{tim}-deuteron", reconstructions, DEUTERON_CONTOUR,
 				projected_offset, projected_flow)
 
 			break
@@ -671,7 +691,10 @@ if __name__ == '__main__':
 		print()
 		logging.info("Beginning reconstruction for TIM {} on shot {}".format(tim, shot))
 
-		shot_info = shot_table[shot_table.shot == shot].iloc[0]
+		try:
+			shot_info = shot_table[shot_table.shot == shot].iloc[0]
+		except IndexError:
+			raise KeyError(f"please add shot {shot} to the shot table file.")
 
 		# clear any previous versions of this reconstruccion
 		summary = summary[(summary.shot != shot) | (summary.tim != tim)]

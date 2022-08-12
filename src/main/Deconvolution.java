@@ -89,8 +89,12 @@ public class Deconvolution {
 	 * do an equal 2D convolution of a source with a gaussian.
 	 * @param source the image to be blured
 	 * @param σ the standard deviation of the desired gaussian in pixels (no physical units because the image axes aren't passed)
+	 * @param region the region in which to set things (pixels where region is false will be ignored)
 	 */
-	private static double[][] convolve_with_gaussian(double[][] source, double σ) {
+	private static double[][] convolve_with_gaussian(double[][] source, double σ, boolean[][] region) {
+		if (source.length != region.length || source[0].length != region[0].length)
+			throw new IllegalArgumentException("the sizes don't match.");
+
 		int size = (int)Math.ceil(σ*10);
 		if (size%2 == 0)
 			size ++;
@@ -104,11 +108,26 @@ public class Deconvolution {
 						Math2.erf_difference((j - size/2.)/a, (j + 1 - size/2.)/a);
 
 		double[][] result = new double[source.length][source[0].length];
-		for (int i = 0; i < result.length; i ++)
-			for (int j = 0; j < result[i].length; j ++)
-				for (int k = Math.max(0, i - size/2); k < source.length && i - k + size/2 >= 0; k ++)
-					for (int l = Math.max(0, j - size/2); l < source[k].length && j - l + size/2 >= 0; l ++)
-						result[i][j] += source[k][l]*kernel[i - k + size/2][j - l + size/2];
+		for (int i = 0; i < result.length; i ++) {
+			for (int j = 0; j < result[i].length; j++) {
+				if (region[i][j]) {
+					for (int k = 0; k < size; k++) {
+						for (int l = 0; l < size; l++) {
+							double source_ijkl;
+							if (i + k - size/2 >= 0 && i + k - size/2 < source.length &&
+									j + l - size/2 >= 0 && j + l - size/2 < source[0].length &&
+									region[i + k - size/2][j + l - size/2])
+								source_ijkl = source[i + k - size/2][j + l - size/2];
+							else
+								source_ijkl = source[i][j];
+							result[i][j] += kernel[k][l]*source_ijkl;
+						}
+					}
+				}
+				else
+					result[i][j] = Double.NaN;
+			}
+		}
 		return result;
 	}
 
@@ -319,8 +338,8 @@ public class Deconvolution {
 		logger.info(String.format("deconvolving %dx%d image into a %dx%d source", n, n, m, m));
 
 		// first, you haff to smooth it
-		double r_smooth = 0;
-		F = convolve_with_gaussian(F, r_smooth);
+		double r_smooth = 2;
+		F = convolve_with_gaussian(F, r_smooth, data_region);
 
 		// now, interpolate it into polar coordinates
 		logger.info("differentiating...");
@@ -374,6 +393,7 @@ public class Deconvolution {
 			dFdr_weited[r.length][l] = 0;
 
 		try {
+			CSV.write(F, new File("tmp/smooth_image.csv"), ',');
 			CSV.write(F_polar, new File("tmp/sinogram.csv"), ',');
 			CSV.write(dFdr, new File("tmp/sinogram_gradient.csv"), ',');
 			CSV.write(dFdr_1, new File("tmp/sinogram_gradient_prime.csv"), ',');
