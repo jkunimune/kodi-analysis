@@ -7,7 +7,6 @@ x_ref = np.linspace(0, 1, 2001, endpoint=False)
 E_ref = np.empty(x_ref.shape)
 for i, a in enumerate(x_ref):
 	E_ref[i] = integrate.quad(lambda b: np.sqrt(1 - b**2)/((a - b)*np.sqrt(1 - b**2 + (a - b)**2)), -1, 2*a-1)[0] + integrate.quad(lambda b: (np.sqrt(1 - b**2)/np.sqrt((a - b)**2 + 1 - b**2) - np.sqrt(1 - (2*a - b)**2)/np.sqrt((a - b)**2 + 1 - (2*a - b)**2))/(a - b), 2*a-1, a)[0]
-E_ref -= x_ref/x_ref[1]*E_ref[1]
 
 
 def normalize(x: np.ndarray):
