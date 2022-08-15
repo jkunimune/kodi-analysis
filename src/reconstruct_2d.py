@@ -505,10 +505,10 @@ def analyze_scan(input_filename: str,
 			data_region = (np.hypot(XI - xI0, YI - yI0) <= r_max) & np.isfinite(NI_data) & \
 			              contains_information # exclude bins that are NaN and bins that are touched by all or none of the source pixels
 
-			try:
-				data_region &= convex_hull(XI, YI, NI_data) # crop it at the convex hull where counts go to zero
-			except MemoryError:
-				logging.warning("  could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
+			# try:
+			# 	data_region &= convex_hull(XI, YI, NI_data) # crop it at the convex hull where counts go to zero
+			# except MemoryError:
+			# 	logging.warning("  could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
 
 			if SHOW_POINT_SPREAD_FUNCCION:
 				plt.figure()

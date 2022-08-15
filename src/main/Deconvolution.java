@@ -314,45 +314,45 @@ public class Deconvolution {
 	 * to deconvolve a solid disk from a measured image. a uniform background will
 	 * be automatically inferred.
 	 * @param F the convolved image (counts/bin)
-	 * @param r0 the radius of the point-spread function (pixels)
-	 * @param η the sum of the point-spread function
+	 * @param r_psf the radius of the point-spread function (pixels)
+	 * @param efficiency the sum of the point-spread function
 	 * @param data_region a mask for the data; only pixels marked as true will be considered
 	 * @return the reconstructed image G such that Math2.convolve(G, q) \approx F
 	 */
-	public static double[][] seguin(double[][] F, double r0, double η,
+	public static double[][] seguin(double[][] F, double r_psf, double efficiency,
 	                                boolean[][] data_region, boolean[][] source_region) {
 		if (F.length != F[0].length)
 			throw new IllegalArgumentException("I haven't implemented non-square images");
-		if (r0 >= F.length/2.)
+		if (r_psf >= F.length/2.)
 			throw new IllegalArgumentException("these data are smaller than the point-spread function.");
 		if (data_region.length != F.length || data_region[0].length != F[0].length)
 			throw new IllegalArgumentException("data_region must have the same shape as F");
-
-		int n = F.length;
-		int m = source_region.length;
-		if (source_region[0].length != m)
+		if (source_region.length != source_region[0].length)
 			throw new IllegalArgumentException("source_region must be square");
-		if (m >= 2*r0)
-			throw new IllegalArgumentException("Seguin's backprojection only works for rS < r0; specify a smaller source region");
+		if (source_region.length >= 2*r_psf)
+			throw new IllegalArgumentException("Séguin's backprojection only works for rS < r0; specify a smaller source region");
 
-		logger.info(String.format("deconvolving %dx%d image into a %dx%d source", n, n, m, m));
+		logger.info(String.format("deconvolving %dx%d image into a %dx%d source", F.length, F[0].length, source_region.length, source_region[0].length));
 
 		// first, you haff to smooth it
-		double r_smooth = 2;
+		double r_smooth = 2.;
 		F = convolve_with_gaussian(F, r_smooth, data_region);
 
 		// now, interpolate it into polar coordinates
 		logger.info("differentiating...");
-		double[] r = new double[n/2];
+		double[] r = new double[F.length/2];
 		for (int k = 0; k < r.length; k ++)
 			r[k] = k;
-		double[] θ = new double[n/2];
+		double[] θ = new double[F.length];
 		for (int l = 0; l < θ.length; l ++)
-			θ[l] = ((double)l/(θ.length - 1) - 0.5)*2*Math.PI;
+			θ[l] = 2*Math.PI*l/θ.length;
+		double i0 = (F.length - 1)/2.;
+		double j0 = (F[0].length - 1)/2.;
 		double[][] F_polar = new double[r.length][θ.length];
 		for (int k = 0; k < r.length; k ++)
 			for (int l = 0; l < θ.length; l ++)
-				F_polar[k][l] = Math2.interp2d(F, r[k]*Math.cos(θ[l]) + (n - 1)/2., r[k]*Math.sin(θ[l]) + (n - 1)/2.);
+				F_polar[k][l] = Math2.interp2d(F, r[k]*Math.cos(θ[l]) + i0,
+				                               r[k]*Math.sin(θ[l]) + j0);
 
 		// and take the derivative with respect to r
 		double[][] dFdr = new double[r.length][θ.length];
@@ -383,8 +383,8 @@ public class Deconvolution {
 		// wey it to compensate for the difference between the shapes of projections based on strait-line integrals and curved-line integrals
 		double[][] dFdr_weited = new double[r.length + 1][θ.length];
 		for (int k = 0; k < r.length; k ++) {
-			double z = r[k]/r0 - 1;
-			double weit = (1 - .22*z)*Math.pow(Math.PI/3*Math.sqrt(1 - z*z)/Math.acos(r[k]/r0/2), 1.4);
+			double z = r[k]/r_psf - 1;
+			double weit = (1 - .22*z)*Math.pow(Math.PI/3*Math.sqrt(1 - z*z)/Math.acos(r[k]/r_psf/2), 1.4);
 			for (int l = 0; l < θ.length; l ++)
 				dFdr_weited[k][l] = dFdr_1[k][l]*weit;
 		}
@@ -403,22 +403,20 @@ public class Deconvolution {
 
 		// finally, do the integral
 		logger.info("integrating...");
-		double[][] G = new double[m][m];
-		for (int i = 0; i < m; i ++) {
-			for (int j = 0; j < m; j ++) {
+		double[][] G = new double[source_region.length][source_region[0].length];
+		for (int i = 0; i < G.length; i ++) {
+			for (int j = 0; j < G[i].length; j ++) {
 				if (source_region[i][j]) {
-					double x = i - (m - 1)/2.;
-					double y = j - (m - 1)/2.;
-					int angular_precision = 720;
-					double dф = 2*Math.PI/angular_precision;
-					for (int p = 0; p < angular_precision; p ++) {
-						double ф = p*dф;
+					double x = i - (G.length - 1)/2.;
+					double y = j - (G[i].length - 1)/2.;
+					for (int l = 0; l < θ.length; l ++) {
+						double ф = θ[l], dф = θ[(l + 1)%θ.length] - θ[l];
 						double sinф = Math.sin(ф), cosф = Math.cos(ф);
-						double R0 = Math.sqrt(r0*r0 - Math.pow(x*sinф - y*cosф, 2));
+						double R0 = Math.sqrt(r_psf*r_psf - Math.pow(x*sinф - y*cosф, 2));
 						double w = 1 - (x*cosф + y*sinф)/R0;
-						if (w*R0 < dFdr.length)
-							G[i][j] += -2*w*r0*r0/η*dф * Math2.interp2d(
-									dFdr_weited, w*R0, ф/(θ[1] - θ[0]));
+						if (w*R0 < dFdr_weited.length)
+							G[i][j] += -2*w*r_psf*r_psf/efficiency*dф * Math2.interp2d(
+									dFdr_weited, w*R0, l);
 					}
 				}
 			}

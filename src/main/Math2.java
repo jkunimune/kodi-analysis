@@ -826,9 +826,13 @@ public class Math2 {
 	}
 
 	public static double interp2d(double[][] x, double i, double j) {
+		if (i < 0 || i > x.length || j < 0 || j > x[(int)i].length)
+			throw new IllegalArgumentException("the given indices "+i+", "+j+" are out of bounds for x of shape ("+
+					                                   x.length+", "+x[0].length+")");
 		int i_l = (int) Math.floor(i);
 		int j_b = (int) Math.floor(j);
-		int i_r = i_l + 1, j_t = j_b + 1;
+		int i_r = Math.min(i_l + 1, x.length - 1);
+		int j_t = Math.min(j_b + 1, x[i_l].length - 1);
 		double c_r = i - i_l, c_l = i_r - i;
 		double c_t = j - j_b, c_b = j_t - j;
 		return c_l*(c_b*x[i_l][j_b] +
