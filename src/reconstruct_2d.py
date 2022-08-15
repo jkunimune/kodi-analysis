@@ -410,6 +410,7 @@ def analyze_scan(input_filename: str,
 			if cut_name == "xray":
 				logging.info(f"observed a magnification discrepancy of {(M_eff/M - 1)*1e2:.2f}%")
 				Q = 0
+				rA = rA*M_eff/M #TODO the new rA should carry over to the KODI, as well as the new sA
 			else:
 				Q = electric_field.get_charging_parameter(M_eff/M, r0, *kinematic_energies)
 			r_psf = electric_field.get_expansion_factor(Q, r0, *kinematic_energies)
@@ -495,7 +496,7 @@ def analyze_scan(input_filename: str,
 				contains_information = (reach > lower_cutoff) & (reach < upper_cutoff)
 			elif Q == 0:
 				RI = np.hypot(XI - xI0, YI - yI0)
-				contains_information = (RI >= 2*r0 - r_max) & (RI <= r_max)
+				contains_information = (RI <= r_max) & (RI >= 2*r0 - r_max)
 			else:
 				logging.warning("it would be computationally inefficient to compute the reach of these data, so I'm "
 				                "setting the data region to be everywhere")

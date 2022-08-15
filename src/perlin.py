@@ -1,3 +1,5 @@
+import numpy as np
+
 def perlin_generator(x_min, x_max, y_min, y_max, wavelength, amplitude):
 	""" return random values with the same shapes as x and y """
 	node_x = np.arange(x_min - wavelength/2, x_max + wavelength, wavelength)
@@ -8,6 +10,8 @@ def perlin_generator(x_min, x_max, y_min, y_max, wavelength, amplitude):
 		return np.sin(z*(np.pi/2))**2
 
 	def aplai(x, y):
+		if x.ndim != 2:
+			x, y = np.meshgrid(x, y, indexing="ij")
 		i_part = np.interp(x, node_x, np.arange(len(node_x)))
 		i_part = np.clip(i_part, 0, grad_x.shape[0]-1.001)
 		j_part = np.interp(y, node_y, np.arange(len(node_y)))
@@ -46,7 +50,6 @@ def wave_generator(x_min, x_max, y_min, y_max, wavelength, amplitude, dimensions
 
 if __name__ == '__main__':
 	import matplotlib.pyplot as plt
-	import numpy as np
 
 	r = np.sqrt(np.random.random(1000000))
 	t = 2*np.pi*np.random.random(1000000)

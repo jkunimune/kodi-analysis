@@ -8,6 +8,9 @@ import numpy as np
 from scipy import optimize, interpolate
 from skimage import measure
 
+import perlin
+
+
 SMOOTHING = 100 # entropy weight
 
 
@@ -72,8 +75,10 @@ def resample_2d(N_old, x_old, y_old, x_new, y_new):
 	x_new, y_new = (x_new[:-1] + x_new[1:])/2, (y_new[:-1] + y_new[1:])/2
 	λ = max(x_old[1] - x_old[0], x_new[1] - x_new[0])
 	kernel_x = np.maximum(0, (1 - abs(x_new[:, np.newaxis] - x_old[np.newaxis, :])/λ)) # do this bilinear-type-thing
+	kernel_x /= np.expand_dims(np.sum(kernel_x, axis=1), axis=1)
 	N_mid = np.matmul(kernel_x, N_old)
 	kernel_y = np.maximum(0, (1 - abs(y_new[:, np.newaxis] - y_old[np.newaxis, :])/λ))
+	kernel_y /= np.expand_dims(np.sum(kernel_y, axis=1), axis=1)
 	N_new = np.matmul(kernel_y, N_mid.transpose()).transpose()
 	return N_new
 
