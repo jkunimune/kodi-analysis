@@ -36,8 +36,9 @@ DEUTERON_ENERGY_CUTS = {'hi': [9, 100], 'md': [6, 9], 'lo': [0, 6]} # (MeV) (emi
 
 SHOW_RAW_DATA = False
 SHOW_CROPD_DATA = False
-SHOW_POINT_SPREAD_FUNCCION = True
-SHOW_ELECTRIC_FIELD_CALCULATION = True
+SHOW_POINT_SPREAD_FUNCCION = False
+SHOW_CENTER_FINDING_CALCULATION = False
+SHOW_ELECTRIC_FIELD_CALCULATION = False
 ASK_FOR_HELP = False
 
 MAX_NUM_PIXELS = 1000
@@ -97,9 +98,9 @@ def simple_penumbra(r, Q, r0, з_min=1.e-15, з_max=1.):
 	    be 1 in the absence of an electric field and slitely less than 1 in the presence
 	    of an electric field
 	"""
-	Δr = np.unique(np.abs(r - r0)) # get an idea for how close to the edge we must sample
+	Δr = np.min(abs(r - r0), where = r != r0, initial=r0) # get an idea for how close to the edge we must sample
 	charging_width = Q/з_max/10 if Q > 0 else 0
-	required_resolution = max(charging_width, Δr[1]/3) # resolution may be limited by charging or the pixel distances
+	required_resolution = max(charging_width, Δr/2) # resolution may be limited by charging or the pixel distances
 
 	rB, nB = electric_field.get_modified_point_spread(r0, Q, energy_min=з_min, energy_max=з_max) # start by accounting for aperture charging but not source size
 	n_pixel = min(int(r.max()/required_resolution), rB.size)
@@ -246,13 +247,14 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 	y_contour = np.interp(ij_contour[:, 1], np.arange(y_centers.size), y_centers)
 	x0, y0, r0 = fit_circle(x_contour, y_contour)
 
-	plt.figure()
-	plt.pcolormesh(x_bins, y_bins, N.T)
-	θ = np.linspace(0, 2*np.pi, 145)
-	plt.plot(x_contour, y_contour, "C1", linewidth=.5)
-	plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "w--")
-	plt.axis("equal")
-	plt.show()
+	if SHOW_CENTER_FINDING_CALCULATION:
+		plt.figure()
+		plt.pcolormesh(x_bins, y_bins, N.T)
+		θ = np.linspace(0, 2*np.pi, 145)
+		plt.plot(x_contour, y_contour, "C1", linewidth=.5)
+		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "w--")
+		plt.axis("equal")
+		plt.show()
 
 	return x0, y0, 1
 
@@ -487,28 +489,27 @@ def analyze_scan(input_filename: str,
 			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *kinematic_energies) # get the dimensionless shape of the penumbra
 			penumbral_kernel *= dxS*dyS*dxI*dyI/(M*L1)**2 # scale by the solid angle subtended by each image pixel
 
-			if XS.size*penumbral_kernel.size < MAX_CONVOLUTION:
-				max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
-				max_source = max_source/np.sum(max_source)
-				reach = signal.convolve2d(max_source, penumbral_kernel, mode='full')
-				lower_cutoff = .005*penumbral_kernel.max() # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-				upper_cutoff = .98*penumbral_kernel.max() # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
-				contains_information = (reach > lower_cutoff) & (reach < upper_cutoff)
-			elif Q == 0:
-				RI = np.hypot(XI - xI0, YI - yI0)
-				contains_information = (RI <= r_max) & (RI >= 2*r0 - r_max)
+			if cut_name != "xray": # TODO: I'd eventually like a more elegant solution for not tangling up nans in the Wiener reconstruction
+				if XS.size*penumbral_kernel.size < MAX_CONVOLUTION:
+					max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
+					max_source = max_source/np.sum(max_source)
+					reach = signal.convolve2d(max_source, penumbral_kernel, mode='full')
+					lower_cutoff = .005*penumbral_kernel.max() # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
+					upper_cutoff = .98*penumbral_kernel.max() # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+					contains_information = (reach > lower_cutoff) & (reach < upper_cutoff)
+				elif Q == 0:
+					RI = np.hypot(XI - xI0, YI - yI0)
+					contains_information = (RI <= r_max) & (RI >= 2*r0 - r_max)
+				else:
+					logging.warning("it would be computationally inefficient to compute the reach of these data, so I'm "
+					                "setting the data region to be everywhere")
+					contains_information = True
+
+				data_region = (np.hypot(XI - xI0, YI - yI0) <= r_max) & np.isfinite(NI_data) & \
+				              contains_information # exclude bins that are NaN and bins that are touched by all or none of the source pixels
+
 			else:
-				logging.warning("it would be computationally inefficient to compute the reach of these data, so I'm "
-				                "setting the data region to be everywhere")
-				contains_information = True
-
-			data_region = (np.hypot(XI - xI0, YI - yI0) <= r_max) & np.isfinite(NI_data) & \
-			              contains_information # exclude bins that are NaN and bins that are touched by all or none of the source pixels
-
-			# try:
-			# 	data_region &= convex_hull(XI, YI, NI_data) # crop it at the convex hull where counts go to zero
-			# except MemoryError:
-			# 	logging.warning("  could not allocate enough memory to crop data by convex hull; some non-data regions may be getting considered in the analysis.")
+				data_region = True
 
 			if SHOW_POINT_SPREAD_FUNCCION:
 				plt.figure()
@@ -519,21 +520,12 @@ def analyze_scan(input_filename: str,
 				plt.show()
 
 			# perform the reconstruction
-			method = "seguin" if cut_name == "xray" else "gelfgat"
+			method = "wiener" if cut_name == "xray" else "gelfgat"
 			np.savetxt("tmp/penumbra.csv", np.where(data_region, NI_data, np.nan), delimiter=',')
 			np.savetxt("tmp/pointspread.csv", penumbral_kernel, delimiter=',')
 			execute_java("Deconvolution", method, r0/dxI)
 			B = np.loadtxt("tmp/source.csv", delimiter=',')
 			B = np.maximum(0, B) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
-
-			# plot some debug plots from the reconstruction
-			for filename in ["smooth_image", "sinogram", "sinogram_gradient", "sinogram_gradient_prime"]:
-				sinogram = np.loadtxt(f"tmp/{filename}.csv", delimiter=",")
-				plt.figure()
-				plt.pcolormesh(sinogram)
-				plt.colorbar()
-				plt.title(filename)
-			plt.show()
 
 			if B.size*penumbral_kernel.size < MAX_CONVOLUTION:
 				# back-calculate the reconstructed penumbral image
@@ -688,7 +680,7 @@ if __name__ == '__main__':
 	logging.info(f"Planning to reconstruct {', '.join(filename for _, _, _, filename in all_scans_to_analyze)}")
 
 	# then iterate thru that list and do the analysis
-	for shot, tim, etch_time, filename in all_scans_to_analyze[::-1]:
+	for shot, tim, etch_time, filename in all_scans_to_analyze:
 		print()
 		logging.info("Beginning reconstruction for TIM {} on shot {}".format(tim, shot))
 

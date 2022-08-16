@@ -23,6 +23,8 @@
  */
 package main;
 
+import main.Fourier.Complex;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -35,6 +37,17 @@ import static main.Math2.containsTheWordTest;
 public class Deconvolution {
 
 	private static final Logger logger = Logger.getLogger("root");
+
+	/**
+	 * change the size of an array by padding the edges with 0, if the new size is
+	 * bigger than the old, or by cropping off the edges, if the new size is smaller.
+	 */
+	private static double[][] resize(double[][] input, int height, int width) {
+		double[][] output = new double[height][width];
+		for (int i = 0; i < Math.min(input.length, height); i ++)
+			System.arraycopy(input[i], 0, output[i], 0, Math.min(input[i].length, width));
+		return output;
+	}
 
 	/**
 	 * do a full 2D normalized convolution of a source with a kernel, including a
@@ -145,21 +158,10 @@ public class Deconvolution {
 	 */
 	public static double[][] gelfgat(int[][] F, double[][] q,
 	                                 boolean[][] data_region, boolean[][] source_region) {
-		if (F.length != F[0].length)
-			throw new IllegalArgumentException("I haven't implemented non-square images");
-		if (q.length != q[0].length)
-			throw new IllegalArgumentException("I haven't implemented non-square images");
-		if (q.length >= F.length)
-			throw new IllegalArgumentException("the kernel must be smaller than the image");
-		if (data_region.length != F.length || data_region[0].length != F[0].length)
-			throw new IllegalArgumentException("data_region must have the same shape as F");
-
 		int n = F.length;
 		int m = F.length - q.length + 1;
 		if (source_region.length != m || source_region[0].length != m)
 			throw new IllegalArgumentException("source_region must have the same shape as the reconstruction");
-
-		logger.info(String.format("deconvolving %dx%d image into a %dx%d source", n, n, m, m));
 
 		// set the non-data-region sections of F to zero
 		F = Math2.deepCopy(F);
@@ -308,12 +310,66 @@ public class Deconvolution {
 	}
 
 	/**
+	 * apply a Wiener filter to a convolved image. a uniform background will be
+	 * automatically inferred
+	 * @param F the convolved image (signal/bin)
+	 * @param q the point-spread function
+	 * @param source_region a mask for the reconstruction; pixels marked as false will always be 0
+	 * @return the reconstructed image G such that Math2.convolve(G, q) \approx F
+	 */
+	public static double[][] wiener(double[][] F, double[][] q,
+	                                 boolean[][] source_region) {
+		double noise_reduction = 1e-10;
+
+		// transfer F and q to the frequency domain
+		int n = (int)Math.pow(2, Math.ceil(Math.log(F.length)/Math.log(2)));
+		Complex[][] F_F = Fourier.FFT(resize(F, n, n));
+		Complex[][] F_q = Fourier.FFT(resize(q, n, n));
+		Complex[][] F_G = new Complex[n][n];
+		// apply the Wiener filter
+		for (int i = 0; i < n; i ++) {
+			for (int j = 0; j < n; j ++) {
+				double F_q_ij2 = Complex.abs2(F_q[i][j]);
+				Complex true_deconv = F_F[i][j].over(F_q[i][j]);
+				double filter = F_q_ij2/(F_q_ij2 + noise_reduction);
+				F_G[i][j] = true_deconv.times(filter);
+			}
+		}
+		// bring it back to the real world
+		double[][] G = Fourier.inverseFFT(F_G);
+		// subtract out the background, which you can infer from the upper right of the image
+		int height = F.length - q.length + 1;
+		int width = F[0].length - q[0].length + 1;
+		double G_sum = 0;
+		int count = 0;
+		for (int i = 0; i < G.length; i ++) {
+			for (int j = 0; j < G[i].length; j ++) {
+				if (i >= height || j >= width) {
+					G_sum += G[i][j];
+					count += 1;
+				}
+			}
+		}
+		double G0 = G_sum/count;
+		for (int i = 0; i < G.length; i ++)
+			for (int j = 0; j < G[i].length; j ++)
+				G[i][j] -= G0;
+		// cut it back to the correct size, which should then remove that upper right region
+		G = resize(G, height, width);
+		for (int i = 0; i < G.length; i ++)
+			for (int j = 0; j < G[i].length; j ++)
+				if (!source_region[i][j])
+					G[i][j] = 0;
+		return G;
+	}
+
+	/**
 	 * perform the algorithm outlined in
 	 *     Séguin, F. H. et al.'s "D3He-proton emission imaging for inertial
 	 *     confinement fusion experiments" in *Rev. Sci. Instrum.* 75 (2004)
 	 * to deconvolve a solid disk from a measured image. a uniform background will
 	 * be automatically inferred.
-	 * @param F the convolved image (counts/bin)
+	 * @param F the convolved image (signal/bin)
 	 * @param r_psf the radius of the point-spread function (pixels)
 	 * @param efficiency the sum of the point-spread function
 	 * @param data_region a mask for the data; only pixels marked as true will be considered
@@ -321,21 +377,13 @@ public class Deconvolution {
 	 */
 	public static double[][] seguin(double[][] F, double r_psf, double efficiency,
 	                                boolean[][] data_region, boolean[][] source_region) {
-		if (F.length != F[0].length)
-			throw new IllegalArgumentException("I haven't implemented non-square images");
-		if (r_psf >= F.length/2.)
+		if (F.length <= 2*r_psf)
 			throw new IllegalArgumentException("these data are smaller than the point-spread function.");
-		if (data_region.length != F.length || data_region[0].length != F[0].length)
-			throw new IllegalArgumentException("data_region must have the same shape as F");
-		if (source_region.length != source_region[0].length)
-			throw new IllegalArgumentException("source_region must be square");
 		if (source_region.length >= 2*r_psf)
 			throw new IllegalArgumentException("Séguin's backprojection only works for rS < r0; specify a smaller source region");
 
-		logger.info(String.format("deconvolving %dx%d image into a %dx%d source", F.length, F[0].length, source_region.length, source_region[0].length));
-
 		// first, you haff to smooth it
-		double r_smooth = 2.;
+		double r_smooth = 1.;
 		F = convolve_with_gaussian(F, r_smooth, data_region);
 
 		// now, interpolate it into polar coordinates
@@ -343,7 +391,7 @@ public class Deconvolution {
 		double[] r = new double[F.length/2];
 		for (int k = 0; k < r.length; k ++)
 			r[k] = k;
-		double[] θ = new double[F.length];
+		double[] θ = new double[4*F.length];
 		for (int l = 0; l < θ.length; l ++)
 			θ[l] = 2*Math.PI*l/θ.length;
 		double i0 = (F.length - 1)/2.;
@@ -413,7 +461,7 @@ public class Deconvolution {
 						double ф = θ[l], dф = θ[(l + 1)%θ.length] - θ[l];
 						double sinф = Math.sin(ф), cosф = Math.cos(ф);
 						double R0 = Math.sqrt(r_psf*r_psf - Math.pow(x*sinф - y*cosф, 2));
-						double w = 1 - (x*cosф + y*sinф)/R0;
+						double w = 1 + (x*cosф + y*sinф)/R0;
 						if (w*R0 < dFdr_weited.length)
 							G[i][j] += -2*w*r_psf*r_psf/efficiency*dф * Math2.interp2d(
 									dFdr_weited, w*R0, l);
@@ -446,10 +494,10 @@ public class Deconvolution {
 		// if this is a test, generate the penumbral image
 		if (testing) {
 			double[][] fake_source = new double[][] {
-					{0, 0, 0, 0},
-					{0, 100, 0, 0},
-					{10, 0, 100, 200},
-					{0, 0, 100, 0},
+					{  0,   0,   0,   0},
+					{  0, 100,   0,   0},
+					{ 10,   0, 100, 200},
+					{  0,   0, 100,   0},
 			};
 			point_spread = new double[][] {
 					{0, .1, 0},
@@ -472,6 +520,13 @@ public class Deconvolution {
 			point_spread = CSV.read(new File("tmp/pointspread.csv"), ',');
 		}
 
+		if (penumbral_image.length != penumbral_image[0].length)
+			throw new IllegalArgumentException("I haven't implemented non-square images");
+		if (point_spread.length != point_spread[0].length)
+			throw new IllegalArgumentException("I haven't implemented non-square images");
+		if (point_spread.length >= penumbral_image.length)
+			throw new IllegalArgumentException("the kernel must be smaller than the image");
+
 		boolean[][] data_region = new boolean[penumbral_image.length][];
 		for (int i = 0; i < data_region.length; i++) {
 			data_region[i] = new boolean[penumbral_image[i].length];
@@ -486,6 +541,10 @@ public class Deconvolution {
 		for (int k = 0; k < source_region.length; k++)
 			for (int l = 0; l < source_region[k].length; l++)
 				source_region[k][l] = Math.hypot(k - c, l - c) <= c + 0.5;
+
+		logger.info(String.format("deconvolving %dx%d image into a %dx%d source",
+		                          penumbral_image.length, penumbral_image[0].length,
+		                          source_region.length, source_region[0].length));
 
 		double[][] source_image;
 		if (method.equals("gelfgat")) {
@@ -502,6 +561,11 @@ public class Deconvolution {
 			                       point_spread,
 			                       data_region,
 			                       source_region);
+		}
+		else if (method.equals("wiener")) {
+			source_image = wiener(penumbral_image,
+			                      point_spread,
+			                      source_region);
 		}
 		else if (method.equals("seguin")) {
 			double point_spread_radius = Double.parseDouble(args[1]);
