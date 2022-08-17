@@ -147,7 +147,7 @@ public class Matrix {
 	 *         in the span of this's rows v that comes closest to satisfying
 	 *         inverse \cdot this \cdot v = v
 	 */
-	public Matrix pseudo_inverse(Matrix complement) {
+	public Matrix pseudoinverse(Matrix complement) {
 		if (this.n > this.m)
 			throw new IllegalArgumentException("I've only implemented pseudoinverses of matrices with more colums than rows");
 		if (this.m != complement.m)
@@ -169,6 +169,46 @@ public class Matrix {
 		return new Matrix(output);
 	}
 
+	/**
+	 * solve the linear equation b = this*x, assuming this is sparse, using the algebraic reconstruction technique, as given by
+	 *     D. Raparia, J. Alessi, and A. Kponou. "The algebraic reconstruction technique (ART)". In <i>proceedings of
+	 *     the 1997 Particle Accelerator Conf.</i>, pp. 2023-2025. doi:10.1109/PAC.1997.751094.
+	 * this is equivalent to but faster than this.pseudoinverse().times(v).
+	 * @param b the vector we're trying to match by solving the equation
+	 * @param nonnegative if set to true, we will coerce all of the values to be positive
+	 * @return x the vector that solves the equation
+	 */
+	public Vector pseudoinverse_times(Vector b, boolean nonnegative) {
+		if (this.n != b.getLength())
+			throw new IllegalArgumentException("the array sizes do not match");
+		Vector x = new DenseVector(new double[m]);
+		while (true) {
+			double discrepancy = 0;
+			// each iteration of the while loop is really a loop thru the rows
+			for (int i = 0; i < n; i ++) {
+				// pull out one row and one result value
+				Vector a_i = new DenseVector(this.values[i]);
+				double N_i = a_i.sqr();
+				double b̃_i = a_i.dot(x);
+				double b_i = b.get(i);
+				// compute how it affects the error
+				discrepancy += (b_i - b̃_i)*(b_i - b̃_i)/N_i;
+				// and apply a step to reduce the error
+				x = x.plus(a_i.times((b_i - b̃_i)/N_i)); // no need regularization factor for our purposes
+				if (nonnegative)
+					for (int j = 0; j < m; j ++)
+						x.set(j, Math.max(0, x.get(j)));
+			}
+			// check the termination condition
+			discrepancy = discrepancy/x.sqr();
+			if (discrepancy <= 1e-8)
+				return x;
+		}
+	}
+
+	/**
+	 * the transpose of the matrix
+	 */
 	public Matrix trans() {
 		double[][] values = new double[this.values[0].length][this.values.length];
 		for (int i = 0; i < values.length; i ++)

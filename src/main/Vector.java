@@ -72,6 +72,8 @@ public abstract class Vector {
 
 	public abstract double get(int i);
 
+	public abstract void set(int i, double value);
+
 	public abstract double[] getValues();
 
 	@Override

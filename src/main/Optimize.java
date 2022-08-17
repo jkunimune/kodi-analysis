@@ -243,15 +243,11 @@ public class Optimize {
 		Vector output = jacobian.times(input); // compute inicial residuals
 		Vector residuals = output.minus(data);
 		Matrix weights = new Matrix(data_weights);
-		Matrix constrained, free;
-		if (constraints.length > 0) {
-			constrained = new Matrix(constraints);
+		Matrix free;
+		if (constraints.length > 0)
 			free = new Matrix(Math2.orthogonalComplement(constraints));
-		}
-		else {
-			constrained = new Matrix(0, initial_input.length);
+		else
 			free = new Matrix(initial_input.length);
-		}
 
 		double zai_error = 1/2.*residuals.dot(weights.times(residuals)); // compute the inicial total error ("zai" is the Pandunia word for "current")
 		if (logger != null)
@@ -277,7 +273,7 @@ public class Optimize {
 				// calculate the step given the normalization λ and limited freedom
 				Matrix reduced_hessian = free.times(modified_hessian);
 				Vector reduced_gradient = free.times(gradient);
-				Vector step = reduced_hessian.pseudo_inverse(constrained).times(reduced_gradient).neg();
+				Vector step = reduced_hessian.pseudoinverse_times(reduced_gradient, false).neg();
 				if (Double.isNaN(step.get(0)))
 					throw new RuntimeException("singular hessian");
 				Vector new_input = input.plus(step);
@@ -455,18 +451,6 @@ public class Optimize {
 		double[] scores = new double[population_size];
 		Arrays.fill(scores, Double.POSITIVE_INFINITY);
 		int best = 0;
-//		for (int i = 0; i < population_size; i ++) {
-//			for (int j = 0; j < dimensionality; j ++) {
-//				if (i > 0 && active[j])
-//					candidates[i][j] = inicial_gess[j] + (2*Math.random() - 1)*scale[j]; // randomly scatter the inicial state across the area of interest
-//				else
-//					candidates[i][j] = inicial_gess[j]; // but keep the 0th member and the inactive coordinates at the inicial gess
-//			}
-//			flip_in_bounds(candidates[i], lower, upper);
-//			scores[i] = objective.apply(candidates[i]);
-//			if (best == -1 || scores[i] < scores[best])
-//				best = i;
-//		}
 
 		int iterations = 0;
 		while (true) {
@@ -511,14 +495,6 @@ public class Optimize {
 
 					flip_in_bounds(new_candidate, lower, upper); // put it in bounds
 					double new_score = objective.apply(new_candidate); // and calculate the score
-					//				if (i == best) {
-					//					System.out.println("a = "+Arrays.toString(candidates[a]));
-					//					System.out.println("b = "+Arrays.toString(candidates[b]));
-					//					System.out.println("c = "+Arrays.toString(candidates[c]));
-					//					System.out.println("* = "+Arrays.toString(candidates[best]));
-					//					System.out.println("r = "+Arrays.toString(new_candidate));
-					//					System.out.println("this changes the score from "+scores[best]+" to "+new_score);
-					//				}
 					if (new_score <= scores[I]) {
 						candidates[I] = new_candidate;
 						scores[I] = new_score;
@@ -531,7 +507,8 @@ public class Optimize {
 			}
 
 			executor.shutdown();
-			executor.awaitTermination(10, TimeUnit.HOURS);
+			if (!executor.awaitTermination(10, TimeUnit.HOURS))
+				throw new RuntimeException("the executor timed out");
 			best = Best[0];
 
 			if (logger != null)

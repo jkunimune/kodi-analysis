@@ -82,17 +82,13 @@ public class SparseVector extends Vector {
 
 	@Override
 	public double dot(Vector that) {
-		if (that instanceof SparseVector) { // if both are sparse
-			SparseVector thot = (SparseVector) that;
-			double product = 0;
-			for (int i: this.values.keySet())
-				if (thot.values.containsKey(i))
-					product += this.values.get(i) * thot.values.get(i);
-			return product;
-		}
-		else { // if the other is dense
-			return that.dot(this); // do it the simple way
-		}
+		if (this.getLength() != that.getLength())
+			throw new IllegalArgumentException("the dimensions don't match.");
+		double product = 0;
+		for (int i: this.values.keySet())
+			if (that.get(i) != 0)
+				product += this.get(i) * that.get(i);
+		return product;
 	}
 
 	@Override
@@ -119,6 +115,14 @@ public class SparseVector extends Vector {
 			return this.values.get(i);
 		else
 			return 0;
+	}
+
+	@Override
+	public void set(int i, double value) {
+		if (value == 0)
+			this.values.remove(i);
+		else
+			this.values.put(i, value);
 	}
 
 	@Override

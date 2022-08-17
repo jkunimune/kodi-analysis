@@ -27,9 +27,15 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
+/**
+ * a normal vector that stores all values as an array
+ */
 public class DenseVector extends Vector {
 	private final double[] values;
 
+	/**
+	 * build a DenseVector given all of its values
+	 */
 	public DenseVector(double... values) {
 		this.values = values;
 	}
@@ -52,6 +58,8 @@ public class DenseVector extends Vector {
 
 	@Override
 	public double dot(Vector that) {
+		if (that instanceof SparseVector) // the sparse dot is faster, so do that if you can
+			return that.dot(this);
 		if (this.getLength() != that.getLength())
 			throw new IllegalArgumentException("the dimensions don't match.");
 		double product = 0;
@@ -82,6 +90,11 @@ public class DenseVector extends Vector {
 	@Override
 	public double get(int i) {
 		return this.values[i];
+	}
+
+	@Override
+	public void set(int i, double value) {
+		this.values[i] = value;
 	}
 
 	@Override
