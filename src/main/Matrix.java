@@ -30,7 +30,21 @@ import java.util.List;
 public class Matrix {
 	public final int n;
 	public final int m;
-	private final double[][] values;
+	private final Vector[] rows;
+
+	/**
+	 * generate a new matrix by giving a list of rows.
+	 */
+	public Matrix(Vector[] rows) {
+		this.n = rows.length;
+		if (rows.length == 0)
+			throw new IllegalArgumentException("if you want to create an array with height 0, you need to specify the width.");
+		this.m = rows[0].getLength();
+		for (Vector row: rows)
+			if (row.getLength() != m)
+				throw new IllegalArgumentException("do not accept jagged arrays.");
+		this.rows = rows;
+	}
 
 	/**
 	 * generate a new matrix by specifying all of its values explicitly.
@@ -43,8 +57,23 @@ public class Matrix {
 		for (double[] row: values)
 			if (row.length != m)
 				throw new IllegalArgumentException("do not accept jagged arrays.");
-		this.values = values;
+		this.rows = new Vector[values.length];
+		for (int i = 0; i < values.length; i ++)
+			this.rows[i] = new DenseVector(values[i]);
+	}
 
+	/**
+	 * create a new matrix by verticly concatenating two existing ones
+	 */
+	public static Matrix verticly_stack(Matrix top, Matrix bottom) {
+		if (top.m != bottom.m)
+			throw new IllegalArgumentException("the arrays must have the same width");
+		Vector[] all_rows = new Vector[top.n + bottom.n];
+		System.arraycopy(top.rows, 0,
+		                 all_rows, 0, top.n);
+		System.arraycopy(bottom.rows, 0,
+		                 all_rows, top.n, bottom.n);
+		return new Matrix(all_rows);
 	}
 
 	/**
@@ -52,9 +81,9 @@ public class Matrix {
 	 */
 	public Matrix(double[] values) {
 		this.n = this.m = values.length;
-		this.values = new double[values.length][values.length];
+		this.rows = new Vector[values.length];
 		for (int i = 0; i < values.length; i ++)
-			this.values[i][i] = values[i];
+			this.rows[i] = new SparseVector(this.m, i, values[i]);
 	}
 
 	/**
@@ -62,9 +91,9 @@ public class Matrix {
 	 */
 	public Matrix(int n) {
 		this.n = this.m = n;
-		this.values = new double[n][n];
-		for (int i = 0; i < values.length; i ++)
-			this.values[i][i] = 1;
+		this.rows = new Vector[n];
+		for (int i = 0; i < n; i ++)
+			this.rows[i] = new SparseVector(n, i, 1.);
 	}
 
 	/**
@@ -73,7 +102,9 @@ public class Matrix {
 	public Matrix(int n, int m) {
 		this.n = n;
 		this.m = m;
-		this.values = new double[n][m];
+		this.rows = new Vector[n];
+		for (int i = 0; i < n; i ++)
+			this.rows[i] = new SparseVector(m);
 	}
 
 	public Vector times(Vector v) {
@@ -81,20 +112,21 @@ public class Matrix {
 			throw new IllegalArgumentException("the dimensions don't match.");
 		double[] product = new double[this.n];
 		for (int i = 0; i < this.n; i ++)
-			for (int j = 0; j < this.m; j ++)
-				if (this.values[i][j] != 0 && v.get(j) != 0) // 0s override Infs and NaNs in this product
-					product[i] += this.values[i][j]*v.get(j);
+			product[i] = this.rows[i].dot(v);
 		return new DenseVector(product);
 	}
 
 	public Matrix times(Matrix that) {
-		if (this.values[0].length != that.values.length)
-			throw new IllegalArgumentException("the array dimensions don't match");
-		double[][] values = new double[this.values.length][that.values[0].length];
-		for (int i = 0; i < values.length; i ++)
-			for (int j = 0; j < values[i].length; j ++)
-				for (int k = 0; k < that.values.length; k ++)
-					values[i][j] += this.values[i][k]*that.values[k][j];
+		if (this.m != that.n)
+			throw new IllegalArgumentException("the matrix dimensions don't match");
+		double[][] values = new double[this.n][that.m];
+		for (int j = 0; j < that.m; j ++) {
+			Vector column = that.getColumn(j);
+			for (int i = 0; i < this.n; i ++) {
+				Vector row = this.getRow(i);
+				values[i][j] += row.dot(column);
+			}
+		}
 		return new Matrix(values);
 	}
 
@@ -102,7 +134,7 @@ public class Matrix {
 	 * @return the inverse of this matrix
 	 */
 	public Matrix inverse() {
-		return new Matrix(Math2.matinv(values));
+		return new Matrix(Math2.matinv(this.getValues()));
 	}
 
 	/**
@@ -125,7 +157,7 @@ public class Matrix {
 		double[][] pruned_values = new double[nonzero.size()][nonzero.size()];
 		for (int i = 0; i < pruned_values.length; i ++)
 			for (int j = 0; j < pruned_values[i].length; j ++)
-				pruned_values[i][j] = values[nonzero.get(i)][nonzero.get(j)];
+				pruned_values[i][j] = this.get(nonzero.get(i), nonzero.get(j));
 
 		double[][] pruned_inverse = Math2.matinv(pruned_values);
 
@@ -154,17 +186,17 @@ public class Matrix {
 			throw new IllegalArgumentException("these row spaces aren't compatible.");
 		if (this.n + complement.n != this.m)
 			throw new IllegalArgumentException("this obviously is not actually an orthogonal complement");
-		double[][] square_matrix = new double[this.m][];
-		System.arraycopy(this.values, 0,
-		                 square_matrix, 0, this.n);
-		System.arraycopy(complement.values, 0,
-		                 square_matrix, this.n, complement.n);
 
-		double[][] inverse = Math2.matinv(square_matrix);
+		// start by adding extra rows from the given orthogonal complement
+		Matrix square_matrix = verticly_stack(this, complement);
 
+		// take the inverse of that matrix
+		Matrix inverse = square_matrix.inverse();
+
+		// remove the extra columns and also convert it to dense
 		double[][] output = new double[this.m][this.n];
 		for (int i = 0; i < this.m; i ++)
-			System.arraycopy(inverse[i], 0,
+			System.arraycopy(inverse.rows[i].getValues(), 0,
 			                 output[i], 0, this.n);
 		return new Matrix(output);
 	}
@@ -181,13 +213,13 @@ public class Matrix {
 	public Vector pseudoinverse_times(Vector b, boolean nonnegative) {
 		if (this.n != b.getLength())
 			throw new IllegalArgumentException("the array sizes do not match");
-		Vector x = new DenseVector(new double[m]);
+		Vector x = new DenseVector(m);
 		while (true) {
 			double discrepancy = 0;
 			// each iteration of the while loop is really a loop thru the rows
 			for (int i = 0; i < n; i ++) {
 				// pull out one row and one result value
-				Vector a_i = new DenseVector(this.values[i]);
+				Vector a_i = this.rows[i];
 				double N_i = a_i.sqr();
 				double b̃_i = a_i.dot(x);
 				double b_i = b.get(i);
@@ -210,32 +242,47 @@ public class Matrix {
 	 * the transpose of the matrix
 	 */
 	public Matrix trans() {
-		double[][] values = new double[this.values[0].length][this.values.length];
+		double[][] values = new double[this.m][this.n];
 		for (int i = 0; i < values.length; i ++)
 			for (int j = 0; j < values[i].length; j ++)
-				values[i][j] = this.values[j][i];
+				values[i][j] = this.get(j, i);
 		return new Matrix(values);
 	}
 
 	public Matrix copy() {
-		double[][] values = new double[this.values.length][this.values[0].length];
-		for (int i = 0; i < values.length; i ++)
-			System.arraycopy(this.values[i], 0, values[i], 0, values[i].length);
-		return new Matrix(values);
+		Vector[] rows = new Vector[this.rows.length];
+		for (int i = 0; i < rows.length; i ++)
+			rows[i] = this.rows[i].copy();
+		return new Matrix(rows);
 	}
 
 	public void set(int i, int j, double a) {
-		this.values[i][j] = a;
+		this.rows[i].set(j, a);
 	}
 
 	public double get(int i, int j) {
-		return this.values[i][j];
+		return this.rows[i].get(j);
+	}
+
+	public Vector getRow(int i) {
+		return this.rows[i];
+	}
+
+	public Vector getColumn(int j) {
+		Vector result;
+		if (this.rows[0] instanceof SparseVector)
+			result = new SparseVector(this.n);
+		else
+			result = new DenseVector(this.n);
+		for (int i = 0; i < this.n; i ++)
+			result.set(i, this.get(i, j));
+		return result;
 	}
 
 	public double[][] getValues() {
 		double[][] copy = new double[this.n][];
 		for (int i = 0; i < this.n; i ++)
-			copy[i] = Arrays.copyOf(this.values[i], this.m);
+			copy[i] = Arrays.copyOf(this.rows[i].getValues(), this.m);
 		return copy;
 	}
 

@@ -7,12 +7,9 @@ import main.Optimize.Optimum;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.logging.FileHandler;
-import java.util.logging.Formatter;
-import java.util.logging.LogRecord;
 import java.util.logging.Logger;
-import java.util.logging.SimpleFormatter;
 
 import static main.Math2.containsTheWordTest;
 
@@ -26,9 +23,9 @@ public class VoxelFit {
 	public static final double SMOOTHING = 1e+1;
 	public static final double TOLERANCE = 1e-3;
 
-	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
-//	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
-	public static final Vector UNIT_K = new DenseVector(0, 0, 1);
+	public static final Vector UNIT_I = new DenseVector(1., 0., 0.);
+//	public static final Vector UNIT_J = new DenseVector(0., 1., 0.);
+	public static final Vector UNIT_K = new DenseVector(0., 0., 1.);
 
 	private static final double Da = 1.66e-27; // (kg)
 	private static final double g = 1e-3; // (kg)
@@ -96,7 +93,10 @@ public class VoxelFit {
 	}
 
 	/**
-	 * read thru an array in the intuitive order and put it into a 1d list
+	 * convert a 5D array to a 2D one such that
+	 * input[l][h][i][j][и] => output[l+H*(h+I*(i+J*j))][и] for a rectangular
+	 * array, but it also handles it correctly if the input is jagged on the
+	 * oneth, twoth, or third indeces
 	 * @param input a 4D array of any size and shape (jagged is okey)
 	 */
 	private static double[] unravelRagged(double[][][][] input) {
@@ -112,21 +112,21 @@ public class VoxelFit {
 		return array;
 	}
 
+
 	/**
-	 * convert a 5D array to a 1D one such that
-	 * input[и][l][h][i][j] => output[l+H*(h+I*(i+J*j))][и] for a rectangular
+	 * convert a 5D array to a 2D one such that
+	 * input[l][h][i][j][и] => output[l+H*(h+I*(i+J*j))][и] for a rectangular
 	 * array, but it also handles it correctly if the input is jagged on the
-	 * twoth, third, or fourth indeces (it needs to be rectangular on the first
-	 * index, obviously, or the transpose wouldn't work)
+	 * oneth, twoth, or third indeces
+	 * @param input a 4D array of any size and shape (jagged is okey)
 	 */
-	private static double[][] unravelRaggedAndTranspose(double[][][][][] input) {
-		double[][] untransposed = new double[input.length][];
-		for (int i = 0; i < input.length; i ++) {
-			untransposed[i] = unravelRagged(input[i]);
-			if (i > 0 && untransposed[i].length != untransposed[i-1].length)
-				throw new IllegalArgumentException("the array is too jagged.");
-		}
-		return Math2.transpose(untransposed);
+	private static Vector[] unravelRagged(Vector[][][][] input) {
+		List<Vector> list = new ArrayList<>();
+		for (Vector[][][] stack: input)
+			for (Vector[][] row: stack)
+				for (Vector[] colum: row)
+					list.addAll(Arrays.asList(colum));
+		return list.toArray(new Vector[0]);
 	}
 
 
@@ -150,8 +150,6 @@ public class VoxelFit {
 			double Gx = μ - mf/m_D*(dμdx - 1/lnΛ*(μ + dμdx));
 			if (Gx < 0) // if Gx is negative
 				Gx = 0; // that means the field thermal speed is hier than the particle speed, so no slowing
-//			if (Gx.value < 0)
-//				throw new IllegalArgumentException("hecc.  m/m = "+(mf/m_D)+", E = "+Э.value+"MeV, T = "+T.value+"keV, x = "+x.value+", μ(x) = "+μ.value+", μ’(x) = "+dμdx.value+", G(x) = "+Gx.value);
 			dЭdx_per_ρ += -lnΛ*q_D*q_D/(4*Math.PI*ɛ0) * Gx * ωpf2_per_ρ/vt2;
 		}
 		return dЭdx_per_ρ/MeV*g/cm/cm;
@@ -267,9 +265,9 @@ public class VoxelFit {
 	 * @param num_basis_functions the total number of basis functions in uce
 	 * @param weit the quantity by which to scale the smoothing terms
 	 */
-	private static double[][] list_bad_modes(double[] r, int num_basis_functions, double weit) {
+	private static Matrix list_bad_modes(double[] r, int num_basis_functions, double weit) {
 		double dr = r[1] - r[0];
-		List<double[]> bad_modes = new ArrayList<>(0);
+		List<Vector> bad_modes = new ArrayList<>(0);
 		int иR = 1;
 		for (int sR = 1; sR < r.length + 2; sR ++) { // for each radial posicion
 			int sM = sR - 1, sL = Math.abs(sR - 2);
@@ -278,25 +276,22 @@ public class VoxelFit {
 			int num_modes_L = Math.min(sL + 1, MAX_MODE + 1);
 			for (int l = 0; l < num_modes_R; l ++) { // go thru the l and m values
 				for (int m = -l; m <= l; m ++) {
-					double[] components = new double[num_basis_functions]; // create a new "bad mode"
+					Vector mode = new SparseVector(num_basis_functions); // create a new "bad mode"
 					int иM = иR - num_modes_M*num_modes_M;
 					int иL = (sL < sM) ? иM - num_modes_L*num_modes_L : иR;
 					if (sR < r.length)
-						components[иR] += 0.5*weit/Math.sqrt(dr); // it is based on this
+						mode.increment(иR, 0.5*weit/Math.sqrt(dr)); // it is based on this
 					if (sM < r.length && l < num_modes_M) // and the corresponding previous basis
-						components[иM] += -weit/Math.sqrt(dr); // note that if there is no previous one, it just weys this value down
+						mode.increment(иM, - weit/Math.sqrt(dr)); // note that if there is no previous one, it just weys this value down
 					if (l < num_modes_L)
-						components[иL] += 0.5*weit/Math.sqrt(dr);
+						mode.increment(иL, 0.5*weit/Math.sqrt(dr));
 					if (!(l == 1 && sR == 1)) // skip this one set of modes because the sines work out to make these ones specifically rong
-						bad_modes.add(components);
+						bad_modes.add(mode);
 					иR ++;
 				}
 			}
 		}
-//		System.out.println("bad modes:");
-//		for (double[] mode: bad_modes)
-//			System.out.println("  "+Arrays.toString(mode));
-		return bad_modes.toArray(new double[0][]);
+		return new Matrix(bad_modes.toArray(new Vector[0]));
 	}
 
 
@@ -338,7 +333,7 @@ public class VoxelFit {
 	 * @return the matrix A such that A x = y, where x is the unraveld production
 	 * coefficients and y is the images
 	 */
-	private static double[][] generate_production_response_matrix(
+	private static Matrix generate_production_response_matrix(
 		  double[][][] density,
 		  double temperature,
 		  double[] x,
@@ -352,11 +347,11 @@ public class VoxelFit {
 		  double[][][][] basis_functions,
 		  double smoothing
 	) {
-		return Math2.vertically_stack(
-			  unravelRaggedAndTranspose(synthesize_image_response(
+		return Matrix.verticly_stack(
+			  new Matrix(unravelRagged(synthesize_image_response(
 			  	  null, density, temperature, x, y, z,
 				  lines_of_sight, Э_cuts, ξ, υ, basis_functions,
-				  true, false)),
+				  true, false))),
 			  list_bad_modes(r, basis_functions.length, smoothing));
 	}
 
@@ -375,7 +370,7 @@ public class VoxelFit {
 	 * @return the matrix A such that A x = y, where x is the unraveld production
 	 * coefficients and y is the images
 	 */
-	private static double[][] generate_density_response_matrix(
+	private static Matrix generate_density_response_matrix(
 		  double[][][] production,
 		  double[][][] density,
 		  double temperature,
@@ -390,11 +385,11 @@ public class VoxelFit {
 		  double[][][][] basis_functions,
 		  double smoothing
 	) {
-		return Math2.vertically_stack(
-			  unravelRaggedAndTranspose(synthesize_image_response(
+		return Matrix.verticly_stack(
+			  new Matrix(unravelRagged(synthesize_image_response(
 				  production, density, temperature, x, y, z,
 				  lines_of_sight, Э_cuts, ξ, υ, basis_functions,
-				  false, true)),
+				  false, true))),
 			  list_bad_modes(r, basis_functions.length, smoothing));
 	}
 
@@ -424,11 +419,25 @@ public class VoxelFit {
 		  double[][][] ξ,
 		  double[][][] υ
 	) {
-		return synthesize_image_response(
+		Vector[][][][] wrapd = synthesize_image_response(
 			  production, density, temperature,
 			  x, y, z, lines_of_sight, Э_cuts, ξ, υ, null,
 			  false, false
-		)[0];
+		);
+		double[][][][] image = new double[wrapd.length][][][];
+		for (int l = 0; l < wrapd.length; l ++) {
+			image[l] = new double[wrapd[l].length][][];
+			for (int h = 0; h < wrapd[l].length; h ++) {
+				image[l][h] = new double[wrapd[l][h].length][];
+				for (int i = 0; i < wrapd[l][h].length; i ++) {
+					image[l][h][i] = new double[wrapd[l][h][i].length];
+					for (int j = 0; j < wrapd[l][h][i].length; j ++) {
+						image[l][h][i][j] = wrapd[l][h][i][j].get(0);
+					}
+				}
+			}
+		}
+		return image;
 	}
 
 
@@ -458,10 +467,10 @@ public class VoxelFit {
 	 * @param respond_to_density whether the density should be taken to depend on
 	 *                           the basis functions (the matrix input will still
 	 *                           be used for ranging)
-	 * @return the image response to each basis function. so output[и][l][h][i][j]
+	 * @return the image response to each basis function. so output[l][h][i][j][и]
 	 * is the response of pixel i,j in cut h on line of sight l to basis function и
 	 */
-	private static double[][][][][] synthesize_image_response(
+	private static Vector[][][][] synthesize_image_response(
 		  double[][][] production,
 		  double[][][] density,
 		  double temperature,
@@ -493,11 +502,15 @@ public class VoxelFit {
 		else
 			num_basis_functions = basis_functions.length;
 
-		double[][][][][] basis_images = new double[num_basis_functions][lines_of_sight.length][Э_cuts.length][][];
-		for (int и = 0; и < num_basis_functions; и ++)
-			for (int l = 0; l < lines_of_sight.length; l ++)
-				for (int h = 0; h < Э_cuts.length; h ++)
-					basis_images[и][l][h] = new double[ξ[l][h].length - 1][υ[l][h].length - 1];
+		Vector[][][][] response = new Vector[lines_of_sight.length][Э_cuts.length][][];
+		for (int l = 0; l < lines_of_sight.length; l ++) {
+			for (int h = 0; h < Э_cuts.length; h++) {
+				response[l][h] = new Vector[ξ[l][h].length - 1][υ[l][h].length - 1];
+				for (int i = 0; i < response[l][h].length; i ++)
+					for (int j = 0; j < response[l][h][i].length; j ++)
+						response[l][h][i][j] = new SparseVector(num_basis_functions);
+			}
+		}
 
 		// for each line of sight
 		for (int l = 0; l < lines_of_sight.length; l ++) {
@@ -637,10 +650,10 @@ public class VoxelFit {
 
 									for (int и = 0; и < num_basis_functions; и ++) // finally, iterate over the basis functions
 										if (local_production[и] != 0 && local_density[и] != 0) // TODO I feel like this line does noting
-											basis_images[и][l][hV][iV][jV] +=
-												  local_production[и]*
+											response[l][hV][iV][jV].increment(и,
+					                              local_production[и]*
 												  local_density[и]*
-												  contribution;
+												  contribution);
 								}
 							}
 						}
@@ -649,7 +662,7 @@ public class VoxelFit {
 			}
 		}
 
-		return basis_images;
+		return response;
 	}
 
 
@@ -687,7 +700,7 @@ public class VoxelFit {
 			basis_volumes[i] = Math2.iiintegral(basis_functions[i], x, y, z); // μm^3
 
 		int num_smoothing_parameters = list_bad_modes(
-			  r, num_basis_functions, 0).length;
+			  r, num_basis_functions, 0).n;
 
 		double[] image_vector = unravelRagged(images);
 		int num_pixels = image_vector.length;

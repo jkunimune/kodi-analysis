@@ -35,6 +35,11 @@ public class SparseVector extends Vector {
 	private final Map<Integer, Double> values;
 
 
+	/**
+	 * build a SparseVector given a series of key-value pairs.
+	 * @param length the maximum allowable index of the vector
+	 * @param args a series of pairs of numbers: the index of a nonzero element followed by the element's value
+	 */
 	public SparseVector(int length, double... args) {
 		if (args.length%2 != 0)
 			throw new IllegalArgumentException("the numerick arguments at the end are supposed to be pairs.");
@@ -49,6 +54,11 @@ public class SparseVector extends Vector {
 		}
 	}
 
+	/**
+	 * build a SparseVector given a map that contains the index and value of every nonzero element
+	 * @param length the maximum allowable index of the vector
+	 * @param values a map where each key is the index of a nonzero element and the corresponding value is that element
+	 */
 	public SparseVector(int length, Map<Integer, Double> values) {
 		this.length = length;
 		this.values = values;
@@ -86,7 +96,7 @@ public class SparseVector extends Vector {
 			throw new IllegalArgumentException("the dimensions don't match.");
 		double product = 0;
 		for (int i: this.values.keySet())
-			if (that.get(i) != 0)
+			if (that.get(i) != 0) // 0s override infs and nans in this product
 				product += this.get(i) * that.get(i);
 		return product;
 	}
@@ -131,5 +141,13 @@ public class SparseVector extends Vector {
 		for (int i: this.values.keySet())
 			values[i] = this.values.get(i);
 		return values;
+	}
+
+	@Override
+	public SparseVector copy() {
+		SparseVector out = new SparseVector(this.length);
+		for (int i: this.values.keySet())
+			out.set(i, this.get(i));
+		return out;
 	}
 }

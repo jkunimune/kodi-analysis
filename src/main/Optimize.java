@@ -58,14 +58,14 @@ public class Optimize {
 		  Logger logger) {
 		final double h = 1e-3;
 
-		Function<double[], double[][]> compute_jacobian = (double[] state) -> {
+		Function<double[], Matrix> compute_jacobian = (double[] state) -> {
 			double[] residuals = compute_residuals.apply(state);
-			double[][] jacobian = new double[residuals.length][state.length];
+			Matrix jacobian = new Matrix(new double[residuals.length][state.length]);
 			for (int j = 0; j < state.length; j ++) {
 				state[j] += scale[j]*h;
 				double[] turb_residuals = compute_residuals.apply(state);
 				for (int i = 0; i < residuals.length; i ++)
-					jacobian[i][j] = (turb_residuals[i] - residuals[i])/(scale[j]*h);
+					jacobian.set(i, j, (turb_residuals[i] - residuals[i])/(scale[j]*h));
 				state[j] -= scale[j]*h;
 			}
 			return jacobian;
@@ -90,7 +90,7 @@ public class Optimize {
 	 */
 	public static Optimum least_squares(
 		  Function<double[], double[]> compute_residuals,
-		  Function<double[], double[][]> compute_jacobian,
+		  Function<double[], Matrix> compute_jacobian,
 		  double[] inicial_gess,
 		  double[] lower_bound,
 		  double[] upper_bound,
@@ -123,7 +123,7 @@ public class Optimize {
 	 */
 	public static Optimum least_squares(
 		  Function<double[], double[]> compute_residuals,
-		  Function<double[], double[][]> compute_jacobian,
+		  Function<double[], Matrix> compute_jacobian,
 		  double[] initial_gess,
 		  double tolerance,
 		  Logger logger) {
@@ -141,7 +141,7 @@ public class Optimize {
 
 		int iter = 0;
 		while (true) {
-			Matrix jacobian = new Matrix(compute_jacobian.apply(state.getValues())); // take the gradients
+			Matrix jacobian = compute_jacobian.apply(state.getValues()); // take the gradients
 			Matrix hessian = jacobian.trans().times(jacobian); // and do some linear algebra
 			Vector gradient = jacobian.trans().times(residuals);
 
@@ -214,7 +214,7 @@ public class Optimize {
 	 * @return the solucion to the least-squares problem
 	 */
 	public static Optimum quasilinear_least_squares(
-		  Function<double[], double[][]> compute_local_jacobian,
+		  Function<double[], Matrix> compute_local_jacobian,
 		  double[] data_values,
 		  double[] data_weights,
 		  double[] initial_input,
@@ -223,10 +223,10 @@ public class Optimize {
 		  double[]... constraints) {
 		if (data_values.length != data_weights.length)
 			throw new IllegalArgumentException("there must be the same number of residuals as weights");
-		double[][] initial_jacobian = compute_local_jacobian.apply(initial_input);
-		if (initial_jacobian.length != data_values.length)
+		Matrix initial_jacobian = compute_local_jacobian.apply(initial_input);
+		if (initial_jacobian.n != data_values.length)
 			throw new IllegalArgumentException("there must be the same number of gradients as residuals");
-		if (initial_jacobian[0].length != initial_input.length)
+		if (initial_jacobian.m != initial_input.length)
 			throw new IllegalArgumentException("the jacobian width must match the initial gess");
 		for (double[] constraint: constraints)
 			if (constraint.length != initial_input.length)
@@ -239,7 +239,7 @@ public class Optimize {
 		Vector data = new DenseVector(data_values);
 		Vector input = new DenseVector(Arrays.copyOf(initial_input, initial_input.length));
 
-		Matrix jacobian = new Matrix(initial_jacobian);
+		Matrix jacobian = initial_jacobian;
 		Vector output = jacobian.times(input); // compute inicial residuals
 		Vector residuals = output.minus(data);
 		Matrix weights = new Matrix(data_weights);
@@ -280,7 +280,7 @@ public class Optimize {
 
 				// get the updated jacobian if there mite be more
 				if (Double.isFinite(tolerance))
-					jacobian = new Matrix(compute_local_jacobian.apply(new_input.getValues()));
+					jacobian = compute_local_jacobian.apply(new_input.getValues());
 				// figure out the new sum of squares
 				output = jacobian.times(new_input);
 				residuals = output.minus(data);
@@ -555,14 +555,14 @@ public class Optimize {
 			return dy;
 		};
 
-		Function<double[], double[][]> grad = (double[] c) -> {
+		Function<double[], Matrix> grad = (double[] c) -> {
 			double[][] J = new double[x.length][c.length];
 			for (int i = 0; i < x.length; i ++) {
 				J[i][0] = Math.exp(c[1]*x[i]);
 				J[i][1] = x[i]*c[0]*Math.exp(c[1]*x[i]);
 				J[i][2] = 1;
 			}
-			return J;
+			return new Matrix(J);
 		};
 
 		double[] c = least_squares(err, grad,

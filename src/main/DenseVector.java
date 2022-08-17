@@ -34,6 +34,13 @@ public class DenseVector extends Vector {
 	private final double[] values;
 
 	/**
+	 * build a zero-DenseVector given just its length
+	 */
+	public DenseVector(int length) {
+		this.values = new double[length];
+	}
+
+	/**
 	 * build a DenseVector given all of its values
 	 */
 	public DenseVector(double... values) {
@@ -105,5 +112,10 @@ public class DenseVector extends Vector {
 	@Override
 	public double[] getValues() {
 		return Arrays.copyOf(this.values, this.values.length);
+	}
+
+	@Override
+	public DenseVector copy() {
+		return new DenseVector(this.getValues());
 	}
 }

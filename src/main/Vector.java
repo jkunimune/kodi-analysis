@@ -74,7 +74,13 @@ public abstract class Vector {
 
 	public abstract void set(int i, double value);
 
+	public void increment(int i, double value) {
+		this.set(i, this.get(i) + value);
+	}
+
 	public abstract double[] getValues();
+
+	public abstract Vector copy();
 
 	@Override
 	public String toString() {

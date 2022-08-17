@@ -1144,16 +1144,6 @@ public class Math2 {
 		return c;
 	}
 
-	/**
-	 * concatenate the rows of two 2d matrices
-	 */
-	public static double[][] vertically_stack(double[][] a, double[][] b) {
-		double[][] c = new double[a.length + b.length][];
-		System.arraycopy(a, 0, c, 0, a.length);
-		System.arraycopy(b, 0, c, a.length, b.length);
-		return c;
-	}
-
 	public static double[][] transpose(double[][] a) {
 		double[][] at = new double[a[0].length][a.length];
 		for (int i = 0; i < at.length; i ++)
