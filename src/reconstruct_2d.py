@@ -542,7 +542,7 @@ def analyze_scan(input_filename: str,
 		# 	logging.info("  Could not find adequate fit")
 		# 	continue
 
-		p0, (p1, θ1), (p2, θ2) = shape_parameters(
+		p0, (_, _), (p2, θ2) = shape_parameters(
 			xS, yS, B, contour=contour) # compute the three number summary
 		logging.info(f"  P0 = {p0/1e-4:.2f} μm")
 		logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")

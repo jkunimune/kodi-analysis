@@ -7,7 +7,7 @@
 # ζ^ points toward the TIM, υ^ points perpendicular to ζ^ and upward, and ξ^ makes it rite-handed.
 # Э stands for Энергия
 # и is the index of a basis function
-
+import math
 import os
 import sys
 
@@ -27,6 +27,9 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 Э_min, Э_max = 3, 13 # (MeV)
 
 r_max = 100 # (μm)
+
+energy_resolution = 3 # (MeV)
+spatial_resolution = 5 # (μm)
 
 
 def bin_centers(x):
@@ -80,16 +83,13 @@ if __name__ == '__main__':
 		tru_images = np.array(tru_images)
 
 	else:
+		n_space_bins = math.ceil(r_max/spatial_resolution) # model spatial resolucion
+		x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
+		print(f"reconstructing a {n_space_bins}^3 morphology with r_max = {r_max} μm")
+
 		# generate or load a new input and run the reconstruction algorithm
 		if name == 'test':
 			# generate a synthetic morphology
-			N = 21 # model spatial resolucion
-			M = 4 # image energy resolucion
-			print(f"testing synthetic morphology with N = {N} and M = {M}")
-
-			x_model = np.linspace(-r_max, r_max, N+1) # (μm)
-			y_model = np.linspace(-r_max, r_max, N+1) # (μm)
-			z_model = np.linspace(-r_max, r_max, N+1) # (μm)
 
 			lines_of_sight = np.array([
 				[1, 0, 0],
@@ -100,14 +100,12 @@ if __name__ == '__main__':
 				# [0, 0, -1],
 			]) # ()
 
-			Э = np.linspace(Э_min, Э_max, M+1)
+			Э = np.linspace(Э_min, Э_max, 5)
 			Э_cuts = np.transpose([Э[:-1], Э[1:]]) # (MeV)
 			ξ_bins = [[expand_bins(x_model)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
 			υ_bins = [[expand_bins(y_model)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
 
 			X, Y, Z = np.meshgrid(x_model, y_model, z_model, indexing='ij')
-			# tru_production = np.where(np.sqrt((X-20)**2 + Y**2 + 2*Z**2) <= 40, 1e8, 0) # (reactions/μm^3)
-			# tru_density = np.where(np.sqrt(2*X**2 + 2*Y**2 + Z**2) <= 80, 50, 0) # (g/cm^3)
 			tru_production = 1e+8*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/50)**4/2)
 			tru_density = 10*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/75)**4/2) * np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2)
 			tru_temperature = 1
@@ -129,19 +127,16 @@ if __name__ == '__main__':
 
 			tru_production, tru_density, tru_temperature = None, None, None
 
-			H = None
 			first_tim_encountered = None
 			centroid: dict[str, tuple[float, float]] = {}
 			Э_cut_list: list[list[float]] = []
-			x_model, y_model, z_model = None, None, None
 			data_dict: dict[str, list[tuple[list[float], list[float], list[list[float]]]]] = {} # load any images you can find into this dict of lists
 			for filename in os.listdir('images'): # search for files that match each row
 				filepath = os.path.join('images', filename)
 				filename, extension = os.path.splitext(filename)
 
 				metadata = filename.split('_') if '_' in filename else filename.split('-')
-				if (extension == '.csv' and name in metadata) or \
-						(extension == '.h5' and name in metadata and 'reconstruction' in metadata): # only take csv and h5 files
+				if extension == '.h5' and name in metadata and 'reconstruction' in metadata: # only take csv and h5 files
 					tim, э_min, э_max = None, None, None
 					for metadatum in metadata: # pull out the different peces of information from the filename
 						if metadatum.startswith('tim'):
@@ -159,11 +154,7 @@ if __name__ == '__main__':
 					if first_tim_encountered is None:
 						first_tim_encountered = tim
 
-					if extension == '.csv': # load the image
-						image = np.loadtxt(filepath, delimiter=',')
-						ξ_bins = υ_bins = np.linspace(-100, 100, image.shape[0] + 1)
-					else:
-						ξ_bins, υ_bins, image = load_hdf5(filepath, ["x", "y", "z"])
+					ξ_bins, υ_bins, image = load_hdf5(filepath, ["x", "y", "z"])
 
 					image = image.T # assume they were loaded in with [y,x] indices and change to [x,y]
 					assert image.shape == (ξ_bins.size - 1, υ_bins.size - 1), (image.shape, ξ_bins.size, υ_bins.size)
@@ -192,16 +183,15 @@ if __name__ == '__main__':
 					ξ_bins, υ_bins = ξ_bins[ξ_in_bounds], υ_bins[υ_in_bounds]
 					image = image[pixel_in_bounds].reshape((ξ_bins.size - 1, υ_bins.size - 1))
 
-					while image.size > 1000: # scale it down if necessary
+					while ξ_bins[1] - ξ_bins[0] < 2*spatial_resolution or image.size > 10000: # scale it down if necessary
 						ξ_bins, υ_bins = ξ_bins[::2], υ_bins[::2]
 						image = (image[:-1:2,:-1:2] + image[:-1:2,1::2] + image[1::2,:-1:2] + image[1::2,1::2])
 
 					data_dict[tim].append((ξ_bins, υ_bins, image)) # I sure hope these load in a consistent order
 					if tim == first_tim_encountered:
 						Э_cut_list.append([э_min, э_max]) # get the energy cuts from whichever tim you see first
-						x_model = (ξ_bins[:-1] + ξ_bins[1:])/2 - ξ_bins.mean()
-						y_model = x_model
-						z_model = x_model
+					else:
+						assert [э_min, э_max] in Э_cut_list # make sure they all match
 
 			Э_cuts = np.array(Э_cut_list)
 			N = x_model.size - 1
@@ -255,8 +245,8 @@ if __name__ == '__main__':
 					tru_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}.csv", delimiter=',')) # d/μm^2/srad
 
 	# load the results
-	recon_production = np.loadtxt("tmp/production-recon.csv").reshape((N+1, N+1, N+1)) # (μm^-3)
-	recon_density = np.loadtxt("tmp/density-recon.csv").reshape((N+1, N+1, N+1)) # (g/cc)
+	recon_production = np.loadtxt("tmp/production-recon.csv").reshape((x_model.size,)*3) # (μm^-3)
+	recon_density = np.loadtxt("tmp/density-recon.csv").reshape((x_model.size,)*3) # (g/cc)
 	recon_temperature = np.loadtxt("tmp/temperature-recon.csv") # (keV)
 	recon_images = []
 	for l in range(lines_of_sight.shape[0]):
@@ -266,10 +256,10 @@ if __name__ == '__main__':
 
 	# show the results
 	if tru_production is not None:
-		save_and_plot_morphologies(x_model, y_model, z_model, (tru_production, tru_density), (recon_production, recon_density))
+		save_and_plot_morphologies(name, x_model, y_model, z_model, (tru_production, tru_density), (recon_production, recon_density))
 	else:
-		save_and_plot_morphologies(x_model, y_model, z_model, (recon_production, recon_density))
+		save_and_plot_morphologies(name, x_model, y_model, z_model, (recon_production, recon_density))
 
-	plot_source_set(name, Э_cuts, ξ_bins, υ_bins, tru_images, *recon_images)
+	plot_source_set(name, Э_cuts, ξ_bins, υ_bins, tru_images, recon_images)
 
 	plt.show()

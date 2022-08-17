@@ -212,7 +212,7 @@ def save_and_plot_source(filename: str, show: bool,
 
 
 def plot_source_set(filename: str, energy_bins: list[tuple[float, float]] | np.ndarray,
-                    x_bins: np.ndarray, y_bins: np.ndarray, *image_sets: np.ndarray) -> None:
+                    x_bins: np.ndarray, y_bins: np.ndarray, *image_sets: list[list[np.ndarray]]) -> None:
 	pairs_plotted = 0
 	for l in range(len(image_sets[0])): # go thru every line of site
 		if pairs_plotted > 0 and pairs_plotted + len(image_sets[0][l]) > 6:
@@ -247,7 +247,7 @@ def plot_source_set(filename: str, energy_bins: list[tuple[float, float]] | np.n
 
 def save_and_plot_morphologies(filename: str,
                                x: np.ndarray, y: np.ndarray, z: np.ndarray,
-                               *morphologies: np.ndarray) -> None:
+                               *morphologies: tuple[np.ndarray, np.ndarray]) -> None:
 	peak_source = np.amax([source for source, density in morphologies])
 	peak_density = np.amax([density for source, density in morphologies])
 	for i, (source, density) in enumerate(morphologies):
