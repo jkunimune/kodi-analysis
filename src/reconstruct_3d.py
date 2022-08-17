@@ -29,7 +29,7 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 r_max = 100 # (μm)
 
 energy_resolution = 3 # (MeV)
-spatial_resolution = 5 # (μm)
+spatial_resolution = 3 # (μm)
 
 
 def bin_centers(x):
@@ -51,10 +51,9 @@ if __name__ == '__main__':
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir(os.path.dirname(os.getcwd()))
 
-	name = sys.argv[1] if len(sys.argv) > 1 else "test"
-	# TODO: clear the 3d directory
+	name = sys.argv[1] if len(sys.argv) > 1 else "--test"
 
-	if name == "skip":
+	if "--skip" in sys.argv:
 		# load the previous inputs and don't run the reconstruction
 		print(f"using previous reconstruction.")
 
@@ -88,7 +87,7 @@ if __name__ == '__main__':
 		print(f"reconstructing a {n_space_bins}^3 morphology with r_max = {r_max} μm")
 
 		# generate or load a new input and run the reconstruction algorithm
-		if name == 'test':
+		if name == "--test":
 			# generate a synthetic morphology
 
 			lines_of_sight = np.array([
@@ -100,7 +99,7 @@ if __name__ == '__main__':
 				# [0, 0, -1],
 			]) # ()
 
-			Э = np.linspace(Э_min, Э_max, 5)
+			Э = np.linspace(Э_min, Э_max, round((Э_max - Э_min)/energy_resolution) + 1)
 			Э_cuts = np.transpose([Э[:-1], Э[1:]]) # (MeV)
 			ξ_bins = [[expand_bins(x_model)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
 			υ_bins = [[expand_bins(y_model)]*Э_cuts.shape[0]]*lines_of_sight.shape[0] # (μm)
@@ -236,7 +235,7 @@ if __name__ == '__main__':
 		# run the reconstruction!
 		execute_java("VoxelFit", name)
 
-		if name == "test":
+		if name == "--test":
 			# load the images it generated if we don't already have them
 			tru_images = []
 			for l in range(lines_of_sight.shape[0]):
@@ -255,11 +254,12 @@ if __name__ == '__main__':
 			recon_images[l].append(np.loadtxt(f"tmp/image-los{l}-cut{h}-recon.csv", delimiter=',')) # (d/μm^2/srad)
 
 	# show the results
+	filename = name.replace("--", "")
 	if tru_production is not None:
-		save_and_plot_morphologies(name, x_model, y_model, z_model, (tru_production, tru_density), (recon_production, recon_density))
+		save_and_plot_morphologies(filename, x_model, y_model, z_model, (tru_production, tru_density), (recon_production, recon_density))
 	else:
-		save_and_plot_morphologies(name, x_model, y_model, z_model, (recon_production, recon_density))
+		save_and_plot_morphologies(filename, x_model, y_model, z_model, (recon_production, recon_density))
 
-	plot_source_set(name, Э_cuts, ξ_bins, υ_bins, tru_images, recon_images)
+	plot_source_set(filename, Э_cuts, ξ_bins, υ_bins, tru_images, recon_images)
 
 	plt.show()

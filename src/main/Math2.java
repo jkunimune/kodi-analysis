@@ -1772,7 +1772,7 @@ public class Math2 {
 
 	public static boolean containsTheWordTest(String[] arr) {
 		for (String s: arr)
-			if (s.equals("test"))
+			if (s.equals("--test"))
 				return true;
 		return false;
 	}

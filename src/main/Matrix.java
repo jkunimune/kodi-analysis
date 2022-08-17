@@ -89,22 +89,21 @@ public class Matrix {
 	/**
 	 * generate an identity matrix.
 	 */
-	public Matrix(int n) {
-		this.n = this.m = n;
-		this.rows = new Vector[n];
+	public static Matrix identity(int n) {
+		Vector[] rows = new Vector[n];
 		for (int i = 0; i < n; i ++)
-			this.rows[i] = new SparseVector(n, i, 1.);
+			rows[i] = new SparseVector(n, i, 1.);
+		return new Matrix(rows);
 	}
 
 	/**
 	 * generate a zero matrix.
 	 */
-	public Matrix(int n, int m) {
-		this.n = n;
-		this.m = m;
-		this.rows = new Vector[n];
+	public static Matrix zeros(int n, int m) {
+		Vector[] rows = new Vector[n];
 		for (int i = 0; i < n; i ++)
-			this.rows[i] = new SparseVector(m);
+			rows[i] = new SparseVector(m);
+		return new Matrix(rows);
 	}
 
 	public Vector times(Vector v) {
@@ -170,38 +169,6 @@ public class Matrix {
 	}
 
 	/**
-	 * calculate the pseudo-inverse of a matrix with more columns than rows,
-	 * given an orthogonal complement of its row-space
-	 * @param complement a set of rows, each of which is linearly independent from
-	 *                   the rows of this.  provided solely so that we don't haff
-	 *                   to waste time computing it ourselves
-	 * @return a m×n matrix which, multiplied by an n vector, produces the vector
-	 *         in the span of this's rows v that comes closest to satisfying
-	 *         inverse \cdot this \cdot v = v
-	 */
-	public Matrix pseudoinverse(Matrix complement) {
-		if (this.n > this.m)
-			throw new IllegalArgumentException("I've only implemented pseudoinverses of matrices with more colums than rows");
-		if (this.m != complement.m)
-			throw new IllegalArgumentException("these row spaces aren't compatible.");
-		if (this.n + complement.n != this.m)
-			throw new IllegalArgumentException("this obviously is not actually an orthogonal complement");
-
-		// start by adding extra rows from the given orthogonal complement
-		Matrix square_matrix = verticly_stack(this, complement);
-
-		// take the inverse of that matrix
-		Matrix inverse = square_matrix.inverse();
-
-		// remove the extra columns and also convert it to dense
-		double[][] output = new double[this.m][this.n];
-		for (int i = 0; i < this.m; i ++)
-			System.arraycopy(inverse.rows[i].getValues(), 0,
-			                 output[i], 0, this.n);
-		return new Matrix(output);
-	}
-
-	/**
 	 * solve the linear equation b = this*x, assuming this is sparse, using the algebraic reconstruction technique, as given by
 	 *     D. Raparia, J. Alessi, and A. Kponou. "The algebraic reconstruction technique (ART)". In <i>proceedings of
 	 *     the 1997 Particle Accelerator Conf.</i>, pp. 2023-2025. doi:10.1109/PAC.1997.751094.
@@ -227,13 +194,14 @@ public class Matrix {
 				discrepancy += (b_i - b̃_i)*(b_i - b̃_i)/N_i;
 				// and apply a step to reduce the error
 				x = x.plus(a_i.times((b_i - b̃_i)/N_i)); // no need regularization factor for our purposes
-				if (nonnegative)
+				if (nonnegative) {
 					for (int j = 0; j < m; j ++)
 						x.set(j, Math.max(0, x.get(j)));
+				}
 			}
 			// check the termination condition
 			discrepancy = discrepancy/x.sqr();
-			if (discrepancy <= 1e-8)
+			if (discrepancy <= 1e-12)
 				return x;
 		}
 	}

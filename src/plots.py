@@ -251,21 +251,24 @@ def save_and_plot_morphologies(filename: str,
 	peak_source = np.amax([source for source, density in morphologies])
 	peak_density = np.amax([density for source, density in morphologies])
 	for i, (source, density) in enumerate(morphologies):
+		print(source.min(), source.max(), density.min(), density.max())
 		plt.figure(figsize=(8, 5))
-		plt.contour(y, z,
-		            np.maximum(0, source[len(x)//2,:,:].T),
-		            locator=ticker.MaxNLocator(
-			            nbins=8*np.max(source[len(x)//2,:,:])/peak_source,
-			            prune='lower'),
-		            colors='#1f7bbb',
-		            zorder=1)
-		plt.colorbar().set_label("Neutron source (μm^-3)")
-		plt.contourf(y, z,
-		             np.maximum(0, density[len(x)//2,:,:].T),
-		             vmin=0, vmax=peak_density, levels=6,
-		             cmap='Reds',
-		             zorder=0)
-		plt.colorbar().set_label("Density (g/cc)")
+		if np.any(source[len(x)//2,:,:] > 0):
+			plt.contour(y, z,
+			            np.maximum(0, source[len(x)//2,:,:].T),
+			            locator=ticker.MaxNLocator(
+				            nbins=8*np.max(source[len(x)//2,:,:])/peak_source,
+				            prune='lower'),
+			            colors='#1f7bbb',
+			            zorder=1)
+			plt.colorbar().set_label("Neutron source (μm^-3)")
+		if np.any(density[len(x)//2,:,:] > 0):
+			plt.contourf(y, z,
+			             np.maximum(0, density[len(x)//2,:,:].T),
+			             vmin=0, vmax=peak_density, levels=6,
+			             cmap='Reds',
+			             zorder=0)
+			plt.colorbar().set_label("Density (g/cc)")
 		# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
 		plt.xlabel("y (cm)")
 		plt.ylabel("z (cm)")

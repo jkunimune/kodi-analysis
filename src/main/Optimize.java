@@ -243,11 +243,16 @@ public class Optimize {
 		Vector output = jacobian.times(input); // compute inicial residuals
 		Vector residuals = output.minus(data);
 		Matrix weights = new Matrix(data_weights);
-		Matrix free;
-		if (constraints.length > 0)
-			free = new Matrix(Math2.orthogonalComplement(constraints));
-		else
-			free = new Matrix(initial_input.length);
+		Matrix realign, constrain; // set up some basis changes that let you enforce constraints
+		if (constraints.length > 0) {
+			Matrix free = new Matrix(Math2.orthogonalComplement(constraints));
+			Matrix constrained = new Matrix(constraints);
+			realign = Matrix.verticly_stack(free, constrained);
+			constrain = Matrix.verticly_stack(free, Matrix.zeros(constraints.length, free.m));
+		}
+		else {
+			realign = constrain = Matrix.identity(initial_input.length);
+		}
 
 		double zai_error = 1/2.*residuals.dot(weights.times(residuals)); // compute the inicial total error ("zai" is the Pandunia word for "current")
 		if (logger != null)
@@ -271,8 +276,8 @@ public class Optimize {
 					modified_hessian.set(i, i, (1 + λ)*hessian.get(i, i));
 
 				// calculate the step given the normalization λ and limited freedom
-				Matrix reduced_hessian = free.times(modified_hessian);
-				Vector reduced_gradient = free.times(gradient);
+				Matrix reduced_hessian = realign.times(modified_hessian);
+				Vector reduced_gradient = constrain.times(gradient);
 				Vector step = reduced_hessian.pseudoinverse_times(reduced_gradient, false).neg();
 				if (Double.isNaN(step.get(0)))
 					throw new RuntimeException("singular hessian");
