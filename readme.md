@@ -32,7 +32,7 @@ and it will automaticly run on the reconstructed 2d images.
 The shot number argument on this one does not support commas.
 I'll get to that later maybe probably
 
-All output files follow the naming convention `results/shot_number[-tim]-quantity-coordinates[-operation].file_extension`.
+All output files follow the naming convention `results/subdirectory/shot_number[-tim]-quantity-coordinates[-operation].file_extension`.
 The shot number is an integer prepended by `synth` if based on synthetic data.
 The quantity is one of:
 - `morphology` for combined mass density and neutron source
