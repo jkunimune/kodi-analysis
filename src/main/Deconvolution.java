@@ -563,6 +563,10 @@ public class Deconvolution {
 			                       source_region);
 		}
 		else if (method.equals("wiener")) {
+			for (double[] row: penumbral_image)
+				for (double val: row)
+					if (Double.isNaN(val))
+						throw new IllegalArgumentException("wiener requires that all pixels be good and finite");
 			source_image = wiener(penumbral_image,
 			                      point_spread,
 			                      source_region);

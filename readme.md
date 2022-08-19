@@ -42,7 +42,7 @@ The quantity is one of:
 - `xray` for x-ray source
 
 the coordinates are one of:
-- `map` for 3D reconstructed (or synthetic) quantities
+- `distribution` for 3D reconstructed (or synthetic) quantities
 - `penumbra` for 2D measured penumbral images
 - `source` for 2D reconstructed (or synthetic) emission images
 

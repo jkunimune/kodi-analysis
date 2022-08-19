@@ -31,7 +31,7 @@ from util import center_of_mass, execute_java, shape_parameters, find_intercept,
 warnings.filterwarnings("ignore")
 
 
-DEUTERON_ENERGY_CUTS = {'hi': [9, 100], 'md': [6, 9], 'lo': [0, 6]} # (MeV) (emitted, not detected)
+DEUTERON_ENERGY_CUTS = {'lo': [0, 6], 'hi': [9, 100], 'md': [6, 9]} # (MeV) (emitted, not detected)
 # cuts = [('7', [11, 100]), ('6', [10, 11]), ('5', [9, 10]), ('4', [8, 9]), ('3', [6, 8]), ('2', [4, 6]), ('1', [2, 4]), ('0', [0, 2])]
 
 SHOW_RAW_DATA = False
@@ -50,7 +50,7 @@ X_RAY_RESOLUTION = 2e-4
 DEUTERON_CONTOUR = .50
 X_RAY_CONTOUR = .17
 MAX_OBJECT_SIZE = 100
-MAX_CONVOLUTION = 1e+9
+MAX_CONVOLUTION = 1e+10
 MAX_CONTRAST = 40
 MAX_ECCENTRICITY = 15
 
@@ -368,22 +368,28 @@ def analyze_scan(input_filename: str,
 	r0 = M*rA
 
 	if input_filename.endswith(".h5"):
-		energy_cuts = {"xray": [None, None]}
+		energy_cuts = {"xray": [np.nan, np.nan]} # TODO: get these from the filename/filtering
 	elif shot.startswith("synth"):
-		energy_cuts = {"synth": [None, None]}
+		energy_cuts = {"synth": [0, np.inf]}
 	else:
 		energy_cuts = DEUTERON_ENERGY_CUTS
 
 	results: list[dict[str, Any]] = []
-	for cut_name, ideal_energies in energy_cuts.items():
-		resolution = X_RAY_RESOLUTION if cut_name == "xray" else DEUTERON_RESOLUTION
-		contour = X_RAY_CONTOUR if cut_name == "xray" else DEUTERON_CONTOUR
+	for cut_name, emission_energies in energy_cuts.items():
 
-		detection_energies = fake_srim.get_E_out(1, 2, ideal_energies, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
-		diameter_max, diameter_min = detector.track_diameter(detection_energies, τ=etch_time, a=2, z=1) # convert to diameters
-		kinematic_energies = fake_srim.get_E_in(1, 2, detection_energies, ['Ta'], 16) # convert back to exclude particles that are ranged out
-		if np.isnan(diameter_max):
-			diameter_max = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
+		# switch out some values depending on whether these are xrays or deuterons
+		if cut_name == "xray":
+			resolution = X_RAY_RESOLUTION
+			contour = X_RAY_CONTOUR
+			diameter_max, diameter_min = np.nan, np.nan
+		else:
+			resolution = DEUTERON_RESOLUTION
+			contour = DEUTERON_CONTOUR
+			detection_energies = fake_srim.get_E_out(1, 2, emission_energies, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
+			diameter_max, diameter_min = detector.track_diameter(detection_energies, τ=etch_time, a=2, z=1) # convert to diameters
+			emission_energies = fake_srim.get_E_in(1, 2, detection_energies, ['Ta'], 16) # convert back to exclude particles that are ranged out
+			if np.isnan(diameter_max):
+				diameter_max = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
 
 		if skip_reconstruction:
 			logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max[1]:5.2f}μm")
@@ -414,8 +420,8 @@ def analyze_scan(input_filename: str,
 				Q = 0
 				rA = rA*M_eff/M #TODO the new rA should carry over to the KODI, as well as the new sA
 			else:
-				Q = electric_field.get_charging_parameter(M_eff/M, r0, *kinematic_energies)
-			r_psf = electric_field.get_expansion_factor(Q, r0, *kinematic_energies)
+				Q = electric_field.get_charging_parameter(M_eff/M, r0, *emission_energies)
+			r_psf = electric_field.get_expansion_factor(Q, r0, *emission_energies)
 
 			r_object = (r_max - r_psf)/(M - 1) # (cm)
 			if r_object <= 0:
@@ -458,7 +464,7 @@ def analyze_scan(input_filename: str,
 
 		save_and_plot_penumbra(f"{shot}-tim{tim}-{cut_name}", show_plots,
 		                       xI_bins, yI_bins, NI_data, xI0, yI0,
-		                       energy_min=kinematic_energies[0], energy_max=kinematic_energies[1],
+		                       energy_min=emission_energies[0], energy_max=emission_energies[1],
 		                       r0=rA*M, s0=sA*M)
 
 		if skip_reconstruction:
@@ -486,7 +492,7 @@ def analyze_scan(input_filename: str,
 
 			logging.info(f"  generating a {XK.shape} point spread function with Q={Q}")
 
-			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *kinematic_energies) # get the dimensionless shape of the penumbra
+			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *emission_energies) # get the dimensionless shape of the penumbra
 			penumbral_kernel *= dxS*dyS*dxI*dyI/(M*L1)**2 # scale by the solid angle subtended by each image pixel
 
 			if cut_name != "xray": # TODO: I'd eventually like a more elegant solution for not tangling up nans in the Wiener reconstruction
@@ -501,8 +507,9 @@ def analyze_scan(input_filename: str,
 					RI = np.hypot(XI - xI0, YI - yI0)
 					contains_information = (RI <= r_max) & (RI >= 2*r0 - r_max)
 				else:
-					logging.warning("it would be computationally inefficient to compute the reach of these data, so I'm "
-					                "setting the data region to be everywhere")
+					logging.warning(f"it would be computationally inefficient to compute the reach of these "
+					                f"{XS.size*penumbral_kernel.size} data, so I'm setting the data region to"
+					                f"be everywhere")
 					contains_information = True
 
 				data_region = (np.hypot(XI - xI0, YI - yI0) <= r_max) & np.isfinite(NI_data) & \
@@ -521,7 +528,11 @@ def analyze_scan(input_filename: str,
 
 			# perform the reconstruction
 			method = "wiener" if cut_name == "xray" else "gelfgat"
-			np.savetxt("tmp/penumbra.csv", np.where(data_region, NI_data, np.nan), delimiter=',')
+			if method != "wiener":
+				clipd_data = np.where(data_region, NI_data, np.nan)
+			else:
+				clipd_data = NI_data
+			np.savetxt("tmp/penumbra.csv", clipd_data, delimiter=',')
 			np.savetxt("tmp/pointspread.csv", penumbral_kernel, delimiter=',')
 			execute_java("Deconvolution", method, r0/dxI)
 			B = np.loadtxt("tmp/source.csv", delimiter=',')
@@ -550,15 +561,15 @@ def analyze_scan(input_filename: str,
 		# save and plot the results
 		save_and_plot_source(f"{shot}-tim{tim}-{cut_name}", show_plots,
 		                     xS_bins, yS_bins, B, contour,
-		                     *kinematic_energies)
+		                     *emission_energies)
 		save_and_plot_overlaid_penumbra(f"{shot}-{tim}-{cut_name}", show_plots,
 		                                xI_bins, yI_bins, NI_reconstruct, NI_data)
 
 		results.append(dict(
 			shot=shot, tim=tim,
 			energy_cut=cut_name,
-			energy_min=kinematic_energies[0],
-			energy_max=kinematic_energies[1],
+			energy_min=emission_energies[0],
+			energy_max=emission_energies[1],
 			x0=xI0, dx0=0,
 			y0=yI0, dy0=0,
 			Q=Q, dQ=0,

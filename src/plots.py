@@ -18,7 +18,8 @@ MAX_NUM_PIXELS = 200
 SQUARE_FIGURE_SIZE = (6.4, 5.4)
 RECTANGULAR_FIGURE_SIZE = (6.4, 4.8)
 
-CMAP = {'all': GREYS, 'lo': REDS, 'md': GREENS, 'hi': BLUES, 'xray': VIOLETS, 'synth': GREYS,
+CMAP = {'all': GREYS, 'synth': GREYS, 'lo': REDS, 'md': ORANGES, 'hi': YELLOWS,
+        'xray': BLUES, 'loxray': CYANS, 'mdxray': BLUES, 'hixray': VIOLETS,
         '0': GREYS, '1': REDS, '2': ORANGES, '3': YELLOWS, '4': GREENS, '5': CYANS, '6': BLUES, '7': VIOLETS}
 
 
@@ -76,7 +77,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 			plt.plot(x0 + dx + r0*np.cos(T), y0 + dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
 	if "xray" in filename:
-		plt.title("X-ray image")
+		plt.title(f"$h\\nu$ = {energy_min:.1f} – {energy_max:.1f} keV")
 	elif energy_min is not None:
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
