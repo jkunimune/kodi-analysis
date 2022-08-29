@@ -1,22 +1,16 @@
-import numpy as np
-import scipy.special as sp
-import scipy.signal as signal
-import matplotlib.pyplot as plt
-import pandas as pd
 import pickle
 
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.signal as signal
 from matplotlib import path
 
-import main
-from main import plot_source, plot_penumbral_image
-from simulations import load_shot, make_image
-from perlin import perlin_generator, wave_generator
 from electric_field import e_field
-from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS, COFFEE
-plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
+from plots import plot_source, save_and_plot_penumbra
+from simulations import load_shot, make_image
 
-main.SHOW_PLOTS = True
-main.PLOT_CONTOUR = False
+
+plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 
 
 NOISE_SCALE = 1.0 # [cm]
@@ -260,9 +254,9 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 			with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.pkl', 'wb') as f:
 				pickle.dump((xI_bins, yI_bins, NI), f)
 
-			plot_penumbral_image(xI_bins, yI_bins, NI, xI_bins, yI_bins, NI, None,
-			                     0, 0, None, None, "synth")
-			plot_source(xS_bins, yS_bins, img, None, None, 'synth', name + "-synth-source")
+			save_and_plot_penumbra(f"{name}-tim0-synth", True,
+			                       xI_bins, yI_bins, NI, 0, 0, 0, np.inf)
+			plot_source(f"{name}-tim0-synth", True, xS, yS, img, .25, 0, np.inf, num_cuts=1)
 			
 		else:
 			raise KeyError(mode)

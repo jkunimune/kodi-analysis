@@ -8,7 +8,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 import static main.Math2.containsTheWordTest;
@@ -57,7 +59,7 @@ public class VoxelFit {
 		for (int i = 0; i < cross_sections.length; i ++) {
 			int j = cross_sections.length - 1 - i;
 			Э_data[j] = 14.1*4/9.*(1 - cross_sections[i][0]); // (MeV)
-			σ_data[j] = .64*b/μm/μm/(4*Math.PI)*2*cross_sections[i][1]; // (μm^2/srad)
+			σ_data[j] = .64*b/(μm*μm)/(4*Math.PI)*2*cross_sections[i][1]; // (μm^2/srad)
 		}
 		σ_nD = new DiscreteFunction(Э_data, σ_data).indexed(20);
 	}
@@ -78,7 +80,32 @@ public class VoxelFit {
 	private static final Logger logger = Logger.getLogger("root");
 
 	/**
-	 * read thru an array in the intuitive order and put it into a 1d list
+	 * take a vector and reshape it into an nd array with the given shape
+	 * @param input an m×n×o array
+	 */
+	private static double[][][] reravel(double[] input, int[] shape) {
+		if (shape.length != 3)
+			throw new UnsupportedOperationException("ndim must be 3");
+		int size = 1;
+		for (int dim: shape)
+			size *= dim;
+		if (size != input.length)
+			throw new IllegalArgumentException("the shape is rong.");
+		double[][][] output = new double[shape[0]][shape[1]][shape[2]];
+		int[] index = new int[shape.length];
+		for (double v: input) {
+			output[index[0]][index[1]][index[2]] = v;
+			for (int k = shape.length - 1; k >= 0; k--) {
+				index[k]++;
+				if (index[k] >= shape[k]) index[k] = 0;
+				else                      break;
+			}
+		}
+		return output;
+	}
+
+	/**
+	 * read thru an array in the intuitive order and put it into a 1d list in ijk order
 	 * @param input an m×n×o array
 	 */
 	private static double[] unravel(double[][][] input) {
@@ -211,158 +238,48 @@ public class VoxelFit {
 		}
 	}
 
-	/**
-	 * return the matrix that turns an unraveled coefficient vector into a full
-	 * 3d mapping, using spherical harmonics and linear interpolation in the
-	 * radial direction
-	 * @return a matrix A such that A_иijk = the derivative of the mapping at x_i,
-	 * y_j, z_k with respect to the иth basis function
-	 */
-	private static double[][][][] basis_functions(double[] r,
-												  double[] x,
-												  double[] y,
-												  double[] z) {
-		int[] shape = new int[r.length];
-		int num_basis_functions = 0;
-		for (int s = 0; s < r.length; s ++) {
-			shape[s] = Math.min(s + 1, MAX_MODE + 1);
-			for (int l = 0; l < shape[s]; l ++) {
-				num_basis_functions += 2*l + 1;
-			}
-		}
-
-		double[][][][] basis = new double[num_basis_functions][x.length][y.length][z.length];
-		for (int i = 0; i < x.length; i ++) {
-			for (int j = 0; j < y.length; j ++) {
-				for (int k = 0; k < z.length; k ++) {
-					double[][] harmonics = spherical_harmonics(x[i], y[j], z[k]);
-					double s_partial = Math.sqrt(x[i]*x[i] + y[j]*y[j] + z[k]*z[k])/r[r.length-1]*(r.length - 1);
-					int и = 0;
-					for (int s = 0; s < r.length; s ++) {
-						for (int l = 0; l < shape[s]; l ++) { // sum up the basis functions
-							// if (l != 1) // skipping P1 TODO: should I bring back the shift for P1?  probably not.  it would be nonlinear.
-							for (int m = -l; m <= l; m ++) {
-								double weit = Math.max(0, 1 - Math.abs(s - s_partial));
-								basis[и][i][j][k] = weit*harmonics[l][l + m];
-								и ++;
-							}
-						}
-					}
-				}
-			}
-		}
-
-		return basis;
-	}
-
-
-	/**
-	 * create an array that represents the dangers of overfitting with the basis functions you are given.
-	 * each row of the array represents one "bad mode", which is two basis functions with the same angular
-	 * distribution and adjacent radial positions, which ideally should have similar coefficients.  each
-	 * collum represents 
-	 * @param r the radial bins
-	 * @param num_basis_functions the total number of basis functions in uce
-	 * @param weit the quantity by which to scale the smoothing terms
-	 */
-	private static Matrix list_bad_modes(double[] r, int num_basis_functions, double weit) {
-		double dr = r[1] - r[0];
-		List<Vector> bad_modes = new ArrayList<>(0);
-		int иR = 1;
-		for (int sR = 1; sR < r.length + 2; sR ++) { // for each radial posicion
-			int sM = sR - 1, sL = Math.abs(sR - 2);
-			int num_modes_R = Math.min(sR + 1, MAX_MODE + 1);
-			int num_modes_M = Math.min(sM + 1, MAX_MODE + 1);
-			int num_modes_L = Math.min(sL + 1, MAX_MODE + 1);
-			for (int l = 0; l < num_modes_R; l ++) { // go thru the l and m values
-				for (int m = -l; m <= l; m ++) {
-					Vector mode = new SparseVector(num_basis_functions); // create a new "bad mode"
-					int иM = иR - num_modes_M*num_modes_M;
-					int иL = (sL < sM) ? иM - num_modes_L*num_modes_L : иR;
-					if (sR < r.length)
-						mode.increment(иR, 0.5*weit/Math.sqrt(dr)); // it is based on this
-					if (sM < r.length && l < num_modes_M) // and the corresponding previous basis
-						mode.increment(иM, - weit/Math.sqrt(dr)); // note that if there is no previous one, it just weys this value down
-					if (l < num_modes_L)
-						mode.increment(иL, 0.5*weit/Math.sqrt(dr));
-					if (!(l == 1 && sR == 1)) // skip this one set of modes because the sines work out to make these ones specifically rong
-						bad_modes.add(mode);
-					иR ++;
-				}
-			}
-		}
-		return new Matrix(bad_modes.toArray(new Vector[0]));
-	}
-
-
-	/**
-	 * calculate a voxel matrix of reactivities and densities
-	 * @param coefs a triangular array of spherical harmonick coefficients, where
-	 *              production_profiles[s][l][m] is the Y_l^m component of the
-	 *              profile at r[s]
-	 * @param basis the array of basis functions (order unity)
-	 * @return values at the vertices
-	 */
-	private static double[][][] bild_3d_map(
-		  double[] coefs, double[][][][] basis) {
-		if (coefs.length != basis.length)
-			throw new IllegalArgumentException(coefs.length+" coefficients cannot convolve "+basis.length+" basis functions.");
-
-		double[][][] values = new double[basis[0].length][basis[0][0].length][basis[0][0][0].length];
-		for (int и = 0; и < basis.length; и ++)
-			for (int i = 0; i < basis[и].length; i ++)
-				for (int j = 0; j < basis[и][i].length; j ++)
-					for (int k = 0; k < basis[и][i][j].length; k ++)
-						values[i][j][k] += coefs[и]*basis[и][i][j][k];
-
-		return values;
-	}
-
 
 	/**
 	 * calculate the transfer matrix that can convert a density array to images
-	 * @param density the density vertex values in (g/cm^3)
-	 * @param temperature the temperature in the shell (keV) to be used for ranging
-	 * @param x the x bin edges (μm)
-	 * @param y the y bin edges (μm)
-	 * @param z the z bin edges (μm)
+	 * @param density the density coefficient values in (g/cm^3)
+	 * @param temperature the uniform temperature in (keV)
+	 * @param basis the basis functions used to define the distributions
 	 * @param Э_cuts the energy bin edges in pairs (MeV)
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
 	 * @param lines_of_sight the detector line of site direccions
+	 * @param object_size the maximum radial extent of the implosion; you can also
+	 * 	                  think of it as the distance from TCC to the detector
+	 * @param integral_step the spatial scale on which to integrate
 	 * @return the matrix A such that A x = y, where x is the unraveld production
 	 * coefficients and y is the images
 	 */
 	private static Matrix generate_production_response_matrix(
-		  double[][][] density,
+		  Vector density,
 		  double temperature,
-		  double[] x,
-		  double[] y,
-		  double[] z,
-		  double[] r,
+		  Basis basis,
+		  double integral_step,
+		  double object_size,
 		  Vector[] lines_of_sight,
-		  Interval[] Э_cuts,
-		  double[][][] ξ,
-		  double[][][] υ,
-		  double[][][][] basis_functions,
+		  Interval[][] Э_cuts,
+		  double[][] ξ,
+		  double[][] υ,
 		  double smoothing
 	) {
 		return Matrix.verticly_stack(
 			  new Matrix(unravelRagged(synthesize_image_response(
-			  	  null, density, temperature, x, y, z,
-				  lines_of_sight, Э_cuts, ξ, υ, basis_functions,
+			  	  null, density, temperature, basis,
+				  integral_step, object_size, lines_of_sight, Э_cuts, ξ, υ,
 				  true, false))),
-			  list_bad_modes(r, basis_functions.length, smoothing));
+			  basis.roughness_vectors(smoothing));
 	}
 
 	/**
 	 * calculate the transfer matrix that can convert a density array to images
-	 * @param production the neutron production vertex values in (n/μm^3)
-	 * @param density the density vertex values in (g/cm^3) to be used for ranging
-	 * @param temperature the temperature in the shell (keV) to be used for ranging
-	 * @param x the x bin edges (μm)
-	 * @param y the y bin edges (μm)
-	 * @param z the z bin edges (μm)
+	 * @param production the production coefficient values in (n/μm^3)
+	 * @param density the density coefficient values in (g/cm^3)
+	 * @param temperature the uniform temperature in (keV)
+	 * @param basis the basis functions used to define the distributions
 	 * @param Э_cuts the energy bin edges (MeV)
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
@@ -371,57 +288,54 @@ public class VoxelFit {
 	 * coefficients and y is the images
 	 */
 	private static Matrix generate_density_response_matrix(
-		  double[][][] production,
-		  double[][][] density,
+		  Vector production,
+		  Vector density,
 		  double temperature,
-		  double[] x,
-		  double[] y,
-		  double[] z,
-		  double[] r,
+		  Basis basis,
+		  double integral_step,
+		  double object_size,
 		  Vector[] lines_of_sight,
-		  Interval[] Э_cuts,
-		  double[][][] ξ,
-		  double[][][] υ,
-		  double[][][][] basis_functions,
+		  Interval[][] Э_cuts,
+		  double[][] ξ,
+		  double[][] υ,
 		  double smoothing
 	) {
 		return Matrix.verticly_stack(
 			  new Matrix(unravelRagged(synthesize_image_response(
-				  production, density, temperature, x, y, z,
-				  lines_of_sight, Э_cuts, ξ, υ, basis_functions,
+				  production, density, temperature, basis,
+				  integral_step, object_size, lines_of_sight, Э_cuts, ξ, υ,
 				  false, true))),
-			  list_bad_modes(r, basis_functions.length, smoothing));
+			  basis.roughness_vectors(smoothing));
 	}
 
 	/**
 	 * calculate the image pixel fluences with respect to the inputs
-	 * @param production the reactivity vertex values in (n/μm^3)
-	 * @param density the density vertex values in (g/cm^3)
+	 * @param production the reactivity coefficients (n/μm^3)
+	 * @param density the density coefficients (g/cm^3)
 	 * @param temperature the electron temperature, taken to be uniform (keV)
-	 * @param x the x bin edges (μm)
-	 * @param y the y bin edges (μm)
-	 * @param z the z bin edges (μm)
+	 * @param basis the basis functions used to convert those coefficients into distributions
 	 * @param Э_cuts the energy bin edges (MeV)
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
 	 * @param lines_of_sight the detector line of site direccions
+	 * @param integral_step the resolution at which to integrate the morphology
 	 * @return the image in (#/srad/μm^2)
 	 */
 	private static double[][][][] synthesize_images(
-		  double[][][] production,
-		  double[][][] density,
+		  Vector production,
+		  Vector density,
 		  double temperature,
-		  double[] x,
-		  double[] y,
-		  double[] z,
+		  Basis basis,
+		  double object_radius,
+		  double integral_step,
 		  Vector[] lines_of_sight,
-		  Interval[] Э_cuts,
-		  double[][][] ξ,
-		  double[][][] υ
+		  Interval[][] Э_cuts,
+		  double[][] ξ,
+		  double[][] υ
 	) {
 		Vector[][][][] wrapd = synthesize_image_response(
-			  production, density, temperature,
-			  x, y, z, lines_of_sight, Э_cuts, ξ, υ, null,
+			  production, density, temperature, basis,
+			  object_radius, integral_step, lines_of_sight, Э_cuts, ξ, υ,
 			  false, false
 		);
 		double[][][][] image = new double[wrapd.length][][][];
@@ -451,17 +365,15 @@ public class VoxelFit {
 	 * density, not the neutron source (and assuming that the effect of ranging
 	 * is fixed).  if neither is null, you will get a single actual image
 	 * wrapped in an array.
-	 * @param production the production vertex values in (n/μm^3)
-	 * @param density the density vertex values in (g/cm^3)
-	 * @param x the x bin edges (μm)
-	 * @param y the y bin edges (μm)
-	 * @param z the z bin edges (μm)
+	 * @param production the production coefficient values in (n/μm^3)
+	 * @param density the density coefficient values in (g/cm^3)
+	 * @param temperature the uniform temperature in (keV)
+	 * @param basis the basis functions used to define the distributions
 	 * @param lines_of_sight the detector line of site direccions
 	 * @param Э_cuts the energy bin edges (MeV)
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
-	 * @param basis_functions each element of the array is a 3D distribution
-	 *                        representing one independent mode in the space
+	 * @param integral_step the resolution at which to integrate the morphology
 	 * @param respond_to_production whether the neutron production should be taken
 	 *                              to depend on the basis functions
 	 * @param respond_to_density whether the density should be taken to depend on
@@ -471,48 +383,41 @@ public class VoxelFit {
 	 * is the response of pixel i,j in cut h on line of sight l to basis function и
 	 */
 	private static Vector[][][][] synthesize_image_response(
-		  double[][][] production,
-		  double[][][] density,
+		  Vector production,
+		  Vector density,
 		  double temperature,
-		  double[] x,
-		  double[] y,
-		  double[] z,
+		  Basis basis,
+		  double object_radius,
+		  double integral_step,
 		  Vector[] lines_of_sight,
-		  Interval[] Э_cuts,
-		  double[][][] ξ,
-		  double[][][] υ,
-		  double[][][][] basis_functions,
+		  Interval[][] Э_cuts,
+		  double[][] ξ,
+		  double[][] υ,
 		  boolean respond_to_production,
 		  boolean respond_to_density
 	) {
-		if ((respond_to_production || respond_to_density) && basis_functions == null)
-			throw new IllegalArgumentException("you need basis functions to get responses");
+		assert !(respond_to_production && respond_to_density) : "I can only respond to one at a time.";
+		assert integral_step < object_radius : "there must be at least one pixel.";
 
 		DiscreteFunction[] ranging_curves = calculate_ranging_curves(temperature);
 		DiscreteFunction stopping_distance = ranging_curves[0]; // (MeV -> g/cm^2)
 		DiscreteFunction penetrating_energy = ranging_curves[1]; // (g/cm^2 -> MeV)
 
-		double L_pixel = x[1] - x[0]; // (μm)
-		double V_voxel = Math.pow(L_pixel, 3); // (μm^3)
-		double radius = Math.max(Math.max(x[x.length - 1], y[y.length - 1]), z[z.length - 1]);
+		double V_voxel = Math.pow(integral_step, 3); // (μm^3)
 
-		int num_basis_functions;
-		if (basis_functions == null)
-			num_basis_functions = 1;
-		else
-			num_basis_functions = basis_functions.length;
-
-		Vector[][][][] response = new Vector[lines_of_sight.length][Э_cuts.length][][];
+		// build up the output array
+		Vector[][][][] response = new Vector[lines_of_sight.length][][][];
 		for (int l = 0; l < lines_of_sight.length; l ++) {
-			for (int h = 0; h < Э_cuts.length; h++) {
-				response[l][h] = new Vector[ξ[l][h].length - 1][υ[l][h].length - 1];
+			response[l] = new Vector[Э_cuts[l].length][ξ[l].length][υ[l].length];
+			for (int h = 0; h < response[l].length; h ++) {
 				for (int i = 0; i < response[l][h].length; i ++)
 					for (int j = 0; j < response[l][h][i].length; j ++)
-						response[l][h][i][j] = new SparseVector(num_basis_functions);
+						response[l][h][i][j] = new SparseVector(basis.num_functions);
 			}
 		}
 
 		// for each line of sight
+		long position_index = 1;
 		for (int l = 0; l < lines_of_sight.length; l ++) {
 			// define the rotated coordinate system (ζ points toward the TIM; ξ and υ are orthogonal)
 			Vector ζ_hat = lines_of_sight[l];
@@ -522,138 +427,102 @@ public class VoxelFit {
 			else
 				ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
 			Vector υ_hat = ζ_hat.cross(ξ_hat);
-			double[] ζ = new double[Math.max(ξ[l][0].length, υ[l][0].length)]; // (these coordinates aren't too important, so just using the bins from the lowest energy bin should be fine
-			for (int k = 0; k < ζ.length; k ++)
-				ζ[k] = radius*(2*k/(ζ.length - 1.) - 1);
+			Matrix rotate = new Matrix(new Vector[] {ξ_hat, υ_hat, ζ_hat}).trans();
 
-			// then build the ρL map in TIM-oriented coordinates
-			double[][][] ρL_skew = new double[ξ[l][0].length][υ[l][0].length][ζ.length];
-			int warningsPrinted = 0;
-			for (int i = 0; i < ξ[l][0].length; i ++) {
-				for (int j = 0; j < υ[l][0].length; j ++) {
-					for (int k = ζ.length - 1; k >= 0; k --) { // TODO: maybe this should tie into the full integral – solve for the stuff in each pixel one at a time
-						// get the density here and the density there and the ρL up to there
-						Vector r1 = ξ_hat.times(ξ[l][0][i]).plus(υ_hat.times(υ[l][0][j])).plus(ζ_hat.times(ζ[k])); // (μm)
-						double ρ1;
-						try {
-							ρ1 = Math2.interp3d(density, x, y, z, r1, false); // (g/cm^3)
-						} catch (IndexOutOfBoundsException e) {
-							ρ1 = 0;
+			// iterate thru the pixels
+			for (int iV = 0; iV < ξ[l].length; iV ++) {
+				for (int jV = 0; jV < υ[l].length; jV ++) {
+					// iterate from the detector along a chord thru the implosion
+					double ρL = 0; // tally up ρL as you go
+					double ρ_previus = 0;
+					for (double ζD = object_radius; ζD >= -object_radius; ζD -= integral_step) {
+						Vector rD = rotate.times(ξ[l][iV], υ[l][jV], ζD);
+						double[] local_density;
+						double ρD;
+						if (respond_to_density) {
+							local_density = basis.get(rD, position_index);
+							ρD = density.dot(new DenseVector(local_density));
 						}
-						double ρ0, ρL_beyond;
-						if (k + 1 < ζ.length) {
-							Vector r0 = ξ_hat.times(ξ[l][0][i]).plus(υ_hat.times(υ[l][0][j])).plus(ζ_hat.times(ζ[k + 1]));
-							try {
-								ρ0 = Math2.interp3d(density, x, y, z, r0, false); // (g/cm^3)
-							} catch (IndexOutOfBoundsException e) {
-								ρ0 = 0;
-							}
-							ρL_beyond = ρL_skew[i][j][k + 1]; // (g/cm^2)
+						else {
+							ρD = basis.get(rD, density, position_index);
+							local_density = new double[] {ρD};
 						}
-						else { // or not if this point is on the outer edge
-							ρ0 = 0;
-							ρL_beyond = 0;
+						position_index ++;
+						if (Math2.all_zero(local_density)) { // skip past the empty regions to focus on the implosion
+							if (ρL == 0)
+								continue;
+							else
+								break;
 						}
-						// then cumulatively integrate it up
-						double dρL = (ρ0 + ρ1)/2.*L_pixel*μm/cm; // (g/cm^2)
-						ρL_skew[i][j][k] = ρL_beyond + dρL;
-						if (warningsPrinted < 3 && dρL > 50e-3) {
-							logger.warning(String.format(
-									"WARNING: the rhoL in a single pixel (%.3g mg/cm^2) is too hi.  you probably need " +
-											"a hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
-									dρL*1e3, ρ0, 20e-3/ρ0*cm/μm));
-							warningsPrinted++;
-						}
-					}
-				}
-			}
+						ρL += (ρD + ρ_previus)/2.*integral_step;
 
-			// remap this onto the absolutely oriented grid
-			double[][][] ρL = new double[x.length][y.length][z.length];
-			for (int i = 0; i < x.length; i ++) {
-				for (int j = 0; j < y.length; j ++) {
-					for (int k = 0; k < z.length; k ++) {
-						Vector r = new DenseVector(x[i], y[j], z[k]);
-						Vector r_skew = new DenseVector(
-								r.dot(ξ_hat), r.dot(υ_hat), r.dot(ζ_hat));
-						try {
-							ρL[i][j][k] = Math2.interp3d(
-									ρL_skew, ξ[l][0], υ[l][0], ζ, r_skew, false);
-						} catch (IndexOutOfBoundsException e) {
-							ρL[i][j][k] = 0;
-						}
-					}
-				}
-			}
+						// iterate thru all possible scattering locations
+						ζ_scan:
+						for (double Δζ = -integral_step/2.; true; Δζ -= integral_step) {
+							double Δξ = 0, Δυ = 0;
+							ξ_scan:
+							while (true) { // there's a fancy 2D for-loop-type-thing here
+								boolean we_should_keep_looking_here = false;
 
-			for (int iP = 0; iP < x.length; iP ++) { // for each point in the production map
-				for (int jP = 0; jP < y.length; jP ++) {
-					for (int kP = 0; kP < z.length; kP ++) {
+								Vector Δr = rotate.times(Δξ, Δυ, Δζ);
+								Vector rP = rD.plus(Δr);
 
-						double[] local_production; // get the production
-						if (respond_to_production) // either by basing it on the basis function
-							local_production = Math2.collum(
-								  basis_functions, iP, jP, kP);
-						else // or by taking it from the provided production array
-							local_production = Math2.full(production[iP][jP][kP], num_basis_functions);
-						if (Math2.all_zero(local_production))
-							continue;
+								double[] local_production; // get the production
+								if (respond_to_production) // either by basing it on the basis function
+									local_production = basis.get(rP, position_index); // TODO: memoize this using a big array instead of the Map
+								else // or taking it at this point
+									local_production = new double[] {basis.get(rP, production, position_index)};
+								position_index ++;
+								if (!Math2.all_zero(local_production)) {
 
-						for (int iD = 0; iD < x.length; iD ++) { // for each point in the density matrix
-							for (int jD = 0; jD < y.length; jD ++) {
-								for (int kD = 0; kD < z.length; kD ++) {
-
-									double[] local_density; // get the density
-									if (respond_to_density) // either by basing it on the basis function
-										local_density = Math2.collum(
-											  basis_functions, iD, jD, kD);
-									else // or by taking it from the provided density array
-										local_density = Math2.full(density[iD][jD][kD], num_basis_functions);
-									if (Math2.all_zero(local_density))
-										continue;
-
-									Vector rP = new DenseVector(x[iP], y[jP], z[kP]);
-									Vector rD = new DenseVector(x[iD], y[jD], z[kD]);
-
-									double Δζ = rD.minus(rP).dot(ζ_hat); // (μm)
-									if (Δζ <= 0) // make sure the scatter is physickly possible
-										continue;
-
-									double Δr2 = (rD.minus(rP)).sqr(); // (μm^2)
-									double cosθ2 = Math.pow(Δζ, 2)/Δr2;
+									double Δr2 = Δr.sqr(); // (μm^2)
+									double cosθ2 = (Δζ*Δζ)/Δr2;
 									double ЭD = Э_KOD*cosθ2;
 
 									double ЭV = penetrating_energy.evaluate(
-										  stopping_distance.evaluate(ЭD) - ρL[iD][jD][kD]); // (MeV)
-									if (ЭV <= 0) // make sure it doesn't range out
-										continue;
+										  stopping_distance.evaluate(ЭD) - ρL); // (MeV)
+									if (ЭV > 0) { // make sure it doesn't range out
 
-									double ξV = rD.dot(ξ_hat);
-									double υV = rD.dot(υ_hat);
+										int hV = Math2.bin(ЭV, Э_cuts[l]); // bin it in energy
+										if (hV >= 0 && hV < Э_cuts[l].length) {
 
-									double σ = σ_nD.evaluate(ЭD); // (μm^2)
+											double σ = σ_nD.evaluate(ЭD); // (μm^2)
 
-									int hV = Math2.bin(ЭV, Э_cuts);
-									if (hV < 0 || hV >= Э_cuts.length)
-										continue;
-									int iV = Math2.bin(ξV, ξ[l][hV]);
-									if (iV < 0 || iV >= ξ[l][hV].length - 1)
-										continue;
-									int jV = Math2.bin(υV, υ[l][hV]);
-									if (jV < 0 || jV >= υ[l][hV].length - 1)
-										continue;
+											double contribution =
+												  1./m_DT*
+												  σ/(4*Math.PI*Δr2)*
+												  V_voxel*V_voxel*Math.pow(μm/cm, 3); // (d/srad/(n/μm^3)/(g/cc))
 
-									double contribution =
-										  1./m_DT*
-										  σ/(4*Math.PI*Δr2)*
-										  V_voxel*V_voxel*Math.pow(μm/cm, 3); // (d/srad/(n/μm^3)/(g/cc))
+											for (int и = 0; и < basis.num_functions; и ++) // finally, iterate over the basis functions
+												response[l][hV][iV][jV].increment(и,
+												      local_production[respond_to_production ? и : 0]*
+													  local_density[respond_to_density ? и : 0]*
+													  contribution);
+											we_should_keep_looking_here = true;
+										}
+									}
+								}
 
-									for (int и = 0; и < num_basis_functions; и ++) // finally, iterate over the basis functions
-										if (local_production[и] != 0 && local_density[и] != 0) // TODO I feel like this line does noting
-											response[l][hV][iV][jV].increment(и,
-					                              local_production[и]*
-												  local_density[и]*
-												  contribution);
+								// do the incrementation for the fancy 2D for-loop-type-thing
+								if (we_should_keep_looking_here) {
+									if (Δυ >= 0) Δυ += integral_step; // if you're scanning in the +υ direction, go up
+									else         Δυ -= integral_step; // if you're scanning in the -υ direction, go down
+								}
+								else {
+									if (Δυ > 0)
+										Δυ = -integral_step; // when you hit the end of the +υ scan, switch to -υ
+									else { // when you hit the end of the -υ scan,
+										if (Δυ < 0) {
+											if (Δξ >= 0) Δξ += integral_step; // if you're scanning in the +ξ direction, go rite
+											else         Δξ -= integral_step; // if you're scanning in the -ξ direction, go left
+										}
+										else { // if you hit the end of the ξ scan
+											if (Δξ > 0)      Δξ = -integral_step; // if it's the +ξ scan, switch to -ξ
+											else if (Δξ < 0) break ξ_scan; // if it's the end of the -ξ scan, we're done here
+											else             break ζ_scan; // when you hit the end of the --ζ scan
+										}
+										Δυ = 0;
+									}
 								}
 							}
 						}
@@ -668,39 +537,39 @@ public class VoxelFit {
 
 	/**
 	 * reconstruct the implosion morphology that corresponds to the given images.
-	 * @param totalYield the total neutron totalYield (used to constrain production)
+	 * @param total_yield the total neutron total_yield (used to constrain production)
 	 * @param images an array of arrays of images.  images[l][h][i][j] is the ij
 	 *               pixel of the h energy bin of the l line of site
-	 * @param r the r points to use for the parameterization (μm)
-	 * @param x the edges of the x bins to use for the morphology (μm)
-	 * @param y the edges of the y bins to use for the morphology (μm)
-	 * @param z the edges of the z bins to use for the morphology (μm)
 	 * @param Э_cuts the edges of the energy bins of the images (MeV)
 	 * @param ξ the edges of the x bins of the images (μm)
 	 * @param υ the edges of the y bins of the images (μm)
 	 * @param lines_of_sight the normalized z vector of each line of site
+	 * @param output_basis the basis to use to represent the resulting morphology
+	 * @param object_radius the maximum radial extent of the implosion
+	 * @param feature_scale the minimum size of features to be reconstructed
 	 * @return an array of two 3d matrices:
 	 *     the neutron production (m^-3),
 	 *     the mass density (g/L), and
 	 *     the temperature (keV) (this one is actually a scalar)
 	 */
-	private static double[][][][] reconstruct_images(
-		  double totalYield, double[][][][] images,
-		  double[] r, double[] x, double[] y, double[] z,
-		  Vector[] lines_of_sight, Interval[] Э_cuts, double[][][] ξ, double[][][] υ) { // TODO: multithread?
+	private static Vector[] reconstruct_images(
+		  double total_yield, double[][][][] images,
+		  Vector[] lines_of_sight, Interval[][] Э_cuts, double[][] ξ, double[][] υ,
+		  double object_radius, double feature_scale, Basis output_basis) { // TODO: multithread?
 
 		VoxelFit.logger.info(String.format("reconstructing %dx%d (%d total) images",
 										   images.length, images[0].length, images.length*images[0].length));
 
 		// start by defining the spherical-harmonick basis functions
-		double[][][][] basis_functions = basis_functions(r, x, y, z);
-		int num_basis_functions = basis_functions.length;
-		double[] basis_volumes = new double[num_basis_functions];
-		for (int i = 0; i < num_basis_functions; i ++)
-			basis_volumes[i] = Math2.iiintegral(basis_functions[i], x, y, z); // μm^3
+		double[] r = new double[(int)Math.round(object_radius/feature_scale)];
+		for (int n = 0; n < r.length; n ++)
+			r[n] = feature_scale*n; // (μm)
+		Basis basis = new SphericalHarmonicBasis(MAX_MODE, r);
+		double[] basis_volumes = new double[basis.num_functions];
+		for (int и = 0; и < basis.num_functions; и ++)
+			basis_volumes[и] = basis.get_volume(и); // μm^3
 
-		int num_smoothing_parameters = list_bad_modes(
-			  r, num_basis_functions, 0).n;
+		int num_smoothing_parameters = basis.roughness_vectors(0).n;
 
 		double[] image_vector = unravelRagged(images);
 		int num_pixels = image_vector.length;
@@ -716,21 +585,20 @@ public class VoxelFit {
 		for (int i = num_pixels; i < data_vector.length; i ++)
 			inverse_variance_vector[i] = 1;
 
-		double production_gess = totalYield/
+		double production_gess = total_yield/
 			  (4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3));
 
-		VoxelFit.logger.info(String.format("using %d 3d basis functions on %dx%dx%d point array",
-										   num_basis_functions,
-										   x.length, y.length, z.length));
+		VoxelFit.logger.info(String.format("using %d 3d basis functions on %.1fum/%.1fum morphology",
+										   basis.num_functions, r[r.length - 1], r[1]));
 
-		double[] production_coefs = new double[num_basis_functions];
-		production_coefs[0] = totalYield/basis_volumes[0]; // set the production to satisfy the total yield constraint
+		Vector production = DenseVector.zeros(basis.num_functions);
+		production.set(0, total_yield/basis.get_volume(0)); // set the production to satisfy the total yield constraint
 
-		double[] density_coefs = new double[num_basis_functions];
+		Vector density = DenseVector.zeros(basis.num_functions);
 		int и = 0;
 		for (int s = 0; s < r.length; s ++) {
-			density_coefs[и] = SHELL_DENSITY_GESS*
-				  Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2))); // then set the density p0 terms to be this gaussian profile
+			density.set(и, SHELL_DENSITY_GESS*
+				  Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2)))); // then set the density p0 terms to be this gaussian profile
 			и += Math.pow(Math.min(s + 1, MAX_MODE + 1), 2);
 		}
 		double temperature = SHELL_TEMPERATURE_GESS;
@@ -742,53 +610,50 @@ public class VoxelFit {
 			logger.info(String.format("Pass %d", iter));
 
 			final double current_temperature = temperature;
-
-			double[][][] density = bild_3d_map(density_coefs, basis_functions);
+			final Vector current_density = density;
 
 			// start by optimizing the hot spot subject to the yield constraint
-			Optimum production_solution = Optimize.quasilinear_least_squares(
+			Optimum production_optimum = Optimize.quasilinear_least_squares(
 				  (coefs) -> generate_production_response_matrix(
-						density,
+						current_density,
 						current_temperature,
-						x, y, z, r,
+						basis, object_radius, feature_scale/2,
 						lines_of_sight, Э_cuts, ξ, υ,
-						basis_functions,
 						SMOOTHING/(production_gess/Math.sqrt(r[r.length-1]))),
 				  data_vector,
 				  inverse_variance_vector,
-				  production_coefs,
+				  production.getValues(),
 				  Double.POSITIVE_INFINITY,
 				  logger,
-				  basis_volumes); // TODO: do shell temperature
-			production_coefs = production_solution.location;
-			double[][][] production = bild_3d_map(production_coefs, basis_functions);
+				  basis_volumes);
+			production = new DenseVector(production_optimum.location);
 
 			// then optimize the cold fuel (fully unconstraind)
-			Optimum density_solution = Optimize.quasilinear_least_squares(
+			final Vector current_production = production;
+			Optimum density_optimum = Optimize.quasilinear_least_squares(
 				  (coefs) -> generate_density_response_matrix(
-						production,
-						bild_3d_map(coefs, basis_functions),
+						current_production,
+						new DenseVector(coefs),
 						current_temperature,
-						x, y, z, r,
+						basis, object_radius, feature_scale/2,
 						lines_of_sight, Э_cuts, ξ, υ,
-						basis_functions,
 						SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length-1]))),
 				  data_vector,
 				  inverse_variance_vector,
-				  density_coefs,
+				  density.getValues(),
 				  1e-3,
 				  logger);
-			density_coefs = density_solution.location;
+			density = new DenseVector(density_optimum.location);
 
 //			temperature = temperature; TODO: fit temperature
 
-			next_error = density_solution.value;
+			next_error = density_optimum.value;
 			iter ++;
 		} while ((last_error - next_error)/next_error > TOLERANCE);
 
-		double[][][] production = bild_3d_map(production_coefs, basis_functions);
-		double[][][] density = bild_3d_map(density_coefs, basis_functions);
-		return new double[][][][] { production, density, {{{temperature}}} };
+		production = output_basis.rebase(basis, production);
+		density = output_basis.rebase(basis, density);
+		return new Vector[] { production, density, new DenseVector(temperature) };
 	}
 
 
@@ -800,87 +665,394 @@ public class VoxelFit {
 						"3d");
 		logger.info("starting...");
 
-		double[][] lines_of_sight = CSV.read(new File("tmp/lines_of_site.csv"), ',');
-		Vector[] lines_of_site = new Vector[lines_of_sight.length];
-		for (int i = 0; i < lines_of_sight.length; i ++)
-			lines_of_site[i] = new DenseVector(lines_of_sight[i]);
+		double model_resolution = Double.parseDouble(args[0]);
+		double integral_resolution = model_resolution/2;
 
-		double[] x = CSV.readColumn(new File("tmp/x.csv")); // load the coordinate system (μm)
+		double[][] line_of_site_data = CSV.read(new File("tmp/lines_of_site.csv"), ',');
+		Vector[] lines_of_site = new Vector[line_of_site_data.length];
+		for (int i = 0; i < lines_of_site.length; i ++)
+			lines_of_site[i] = new DenseVector(line_of_site_data[i]);
+
+		double[] x = CSV.readColumn(new File("tmp/x.csv")); // load the coordinate system for 3d input and output (μm)
 		double[] y = CSV.readColumn(new File("tmp/y.csv")); // (μm)
 		double[] z = CSV.readColumn(new File("tmp/z.csv")); // (μm)
-		double[][] Э_array = CSV.read(new File("tmp/energy.csv"), ','); // (MeV)
-		Interval[] Э_cuts = new Interval[Э_array.length];
-		for (int i = 0; i < Э_cuts.length; i ++)
-			Э_cuts[i] = new Interval(Э_array[i][0], Э_array[i][1]);
+		Basis model_grid = new CartesianGrid(x, y, z);
+		double object_radius = Math.sqrt(x[0]*x[0] + y[0]*y[0] + z[0] + z[0]);
 
-		double[] r = new double[(int)((x.length - 1)/(2*Math.sqrt(3)))]; // (μm)
-		for (int s = 0; s < r.length; s ++)
-			r[s] = x[x.length - 1]*s/r.length;
+		Interval[][] Э_cuts = new Interval[lines_of_site.length][];
+		double[][] ξ = new double[lines_of_site.length][];
+		double[][] υ = new double[lines_of_site.length][];
+		for (int l = 0; l < lines_of_site.length; l ++) {
+			double[][] Э_array = CSV.read(new File("tmp/energy-los"+l+".csv"), ','); // (MeV)
+			Э_cuts[l] = new Interval[Э_array.length];
+			for (int h = 0; h < Э_cuts[l].length; h ++)
+				Э_cuts[l][h] = new Interval(Э_array[h][0], Э_array[h][1]);
+			ξ[l] = CSV.readColumn(new File("tmp/xye-los"+l+".csv"));
+			υ[l] = CSV.readColumn(new File("tmp/ypsilon-los"+l+".csv"));
+		}
 
-		double[][][] ξ = new double[lines_of_sight.length][Э_cuts.length][];
-		double[][][] υ = new double[lines_of_sight.length][Э_cuts.length][];
-		double[][][][] images = new double[lines_of_sight.length][Э_cuts.length][][];
+		double[][][][] images = new double[lines_of_site.length][][][];
 		double neutronYield;
 
 		if (containsTheWordTest(args)) {
-			for (int l = 0; l < lines_of_sight.length; l ++) {
-				for (int h = 0; h < Э_cuts.length; h ++) {
-					ξ[l][h] = CSV.readColumn(new File("tmp/xye-los"+l+"-cut"+h+".csv"));
-					υ[l][h] = CSV.readColumn(new File("tmp/ypsilon-los"+l+"-cut"+h+".csv"));
-				}
-			}
 			String[] morphology_filenames = {"production", "density"};
-			double[][][][] anser = new double[2][x.length][y.length][z.length];
+			double[][] anser = new double[morphology_filenames.length][];
 			for (int q = 0; q < morphology_filenames.length; q++) {
-				double[] anser_as_colum = CSV.readColumn(new File(
+				anser[q] = CSV.readColumn(new File(
 					  String.format("tmp/%s.csv", morphology_filenames[q]))); // load the input morphology (μm^-3, g/cm^3)
-				for (int i = 0; i < x.length; i++)
-					for (int j = 0; j < y.length; j++)
-						System.arraycopy(
-							  anser_as_colum, (i*y.length + j)*z.length,
-							  anser[q][i][j], 0, z.length);
+				if (anser[q].length != model_grid.num_functions)
+					throw new IOException("this file had the rong number of things");
 			}
 			double temperature = CSV.readScalar(new File("tmp/temperature.csv")); // (keV)
 
 			images = synthesize_images(
-				  anser[0], anser[1], temperature,
-				  x, y, z, lines_of_site, Э_cuts, ξ, υ); // synthesize the true images (d/μm^2/srad)
-			for (int l = 0; l < lines_of_sight.length; l ++)
-				for (int h = 0; h < Э_cuts.length; h ++)
-					CSV.write(images[l][h], new File("tmp/image-los"+l+"-cut"+h+".csv"), ',');
+				  new DenseVector(anser[0]), new DenseVector(anser[1]), temperature,
+				  model_grid, object_radius, integral_resolution, lines_of_site, Э_cuts, ξ, υ); // synthesize the true images (d/μm^2/srad)
+			for (int l = 0; l < lines_of_site.length; l ++)
+				CSV.writeColumn(unravel(images[l]), new File("tmp/image-los"+l+".csv"));
 
-			neutronYield = Math2.iiintegral(anser[0], x, y, z);
+			neutronYield = Math2.sum(anser[0])*(x[1] - x[0])*(y[1] - y[0])*(z[1] - z[0]);
 			CSV.writeScalar(neutronYield, new File("tmp/total-yield.csv"));
 		}
 		else {
-			for (int l = 0; l < lines_of_sight.length; l ++) {
-				for (int h = 0; h < Э_cuts.length; h ++) {
-					ξ[l][h] = CSV.readColumn(new File("tmp/xye-los"+l+"-cut"+h+".csv"));
-					υ[l][h] = CSV.readColumn(new File("tmp/ypsilon-los"+l+"-cut"+h+".csv"));
-					images[l][h] = CSV.read(new File("tmp/image-los"+l+"-cut"+h+".csv"), ',');
+			for (int l = 0; l < lines_of_site.length; l ++) {
+				images[l] = reravel(CSV.readColumn(new File("tmp/image-los"+l+".csv")),
+				                    new int[] {});
+				for (int h = 0; h < Э_cuts[l].length; h ++) {
 					int n = images[l][h].length, m = images[l][h][0].length;
-					if (n != ξ[l][h].length - 1 || m != υ[l][h].length - 1)
-						throw new IllegalArgumentException("image size "+n+"x"+m+" does not match array lengths ("+ξ[l][h].length+" for xi and "+υ[l][h].length+" for ypsilon)");
+					if (n != ξ[l].length || m != υ[l].length)
+						throw new IllegalArgumentException(
+								"image size "+n+"x"+m+" does not match array lengths ("+ξ[l].length+" for xi and "+
+								υ[l].length+" for ypsilon)");
 				}
 			}
 
 			neutronYield = CSV.readScalar(new File("tmp/total-yield.csv"));
 		}
 
-		double[][][][] anser = reconstruct_images(
+		Vector[] anser = reconstruct_images(
 			  neutronYield, images,
-			  r, x, y, z,
-			  lines_of_site, Э_cuts, ξ, υ); // reconstruct the morphology
+			  lines_of_site, Э_cuts, ξ, υ,
+			  object_radius, model_resolution, model_grid); // reconstruct the morphology
 
 		images = synthesize_images(
-			  anser[0], anser[1], anser[2][0][0][0],
-			  x, y, z, lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphologie's images
+			  anser[0], anser[1], anser[2].get(0),
+			  model_grid, object_radius, integral_resolution,
+			  lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphologie's images
 
-		CSV.writeColumn(unravel(anser[0]), new File("tmp/production-recon.csv"));
-		CSV.writeColumn(unravel(anser[1]), new File("tmp/density-recon.csv"));
-		CSV.writeScalar(anser[2][0][0][0], new File("tmp/temperature-recon.csv"));
-		for (int l = 0; l < lines_of_sight.length; l ++)
-			for (int h = 0; h < Э_cuts.length; h ++)
-				CSV.write(images[l][h], new File("tmp/image-los"+l+"-cut"+h+"-recon.csv"), ',');
+		CSV.writeColumn(anser[0].getValues(), new File("tmp/production-recon.csv"));
+		CSV.writeColumn(anser[1].getValues(), new File("tmp/density-recon.csv"));
+		CSV.writeScalar(anser[2].get(0), new File("tmp/temperature-recon.csv"));
+		for (int l = 0; l < lines_of_site.length; l ++)
+			CSV.writeColumn(unravel(images[l]), new File("tmp/image-los"+l+"-recon.csv"));
 	}
+
+
+	/**
+	 * a fixed distribution definition that turns the unraveled coefficient vector into a
+	 * full 3d mapping
+	 */
+	public abstract static class Basis {
+		/** the number of basis functions in this basis */
+		public final int num_functions;
+
+		public Basis(int num_functions) {
+			this.num_functions = num_functions;
+		}
+
+		/**
+		 * get the value of the distribution at a particular location in space given the basis function coeffients
+		 * @param r the location vector (μm)
+		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 doubles
+		 * @param coefficients the value to multiply by each basis function (same units as output)
+		 * @return the value of the distribution in the same units as coefficients
+		 */
+		public double get(Vector r, Vector coefficients, long key) {
+			assert r.getLength() == 3 : "this vector is not in 3-space";
+			return this.get(r.get(0), r.get(1), r.get(2), coefficients, key);
+		}
+
+		/**
+		 * get the value of the distribution at a particular location in space given the basis function coeffients
+		 * @param x the x coordinate (μm)
+		 * @param y the y coordinate (μm)
+		 * @param z the z coordinate (μm)
+		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 doubles
+		 * @param coefficients the value to multiply by each basis function (same units as output)
+		 * @return the value of the distribution in the same units as coefficients
+		 */
+		public double get(double x, double y, double z, Vector coefficients, long key) {
+			assert coefficients.getLength() == num_functions : "this is the rong number of coefficients";
+			double result = 0;
+			for (int i = 0; i < num_functions; i ++)
+				if (coefficients.get(i) != 0)
+					result += coefficients.get(i)*this.get(x, y, z, i, key);
+			return result;
+		}
+
+		/**
+		 * get the value of each basis function at a particular location in space
+		 * @param r the location vector (μm)
+		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 doubles
+		 * @return the derivative of the distribution at this point with respect to basis function и
+		 */
+		public double[] get(Vector r, long key) {
+			assert r.getLength() == 3 : "this vector is not in 3-space";
+			return this.get(r.get(0), r.get(1), r.get(2), key);
+		}
+
+		/**
+		 * get the value of each basis function at a particular location in space
+		 * @param x the x coordinate (μm)
+		 * @param y the y coordinate (μm)
+		 * @param z the z coordinate (μm)
+		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memorize on
+		 *            a tuple of 3 doubles, or 0 to forgo memorization
+		 * @return the derivative of the distribution at this point with respect to basis function и
+		 */
+		public double[] get(double x, double y, double z, long key) {
+			double[] result = new double[num_functions];
+			for (int i = 0; i < num_functions; i ++)
+				result[i] = this.get(x, y, z, i, key);
+			return result;
+		}
+
+		/**
+		 * get the value of the иth basis function at a particular location in space
+		 * @param x the x coordinate (μm)
+		 * @param y the y coordinate (μm)
+		 * @param z the z coordinate (μm)
+		 * @param и the index of the basis function
+		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on
+		 *            a tuple of 3 doubles, or 0 to forgo memoization
+		 * @return the derivative of the distribution at this point with respect to basis function и
+		 */
+		public abstract double get(double x, double y, double z, int и, long key);
+
+		/**
+		 * calculate the infinite 3d integral of this basis function dxdydz
+		 * @param и the index of the desired basis function
+		 * @return ∫∫∫ this.get(x, y, z, и) dx dy dz
+		 */
+		public abstract double get_volume(int и);
+
+		/**
+		 * figure out the coefficients that will, together with this basis, approximately reproduce
+		 * the 3d profiles produced by that together with those_coefficients
+		 */
+		public abstract Vector rebase(Basis that, Vector those_coefficients);
+
+		/**
+		 * create an array that represents the dangers of overfitting with the basis functions you are given.
+		 * each row of the array represents one "bad mode", which is two basis functions with the same angular
+		 * distribution and adjacent radial positions, which ideally should have similar coefficients.  each
+		 * collum represents 
+		 * @param weit the quantity by which to scale the smoothing terms
+		 */
+		public abstract Matrix roughness_vectors(double weit);
+	}
+
+	/**
+	 * a 3d basis based on spherical harmonics with linear interpolation in the radial direction
+	 */
+	public static class SphericalHarmonicBasis extends Basis {
+		private final int[] n;
+		private final int[] l;
+		private final int[] m;
+		private final double[] r_ref;
+		private final Map<Long, Double> memory;
+
+		private static int stuff_that_should_go_before_super(int l_max, double[] r_ref) {
+			int[] shape = new int[r_ref.length];
+			int num_functions = 0;
+			for (int n = 0; n < r_ref.length; n ++) {
+				shape[n] = Math.min(n, l_max) + 1;
+				for (int l = 0; l < shape[n]; l ++) {
+					num_functions += 2*l + 1;
+				}
+			}
+			return num_functions;
+		}
+
+		/**
+		 * generate a basis given the maximum order of asymmetry to use and the
+		 * specific radial locations at which to define the profiles
+		 * @param l_max the l-number of the harmonics will only go up to l >= l_max
+		 * @param r_ref the fixd points where the radial modes peak (μm)
+		 */
+		public SphericalHarmonicBasis(int l_max, double[] r_ref) {
+			super(stuff_that_should_go_before_super(l_max, r_ref));
+
+			this.r_ref = r_ref;
+
+			this.n = new int[num_functions];
+			this.l = new int[num_functions];
+			this.m = new int[num_functions];
+
+			int index = 0;
+			for (int n = 0; n < r_ref.length; n ++) {
+				for (int l = 0; l <= Math.min(n, l_max); l ++) {
+					for (int m = - l; m <= l; m++) {
+						this.n[index] = n;
+						this.l[index] = l;
+						this.m[index] = m;
+					}
+				}
+			}
+
+			this.memory = new HashMap<>();
+		}
+
+		@Override
+		public double get(double x, double y, double z, int и, long key) {
+			assert и < num_functions : "there are only "+num_functions+" modes";
+
+			key = (key != 0) ? key*num_functions + и : 0;
+			if (key != 0 && memory.containsKey(key))
+				return memory.get(key);
+			else {
+				double[][] harmonics = spherical_harmonics(x, y, z);
+				double s_partial = Math.sqrt(x*x + y*y + z*z)/r_ref[1];
+				double weit = Math.max(0, 1 - Math.abs(n[и] - s_partial));
+				double value = weit*harmonics[l[и]][l[и] + m[и]];
+				memory.put(key, value);
+				return value;
+			}
+		}
+
+		@Override
+		public double get_volume(int и) {
+			if (l[и] != 0)
+				return 0;
+			else {
+				double r_и = r_ref[n[и]];
+				double dr = r_ref[1];
+				return 4*Math.PI*(r_и*r_и + dr*dr/6.)*dr;
+			}
+		}
+
+		@Override
+		public Matrix roughness_vectors(double weit) {
+			double dr = r_ref[1] - r_ref[0];
+			List<Vector> bad_modes = new ArrayList<>(0);
+			for (int n_R = 1; n_R < r_ref.length + 2; n_R ++) { // for each radial posicion
+				int n_M = n_R - 1, n_L = Math.abs(n_R - 2);
+				for (int l = 0; l <= n_R && l <= this.l[this.l.length - 1]; l ++) { // go thru the l and m values
+					for (int m = -l; m <= l; m ++) {
+
+						int и_L = -1, и_M = -1, и_R = -1; // search for the indices of the modes that match them
+						for (int и = 0; и < this.num_functions; и ++) {
+							if (this.l[и] == l && this.m[и] == m) {
+								if (this.n[и] == n_L)
+									и_L = и;
+								else if (this.n[и] == n_M)
+									и_M = и;
+								else if (this.n[и] == n_R)
+									и_R = и;
+							}
+						}
+
+						if (и_L >= 0 || и_M >= 0 || и_R >= 0) {
+							Vector mode = new SparseVector(num_functions); // create a new "bad mode"
+
+							if (и_R >= 0)
+								mode.increment(и_R, 0.5*weit/Math.sqrt(dr));
+							if (и_M >= 0)
+								mode.increment(и_M, - weit/Math.sqrt(dr)); // note that if there is no и_L, it just weys this value down
+							if (и_L >= 0)
+								mode.increment(и_L, 0.5*weit/Math.sqrt(dr));
+							if (! (l == 1 && n_R == 1)) // skip this one set of modes because the sines work out to make these ones specifically rong
+								bad_modes.add(mode);
+						}
+					}
+				}
+			}
+			System.out.println(bad_modes);
+			return new Matrix(bad_modes.toArray(new Vector[0]));
+		}
+
+		@Override
+		public Vector rebase(Basis that, Vector those_coefficients) {
+			throw new UnsupportedOperationException("I didn't implement this");
+		}
+	}
+
+	/**
+	 * a basis where values are interpolated between evenly spaced points in a cubic grid
+	 */
+	public static class CartesianGrid extends Basis {
+		private final double[] x;
+		private final double[] y;
+		private final double[] z;
+
+		/**
+		 * generate a basis given the grid values at which stuff is defined
+		 * @param x the x values (must be evenly spaced)
+		 * @param y the y values (must be evenly spaced)
+		 * @param z the z values (must be evenly spaced)
+		 */
+		public CartesianGrid(double[] x, double[] y, double[] z) {
+			super(x.length*y.length*z.length);
+			this.x = x;
+			this.y = y;
+			this.z = z;
+		}
+
+		@Override
+		public double get(double x, double y, double z, Vector coefficients, long key) {
+			double i_full = (x - this.x[0])/(this.x[1] - this.x[0]);
+			double j_full = (y - this.y[0])/(this.y[1] - this.y[0]);
+			double k_full = (z - this.z[0])/(this.z[1] - this.z[0]);
+			double result = 0;
+			for (int i = (int)Math.floor(i_full); i <= (int)Math.ceil(i_full); i ++) {
+				if (i >= 0 && i < this.x.length) {
+					for (int j = (int)Math.floor(j_full); j <= (int)Math.ceil(j_full); j ++) {
+						if (j >= 0 && j < this.y.length) {
+							for (int k = (int)Math.floor(k_full); k <= (int)Math.ceil(k_full); k ++) {
+								if (k >= 0 && k < this.z.length) {
+									double corner_weit = (1 - Math.abs(i - i_full)) *
+									                     (1 - Math.abs(j - j_full)) *
+									                     (1 - Math.abs(k - k_full));
+									double corner_value = coefficients.get(
+										(i*this.y.length + j)*this.z.length + k);
+									result += corner_weit*corner_value;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			return result;
+		}
+
+		@Override
+		public double get(double x, double y, double z, int и, long key) {
+			return get(x, y, z, new SparseVector(this.num_functions, и, 1), key);
+		}
+
+		@Override
+		public double get_volume(int и) {
+			return (x[1] - x[0])*(y[1] - y[0])*(z[1] - z[0]);
+		}
+
+		@Override
+		public Matrix roughness_vectors(double weit) {
+			throw new UnsupportedOperationException("I haven't done that either.");
+		}
+
+		@Override
+		public Vector rebase(Basis that, Vector those_coefficients) {
+			Vector these_coefficients = DenseVector.zeros(this.num_functions);
+			for (int i = 0; i < x.length; i ++)
+				for (int j = 0; j < y.length; j ++)
+					for (int k = 0; k < z.length; k ++)
+						these_coefficients.set((i*y.length + j)*z.length + k,
+						                       that.get(x[i], y[j], z[k],
+						                                those_coefficients,
+						                                0));
+			return these_coefficients;
+		}
+	}
+
 }

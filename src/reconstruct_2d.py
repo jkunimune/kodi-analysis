@@ -17,22 +17,23 @@ import numpy as np
 import pandas as pd
 import scipy.signal as signal
 import scipy.spatial as spatial
+from scipy import interpolate
 from skimage import measure
 
 import coordinate
 import detector
 import electric_field
 import fake_srim
-from hdf5_util import load_hdf5
-from plots import plot_overlaid_contors, save_and_plot_penumbra, save_and_plot_source, save_and_plot_overlaid_penumbra
+from hdf5_util import load_hdf5, save_as_hdf5
+from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d
 
 
 warnings.filterwarnings("ignore")
 
 
-DEUTERON_ENERGY_CUTS = {'lo': [0, 6], 'hi': [9, 100], 'md': [6, 9]} # (MeV) (emitted, not detected)
-# cuts = [('7', [11, 100]), ('6', [10, 11]), ('5', [9, 10]), ('4', [8, 9]), ('3', [6, 8]), ('2', [4, 6]), ('1', [2, 4]), ('0', [0, 2])]
+DEUTERON_ENERGY_CUTS = [[0, 6], [9, 100], [6, 9]] # (MeV) (emitted, not detected)
+# cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
 
 SHOW_RAW_DATA = False
 SHOW_CROPD_DATA = False
@@ -213,7 +214,8 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 			x_bins = f["x"][:]
 			y_bins = f["y"][:]
 			N = f["PSL_per_px"][:, :]
-		x0, y0 = center_of_mass(x_bins, y_bins, N)
+		x_centers, y_centers = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
+		x0, y0 = center_of_mass(x_centers, y_centers, N)
 
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
@@ -367,36 +369,49 @@ def analyze_scan(input_filename: str,
 	M *= scale
 	r0 = M*rA
 
-	if input_filename.endswith(".h5"):
-		energy_cuts = {"xray": [np.nan, np.nan]} # TODO: get these from the filename/filtering
-	elif shot.startswith("synth"):
-		energy_cuts = {"synth": [0, np.inf]}
+	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
+	if particle == "deuteron":
+		contour = DEUTERON_CONTOUR
 	else:
-		energy_cuts = DEUTERON_ENERGY_CUTS
+		contour = X_RAY_CONTOUR
+
+	if skip_reconstruction: # load the full image set now if you can
+		energy_cuts, xU, yU, image_stack = load_hdf5(f"results/data/{shot}-tim{tim}-reconstructed-source.h5",
+		                                             ["energy", "x", "y", "image"])
+		image_stack = image_stack.transpose((0, 2, 1)) # assume it was saved as [x,y] and switch to [i,j]
+	else: # or just prepare the grid
+		if particle == "xray":
+			energy_cuts = [[np.nan, np.nan]] # TODO: get these from the filename/filtering
+		elif shot.startswith("synth"):
+			energy_cuts = [[0, np.inf]]
+		else:
+			energy_cuts = DEUTERON_ENERGY_CUTS
+		xU, yU, image_stack = None, None, None
+
+	sorted_energy_cuts, cut_indices = np.unique(energy_cuts, axis=0, return_inverse=True)
 
 	results: list[dict[str, Any]] = []
-	for cut_name, emission_energies in energy_cuts.items():
+	for cut_index, emission_energies in zip(cut_indices, energy_cuts):
 
 		# switch out some values depending on whether these are xrays or deuterons
-		if cut_name == "xray":
-			resolution = X_RAY_RESOLUTION
-			contour = X_RAY_CONTOUR
-			diameter_max, diameter_min = np.nan, np.nan
-		else:
+		if particle == "deuteron":
 			resolution = DEUTERON_RESOLUTION
-			contour = DEUTERON_CONTOUR
 			detection_energies = fake_srim.get_E_out(1, 2, emission_energies, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
 			diameter_max, diameter_min = detector.track_diameter(detection_energies, τ=etch_time, a=2, z=1) # convert to diameters
 			emission_energies = fake_srim.get_E_in(1, 2, detection_energies, ['Ta'], 16) # convert back to exclude particles that are ranged out
 			if np.isnan(diameter_max):
 				diameter_max = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
+		else:
+			resolution = X_RAY_RESOLUTION
+			diameter_max, diameter_min = np.nan, np.nan
 
 		if skip_reconstruction:
 			logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max[1]:5.2f}μm")
 			r0_eff, r_max = 0, 0
 			Q, num_bins_K = 0, 0 # TODO: load previous value of Q from summary.csv
 			xI_bins, yI_bins, NI_data = load_hdf5(
-				f"results/data/{shot}-tim{tim}-{cut_name}-penumbra", ["x", "y", "z"])
+				f"results/data/{shot}-tim{tim}-{cut_index}-penumbra", ["x", "y", "z"])
+			NI_data = NI_data.T
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 
 		else:
@@ -415,18 +430,22 @@ def analyze_scan(input_filename: str,
 				r_max = r0 + (M - 1)*MAX_OBJECT_SIZE*resolution
 
 			M_eff = r0_eff/rA
-			if cut_name == "xray":
+			if particle == "deuteron":
+				Q = electric_field.get_charging_parameter(M_eff/M, r0, *emission_energies)
+			else:
 				logging.info(f"observed a magnification discrepancy of {(M_eff/M - 1)*1e2:.2f}%")
 				Q = 0
 				rA = rA*M_eff/M #TODO the new rA should carry over to the KODI, as well as the new sA
-			else:
-				Q = electric_field.get_charging_parameter(M_eff/M, r0, *emission_energies)
 			r_psf = electric_field.get_expansion_factor(Q, r0, *emission_energies)
 
 			r_object = (r_max - r_psf)/(M - 1) # (cm)
 			if r_object <= 0:
 				raise ValueError("something is rong but I don't understand what it is rite now.  check on the coordinate definitions.")
 
+			if particle == "deuteron":
+				resolution = DEUTERON_RESOLUTION
+			else:
+				resolution = X_RAY_RESOLUTION
 			num_bins_S = math.ceil(r_object/resolution)*2 + 1
 			num_bins_K = math.ceil(r_psf/(M - 1)/resolution)*2 + 3
 			num_bins_I = num_bins_S + num_bins_K - 1
@@ -462,18 +481,16 @@ def analyze_scan(input_filename: str,
 				NI_data = resample_2d(N_scan, x_scan_bins, y_scan_bins, xI_bins, yI_bins) # resample to the chosen bin size
 				NI_data *= dxI*dyI/(dx_scan*dy_scan) # since these are in signal/bin, this factor is needed
 
-		save_and_plot_penumbra(f"{shot}-tim{tim}-{cut_name}", show_plots,
+		save_and_plot_penumbra(f"{shot}-tim{tim}-{cut_index}", show_plots,
 		                       xI_bins, yI_bins, NI_data, xI0, yI0,
 		                       energy_min=emission_energies[0], energy_max=emission_energies[1],
 		                       r0=rA*M, s0=sA*M)
 
 		if skip_reconstruction:
-			xS_bins, yS_bins, B = load_hdf5(
-				f"results/data/{shot}-tim{tim}-{cut_name}-source", ["x", "y", "z"])
-			xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
-			dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
-			NI_residu = load_hdf5(
-				f"results/data/{shot}-tim{tim}-{cut_name}-penumbra-residual", ["z"])
+			briteness_U = image_stack[energy_cuts, :, :]
+			NI_residu, = load_hdf5(
+				f"results/data/{shot}-tim{tim}-{cut_index}-penumbra-residual", ["z"])
+			NI_residu = NI_residu.T
 			NI_reconstruct = NI_data - NI_residu
 
 		else:
@@ -495,13 +512,13 @@ def analyze_scan(input_filename: str,
 			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *emission_energies) # get the dimensionless shape of the penumbra
 			penumbral_kernel *= dxS*dyS*dxI*dyI/(M*L1)**2 # scale by the solid angle subtended by each image pixel
 
-			if cut_name != "xray": # TODO: I'd eventually like a more elegant solution for not tangling up nans in the Wiener reconstruction
-				if XS.size*penumbral_kernel.size < MAX_CONVOLUTION:
+			if particle == "deuteron": # TODO: I'd eventually like a more elegant solution for not tangling up nans in the Wiener reconstruction
+				if XS.size*penumbral_kernel.size <= MAX_CONVOLUTION:
 					max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
 					max_source = max_source/np.sum(max_source)
 					reach = signal.convolve2d(max_source, penumbral_kernel, mode='full')
-					lower_cutoff = .005*penumbral_kernel.max() # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-					upper_cutoff = .98*penumbral_kernel.max() # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+					lower_cutoff = .005*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
+					upper_cutoff = .98*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
 					contains_information = (reach > lower_cutoff) & (reach < upper_cutoff)
 				elif Q == 0:
 					RI = np.hypot(XI - xI0, YI - yI0)
@@ -527,7 +544,7 @@ def analyze_scan(input_filename: str,
 				plt.show()
 
 			# perform the reconstruction
-			method = "wiener" if cut_name == "xray" else "gelfgat"
+			method = "gelfgat" if particle == "deuteron" else "wiener"
 			if method != "wiener":
 				clipd_data = np.where(data_region, NI_data, np.nan)
 			else:
@@ -535,18 +552,32 @@ def analyze_scan(input_filename: str,
 			np.savetxt("tmp/penumbra.csv", clipd_data, delimiter=',')
 			np.savetxt("tmp/pointspread.csv", penumbral_kernel, delimiter=',')
 			execute_java("Deconvolution", method, r0/dxI)
-			B = np.loadtxt("tmp/source.csv", delimiter=',')
-			B = np.maximum(0, B) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
+			briteness_S = np.loadtxt("tmp/source.csv", delimiter=',')
+			briteness_S = np.maximum(0, briteness_S) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
 
-			if B.size*penumbral_kernel.size < MAX_CONVOLUTION:
+			if briteness_S.size*penumbral_kernel.size <= MAX_CONVOLUTION:
 				# back-calculate the reconstructed penumbral image
-				NI_reconstruct = signal.convolve2d(B, penumbral_kernel)
+				NI_reconstruct = signal.convolve2d(briteness_S, penumbral_kernel)
 				# and estimate background as whatever makes it fit best
 				NI_reconstruct += np.mean(NI_data - NI_reconstruct, where=data_region)
 			else:
 				NI_reconstruct = np.full(NI_data.shape, np.nan)
 
-		logging.info(f"  ∫B = {np.sum(B*dxS*dyS)*4*np.pi:.4g} deuterons")
+			# after reproducing the input, we must make some adjustments to the source
+			if len(energy_cuts) == 1:
+				xU, yU = xS, yS
+				briteness_U = briteness_S
+			else:
+				if xU is None or yU is None:
+					xU = np.linspace(xS[0], xS[-1], xS.size*2 - 1)
+					yU = np.linspace(yS[0], yS[-1], yS.size*2 - 1)
+					image_stack = np.zeros((cut_indices.size, xU.shape, yU.shape))
+				briteness_U = interpolate.RectBivariateSpline(xS, yS, briteness_S)(xU, yU)
+
+			image_stack[cut_index, :, :] = briteness_U
+
+		dxU, dyU = xU[1] - xU[0], yU[1] - yU[0]
+		logging.info(f"  ∫B = {np.sum(briteness_U*dxU*dyU)*4*np.pi:.4g} deuterons")
 		χ2_red = np.sum((NI_reconstruct - NI_data)**2/NI_reconstruct)
 		logging.info(f"  χ^2/n = {χ2_red}")
 		# if χ2_red >= 1.5: # throw it away if it looks unreasonable
@@ -554,20 +585,19 @@ def analyze_scan(input_filename: str,
 		# 	continue
 
 		p0, (_, _), (p2, θ2) = shape_parameters(
-			xS, yS, B, contour=contour) # compute the three number summary
+			xU, yU, briteness_U, contour=contour) # compute the three number summary
 		logging.info(f"  P0 = {p0/1e-4:.2f} μm")
 		logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 		# save and plot the results
-		save_and_plot_source(f"{shot}-tim{tim}-{cut_name}", show_plots,
-		                     xS_bins, yS_bins, B, contour,
-		                     *emission_energies)
-		save_and_plot_overlaid_penumbra(f"{shot}-{tim}-{cut_name}", show_plots,
+		plot_source(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
+		            xU, yU, briteness_U, contour,
+		            *emission_energies, num_cuts=cut_indices.size)
+		save_and_plot_overlaid_penumbra(f"{shot}-{tim}-{cut_index}", show_plots,
 		                                xI_bins, yI_bins, NI_reconstruct, NI_data)
 
 		results.append(dict(
 			shot=shot, tim=tim,
-			energy_cut=cut_name,
 			energy_min=emission_energies[0],
 			energy_max=emission_energies[1],
 			x0=xI0, dx0=0,
@@ -580,41 +610,31 @@ def analyze_scan(input_filename: str,
 			separation_angle=None,
 		))
 
-	# calculate the differentials between lines of site
-	for cut_set in [['0', '1', '2', '3', '4', '5', '6', '7'], ['lo', 'hi']]:
-		filenames = []
-		for cut_name in cut_set:
-			for result in results:
-				if result["energy_cut"] == cut_name:
-					filenames.append((f"results/data/{shot}-tim{tim}-{cut_name}-reconstruction", cut_name))
-					break
-		if len(filenames) >= len(cut_set)*3/4:
-			reconstructions: list[tuple[np.ndarray, np.ndarray, np.ndarray, str]] = []
-			for filename, cut_name in filenames:
-				x, y, z = load_hdf5(filename, ['x', 'y', 'z'])
-				reconstructions.append((x, y, z, cut_name))
+	# finally, save the combined image set
+	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-source",
+	             energy=sorted_energy_cuts, x=xU, y=yU,
+	             image=image_stack.transpose((0, 2, 1)))
 
-			dxL, dyL = center_of_mass(*reconstructions[0][:3])
-			dxH, dyH = center_of_mass(*reconstructions[-1][:3])
-			dx, dy = dxH - dxL, dyH - dyL
-			logging.info(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
-			for result in results:
-				result["separation_magnitude"] = np.hypot(dx, dy)/1e-4
-				result["separation_angle"] = np.degrees(np.arctan2(dy, dx))
+	# calculate the differentials between energy cuts
+	dxL, dyL = center_of_mass(xU, yU, image_stack[0])
+	dxH, dyH = center_of_mass(xU, yU, image_stack[-1])
+	dx, dy = dxH - dxL, dyH - dyL
+	logging.info(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
+	for result in results:
+		result["separation_magnitude"] = np.hypot(dx, dy)/1e-4
+		result["separation_angle"] = np.degrees(np.arctan2(dy, dx))
 
-			tim_basis = coordinate.tim_coordinates(tim)
-			projected_offset = coordinate.project(
-				shot_info["offset (r)"], shot_info["offset (θ)"], shot_info["offset (ф)"],
-				tim_basis)
-			projected_flow = coordinate.project(
-				shot_info["flow (r)"], shot_info["flow (θ)"], shot_info["flow (ф)"],
-				tim_basis)
+	tim_basis = coordinate.tim_coordinates(tim)
+	projected_offset = coordinate.project(
+		shot_info["offset (r)"], shot_info["offset (θ)"], shot_info["offset (ф)"],
+		tim_basis)
+	projected_flow = coordinate.project(
+		shot_info["flow (r)"], shot_info["flow (θ)"], shot_info["flow (ф)"],
+		tim_basis)
 
-			plot_overlaid_contors(
-				f"{shot}-{tim}-deuteron", reconstructions, DEUTERON_CONTOUR,
-				projected_offset, projected_flow)
-
-			break
+	plot_overlaid_contors(
+		f"{shot}-{tim}-deuteron", xU, yU, image_stack, contour,
+		projected_offset, projected_flow)
 
 	return results
 

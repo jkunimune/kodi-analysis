@@ -13,7 +13,7 @@ def save_as_hdf5(filename, **kwargs):
 		for col_name, col_values in kwargs.items():
 			col_values = np.array(col_values)
 			dataset = f.create_dataset(col_name, col_values.shape)
-			dataset[...] = col_values	
+			dataset[...] = col_values
 
 def load_hdf5(filename: str, keys: list[str]):
 	if not filename.endswith('.h5'):

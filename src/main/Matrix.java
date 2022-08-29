@@ -106,6 +106,10 @@ public class Matrix {
 		return new Matrix(rows);
 	}
 
+	public Vector times(double... v) {
+		return this.times(new DenseVector(v));
+	}
+
 	public Vector times(Vector v) {
 		if (v.getLength() != this.m)
 			throw new IllegalArgumentException("the dimensions don't match.");
@@ -180,7 +184,7 @@ public class Matrix {
 	public Vector pseudoinverse_times(Vector b, boolean nonnegative) {
 		if (this.n != b.getLength())
 			throw new IllegalArgumentException("the array sizes do not match");
-		Vector x = new DenseVector(m);
+		Vector x = DenseVector.zeros(m);
 		while (true) {
 			double discrepancy = 0;
 			// each iteration of the while loop is really a loop thru the rows
@@ -241,17 +245,17 @@ public class Matrix {
 		if (this.rows[0] instanceof SparseVector)
 			result = new SparseVector(this.n);
 		else
-			result = new DenseVector(this.n);
+			result = DenseVector.zeros(this.n);
 		for (int i = 0; i < this.n; i ++)
 			result.set(i, this.get(i, j));
 		return result;
 	}
 
 	public double[][] getValues() {
-		double[][] copy = new double[this.n][];
+		double[][] values = new double[this.n][];
 		for (int i = 0; i < this.n; i ++)
-			copy[i] = Arrays.copyOf(this.rows[i].getValues(), this.m);
-		return copy;
+			values[i] = this.rows[i].getValues();
+		return values;
 	}
 
 	@Override

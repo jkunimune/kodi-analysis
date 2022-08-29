@@ -1,13 +1,13 @@
 import logging
 
 import numpy as np
-from matplotlib import pyplot as plt, ticker
+from matplotlib import colors, pyplot as plt, ticker
 from scipy import optimize
 from scipy import special
 
 from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS, COFFEE
 from hdf5_util import save_as_hdf5
-from util import downsample_2d, get_relative_aperture_positions, downsample_1d, median, saturate
+from util import downsample_2d, get_relative_aperture_positions, downsample_1d, median, saturate, center_of_mass
 
 
 PLOT_THEORETICAL_PROJECTION = True
@@ -18,9 +18,10 @@ MAX_NUM_PIXELS = 200
 SQUARE_FIGURE_SIZE = (6.4, 5.4)
 RECTANGULAR_FIGURE_SIZE = (6.4, 4.8)
 
-CMAP = {'all': GREYS, 'synth': GREYS, 'lo': REDS, 'md': ORANGES, 'hi': YELLOWS,
-        'xray': BLUES, 'loxray': CYANS, 'mdxray': BLUES, 'hixray': VIOLETS,
-        '0': GREYS, '1': REDS, '2': ORANGES, '3': YELLOWS, '4': GREENS, '5': CYANS, '6': BLUES, '7': VIOLETS}
+COLORMAPS = {"deuteron": [(7, GREYS), (1, REDS), (2, ORANGES), (0, YELLOWS), (3, GREENS),
+                          (4, CYANS), (5, BLUES), (6, VIOLETS)],
+             "xray":     [(7, GREYS), (6, REDS), (5, ORANGES), (4, YELLOWS), (3, GREENS),
+                          (2, CYANS), (1, BLUES), (0, VIOLETS)]}
 
 
 def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
@@ -29,6 +30,10 @@ def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
 		filepath = f"results/plots/{filename}.{extension}"
 		plt.savefig(filepath, transparent=filetype!='png')
 		logging.debug(f"  saving {filepath}")
+
+
+def choose_colormaps(particle: str, num_cuts: int) -> list[colors.ListedColormap]:
+	return [cmap for priority, cmap in COLORMAPS[particle] if priority < num_cuts]
 
 
 def save_and_plot_radial_data(filename: str, show: bool,
@@ -61,7 +66,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
                            s0: float = np.inf, r0: float = 1.5):
 	""" plot the data along with the initial fit to it, and the reconstructed superaperture.
 	"""
-	save_as_hdf5(f'results/data/{filename}-penumbra', x=x_bins, y=y_bins, z=N)
+	save_as_hdf5(f'results/data/{filename}-penumbra', x=x_bins, y=y_bins, z=N.T)
 
 	# while x_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
 	# 	x_bins, y_bins, N = resample_2d(x_bins, y_bins, N)
@@ -114,7 +119,8 @@ def save_and_plot_penumbra(filename: str, show: bool,
 def save_and_plot_overlaid_penumbra(filename: str, show: bool,
                                     x_bins: np.ndarray, y_bins: np.ndarray,
                                     N_top: np.ndarray, N_bottom: np.ndarray) -> None:
-	save_as_hdf5(f'results/data/{filename}-penumbra-residual', x=x_bins, y=y_bins, z=N_top - N_bottom)
+	save_as_hdf5(f'results/data/{filename}-penumbra-residual',
+	             x=x_bins, y=y_bins, z=(N_top - N_bottom).T)
 
 	while x_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
 		_, _, N_top = downsample_2d(x_bins, y_bins, N_top)
@@ -145,12 +151,10 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	plt.close('all')
 
 
-def save_and_plot_source(filename: str, show: bool,
-                         x_bins: np.ndarray, y_bins: np.ndarray, B: np.ndarray,
-                         contour_level: float, e_min: float, e_max: float) -> None:
-	save_as_hdf5(f'results/data/{filename}-source', x=x_bins, y=y_bins, z=B)
-
-	x_centers, y_centers = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
+def plot_source(filename: str, show: bool,
+                x_centers: np.ndarray, y_centers: np.ndarray, B: np.ndarray,
+                contour_level: float, e_min: float, e_max: float, num_cuts=1) -> None:
+	particle, cut_index = filename.split("-")[-2:]
 
 	x0 = median(x_centers, weights=np.sum(B, axis=1))
 	y0 = median(y_centers, weights=np.sum(B, axis=0))
@@ -161,12 +165,11 @@ def save_and_plot_source(filename: str, show: bool,
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE) # plot the reconstructed source image
 	plt.locator_params(steps=[1, 2, 5, 10])
-	plt.pcolormesh((x_bins - x0)/1e-4, (y_bins - y0)/1e-4, B.T,
-	               cmap=CMAP[filename.split("-")[-1]], vmin=0, rasterized=True)
+	plt.contourf((x_centers - x0)/1e-4, (y_centers - y0)/1e-4, B.T,
+	             cmap=choose_colormaps(particle, num_cuts)[int(cut_index)],
+	             levels=np.linspace(0, np.max(B), 21))
 	if PLOT_SOURCE_CONTOUR:
-		plt.contour(((x_bins[1:] + x_bins[:-1])/2 - x0)/1e-4,
-		            ((y_bins[1:] + y_bins[:-1])/2 - y0)/1e-4,
-		            B.T,
+		plt.contour((x_centers - x0)/1e-4, (y_centers - y0)/1e-4, B.T,
 		            levels=[contour_level*np.max(B)], colors='#ddd', linestyles='dashed', linewidths=1)
 	# T = np.linspace(0, 2*np.pi, 144)
 	# R = p0 + p2*np.cos(2*(T - θ2))
@@ -195,7 +198,7 @@ def save_and_plot_source(filename: str, show: bool,
 		popt, pcov = optimize.curve_fit(
 			blurred_boxcar,
 			r_centers.ravel(), B.ravel(),
-			[B.max(), 10e-4])
+			[np.max(B), 10e-4])
 		logging.info(f"  1σ resolution = {popt[1]/1e-4} μm")
 		plt.plot(x_centers/1e-4, blurred_boxcar(x_centers, *popt)*scale, '--')
 
@@ -212,14 +215,21 @@ def save_and_plot_source(filename: str, show: bool,
 	plt.close('all')
 
 
-def plot_source_set(filename: str, energy_bins: list[tuple[float, float]] | np.ndarray,
-                    x_bins: np.ndarray, y_bins: np.ndarray, *image_sets: list[list[np.ndarray]]) -> None:
+def save_and_plot_source_sets(filename: str, energy_bins: list[list[tuple[float, float]] | np.ndarray],
+                    x: list[np.ndarray], y: list[np.ndarray], *image_sets: list[np.ndarray]) -> None:
+	""" plot a bunch of source images, specificly in comparison (e.g. between data and reconstruction)
+	    :param filename: the filename with which to save them
+	    :param energy_bins: the energy bins for each line of site, which must be the same between image sets
+	    :param x: the x coordinates of the pixel centers for each line of site
+	    :param y: the x coordinates of the pixel centers for each line of site
+	    :param image_sets: each image set is a list, where each element of the list is a 3d array, which is a stack of all the images in one set on one line of site.
+	"""
 	pairs_plotted = 0
 	for l in range(len(image_sets[0])): # go thru every line of site
 		if pairs_plotted > 0 and pairs_plotted + len(image_sets[0][l]) > 6:
 			break # but stop when you think you're about to plot too many
 
-		num_cuts = len(image_sets[0][l])
+		num_cuts = len(energy_bins[l])
 		if num_cuts == 1:
 			cmaps = [GREYS]
 		elif num_cuts < 7:
@@ -230,16 +240,16 @@ def plot_source_set(filename: str, energy_bins: list[tuple[float, float]] | np.n
 		assert len(cmaps) == num_cuts
 
 		for h in [0, num_cuts - 1]:
-			maximum = np.amax([image_set[l][h] for image_set in image_sets])
+			maximum = np.amax([image_set[l][h, :, :] for image_set in image_sets])
 			for i, image_set in enumerate(image_sets):
 				plt.figure(figsize=(6, 5))
-				plt.pcolormesh(x_bins[l][h], y_bins[l][h], image_set[l][h].T,
-				               vmin=min(0, np.min(image_set[l][h])),
-				               vmax=maximum,
-				               cmap=cmaps[h])
+				plt.contourf(x[l], y[l][h], image_set[l][h].T,
+				             min=min(0, np.min(image_set[l][h])),
+				             vmax=maximum,
+				             cmap=cmaps[h])
 				plt.axis('square')
 				# plt.axis([-r_max, r_max, -r_max, r_max])
-				plt.title(f"$E_\\mathrm{{d}}$ = {energy_bins[h][0]:.1f} – {energy_bins[h][1]:.1f} MeV")
+				plt.title(f"$E_\\mathrm{{d}}$ = {energy_bins[l][h][0]:.1f} – {energy_bins[l][h][1]:.1f} MeV")
 				plt.colorbar()
 				plt.tight_layout()
 				save_current_figure(f"{filename}-{i}-{l}-{h}")
@@ -280,30 +290,40 @@ def save_and_plot_morphologies(filename: str,
 
 
 def plot_overlaid_contors(filename: str,
-                          reconstructions: list[tuple[np.ndarray, np.ndarray, np.ndarray, str]],
+                          x_centers: np.ndarray, y_centers: np.ndarray,
+                          images: np.ndarray,
                           contour_level: float,
                           projected_offset: tuple[float, float, float],
                           projected_flow: tuple[float, float, float]) -> None:
-	x0, y0 = None, None
-	for i, (x_bins, y_bins, N, cut_name) in enumerate(reconstructions): # convert the x and y bin edges to pixel centers
-		x, y = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
-		X, Y = np.meshgrid(x, y, indexing='ij')
-		reconstructions[i][0:2] = X, Y
-		if i == int(len(reconstructions)*3/4):
-			x0 = X[np.unravel_index(np.argmax(N), N.shape)] # calculate the centroid of the highest energy bin
-			y0 = Y[np.unravel_index(np.argmax(N), N.shape)]
+	""" plot the plot with the multiple energy cuts overlaid
+	    :param filename: the extensionless filename with which to save the figure
+	    :param x_centers: a 1d array of the x coordinates of the pixel centers
+	    :param y_centers: a 1d array of the y coordinates of the pixel centers
+	    :param images: a 3d array, which is a stack of all the x centers we have
+	    :param contour_level: the contour level in (0, 1) to plot
+	    :param projected_offset: the capsule offset from TCC, given as (x, y, z)
+	    :param projected_flow: the measured hot spot velocity, given as (x, y, z)
+	"""
+	x0, y0 = center_of_mass(x_centers, y_centers, images[-1, :, :]) # calculate the centroid of the highest energy bin
 
 	x_off, y_off, z_off = projected_offset
 	x_flo, y_flo, z_flo = projected_flow
 
+	particle = filename.split("-")[-1]
+	colormaps = choose_colormaps(particle, images.shape[0])
+
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
-	for X, Y, N, cut_name in reconstructions:
-		color = saturate(*CMAP[cut_name].colors[-1], factor=1.5)
-		if len(reconstructions) > 3:
-			plt.contour((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[contour_level], colors=[color])
+	for h in range(images.shape[0]):
+		color = saturate(*colormaps[h].colors[-1], factor=1.5)
+		if images.shape[0] > 3:
+			plt.contour((x_centers - x0)/1e-4, (y_centers - y0)/1e-4,
+			            images[h]/np.max(images[h]),
+			            levels=[contour_level], colors=[color])
 		else:
-			plt.contourf((X - x0)/1e-4, (Y - y0)/1e-4, N/N.max(), levels=[contour_level, 1], colors=[color])
+			plt.contour((x_centers - x0)/1e-4, (y_centers - y0)/1e-4,
+			            images[h]/np.max(images[h]),
+			            levels=[contour_level, 1], colors=[color])
 	if PLOT_OFFSET:
 		plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 		plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')

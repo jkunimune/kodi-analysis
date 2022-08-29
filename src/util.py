@@ -14,11 +14,11 @@ import perlin
 SMOOTHING = 100 # entropy weight
 
 
-def center_of_mass(x_bins, y_bins, N):
-	""" get the center of mass of a 2d histogram """
+def center_of_mass(x, y, N):
+	""" get the center of mass of a 2d function """
 	return np.array([
-		np.average((x_bins[:-1] + x_bins[1:])/2, weights=N.sum(axis=1)),
-		np.average((y_bins[:-1] + y_bins[1:])/2, weights=N.sum(axis=0))])
+		np.average(x, weights=N.sum(axis=1)),
+		np.average(y, weights=N.sum(axis=0))])
 
 
 def median(x, weights=None):
