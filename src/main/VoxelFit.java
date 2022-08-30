@@ -405,6 +405,12 @@ public class VoxelFit {
 
 		double V_voxel = Math.pow(integral_step, 3); // (μm^3)
 
+		int num_components; // figure if we need to resolve the output by basis function
+		if (respond_to_production || respond_to_density)
+			num_components = basis.num_functions;
+		else
+			num_components = 1;
+
 		// build up the output array
 		Vector[][][][] response = new Vector[lines_of_sight.length][][][];
 		for (int l = 0; l < lines_of_sight.length; l ++) {
@@ -412,12 +418,12 @@ public class VoxelFit {
 			for (int h = 0; h < response[l].length; h ++) {
 				for (int i = 0; i < response[l][h].length; i ++)
 					for (int j = 0; j < response[l][h][i].length; j ++)
-						response[l][h][i][j] = new SparseVector(basis.num_functions);
+						response[l][h][i][j] = new SparseVector(num_components);
 			}
 		}
 
 		// for each line of sight
-		long position_index = 1;
+		long position_index = 1, warningsPrinted = 0;
 		for (int l = 0; l < lines_of_sight.length; l ++) {
 			// define the rotated coordinate system (ζ points toward the TIM; ξ and υ are orthogonal)
 			Vector ζ_hat = lines_of_sight[l];
@@ -454,7 +460,15 @@ public class VoxelFit {
 							else
 								break;
 						}
-						ρL += (ρD + ρ_previus)/2.*integral_step;
+						double dρL = (ρD + ρ_previus)/2.*integral_step*μm/cm;
+						if (dρL > 50e-3 && warningsPrinted < 6) {
+							logger.warning(String.format(
+									"WARNING: the rhoL in a single integral step (%.3g mg/cm^2) is too hi.  you probably need " +
+											"a hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
+									dρL*1e3, ρD, 20e-3/ρD*cm/μm));
+							warningsPrinted++;
+						}
+						ρL += dρL; // (g/cm^2)
 
 						// iterate thru all possible scattering locations
 						ζ_scan:
@@ -493,7 +507,7 @@ public class VoxelFit {
 												  σ/(4*Math.PI*Δr2)*
 												  V_voxel*V_voxel*Math.pow(μm/cm, 3); // (d/srad/(n/μm^3)/(g/cc))
 
-											for (int и = 0; и < basis.num_functions; и ++) // finally, iterate over the basis functions
+											for (int и = 0; и < num_components; и ++) // finally, iterate over the basis functions
 												response[l][hV][iV][jV].increment(и,
 												      local_production[respond_to_production ? и : 0]*
 													  local_density[respond_to_density ? и : 0]*
@@ -891,11 +905,12 @@ public class VoxelFit {
 
 			int index = 0;
 			for (int n = 0; n < r_ref.length; n ++) {
-				for (int l = 0; l <= Math.min(n, l_max); l ++) {
+				for (int l = 0; l <= n && l <= l_max; l ++) {
 					for (int m = - l; m <= l; m++) {
 						this.n[index] = n;
 						this.l[index] = l;
 						this.m[index] = m;
+						index ++;
 					}
 				}
 			}
@@ -934,35 +949,37 @@ public class VoxelFit {
 		@Override
 		public Matrix roughness_vectors(double weit) {
 			double dr = r_ref[1] - r_ref[0];
+			int l_max = this.l[this.l.length - 1];
 			List<Vector> bad_modes = new ArrayList<>(0);
 			for (int n_R = 1; n_R < r_ref.length + 2; n_R ++) { // for each radial posicion
 				int n_M = n_R - 1, n_L = Math.abs(n_R - 2);
-				for (int l = 0; l <= n_R && l <= this.l[this.l.length - 1]; l ++) { // go thru the l and m values
-					for (int m = -l; m <= l; m ++) {
+				for (int l = 0; l <= n_R && l <= l_max; l ++) { // go thru the l and m values
+					if (! (l == 1 && n_R == 1)) { // skip this one set of modes because the sines work out to make these ones specifically rong
+						for (int m = -l; m <= l; m ++) {
 
-						int и_L = -1, и_M = -1, и_R = -1; // search for the indices of the modes that match them
-						for (int и = 0; и < this.num_functions; и ++) {
-							if (this.l[и] == l && this.m[и] == m) {
-								if (this.n[и] == n_L)
-									и_L = и;
-								else if (this.n[и] == n_M)
-									и_M = и;
-								else if (this.n[и] == n_R)
-									и_R = и;
+							int и_L = - 1, и_M = - 1, и_R = - 1; // search for the indices of the modes that match them
+							for (int и = 0; и < this.num_functions; и ++) {
+								if (this.l[и] == l && this.m[и] == m) {
+									if (this.n[и] == n_L)
+										и_L = и;
+									if (this.n[и] == n_M)
+										и_M = и;
+									if (this.n[и] == n_R)
+										и_R = и;
+								}
 							}
-						}
 
-						if (и_L >= 0 || и_M >= 0 || и_R >= 0) {
-							Vector mode = new SparseVector(num_functions); // create a new "bad mode"
+							if (и_L >= 0 || и_M >= 0 || и_R >= 0) {
+								Vector mode = new SparseVector(num_functions); // create a new "bad mode"
 
-							if (и_R >= 0)
-								mode.increment(и_R, 0.5*weit/Math.sqrt(dr));
-							if (и_M >= 0)
-								mode.increment(и_M, - weit/Math.sqrt(dr)); // note that if there is no и_L, it just weys this value down
-							if (и_L >= 0)
-								mode.increment(и_L, 0.5*weit/Math.sqrt(dr));
-							if (! (l == 1 && n_R == 1)) // skip this one set of modes because the sines work out to make these ones specifically rong
+								if (и_R >= 0)
+									mode.increment(и_R, 0.5*weit/Math.sqrt(dr));
+								if (и_M >= 0)
+									mode.increment(и_M, - weit/Math.sqrt(dr)); // note that if there is no и_L, it just weys this value down
+								if (и_L >= 0)
+									mode.increment(и_L, 0.5*weit/Math.sqrt(dr));
 								bad_modes.add(mode);
+							}
 						}
 					}
 				}
