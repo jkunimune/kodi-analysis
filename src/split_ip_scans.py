@@ -25,7 +25,7 @@ if __name__ == "__main__":
 		with open(os.path.join(SCAN_DIRECTORY, "tim_scan_info.txt"), "r") as f:
 			for line in f:
 				shot, tim_set = line.split(":")
-				tim_sets[shot.strip()] = [int(tim.strip()) for tim in tim_set.split(",")][::-1]
+				tim_sets[shot.strip()] = [int(tim.strip()) for tim in tim_set.split(",")]
 	except FileNotFoundError:
 		with open(os.path.join(SCAN_DIRECTORY, "tim_scan_info.txt"), "w") as f:
 			f.write("N210808: 2, 4, 5")
@@ -37,6 +37,7 @@ if __name__ == "__main__":
 			not re.search(r"tim[0-9]", filename, re.IGNORECASE):
 			print(filename)
 			shot = re.search(r"s([0-9]+)", filename, re.IGNORECASE).group(1)
+			number = re.search(r"_-([0-9]+)-", filename, re.IGNORECASE).group(1)
 			with h5py.File(os.path.join(SCAN_DIRECTORY, filename), "r") as f:
 				dataset = f["PSL_per_px"]
 				psl = dataset[:, :].transpose()
@@ -75,22 +76,33 @@ if __name__ == "__main__":
 
 			# then split it up and save the image plate scans as separate files
 			cut_positions = np.round(np.interp(sorted(cut_positions), x_bins, np.arange(x_bins.size))).astype(int)
+			cut_intervals = []
 			for i in range(1, len(cut_positions)):
-				width = cut_positions[i] - cut_positions[i - 1]
-				if width >= psl.shape[1]/2:
-					if len(tim_set) == 0:
-						raise ValueError(f"there were too many image plates here; I was expecting {len(tim_sets[shot])}")
-					tim = tim_set.pop()
+				if cut_positions[i] - cut_positions[i - 1] >= psl.shape[1]/2:
+					cut_intervals.append((cut_positions[i - 1], cut_positions[i]))
 
-					new_filename = filename.replace(".h5", f"_tim{tim}.h5")
-					with h5py.File(os.path.join(SCAN_DIRECTORY, new_filename), "w") as f:
-						f.attrs["scan_delay"] = scan_delay
-						x_dataset = f.create_dataset("x", (width + 1,), dtype="f")
-						x_dataset[:] = x_bins[cut_positions[i - 1]:cut_positions[i] + 1]
-						y_dataset = f.create_dataset("y", (psl.shape[1] + 1,), dtype="f")
-						y_dataset[:] = y_bins
-						z_dataset = f.create_dataset("PSL_per_px", (width, psl.shape[1]), dtype="f")
-						z_dataset[:, :] = psl[cut_positions[i - 1]:cut_positions[i], :]
+			if len(cut_intervals)%len(tim_set) != 0:
+				raise ValueError(f"the number of image plates ({len(cut_intervals)} does "
+				                 f"not match the number of TIMs ({len(tim_sets[shot])})")
+			num_ip_per_scan = len(cut_intervals)//len(tim_set)
 
-			if len(tim_set) > 0:
-				raise ValueError(f"there weren't enuff image plates here; I was expecting {len(tim_sets[shot])}")
+			for i, (start, end) in enumerate(cut_intervals):
+				try:
+					tim = tim_set[i//num_ip_per_scan]
+				except IndexError:
+					raise ValueError(f"the number of image plates ({len(cut_intervals)} does "
+					                 f"not match the number of TIMs ({len(tim_sets[shot])})")
+				if num_ip_per_scan > 1:
+					ip_position = i
+				else:
+					ip_position = number
+
+				new_filename = f"{shot}_tim{tim}_ip{ip_position}_0Al.h5"
+				with h5py.File(os.path.join(SCAN_DIRECTORY, new_filename), "w") as f:
+					f.attrs["scan_delay"] = scan_delay
+					x_dataset = f.create_dataset("x", (end - start + 1,), dtype="f")
+					x_dataset[:] = x_bins[start:end + 1]
+					y_dataset = f.create_dataset("y", (psl.shape[1] + 1,), dtype="f")
+					y_dataset[:] = y_bins
+					z_dataset = f.create_dataset("PSL_per_px", (end - start, psl.shape[1]), dtype="f")
+					z_dataset[:, :] = psl[start:end, :]
