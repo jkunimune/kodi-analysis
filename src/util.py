@@ -5,10 +5,10 @@ import shutil
 import subprocess
 
 import numpy as np
-from scipy import optimize, interpolate
+from colormath.color_conversions import convert_color
+from colormath.color_objects import sRGBColor, LabColor
+from scipy import optimize
 from skimage import measure
-
-import perlin
 
 
 SMOOTHING = 100 # entropy weight
@@ -85,9 +85,15 @@ def resample_2d(N_old, x_old, y_old, x_new, y_new):
 
 def saturate(r, g, b, factor=2.0):
 	""" take an RGB color and make it briter """
-	return (1 - factor*(1 - r),
-	        1 - factor*(1 - g),
-	        1 - factor*(1 - b))
+	color = sRGBColor(r, g, b)
+	color = convert_color(color, LabColor)
+	color.lab_l /= factor
+	color.lab_a *= factor
+	color.lab_b *= factor
+	color = convert_color(color, sRGBColor)
+	return (color.clamped_rgb_r,
+	        color.clamped_rgb_g,
+	        color.clamped_rgb_b)
 
 
 def get_relative_aperture_positions(spacing, r_img, r_max):
