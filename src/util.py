@@ -42,6 +42,13 @@ def linregress(x, y, weights=None):
 	return m, b
 
 
+def nearest_index(points: np.ndarray, reference: np.ndarray):
+	""" the nearest index """
+	if reference.ndim != 1:
+		raise ValueError("this is the opposite of the problem in DSitMoM: too many dimensions")
+	return np.round(np.interp(points, reference, np.arange(reference.size))).astype(int)
+
+
 def downsample_1d(x_bins, N):
 	""" double the bin size of this 1d histogram """
 	assert N.shape == (x_bins.size - 1,)

@@ -319,7 +319,7 @@ public class Deconvolution {
 	 */
 	public static double[][] wiener(double[][] F, double[][] q,
 	                                 boolean[][] source_region) {
-		double noise_reduction = 1e-10;
+		double noise_reduction = 1e-11;
 
 		// transfer F and q to the frequency domain
 		int n = (int)Math.pow(2, Math.ceil(Math.log(F.length)/Math.log(2)));
@@ -383,7 +383,7 @@ public class Deconvolution {
 			throw new IllegalArgumentException("Séguin's backprojection only works for rS < r0; specify a smaller source region");
 
 		// first, you haff to smooth it
-		double r_smooth = 1.;
+		double r_smooth = 2.;
 		F = convolve_with_gaussian(F, r_smooth, data_region);
 
 		// now, interpolate it into polar coordinates
@@ -542,9 +542,10 @@ public class Deconvolution {
 			for (int l = 0; l < source_region[k].length; l++)
 				source_region[k][l] = Math.hypot(k - c, l - c) <= c + 0.5;
 
-		logger.info(String.format("deconvolving %dx%d image into a %dx%d source",
+		logger.info(String.format("deconvolving %dx%d image into a %dx%d source using %s",
 		                          penumbral_image.length, penumbral_image[0].length,
-		                          source_region.length, source_region[0].length));
+		                          source_region.length, source_region[0].length,
+		                          method));
 
 		double[][] source_image;
 		if (method.equals("gelfgat")) {

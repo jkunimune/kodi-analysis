@@ -163,11 +163,14 @@ def plot_source(filename: str, show: bool,
 	#                                (y_bins[:-1] + y_bins[1:])/2,
 	#                                B, contour=1/6)[0]
 
+	levels = np.linspace(0, np.max(B), 21)
+	levels[0] = -np.inf
+
 	plt.figure(figsize=SQUARE_FIGURE_SIZE) # plot the reconstructed source image
 	plt.locator_params(steps=[1, 2, 5, 10])
 	plt.contourf((x_centers - x0)/1e-4, (y_centers - y0)/1e-4, B.T,
 	             cmap=choose_colormaps(particle, num_cuts)[int(cut_index)],
-	             levels=np.linspace(0, np.max(B), 21))
+	             levels=levels)
 	if PLOT_SOURCE_CONTOUR:
 		plt.contour((x_centers - x0)/1e-4, (y_centers - y0)/1e-4, B.T,
 		            levels=[contour_level*np.max(B)], colors='#ddd', linestyles='dashed', linewidths=1)

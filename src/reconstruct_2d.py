@@ -2,7 +2,7 @@
 # perform the 2d reconstruction algorithms on data from some shots specified in the command line arguments
 
 import logging
-import math
+from math import log, pi, nan, ceil, radians
 import os
 import pickle
 import re
@@ -26,7 +26,7 @@ import electric_field
 import fake_srim
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
-from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d
+from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d, nearest_index
 
 
 warnings.filterwarnings("ignore")
@@ -129,18 +129,29 @@ def point_spread_function(XK: np.ndarray, YK: np.ndarray,
 def load_cr39_scan_file(filename: str,
                         min_diameter=0., max_diameter=np.inf,
                         max_contrast=50., max_eccentricity=15.) -> tuple[np.ndarray, np.ndarray]:
-	""" load the track coordinates from a CR-39 scan file converted to txt
+	""" load the track coordinates from a CR-39 scan file
 	    :return: the x coordinates (cm) and the y coordinates (cm)
 	"""
-	track_list = pd.read_csv(filename, sep=r'\s+', # TODO: read cpsa file directly so I can get these things off my disc
-	                         header=20, skiprows=[24],
-	                         encoding='Latin-1',
-	                         dtype='float32') # load all track coordinates
+	if filename.endswith(".txt"):
+		track_list = pd.read_csv(filename, sep=r'\s+', # TODO: read cpsa file directly so I can get these things off my disc
+		                         header=20, skiprows=[24],
+		                         encoding='Latin-1',
+		                         dtype='float32') # load all track coordinates
 
-	hi_contrast = (track_list['cn(%)'] < max_contrast) & (track_list['e(%)'] < max_eccentricity)
-	in_bounds = (track_list['d(µm)'] >= min_diameter) & (track_list['d(µm)'] <= max_diameter)
-	x_tracks = track_list[hi_contrast & in_bounds]['x(cm)']
-	y_tracks = track_list[hi_contrast & in_bounds]['y(cm)']
+		hi_contrast = (track_list['cn(%)'] < max_contrast) & (track_list['e(%)'] < max_eccentricity)
+		in_bounds = (track_list['d(µm)'] >= min_diameter) & (track_list['d(µm)'] <= max_diameter)
+		x_tracks = track_list[hi_contrast & in_bounds]['x(cm)']
+		y_tracks = track_list[hi_contrast & in_bounds]['y(cm)']
+
+	elif filename.endswith(".cpsa"):
+		raise NotImplementedError("I think Peter has not finishd this but will soon.")
+		# file = cr39py.CR39(filename)
+		# file.add_cut(cr39py.Cut(cmax=max_contrast, emax=max_eccentricity,
+		#                         dmin=min_diameter, dmax=max_diameter))
+		# x_tracks, y_tracks = file.get_x(), file.get_y()
+
+	else:
+		raise ValueError(f"the {os.path.splitext(filename)[-1]} filetype cannot be read as a CR-39 scan file.")
 
 	return x_tracks, y_tracks
 
@@ -153,18 +164,9 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 	    :param diameter_max: the maximum diameter to count (μm)
 	    :return: the number of tracks if it's a CR-39 scan, inf if it's an image plate scan
 	"""
-	if filename.endswith(".txt"):
-		n = 0
-		with open(filename, "r") as f:
-			for line in f:
-				if re.fullmatch(r"[-0-9. ]+", line.strip()):
-					try:
-						x, y, d, cn, ca, e = (float(s) for s in line.strip().split())
-						if d >= diameter_min and d <= diameter_max:
-							n += 1
-					except ValueError:
-						pass
-		return n
+	if filename.endswith(".txt") or filename.endswith(".cpsa"):
+		x_tracks, y_tracks = load_cr39_scan_file(filename)
+		return x_tracks.size
 	elif filename.endswith(".pkl"):
 		with open(filename, "rb") as f:
 			x_bins, y_bins, N = pickle.load(f)
@@ -185,7 +187,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 	    :return: the x and y of the center of one of the circles, and the factor by which the observed separation
 	             deviates from the given s
 	"""
-	if filename.endswith(".txt"): # if it's a cpsa-derived text file
+	if filename.endswith(".txt") or filename.endswith(".cpsa"): # if it's a cpsa-derived text file
 		x_tracks, y_tracks = load_cr39_scan_file(filename) # load all track coordinates
 		n_bins = max(6, int(min(MAX_NUM_PIXELS, np.sqrt(x_tracks.size)/10))) # get the image resolution needed to resolve the circle
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
@@ -252,7 +254,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 	if SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
 		plt.pcolormesh(x_bins, y_bins, N.T)
-		θ = np.linspace(0, 2*np.pi, 145)
+		θ = np.linspace(0, 2*pi, 145)
 		plt.plot(x_contour, y_contour, "C1", linewidth=.5)
 		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "w--")
 		plt.axis("equal")
@@ -272,7 +274,7 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 	    :param r0: the nominal radius of the 50% contour
 	    :return the radius of the 50% contour, and the radius of the 1% contour
 	"""
-	if filename.endswith(".txt"): # if it's a cpsa-derived text file
+	if filename.endswith(".txt") or filename.endswith(".cpsa"): # if it's a cpsa-derived text file
 		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max) # load all track coordinates
 		r_tracks = np.hypot(x_tracks - x0, y_tracks - y0)
 		r_bins = np.linspace(0, 1.7*r0, int(np.sum(r_tracks <= r0)/1000))
@@ -298,7 +300,7 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
 
 	r = (r_bins[:-1] + r_bins[1:])/2
-	A = np.pi*(r_bins[1:]**2 - r_bins[:-1]**2)
+	A = pi*(r_bins[1:]**2 - r_bins[:-1]**2)
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
 	ρ_max = np.average(ρ, weights=np.where(r < 0.5*r0, 1/dρ**2, 0))
 	ρ_min = np.average(ρ, weights=np.where(r > 1.5*r0, 1/dρ**2, 0))
@@ -355,7 +357,7 @@ def analyze_scan(input_filename: str,
 		         energy bin. the reconstructed image will not be returned, but simply saved to disc after various nice
 		         pictures have been taken and also saved.
 	"""
-	assert abs(rotation) < 2*np.pi
+	assert abs(rotation) < 2*pi
 
 	num_tracks = count_tracks_in_scan(input_filename, 0, np.inf)
 	logging.info(f"found {num_tracks:.4g} tracks in the file")
@@ -381,7 +383,7 @@ def analyze_scan(input_filename: str,
 		image_stack = image_stack.transpose((0, 2, 1)) # assume it was saved as [x,y] and switch to [i,j]
 	else: # or just prepare the grid
 		if particle == "xray":
-			energy_cuts = [[np.nan, np.nan]] # TODO: get these from the filename/filtering
+			energy_cuts = [[nan, nan]] # TODO: get these from the filename/filtering
 		elif shot.startswith("synth"):
 			energy_cuts = [[0, np.inf]]
 		else:
@@ -403,7 +405,7 @@ def analyze_scan(input_filename: str,
 				diameter_max = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
 		else:
 			resolution = X_RAY_RESOLUTION
-			diameter_max, diameter_min = np.nan, np.nan
+			diameter_max, diameter_min = nan, nan
 
 		if skip_reconstruction:
 			logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max[1]:5.2f}μm")
@@ -446,14 +448,13 @@ def analyze_scan(input_filename: str,
 				resolution = DEUTERON_RESOLUTION
 			else:
 				resolution = X_RAY_RESOLUTION
-			num_bins_S = math.ceil(r_object/resolution)*2 + 1
-			num_bins_K = math.ceil(r_psf/(M - 1)/resolution)*2 + 3
-			num_bins_I = num_bins_S + num_bins_K - 1
+			num_bins_K = ceil(r_psf/(M - 1)/resolution)*2 + 3
+			num_bins_I = ceil(r_object/resolution)*2 + num_bins_K
 			xI_bins = np.linspace(xI0 - r_max, xI0 + r_max, num_bins_I + 1)
 			yI_bins = np.linspace(yI0 - r_max, yI0 + r_max, num_bins_I + 1)
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 
-			if input_filename.endswith(".txt"): # if it's a cpsa-derived text file
+			if input_filename.endswith(".txt") or input_filename.endswith(".cpsa"): # if it's a cpsa-derived text file
 				x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
 				NI_data, xI_bins, yI_bins = np.histogram2d(x_tracks, y_tracks, bins=(xI_bins, yI_bins))
 
@@ -475,9 +476,21 @@ def analyze_scan(input_filename: str,
 
 				dx_scan = x_scan_bins[1] - x_scan_bins[0]
 				dy_scan = y_scan_bins[1] - y_scan_bins[0]
-				if x_scan_bins[1] - x_scan_bins[0] > (M - 1)*resolution:
-					logging.warning("The scan resolution of this image plate scan is insufficient to support the "
-					                "requested reconstruction resolution; it will be zoomed and enhanced.")
+				# if you're near the Nyquist frequency, consider *not* resampling
+				if abs(log(dx_scan/dxI)) < .5:
+					num_bins_K = int(round(num_bins_K/dx_scan*dxI)) # in which case you must recalculate all these numbers
+					dxI, dyI = dx_scan, dy_scan
+					left, right = nearest_index(xI_bins[[0, -1]], x_scan_bins)
+					bottom, top = nearest_index(yI_bins[[0, -1]], y_scan_bins)
+					xI_bins = x_scan_bins[left:right + 1]
+					yI_bins = y_scan_bins[bottom:top + 1]
+					assert xI_bins.size == yI_bins.size
+				elif dx_scan > dxI:
+					logging.warning(f"The scan resolution of this image plate scan ({dx_scan/1e-4:.0f}μm/{M - 1:.1f}) is "
+					                f"insufficient to support the requested reconstruction resolution ({dxI/1e-4:.0f}μm); "
+					                f"it will be zoomed and enhanced.")
+
+
 				NI_data = resample_2d(N_scan, x_scan_bins, y_scan_bins, xI_bins, yI_bins) # resample to the chosen bin size
 				NI_data *= dxI*dyI/(dx_scan*dy_scan) # since these are in signal/bin, this factor is needed
 
@@ -546,7 +559,7 @@ def analyze_scan(input_filename: str,
 			# perform the reconstruction
 			method = "gelfgat" if particle == "deuteron" else "wiener"
 			if method != "wiener":
-				clipd_data = np.where(data_region, NI_data, np.nan)
+				clipd_data = np.where(data_region, NI_data, nan)
 			else:
 				clipd_data = NI_data
 			np.savetxt("tmp/penumbra.csv", clipd_data, delimiter=',')
@@ -561,23 +574,22 @@ def analyze_scan(input_filename: str,
 				# and estimate background as whatever makes it fit best
 				NI_reconstruct += np.mean(NI_data - NI_reconstruct, where=data_region)
 			else:
-				NI_reconstruct = np.full(NI_data.shape, np.nan)
+				NI_reconstruct = np.full(NI_data.shape, nan)
 
 			# after reproducing the input, we must make some adjustments to the source
-			if len(energy_cuts) == 1:
-				xU, yU = xS, yS
-				briteness_U = briteness_S
-			else:
-				if xU is None or yU is None:
+			if xU is None or yU is None or image_stack is None:
+				if len(energy_cuts) == 1:
+					xU, yU = xS, yS
+				else:
 					xU = np.linspace(xS[0], xS[-1], xS.size*2 - 1)
 					yU = np.linspace(yS[0], yS[-1], yS.size*2 - 1)
-					image_stack = np.zeros((cut_indices.size, xU.shape, yU.shape))
-				briteness_U = interpolate.RectBivariateSpline(xS, yS, briteness_S)(xU, yU)
+				image_stack = np.zeros((len(energy_cuts), xU.size, yU.size))
 
+			briteness_U = interpolate.RectBivariateSpline(xS, yS, briteness_S)(xU, yU)
 			image_stack[cut_index, :, :] = briteness_U
 
 		dxU, dyU = xU[1] - xU[0], yU[1] - yU[0]
-		logging.info(f"  ∫B = {np.sum(briteness_U*dxU*dyU)*4*np.pi:.4g} deuterons")
+		logging.info(f"  ∫B = {np.sum(briteness_U*dxU*dyU)*4*pi :.4g} deuterons")
 		χ2_red = np.sum((NI_reconstruct - NI_data)**2/NI_reconstruct)
 		logging.info(f"  χ^2/n = {χ2_red}")
 		# if χ2_red >= 1.5: # throw it away if it looks unreasonable
@@ -698,17 +710,20 @@ if __name__ == '__main__':
 				tim_match = re.search(r"tim([0-9]+)", fname, re.IGNORECASE)
 			else:
 				tim_match = re.search(rf"tim({tim})", fname, re.IGNORECASE)
-			if (fname.endswith('.txt') or fname.endswith('.pkl') or fname.endswith('.h5')) \
+			if (fname.endswith(".txt") or fname.endswith(".cpsa") or fname.endswith(".pkl") or fname.endswith(".h5")) \
 					and shot_match is not None and tim_match is not None:
 				matching_tim = tim_match.group(1) # these regexes would work much nicer if _ wasn't a word haracter
-				etch_time = float(etch_match.group(1)) if etch_match is not None else np.nan
+				etch_time = float(etch_match.group(1)) if etch_match is not None else nan
 				matching_scans.append((shot, matching_tim, etch_time, f"data/scans/{fname}"))
 		if len(matching_scans) == 0:
 			logging.info("  Could not find any text file for TIM {} on shot {}".format(tim, shot))
 		else:
 			all_scans_to_analyze += matching_scans
 
-	logging.info(f"Planning to reconstruct {', '.join(filename for _, _, _, filename in all_scans_to_analyze)}")
+	if len(all_scans_to_analyze) > 0:
+		logging.info(f"Planning to reconstruct {', '.join(filename for _, _, _, filename in all_scans_to_analyze)}")
+	else:
+		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the data folder.")
 
 	# then iterate thru that list and do the analysis
 	for shot, tim, etch_time, filename in all_scans_to_analyze:
@@ -735,7 +750,7 @@ if __name__ == '__main__':
 			L1                  = shot_info["standoff"]*1e-4,
 			M                   = shot_info["magnification"],
 			etch_time           = etch_time,
-			rotation            = math.radians(shot_info["rotation"]),
+			rotation            = radians(shot_info["rotation"]),
 		)
 
 		for result in results:
