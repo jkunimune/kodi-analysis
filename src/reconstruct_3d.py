@@ -32,20 +32,6 @@ energy_resolution = 3 # (MeV)
 spatial_resolution = 10 # (μm)
 
 
-def bin_centers(x):
-	return (x[1:] + x[:-1])/2
-
-
-def expand_bins(x):
-	return np.concatenate([[2*x[0] - x[1]], (x[1:] + x[:-1])/2, [2*x[-1] - x[-2]]])
-
-
-def integrate(y, x):
-	ydx = y*np.gradient(x)
-	cumsum = np.concatenate([[0], np.cumsum(ydx)])
-	return (cumsum[:-1] + cumsum[1:] - cumsum[1])/2
-
-
 if __name__ == '__main__':
 	# set it to work from the base directory regardless of whence we call the file
 	if os.path.basename(os.getcwd()) == "src":

@@ -2,13 +2,13 @@
 # perform the 2d reconstruction algorithms on data from some shots specified in the command line arguments
 
 import logging
-from math import log, pi, nan, ceil, radians
 import os
 import pickle
 import re
 import sys
 import time
 import warnings
+from math import log, pi, nan, ceil, radians, inf
 from typing import Any
 
 import h5py
@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.signal as signal
-import scipy.spatial as spatial
 from scipy import interpolate
 from skimage import measure
 
@@ -26,7 +25,8 @@ import electric_field
 import fake_srim
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
-from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d, nearest_index
+from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d, nearest_index, \
+	inside_polygon, bin_centers, downsample_2d, Point
 
 
 warnings.filterwarnings("ignore")
@@ -35,12 +35,10 @@ warnings.filterwarnings("ignore")
 DEUTERON_ENERGY_CUTS = [[0, 6], [9, 100], [6, 9]] # (MeV) (emitted, not detected)
 # cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
 
-SHOW_RAW_DATA = False
-SHOW_CROPD_DATA = False
+ASK_FOR_HELP = True
+SHOW_CENTER_FINDING_CALCULATION = True
+SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
-SHOW_CENTER_FINDING_CALCULATION = False
-SHOW_ELECTRIC_FIELD_CALCULATION = False
-ASK_FOR_HELP = False
 
 MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -60,15 +58,15 @@ def where_is_the_ocean(x, y, z, title, timeout=None):
 	""" solicit the user's help in locating something """
 	fig = plt.figure()
 	plt.pcolormesh(x, y, z, vmax=np.quantile(z, .999))
-	plt.axis('square')
+	plt.axis("equal")
 	plt.colorbar()
 	plt.title(title)
 
 	center_guess = (None, None)
-	def onclick(event, center_guess=center_guess):
+	def on_click(event, center_guess=center_guess):
 		center_guess[0] = event.xdata
 		center_guess[1] = event.ydata
-	fig.canvas.mpl_connect('button_press_event', onclick)
+	fig.canvas.mpl_connect('button_press_event', on_click)
 
 	start = time.time()
 	while center_guess[0] is None and (timeout is None or time.time() - start < timeout):
@@ -80,18 +78,59 @@ def where_is_the_ocean(x, y, z, title, timeout=None):
 		raise TimeoutError
 
 
-def convex_hull(x, y, N):
-	""" return an array of the same shape as z with pixels inside the convex hull
-		of the data markd True and those outside markd false.
-	"""
-	triangulacion = spatial.Delaunay(np.transpose([x[N > 0], y[N > 0]]))
-	hull_object = triangulacion.find_simplex(np.transpose([x.ravel(), y.ravel()]))
-	inside = ~((N == 0) & (hull_object == -1).reshape(N.shape))
-	inside[:, 1:] &= inside[:, :-1] # erode hull by one pixel in all directions to ignore edge effects
-	inside[:, :-1] &= inside[:, 1:]
-	inside[1:, :] &= inside[:-1, :]
-	inside[:-1, :] &= inside[1:, :]
-	return inside
+def user_defined_region(filename, title, timeout=None) -> list[Point]:
+	""" solicit the user's help in circling a region """
+	if filename.endswith(".txt") or filename.endswith(".cpsa"):
+		x_tracks, y_tracks = load_cr39_scan_file(filename)
+		z, x, y = np.histogram2d(x_tracks, y_tracks, bins=100)
+	elif filename.endswith(".pkl"):
+		with open(filename, "rb") as f:
+			x, y, z = pickle.load(f)
+	elif filename.endswith(".h5"):
+		with h5py.File(filename, "r") as f:
+			x, y, z = f["x"][:], f["y"][:], f["PSL_per_px"][:, :]
+		while z.size > 1e6:
+			x, y, z = downsample_2d(x, y, z)
+	else:
+		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
+
+	fig = plt.figure()
+	plt.pcolormesh(x, y, z.T, vmax=np.quantile(z, .999))
+	polygon, = plt.plot([], [], "k-")
+	cap, = plt.plot([], [], "k:")
+	cursor, = plt.plot([], [], "ko")
+	plt.axis("equal")
+	plt.colorbar()
+	plt.title(title)
+
+	vertices = []
+	last_click_time = time.time()
+	def on_click(event):
+		nonlocal last_click_time
+		vertices.append((event.xdata, event.ydata))
+		polygon.set_xdata([x for x, y in vertices])
+		polygon.set_ydata([y for x, y in vertices])
+		cap.set_xdata([vertices[0][0], vertices[-1][0]])
+		cap.set_ydata([vertices[0][1], vertices[-1][1]])
+		cursor.set_xdata([vertices[-1][0]])
+		cursor.set_ydata([vertices[-1][1]])
+		last_click_time = time.time()
+	fig.canvas.mpl_connect('button_press_event', on_click)
+
+	has_closed = False
+	def on_close(_):
+		nonlocal has_closed
+		has_closed = True
+	fig.canvas.mpl_connect("close_event", on_close)
+
+	while not has_closed and (timeout is None or time.time() - last_click_time < timeout):
+		plt.pause(.01)
+	plt.close("all")
+
+	if len(vertices) >= 3:
+		return vertices
+	else:
+		raise TimeoutError
 
 
 def simple_penumbra(r, Q, r0, з_min=1.e-15, з_max=1.):
@@ -127,7 +166,7 @@ def point_spread_function(XK: np.ndarray, YK: np.ndarray,
 
 
 def load_cr39_scan_file(filename: str,
-                        min_diameter=0., max_diameter=np.inf,
+                        min_diameter=0., max_diameter=inf,
                         max_contrast=50., max_eccentricity=15.) -> tuple[np.ndarray, np.ndarray]:
 	""" load the track coordinates from a CR-39 scan file
 	    :return: the x coordinates (cm) and the y coordinates (cm)
@@ -172,18 +211,19 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 			x_bins, y_bins, N = pickle.load(f)
 		return int(np.sum(N))
 	elif filename.endswith(".h5"):
-		return np.inf
+		return 1_000_000_000
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 
-def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tuple[float, float, float]:
+def find_circle_center(filename: str, r_nominal: float, s_nominal: float, region: list[Point]) -> tuple[float, float, float]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param r_nominal: the expected radius of the circles
 	    :param s_nominal: the expected spacing between the circles. a positive number means the nearest center-to-center
 	              distance in a hexagonal array. a negative number means the nearest center-to-center distance in a
 	              rectangular array. a 0 means that there is only one aperture.
+		:param region: the region in which to care about tracks
 	    :return: the x and y of the center of one of the circles, and the factor by which the observed separation
 	             deviates from the given s
 	"""
@@ -216,33 +256,37 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 			x_bins = f["x"][:]
 			y_bins = f["y"][:]
 			N = f["PSL_per_px"][:, :]
-		x_centers, y_centers = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
-		x0, y0 = center_of_mass(x_centers, y_centers, N)
+		x0, y0 = None, None
 
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
-	x_centers, y_centers = (x_bins[:-1] + x_bins[1:])/2, (y_bins[:-1] + y_bins[1:])/2
+	x_centers, y_centers = bin_centers(x_bins), bin_centers(y_bins)
 	X_pixels, Y_pixels = np.meshgrid(x_centers, y_centers, indexing="ij")
+	N[~inside_polygon(X_pixels, Y_pixels, region)] = nan
+	assert not np.all(np.isnan(N))
+
 	# if we don't have a good gess, do a scan
 	if x0 is None or y0 is None:
 		x0, y0 = x_bins.mean(), y_bins.mean()
 		scale = max(x_bins.ptp(), y_bins.ptp())/2
 		while scale > .5*r_nominal:
-			best_umbra = -np.inf
+			best_umbra = -inf
 			x_scan = np.linspace(x0 - scale, x0 + scale, 7)
 			y_scan = np.linspace(y0 - scale, y0 + scale, 7)
 			for x in x_scan:
 				for y in y_scan:
-					umbra_counts = np.sum(N, where=np.hypot(X_pixels - x, Y_pixels - y) < .7*r_nominal)
-					if umbra_counts > best_umbra:
-						best_umbra = umbra_counts
+					umbra_height = np.nanmean(N, where=np.hypot(X_pixels - x, Y_pixels - y) < .7*r_nominal)
+					if umbra_height > best_umbra:
+						best_umbra = umbra_height
 						x0, y0 = x, y
 			scale /= 6
 
 	# now that's squared away, find the largest 50% conture
-	max_density = np.mean(N, where=np.hypot(X_pixels - x0, Y_pixels - y0) < .5*r_nominal)
-	haff_density = max_density/2
+	R_pixels = np.hypot(X_pixels - x0, Y_pixels - y0)
+	max_density = np.nanmean(N, where=R_pixels < .5*r_nominal)
+	min_density = np.nanmean(N, where=R_pixels > 1.5*r_nominal)
+	haff_density = (max_density + min_density)/2
 	contours = measure.find_contours(N, haff_density)
 	if len(contours) == 0:
 		raise ValueError("there were no tracks.  we should have caut that by now.")
@@ -256,7 +300,10 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 		plt.pcolormesh(x_bins, y_bins, N.T)
 		θ = np.linspace(0, 2*pi, 145)
 		plt.plot(x_contour, y_contour, "C1", linewidth=.5)
-		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "w--")
+		plt.plot(x0 + r_nominal*np.cos(θ), y0 + r_nominal*np.sin(θ), "w--", linewidth=.9)
+		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "w-", linewidth=.9)
+		plt.xlim(x_bins.min(), x_bins.max())
+		plt.ylim(y_bins.min(), y_bins.max())
 		plt.axis("equal")
 		plt.show()
 
@@ -264,7 +311,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float) -> tup
 
 
 def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
-                       x0: float, y0: float, r0: float) -> tuple[float, float]:
+                       x0: float, y0: float, r0: float, region: list[Point]) -> Point:
 	""" precisely determine two key metrics of a penumbra's radius in a particular energy cut
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param diameter_min: the minimum track diameter to consider (μm)
@@ -272,10 +319,13 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 	    :param x0: the x coordinate of the center of the circle (cm)
 	    :param y0: the y coordinate of the center of the circle (cm)
 	    :param r0: the nominal radius of the 50% contour
+	    :param region: the polygon inside which we care about the data
 	    :return the radius of the 50% contour, and the radius of the 1% contour
 	"""
-	if filename.endswith(".txt") or filename.endswith(".cpsa"): # if it's a cpsa-derived text file
+	if filename.endswith(".txt") or filename.endswith(".cpsa"): # if it's a cpsa-derived file
 		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max) # load all track coordinates
+		valid = inside_polygon(x_tracks, y_tracks, region)
+		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
 		r_tracks = np.hypot(x_tracks - x0, y_tracks - y0)
 		r_bins = np.linspace(0, 1.7*r0, int(np.sum(r_tracks <= r0)/1000))
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
@@ -294,13 +344,14 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 
 		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2
 		XC, YC = np.meshgrid(xC, yC, indexing='ij')
+		NC[~inside_polygon(XC, YC, region)] = 0
 		RC = np.hypot(XC - x0, YC - y0)
 		dr = (xC_bins[1] - xC_bins[0] + yC_bins[1] - yC_bins[0])/2
 		r_bins = np.linspace(0, 1.7*r0, int(r0/(dr*2)))
 		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
 
-	r = (r_bins[:-1] + r_bins[1:])/2
-	A = pi*(r_bins[1:]**2 - r_bins[:-1]**2)
+	r = bin_centers(r_bins)
+	A = pi*(r_bins[1:]**2 - r_bins[:-1]**2) # TODO: I would get cleaner results if this could account for the polygon area at each radius
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
 	ρ_max = np.average(ρ, weights=np.where(r < 0.5*r0, 1/dρ**2, 0))
 	ρ_min = np.average(ρ, weights=np.where(r > 1.5*r0, 1/dρ**2, 0))
@@ -359,14 +410,19 @@ def analyze_scan(input_filename: str,
 	"""
 	assert abs(rotation) < 2*pi
 
-	num_tracks = count_tracks_in_scan(input_filename, 0, np.inf)
+	num_tracks = count_tracks_in_scan(input_filename, 0, inf)
 	logging.info(f"found {num_tracks:.4g} tracks in the file")
 	if num_tracks < 1e+3:
 		logging.warning("Not enuff tracks to reconstruct")
 		return []
 
+	if sA != 0:
+		data_region = user_defined_region(input_filename, "Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
+	else:
+		data_region = [(-inf, -inf), (-inf, inf), (inf, inf), (inf, -inf)]
+
 	# find the centers and spacings of the penumbral images
-	xI0, yI0, scale = find_circle_center(input_filename, M*rA, M*sA)
+	xI0, yI0, scale = find_circle_center(input_filename, M*rA, M*sA, region=data_region)
 	# update the magnification to be based on this check
 	M *= scale
 	r0 = M*rA
@@ -385,7 +441,7 @@ def analyze_scan(input_filename: str,
 		if particle == "xray":
 			energy_cuts = [[nan, nan]] # TODO: get these from the filename/filtering
 		elif shot.startswith("synth"):
-			energy_cuts = [[0, np.inf]]
+			energy_cuts = [[0, inf]]
 		else:
 			energy_cuts = DEUTERON_ENERGY_CUTS
 		xU, yU, image_stack = None, None, None
@@ -402,7 +458,7 @@ def analyze_scan(input_filename: str,
 			diameter_max, diameter_min = detector.track_diameter(detection_energies, τ=etch_time, a=2, z=1) # convert to diameters
 			emission_energies = fake_srim.get_E_in(1, 2, detection_energies, ['Ta'], 16) # convert back to exclude particles that are ranged out
 			if np.isnan(diameter_max):
-				diameter_max = np.inf # and if the bin goes down to zero energy, make sure all large diameters are counted
+				diameter_max = inf # and if the bin goes down to zero energy, make sure all large diameters are counted
 		else:
 			resolution = X_RAY_RESOLUTION
 			diameter_max, diameter_min = nan, nan
@@ -425,7 +481,7 @@ def analyze_scan(input_filename: str,
 				continue
 
 			# start with a 1D reconstruction
-			r0_eff, r_max = find_circle_radius(input_filename, diameter_min, diameter_max, xI0, yI0, M*rA)
+			r0_eff, r_max = find_circle_radius(input_filename, diameter_min, diameter_max, xI0, yI0, M*rA, region=data_region)
 			if r_max > r0 + (M - 1)*MAX_OBJECT_SIZE*resolution:
 				logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
 				                f"but I'm cropping it at {MAX_OBJECT_SIZE*resolution/1e-4:.0f}μm to save time")
@@ -490,7 +546,6 @@ def analyze_scan(input_filename: str,
 					                f"insufficient to support the requested reconstruction resolution ({dxI/1e-4:.0f}μm); "
 					                f"it will be zoomed and enhanced.")
 
-
 				NI_data = resample_2d(N_scan, x_scan_bins, y_scan_bins, xI_bins, yI_bins) # resample to the chosen bin size
 				NI_data *= dxI*dyI/(dx_scan*dy_scan) # since these are in signal/bin, this factor is needed
 
@@ -542,24 +597,25 @@ def analyze_scan(input_filename: str,
 					                f"be everywhere")
 					contains_information = True
 
-				data_region = (np.hypot(XI - xI0, YI - yI0) <= r_max) & np.isfinite(NI_data) & \
-				              contains_information # exclude bins that are NaN and bins that are touched by all or none of the source pixels
+				relevant_pixels = np.isfinite(NI_data) & contains_information # exclude bins that are NaN and bins that are touched by all or none of the source pixels
 
 			else:
-				data_region = True
+				relevant_pixels = True
+
+			relevant_pixels &= inside_polygon(XI, YI, data_region)
 
 			if SHOW_POINT_SPREAD_FUNCCION:
 				plt.figure()
 				plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
-				plt.contour(XI - xI0, YI - yI0, np.where(data_region, 1, 0), levels=[0.5], colors="k")
+				plt.contour(XI - xI0, YI - yI0, np.where(relevant_pixels, 1, 0), levels=[0.5], colors="k")
 				plt.axis('square')
 				plt.title("Point spread function")
 				plt.show()
 
 			# perform the reconstruction
-			method = "gelfgat" if particle == "deuteron" else "wiener"
+			method = "gelfgat" if particle == "deuteron" else "seguin"
 			if method != "wiener":
-				clipd_data = np.where(data_region, NI_data, nan)
+				clipd_data = np.where(relevant_pixels, NI_data, nan)
 			else:
 				clipd_data = NI_data
 			np.savetxt("tmp/penumbra.csv", clipd_data, delimiter=',')
@@ -568,11 +624,18 @@ def analyze_scan(input_filename: str,
 			briteness_S = np.loadtxt("tmp/source.csv", delimiter=',')
 			briteness_S = np.maximum(0, briteness_S) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
 
+			for filename in ["penumbra", "pointspread", "source", "smooth_image", "sinogram", "sinogram_gradient", "sinogram_gradient_prime"]:
+				plt.figure()
+				plt.title(filename)
+				values = np.loadtxt(f"tmp/{filename}.csv", delimiter=",")
+				plt.pcolormesh(values.T)
+			plt.show()
+
 			if briteness_S.size*penumbral_kernel.size <= MAX_CONVOLUTION:
 				# back-calculate the reconstructed penumbral image
 				NI_reconstruct = signal.convolve2d(briteness_S, penumbral_kernel)
 				# and estimate background as whatever makes it fit best
-				NI_reconstruct += np.mean(NI_data - NI_reconstruct, where=data_region)
+				NI_reconstruct += np.mean(NI_data - NI_reconstruct, where=relevant_pixels)
 			else:
 				NI_reconstruct = np.full(NI_data.shape, nan)
 
@@ -733,7 +796,7 @@ if __name__ == '__main__':
 		try:
 			shot_info = shot_table[shot_table.shot == shot].iloc[0]
 		except IndexError:
-			raise KeyError(f"please add shot {shot} to the shot table file.")
+			raise KeyError(f"please add shot {shot!r} to the shot table file.")
 
 		# clear any previous versions of this reconstruccion
 		summary = summary[(summary.shot != shot) | (summary.tim != tim)]

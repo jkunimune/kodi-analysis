@@ -14,6 +14,14 @@ from skimage import measure
 SMOOTHING = 100 # entropy weight
 
 
+Point = tuple[float, float]
+
+
+def bin_centers(bin_edges: np.ndarray):
+	""" take an array of bin edges and convert it to the centers of the bins """
+	return (bin_edges[1:] + bin_edges[:-1])/2
+
+
 def center_of_mass(x, y, N):
 	""" get the center of mass of a 2d function """
 	return np.array([
@@ -78,8 +86,8 @@ def downsample_2d(x_bins, y_bins, N):
 
 def resample_2d(N_old, x_old, y_old, x_new, y_new):
 	""" apply new bins to a 2d function, preserving quality and accuraccy as much as possible """
-	x_old, y_old = (x_old[:-1] + x_old[1:])/2, (y_old[:-1] + y_old[1:])/2
-	x_new, y_new = (x_new[:-1] + x_new[1:])/2, (y_new[:-1] + y_new[1:])/2
+	x_old, y_old = bin_centers(x_old), bin_centers(y_old)
+	x_new, y_new = bin_centers(x_new), bin_centers(y_new)
 	λ = max(x_old[1] - x_old[0], x_new[1] - x_new[0])
 	kernel_x = np.maximum(0, (1 - abs(x_new[:, np.newaxis] - x_old[np.newaxis, :])/λ)) # do this bilinear-type-thing
 	kernel_x /= np.expand_dims(np.sum(kernel_x, axis=1), axis=1)
@@ -101,6 +109,21 @@ def saturate(r, g, b, factor=2.0):
 	return (color.clamped_rgb_r,
 	        color.clamped_rgb_g,
 	        color.clamped_rgb_b)
+
+
+def inside_polygon(x: np.ndarray, y: np.ndarray, polygon: list[Point]):
+	if x.shape != y.shape:
+		raise ValueError("nope")
+	num_crossings = np.zeros(x.shape, dtype=int)
+	for i in range(len(polygon)):
+		x0, y0 = polygon[i - 1]
+		x1, y1 = polygon[i]
+		if x0 != x1:
+			straddles = (x0 < x) != (x1 < x)
+			yX = (x - x0)/(x1 - x0)*(y1 - y0) + y0
+			covers = y > yX
+			num_crossings[straddles & covers] += 1
+	return num_crossings%2 == 1
 
 
 def get_relative_aperture_positions(spacing, r_img, r_max):

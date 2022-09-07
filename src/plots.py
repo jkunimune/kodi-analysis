@@ -7,7 +7,8 @@ from scipy import special
 
 from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS, COFFEE
 from hdf5_util import save_as_hdf5
-from util import downsample_2d, get_relative_aperture_positions, downsample_1d, median, saturate, center_of_mass
+from util import downsample_2d, get_relative_aperture_positions, downsample_1d, median, saturate, center_of_mass, \
+	bin_centers, Point
 
 
 PLOT_THEORETICAL_PROJECTION = True
@@ -140,8 +141,8 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	save_current_figure(f"{filename}-penumbra-residual")
 
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.plot((x_bins[:-1] + x_bins[1:])/2, N_top[:, N_top.shape[1]//2], "--", label="Reconstruction")
-	plt.plot((x_bins[:-1] + x_bins[1:])/2, N_bottom[:, N_bottom.shape[1]//2], "-o", label="Data")
+	plt.plot(bin_centers(x_bins), N_top[:, N_top.shape[1]//2], "--", label="Reconstruction")
+	plt.plot(bin_centers(x_bins), N_bottom[:, N_bottom.shape[1]//2], "-o", label="Data")
 	plt.legend()
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
@@ -159,8 +160,8 @@ def plot_source(filename: str, show: bool,
 	x0 = median(x_centers, weights=np.sum(B, axis=1))
 	y0 = median(y_centers, weights=np.sum(B, axis=0))
 
-	# object_size = shape_parameters((x_bins[:-1] + x_bins[1:])/2,
-	#                                (y_bins[:-1] + y_bins[1:])/2,
+	# object_size = shape_parameters(bin_centers(x_bins),
+	#                                bin_centers(y_bins),
 	#                                B, contour=1/6)[0]
 
 	levels = np.linspace(0, np.max(B), 21)
@@ -218,7 +219,7 @@ def plot_source(filename: str, show: bool,
 	plt.close('all')
 
 
-def save_and_plot_source_sets(filename: str, energy_bins: list[list[tuple[float, float]] | np.ndarray],
+def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.ndarray],
                     x: list[np.ndarray], y: list[np.ndarray], *image_sets: list[np.ndarray]) -> None:
 	""" plot a bunch of source images, specificly in comparison (e.g. between data and reconstruction)
 	    :param filename: the filename with which to save them

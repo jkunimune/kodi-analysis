@@ -6,6 +6,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import pickle
 
 from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
+from util import bin_centers
 
 
 N_simul = 1000000
@@ -50,7 +51,7 @@ def make_image(t, R, ρ, Ti, e_bounds):
 	dt = np.gradient(t)
 	dR = np.gradient(R, axis=1)
 
-	σv = 9.1e-22*np.exp(-0.572*abs(np.log(T/64.2))**2.13) # m^3/s
+	σv = 9.1e-22*np.exp(-0.572*abs(np.log(Ti/64.2))**2.13) # m^3/s
 	σv[np.isnan(σv)] = 0
 	# plt.loglog(Ti[Ti > 1], σv[Ti > 1], '.')
 	# plt.show()
@@ -135,7 +136,7 @@ if __name__ == '__main__':
 		Y, _ = np.histogram(R, bins=r_bins, weights=Yn*(4*np.pi*R**2*dR)*dt)
 		# plt.plot(np.repeat(r_bins, 2)[1:-1], np.repeat(Y,2))
 
-		r = (r_bins[:-1] + r_bins[1:])/2
+		r = bin_centers(r_bins)
 		Yn_integrated = np.zeros(r_bins.size-1)
 		nD_burn_average = np.zeros(r_bins.size-1)
 		for i in range(t.size):
