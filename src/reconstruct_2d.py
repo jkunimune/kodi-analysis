@@ -347,14 +347,16 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 		NC[~inside_polygon(XC, YC, region)] = 0
 		RC = np.hypot(XC - x0, YC - y0)
 		dr = (xC_bins[1] - xC_bins[0] + yC_bins[1] - yC_bins[0])/2
-		r_bins = np.linspace(0, 1.7*r0, int(r0/(dr*2)))
+		r_bins = np.linspace(0, 2*r0, int(r0/(dr*2)))
 		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
 
 	r = bin_centers(r_bins)
-	A = pi*(r_bins[1:]**2 - r_bins[:-1]**2) # TODO: I would get cleaner results if this could account for the polygon area at each radius
+	dr = r_bins[1:] - r_bins[:-1]
+	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
+	A = pi*r*dr*np.mean(inside_polygon(x0 + r*np.cos(θ), y0 + r*np.sin(θ), region), axis=0)
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
-	ρ_max = np.average(ρ, weights=np.where(r < 0.5*r0, 1/dρ**2, 0))
-	ρ_min = np.average(ρ, weights=np.where(r > 1.5*r0, 1/dρ**2, 0))
+	ρ_max = np.average(ρ, weights=np.where((r < 0.5*r0) & ~np.isnan(A), 1/dρ**2, 0))
+	ρ_min = np.average(ρ, weights=np.where((r > 1.5*r0) & ~np.isnan(A), 1/dρ**2, 0))
 	dρ_background = np.std(ρ, where=r > 1.5*r0)
 	domain = r > r0/2
 	ρ_50 = ρ_max*.50 + ρ_min*.50
@@ -542,8 +544,8 @@ def analyze_scan(input_filename: str,
 					yI_bins = y_scan_bins[bottom:top + 1]
 					assert xI_bins.size == yI_bins.size
 				elif dx_scan > dxI:
-					logging.warning(f"The scan resolution of this image plate scan ({dx_scan/1e-4:.0f}μm/{M - 1:.1f}) is "
-					                f"insufficient to support the requested reconstruction resolution ({dxI/1e-4:.0f}μm); "
+					logging.warning(f"The scan resolution of this image plate scan ({dx_scan/1e-4:.0f}/{M - 1:.1f} μm) is "
+					                f"insufficient to support the requested reconstruction resolution ({dxI/(M - 1)/1e-4:.0f}μm); "
 					                f"it will be zoomed and enhanced.")
 
 				NI_data = resample_2d(N_scan, x_scan_bins, y_scan_bins, xI_bins, yI_bins) # resample to the chosen bin size
