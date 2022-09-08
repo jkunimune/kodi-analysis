@@ -29,6 +29,16 @@ def center_of_mass(x, y, N):
 		np.average(y, weights=N.sum(axis=0))])
 
 
+def dilate(array: np.ndarray) -> np.ndarray:
+	""" it's just erosion. """
+	result = np.array(array)
+	result[1:, :] |= result[:-1, :]
+	result[:-1, :] |= result[1:, :]
+	result[:, 1:] |= result[:, :-1]
+	result[:, :-1] |= result[:, 1:]
+	return result
+
+
 def median(x, weights=None):
 	""" weited median"""
 	if weights is None:
@@ -50,11 +60,19 @@ def linregress(x, y, weights=None):
 	return m, b
 
 
-def nearest_index(points: np.ndarray, reference: np.ndarray):
+def nearest_index(points: float | np.ndarray, reference: np.ndarray):
 	""" the nearest index """
 	if reference.ndim != 1:
 		raise ValueError("this is the opposite of the problem in DSitMoM: too many dimensions")
 	return np.round(np.interp(points, reference, np.arange(reference.size))).astype(int)
+
+
+def nearest_value(exact: float | np.ndarray, options: np.ndarray):
+	""" the nearest match in the option array """
+	if options.ndim != 1:
+		raise ValueError("this is the opposite of the problem in DSitMoM: too many dimensions")
+	best_index = np.argmin(abs(exact - options))
+	return options[best_index]
 
 
 def downsample_1d(x_bins, N):
@@ -121,7 +139,7 @@ def inside_polygon(x: np.ndarray, y: np.ndarray, polygon: list[Point]):
 		if x0 != x1:
 			straddles = (x0 < x) != (x1 < x)
 			yX = (x - x0)/(x1 - x0)*(y1 - y0) + y0
-			covers = y > yX
+			covers = (y > yX) | ((y > y0) & (y > y1))
 			num_crossings[straddles & covers] += 1
 	return num_crossings%2 == 1
 

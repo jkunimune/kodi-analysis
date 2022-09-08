@@ -26,7 +26,7 @@ import fake_srim
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d, nearest_index, \
-	inside_polygon, bin_centers, downsample_2d, Point
+	inside_polygon, bin_centers, downsample_2d, Point, dilate
 
 
 warnings.filterwarnings("ignore")
@@ -416,10 +416,10 @@ def analyze_scan(input_filename: str,
 		logging.warning("Not enuff tracks to reconstruct")
 		return []
 
-	if sA != 0:
+	try:
 		data_region = user_defined_region(input_filename, "Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
-	else:
-		data_region = [(-inf, -inf), (-inf, inf), (inf, inf), (inf, -inf)]
+	except TimeoutError:
+		data_region = [(-inf, inf), (-inf, -inf), (inf, -inf), (inf, inf)]
 
 	# find the centers and spacings of the penumbral images
 	xI0, yI0, scale = find_circle_center(input_filename, M*rA, M*sA, region=data_region)
@@ -580,44 +580,43 @@ def analyze_scan(input_filename: str,
 			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *emission_energies) # get the dimensionless shape of the penumbra
 			penumbral_kernel *= dxS*dyS*dxI*dyI/(M*L1)**2 # scale by the solid angle subtended by each image pixel
 
-			if particle == "deuteron": # TODO: I'd eventually like a more elegant solution for not tangling up nans in the Wiener reconstruction
-				if XS.size*penumbral_kernel.size <= MAX_CONVOLUTION:
-					max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
-					max_source = max_source/np.sum(max_source)
-					reach = signal.convolve2d(max_source, penumbral_kernel, mode='full')
-					lower_cutoff = .005*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-					upper_cutoff = .98*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
-					contains_information = (reach > lower_cutoff) & (reach < upper_cutoff)
-				elif Q == 0:
-					RI = np.hypot(XI - xI0, YI - yI0)
-					contains_information = (RI <= r_max) & (RI >= 2*r0 - r_max)
-				else:
-					logging.warning(f"it would be computationally inefficient to compute the reach of these "
-					                f"{XS.size*penumbral_kernel.size} data, so I'm setting the data region to"
-					                f"be everywhere")
-					contains_information = True
-
-				relevant_pixels = np.isfinite(NI_data) & contains_information # exclude bins that are NaN and bins that are touched by all or none of the source pixels
-
+			# mark pixels that are tuchd by all or none of the source pixels (and are therefore useless)
+			if XS.size*penumbral_kernel.size <= MAX_CONVOLUTION:
+				max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
+				max_source = max_source/np.sum(max_source)
+				reach = signal.convolve2d(max_source, penumbral_kernel, mode='full')
+				lower_cutoff = .005*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
+				upper_cutoff = .98*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+				within_penumbra = reach < lower_cutoff
+				without_penumbra = reach > upper_cutoff
+			elif Q == 0:
+				RI = np.hypot(XI - xI0, YI - yI0)
+				within_penumbra = RI < 2*r0 - r_max
+				without_penumbra = RI > r_max
 			else:
-				relevant_pixels = True
+				logging.warning(f"it would be computationally inefficient to compute the reach of these "
+				                f"{XS.size*penumbral_kernel.size} data, so I'm setting the data region to"
+				                f"be everywhere")
+				within_penumbra, without_penumbra = False, False
 
-			relevant_pixels &= inside_polygon(XI, YI, data_region)
+			# apply the user-defined mask and smooth the invalid regions
+			without_penumbra |= ~inside_polygon(XI, YI, data_region)
+			inner_value = np.mean(NI_data, where=dilate(within_penumbra) & ~(within_penumbra | without_penumbra))
+			outer_value = np.mean(NI_data, where=dilate(without_penumbra) & ~(within_penumbra | without_penumbra))
+			clipd_data = np.where(within_penumbra, inner_value,
+			                      np.where(without_penumbra, outer_value,
+			                               NI_data))
 
 			if SHOW_POINT_SPREAD_FUNCCION:
 				plt.figure()
 				plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
-				plt.contour(XI - xI0, YI - yI0, np.where(relevant_pixels, 1, 0), levels=[0.5], colors="k")
+				plt.contour(XI - xI0, YI - yI0, within_penumbra | without_penumbra, levels=[0.5], colors="k")
 				plt.axis('square')
 				plt.title("Point spread function")
 				plt.show()
 
 			# perform the reconstruction
-			method = "gelfgat" if particle == "deuteron" else "seguin"
-			if method != "wiener":
-				clipd_data = np.where(relevant_pixels, NI_data, nan)
-			else:
-				clipd_data = NI_data
+			method = "gelfgat" if particle == "deuteron" else "wiener"
 			np.savetxt("tmp/penumbra.csv", clipd_data, delimiter=',')
 			np.savetxt("tmp/pointspread.csv", penumbral_kernel, delimiter=',')
 			execute_java("Deconvolution", method, r0/dxI)
@@ -625,17 +624,21 @@ def analyze_scan(input_filename: str,
 			briteness_S = np.maximum(0, briteness_S) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
 
 			for filename in ["penumbra", "pointspread", "source", "smooth_image", "sinogram", "sinogram_gradient", "sinogram_gradient_prime"]:
-				plt.figure()
-				plt.title(filename)
-				values = np.loadtxt(f"tmp/{filename}.csv", delimiter=",")
-				plt.pcolormesh(values.T)
+				try:
+					values = np.loadtxt(f"tmp/{filename}.csv", delimiter=",")
+					plt.figure()
+					plt.title(filename)
+					plt.pcolormesh(values.T)
+				except IOError:
+					pass
 			plt.show()
 
 			if briteness_S.size*penumbral_kernel.size <= MAX_CONVOLUTION:
 				# back-calculate the reconstructed penumbral image
 				NI_reconstruct = signal.convolve2d(briteness_S, penumbral_kernel)
 				# and estimate background as whatever makes it fit best
-				NI_reconstruct += np.mean(NI_data - NI_reconstruct, where=relevant_pixels)
+				NI_reconstruct += np.mean(NI_data - NI_reconstruct,
+				                          where=~(within_penumbra | without_penumbra))
 			else:
 				NI_reconstruct = np.full(NI_data.shape, nan)
 

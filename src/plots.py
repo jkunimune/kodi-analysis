@@ -8,7 +8,7 @@ from scipy import special
 from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS, COFFEE
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, get_relative_aperture_positions, downsample_1d, median, saturate, center_of_mass, \
-	bin_centers, Point
+	bin_centers, Point, nearest_value, shape_parameters
 
 
 PLOT_THEORETICAL_PROJECTION = True
@@ -157,12 +157,10 @@ def plot_source(filename: str, show: bool,
                 contour_level: float, e_min: float, e_max: float, num_cuts=1) -> None:
 	particle, cut_index = filename.split("-")[-2:]
 
-	x0 = median(x_centers, weights=np.sum(B, axis=1))
-	y0 = median(y_centers, weights=np.sum(B, axis=0))
-
-	# object_size = shape_parameters(bin_centers(x_bins),
-	#                                bin_centers(y_bins),
-	#                                B, contour=1/6)[0]
+	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=1/6)
+	object_size = nearest_value(2*object_size/1e-4,
+	                            np.array([50, 100, 200, 500, 1000]))
+	x0, y0 = r0*np.cos(θ), r0*np.sin(θ)
 
 	levels = np.linspace(0, np.max(B), 21)
 	levels[0] = -np.inf
@@ -186,7 +184,7 @@ def plot_source(filename: str, show: bool,
 		plt.title(f"$E_\\mathrm{{d}}$ = {e_min:.1f} – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
-	# plt.axis([-object_size, object_size, -object_size, object_size])
+	plt.axis([-object_size, object_size, -object_size, object_size])
 	plt.tight_layout()
 	save_current_figure(filename)
 

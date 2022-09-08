@@ -39,11 +39,14 @@ public class Deconvolution {
 	private static final Logger logger = Logger.getLogger("root");
 
 	/**
-	 * change the size of an array by padding the edges with 0, if the new size is
+	 * change the size of an array by padding the edges with a constant, if the new size is
 	 * bigger than the old, or by cropping off the edges, if the new size is smaller.
 	 */
-	private static double[][] resize(double[][] input, int height, int width) {
+	private static double[][] resize(double[][] input, int height, int width, double pad_value) {
 		double[][] output = new double[height][width];
+		for (int i = 0; i < height; i ++)
+			for (int j = 0; j < width; j ++)
+				output[i][j] = pad_value;
 		for (int i = 0; i < Math.min(input.length, height); i ++)
 			System.arraycopy(input[i], 0, output[i], 0, Math.min(input[i].length, width));
 		return output;
@@ -319,12 +322,12 @@ public class Deconvolution {
 	 */
 	public static double[][] wiener(double[][] F, double[][] q,
 	                                 boolean[][] source_region) {
-		double noise_reduction = 1e-11;
+		double noise_reduction = 1e-11; // TODO: for-loop this until the signal-to-noise goes below 20
 
 		// transfer F and q to the frequency domain
 		int n = (int)Math.pow(2, Math.ceil(Math.log(F.length)/Math.log(2)));
-		Complex[][] F_F = Fourier.FFT(resize(F, n, n));
-		Complex[][] F_q = Fourier.FFT(resize(q, n, n));
+		Complex[][] F_F = Fourier.FFT(resize(F, n, n, F[0][0]));
+		Complex[][] F_q = Fourier.FFT(resize(q, n, n, 0.));
 		Complex[][] F_G = new Complex[n][n];
 		// apply the Wiener filter
 		for (int i = 0; i < n; i ++) {
@@ -355,7 +358,7 @@ public class Deconvolution {
 			for (int j = 0; j < G[i].length; j ++)
 				G[i][j] -= G0;
 		// cut it back to the correct size, which should then remove that upper right region
-		G = resize(G, height, width);
+		G = resize(G, height, width, Double.NaN);
 		for (int i = 0; i < G.length; i ++)
 			for (int j = 0; j < G[i].length; j ++)
 				if (!source_region[i][j])
@@ -581,7 +584,7 @@ public class Deconvolution {
 			                      data_region,
 			                      source_region);
 		}
-		else {
+		else { // TODO: implement Richardson-Lucy
 			throw new IllegalArgumentException("the requested algorithm '"+method+"' is not in the list of reconstruction algorithms");
 		}
 
