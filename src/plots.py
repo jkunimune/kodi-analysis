@@ -206,7 +206,7 @@ def plot_source(filename: str, show: bool,
 
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
-	plt.xlim(-150, 150)
+	plt.xlim(-object_size, object_size)
 	plt.ylim(0, None)
 	plt.yscale("symlog", linthresh=1e-2, linscale=1/np.log(10))
 	plt.tight_layout()

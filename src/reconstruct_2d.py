@@ -23,6 +23,7 @@ import coordinate
 import detector
 import electric_field
 import fake_srim
+from cmap import SPIRAL
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d, nearest_index, \
@@ -32,7 +33,7 @@ from util import center_of_mass, execute_java, shape_parameters, find_intercept,
 warnings.filterwarnings("ignore")
 
 
-DEUTERON_ENERGY_CUTS = [[0, 6], [9, 100], [6, 9]] # (MeV) (emitted, not detected)
+DEUTERON_ENERGY_CUTS = [("lo", [0, 6]), ("hi", [9, 100]), ("md", [6, 9])] # (MeV) (emitted, not detected)
 # cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
 
 ASK_FOR_HELP = True
@@ -48,7 +49,7 @@ DEUTERON_RESOLUTION = 5e-4
 X_RAY_RESOLUTION = 2e-4
 DEUTERON_CONTOUR = .50
 X_RAY_CONTOUR = .17
-MAX_OBJECT_SIZE = 100
+MAX_OBJECT_SIZE = 200
 MAX_CONVOLUTION = 1e+10
 MAX_CONTRAST = 40
 MAX_ECCENTRICITY = 15
@@ -57,7 +58,7 @@ MAX_ECCENTRICITY = 15
 def where_is_the_ocean(x, y, z, title, timeout=None):
 	""" solicit the user's help in locating something """
 	fig = plt.figure()
-	plt.pcolormesh(x, y, z, vmax=np.quantile(z, .999))
+	plt.pcolormesh(x, y, z, vmax=np.quantile(z, .999), cmap=SPIRAL)
 	plt.axis("equal")
 	plt.colorbar()
 	plt.title(title)
@@ -95,7 +96,7 @@ def user_defined_region(filename, title, timeout=None) -> list[Point]:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 	fig = plt.figure()
-	plt.pcolormesh(x, y, z.T, vmax=np.quantile(z, .999))
+	plt.pcolormesh(x, y, z.T, vmax=np.quantile(z, .999), cmap=SPIRAL)
 	polygon, = plt.plot([], [], "k-")
 	cap, = plt.plot([], [], "k:")
 	cursor, = plt.plot([], [], "ko")
@@ -204,7 +205,7 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 	    :return: the number of tracks if it's a CR-39 scan, inf if it's an image plate scan
 	"""
 	if filename.endswith(".txt") or filename.endswith(".cpsa"):
-		x_tracks, y_tracks = load_cr39_scan_file(filename)
+		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max)
 		return x_tracks.size
 	elif filename.endswith(".pkl"):
 		with open(filename, "rb") as f:
@@ -302,8 +303,8 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float, region
 		plt.plot(x_contour, y_contour, "C1", linewidth=.5)
 		plt.plot(x0 + r_nominal*np.cos(θ), y0 + r_nominal*np.sin(θ), "w--", linewidth=.9)
 		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "w-", linewidth=.9)
-		plt.xlim(x_bins.min(), x_bins.max())
-		plt.ylim(y_bins.min(), y_bins.max())
+		plt.xlim(np.min(x_bins), np.max(x_bins))
+		plt.ylim(np.min(y_bins), np.max(y_bins))
 		plt.axis("equal")
 		plt.show()
 
@@ -365,7 +366,7 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
 
 	if SHOW_ELECTRIC_FIELD_CALCULATION:
-		plt.plot(r, ρ, 'C0-o')
+		plt.plot(r, ρ, 'C0-o', markersize=5)
 		r, ρ_charged = electric_field.get_modified_point_spread(
 			r0,
 			electric_field.get_charging_parameter(r_50/r0, r0, 5., 10.),
@@ -441,17 +442,18 @@ def analyze_scan(input_filename: str,
 		image_stack = image_stack.transpose((0, 2, 1)) # assume it was saved as [x,y] and switch to [i,j]
 	else: # or just prepare the grid
 		if particle == "xray":
-			energy_cuts = [[nan, nan]] # TODO: get these from the filename/filtering
+			energy_cuts = [("xray", [nan, nan])] # TODO: get these from the filename/filtering
 		elif shot.startswith("synth"):
-			energy_cuts = [[0, inf]]
+			energy_cuts = [("all", [0, inf])]
 		else:
 			energy_cuts = DEUTERON_ENERGY_CUTS
 		xU, yU, image_stack = None, None, None
 
-	sorted_energy_cuts, cut_indices = np.unique(energy_cuts, axis=0, return_inverse=True)
+	sorted_energy_cuts, cut_indices = np.unique(
+		[bounds for name, bounds in energy_cuts], axis=0, return_inverse=True)
 
 	results: list[dict[str, Any]] = []
-	for cut_index, emission_energies in zip(cut_indices, energy_cuts):
+	for cut_index, (energy_cut_name, emission_energies) in zip(cut_indices, energy_cuts):
 
 		# switch out some values depending on whether these are xrays or deuterons
 		if particle == "deuteron":
@@ -467,8 +469,13 @@ def analyze_scan(input_filename: str,
 
 		if skip_reconstruction:
 			logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max[1]:5.2f}μm")
-			r0_eff, r_max = 0, 0
-			Q, num_bins_K = 0, 0 # TODO: load previous value of Q from summary.csv
+			old_summary = pd.read_csv("results/summary.csv")
+			previus_parameters = old_summary[(old_summary.shot == shot) &
+			                                 (old_summary.tim == tim) &
+			                                 (old_summary.energy_cut == energy_cut_name)
+			                                 ].iloc[0]
+			r0_eff, r_max, num_bins_K = 0, 0, 0
+			Q = previus_parameters.Q
 			xI_bins, yI_bins, NI_data = load_hdf5(
 				f"results/data/{shot}-tim{tim}-{cut_index}-penumbra", ["x", "y", "z"])
 			NI_data = NI_data.T
@@ -483,7 +490,7 @@ def analyze_scan(input_filename: str,
 				continue
 
 			# start with a 1D reconstruction
-			r0_eff, r_max = find_circle_radius(input_filename, diameter_min, diameter_max, xI0, yI0, M*rA, region=data_region)
+			r0_eff, r_max = find_circle_radius(input_filename, diameter_min, diameter_max, xI0, yI0, M*rA, region=data_region) # TODO: should I actually save the results of a 1d abel-transformed reconstruction?
 			if r_max > r0 + (M - 1)*MAX_OBJECT_SIZE*resolution:
 				logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
 				                f"but I'm cropping it at {MAX_OBJECT_SIZE*resolution/1e-4:.0f}μm to save time")
@@ -514,7 +521,7 @@ def analyze_scan(input_filename: str,
 
 			if input_filename.endswith(".txt") or input_filename.endswith(".cpsa"): # if it's a cpsa-derived text file
 				x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
-				NI_data, xI_bins, yI_bins = np.histogram2d(x_tracks, y_tracks, bins=(xI_bins, yI_bins))
+				NI_data, xI_bins, yI_bins = np.histogram2d(x_tracks, y_tracks, bins=(xI_bins, yI_bins)) # TODO: do multiple apertures if there are multiple apertures (and allow for a periodic convolution kernel)
 
 			else:
 				if input_filename.endswith(".pkl"): # if it's a pickle file
@@ -678,6 +685,7 @@ def analyze_scan(input_filename: str,
 
 		results.append(dict(
 			shot=shot, tim=tim,
+			energy_cut=energy_cut_name,
 			energy_min=emission_energies[0],
 			energy_max=emission_energies[1],
 			x0=xI0, dx0=0,
