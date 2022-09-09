@@ -322,48 +322,95 @@ public class Deconvolution {
 	 */
 	public static double[][] wiener(double[][] F, double[][] q,
 	                                 boolean[][] source_region) {
-		double noise_reduction = 1e-11; // TODO: for-loop this until the signal-to-noise goes below 20
-
-		// transfer F and q to the frequency domain
-		int n = (int)Math.pow(2, Math.ceil(Math.log(F.length)/Math.log(2)));
-		Complex[][] F_F = Fourier.FFT(resize(F, n, n, F[0][0]));
-		Complex[][] F_q = Fourier.FFT(resize(q, n, n, 0.));
-		Complex[][] F_G = new Complex[n][n];
-		// apply the Wiener filter
-		for (int i = 0; i < n; i ++) {
-			for (int j = 0; j < n; j ++) {
-				double F_q_ij2 = Complex.abs2(F_q[i][j]);
-				Complex true_deconv = F_F[i][j].over(F_q[i][j]);
-				double filter = F_q_ij2/(F_q_ij2 + noise_reduction);
-				F_G[i][j] = true_deconv.times(filter);
-			}
-		}
-		// bring it back to the real world
-		double[][] G = Fourier.inverseFFT(F_G);
-		// subtract out the background, which you can infer from the upper right of the image
+		int max_iterations = 20;
 		int height = F.length - q.length + 1;
 		int width = F[0].length - q[0].length + 1;
-		double G_sum = 0;
+		int n = (int) Math.pow(2, Math.ceil(Math.log(F.length)/Math.log(2)));
+
+		double[][][] G = new double[max_iterations][][];
+		double[] signal_to_noise = new double[max_iterations];
+		int t_best = -1;
+		for (int t = 0; t < max_iterations; t ++) {
+			double noise_reduction = Math.pow(Math2.sum(q), 2)*1e-9*Math.exp(t);
+			logger.info(String.format("trying a=%.2g", noise_reduction));
+
+			// transfer F and q to the frequency domain
+			Complex[][] F_F = Fourier.FFT(resize(F, n, n, F[0][0]));
+			Complex[][] F_q = Fourier.FFT(resize(q, n, n, 0.));
+			Complex[][] F_G = new Complex[n][n];
+			// apply the Wiener filter
+			for (int i = 0; i < n; i++) {
+				for (int j = 0; j < n; j++) {
+					double F_q_ij2 = Complex.abs2(F_q[i][j]);
+					Complex true_deconv = F_F[i][j].over(F_q[i][j]);
+					double filter = F_q_ij2/(F_q_ij2 + noise_reduction);
+					F_G[i][j] = true_deconv.times(filter);
+				}
+			}
+			// bring it back to the real world
+			G[t] = Fourier.inverseFFT(F_G);
+
+			// estimate the signal/noise ratio in the reconstructed source
+			int rim_count = 0;
+			double rim_sum = 0;
+			double peak_height = 0;
+			for (int i = 0; i < height; i ++) {
+				for (int j = 0; j < width; j++) {
+					if (Math.hypot(i - height/2., j - width/2.) > .42*height) {
+						rim_count += 1;
+						rim_sum += G[t][i][j]*G[t][i][j];
+					}
+					else {
+						if (G[t][i][j] > peak_height)
+							peak_height = G[t][i][j];
+					}
+				}
+			}
+			double rim_level = Math.sqrt(rim_sum/rim_count);
+			signal_to_noise[t] = peak_height/rim_level;
+			logger.info(String.format("found a signal/noise of %.3g/%.3g = %.2f", peak_height, rim_level, signal_to_noise[t]));
+
+			// keep track of the best G
+			if (t_best < 0 || signal_to_noise[t] > signal_to_noise[t_best])
+				t_best = t;
+
+			// stop when you kno you've passd the max (or go hi enuff)
+			if (signal_to_noise[t] < signal_to_noise[t_best]/2 || signal_to_noise[t] > 30)
+				break;
+		}
+
+		double[][] G_final = G[t_best];
+
+		try {
+			CSV.write(G_final, new File("tmp/full_source.csv"), ',');
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+
+		// subtract out the background, which you can infer from the upper right of the image
 		int count = 0;
-		for (int i = 0; i < G.length; i ++) {
-			for (int j = 0; j < G[i].length; j ++) {
-				if (i >= height || j >= width) {
-					G_sum += G[i][j];
+		double sum = 0;
+		for (int i = 0; i < G_final.length; i ++) {
+			for (int j = 0; j < G_final[i].length; j ++) {
+				if (i >= height || j >= width || !source_region[i][j]) {
 					count += 1;
+					sum += G_final[i][j];
 				}
 			}
 		}
-		double G0 = G_sum/count;
-		for (int i = 0; i < G.length; i ++)
-			for (int j = 0; j < G[i].length; j ++)
-				G[i][j] -= G0;
+		double G0 = sum/count;
+		for (int i = 0; i < G_final.length; i++)
+			for (int j = 0; j < G_final[i].length; j++)
+				G_final[i][j] -= G0;
+
 		// cut it back to the correct size, which should then remove that upper right region
-		G = resize(G, height, width, Double.NaN);
-		for (int i = 0; i < G.length; i ++)
-			for (int j = 0; j < G[i].length; j ++)
+		G_final = resize(G_final, height, width, Double.NaN);
+		for (int i = 0; i < G_final.length; i ++)
+			for (int j = 0; j < G_final[i].length; j ++)
 				if (!source_region[i][j])
-					G[i][j] = 0;
-		return G;
+					G_final[i][j] = 0;
+
+		return G_final;
 	}
 
 	/**

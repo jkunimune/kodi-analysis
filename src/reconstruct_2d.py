@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.signal as signal
+from matplotlib.backend_bases import MouseEvent, MouseButton
 from scipy import interpolate
 from skimage import measure
 
@@ -26,7 +27,7 @@ import fake_srim
 from cmap import SPIRAL
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
-from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d, nearest_index, \
+from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate
 
 
@@ -37,7 +38,7 @@ DEUTERON_ENERGY_CUTS = [("lo", [0, 6]), ("hi", [9, 100]), ("md", [6, 9])] # (MeV
 # cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
 
 ASK_FOR_HELP = True
-SHOW_CENTER_FINDING_CALCULATION = True
+SHOW_CENTER_FINDING_CALCULATION = False
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
@@ -49,7 +50,7 @@ DEUTERON_RESOLUTION = 5e-4
 X_RAY_RESOLUTION = 2e-4
 DEUTERON_CONTOUR = .50
 X_RAY_CONTOUR = .17
-MAX_OBJECT_SIZE = 200
+MAX_OBJECT_SIZE = 250
 MAX_CONVOLUTION = 1e+10
 MAX_CONTRAST = 40
 MAX_ECCENTRICITY = 15
@@ -106,16 +107,20 @@ def user_defined_region(filename, title, timeout=None) -> list[Point]:
 
 	vertices = []
 	last_click_time = time.time()
-	def on_click(event):
+	def on_click(event: MouseEvent):
 		nonlocal last_click_time
-		vertices.append((event.xdata, event.ydata))
+		if event.button == MouseButton.LEFT or len(vertices) == 0:
+			vertices.append((event.xdata, event.ydata))
+		else:
+			vertices.pop()
+		last_click_time = time.time()
 		polygon.set_xdata([x for x, y in vertices])
 		polygon.set_ydata([y for x, y in vertices])
-		cap.set_xdata([vertices[0][0], vertices[-1][0]])
-		cap.set_ydata([vertices[0][1], vertices[-1][1]])
-		cursor.set_xdata([vertices[-1][0]])
-		cursor.set_ydata([vertices[-1][1]])
-		last_click_time = time.time()
+		if len(vertices) > 0:
+			cap.set_xdata([vertices[0][0], vertices[-1][0]])
+			cap.set_ydata([vertices[0][1], vertices[-1][1]])
+			cursor.set_xdata([vertices[-1][0]])
+			cursor.set_ydata([vertices[-1][1]])
 	fig.canvas.mpl_connect('button_press_event', on_click)
 
 	has_closed = False
@@ -356,8 +361,9 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 	A = pi*r*dr*np.mean(inside_polygon(x0 + r*np.cos(θ), y0 + r*np.sin(θ), region), axis=0)
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
-	ρ_max = np.average(ρ, weights=np.where((r < 0.5*r0) & ~np.isnan(A), 1/dρ**2, 0))
-	ρ_min = np.average(ρ, weights=np.where((r > 1.5*r0) & ~np.isnan(A), 1/dρ**2, 0))
+	inside = A > 0
+	ρ_max = np.average(ρ[inside], weights=np.where(r < 0.5*r0, 1/dρ**2, 0)[inside])
+	ρ_min = np.average(ρ[inside], weights=np.where(r > 1.5*r0, 1/dρ**2, 0)[inside])
 	dρ_background = np.std(ρ, where=r > 1.5*r0)
 	domain = r > r0/2
 	ρ_50 = ρ_max*.50 + ρ_min*.50
@@ -366,7 +372,7 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
 
 	if SHOW_ELECTRIC_FIELD_CALCULATION:
-		plt.plot(r, ρ, 'C0-o', markersize=5)
+		plt.errorbar(x=r, y=ρ, yerr=dρ, fmt='C0-')
 		r, ρ_charged = electric_field.get_modified_point_spread(
 			r0,
 			electric_field.get_charging_parameter(r_50/r0, r0, 5., 10.),
@@ -545,8 +551,9 @@ def analyze_scan(input_filename: str,
 				if abs(log(dx_scan/dxI)) < .5:
 					num_bins_K = int(round(num_bins_K/dx_scan*dxI)) # in which case you must recalculate all these numbers
 					dxI, dyI = dx_scan, dy_scan
-					left, right = nearest_index(xI_bins[[0, -1]], x_scan_bins)
-					bottom, top = nearest_index(yI_bins[[0, -1]], y_scan_bins)
+					left, right = np.round((xI_bins[[0, -1]] - x_scan_bins[0])/dx_scan).astype(int)
+					bottom = np.round((yI_bins[0] - y_scan_bins[0])/dy_scan).astype(int)
+					top = bottom + right - left
 					xI_bins = x_scan_bins[left:right + 1]
 					yI_bins = y_scan_bins[bottom:top + 1]
 					assert xI_bins.size == yI_bins.size
@@ -632,7 +639,7 @@ def analyze_scan(input_filename: str,
 			briteness_S = np.loadtxt("tmp/source.csv", delimiter=',')
 			briteness_S = np.maximum(0, briteness_S) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
 
-			for filename in ["penumbra", "pointspread", "source", "smooth_image", "sinogram", "sinogram_gradient", "sinogram_gradient_prime"]:
+			for filename in ["penumbra", "pointspread", "source", "smooth_image", "sinogram", "sinogram_gradient", "sinogram_gradient_prime", "full_source"]:
 				try:
 					values = np.loadtxt(f"tmp/{filename}.csv", delimiter=",")
 					plt.figure()

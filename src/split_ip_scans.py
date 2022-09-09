@@ -31,13 +31,17 @@ if __name__ == "__main__":
 			f.write("N210808: 2, 4, 5")
 		raise FileNotFoundError("please fill out the tim_scan_info.txt file in the scans directory")
 
-	# then search for scan files
-	for filename in os.listdir(SCAN_DIRECTORY):
+	# then search for scan files (most recent first)
+	for filename in reversed(os.listdir(SCAN_DIRECTORY)):
 		if re.match(r"^pcis[-_].*s[0-9]+.*\.h5$", filename, re.IGNORECASE) and \
 			not re.search(r"tim[0-9]", filename, re.IGNORECASE):
 			print(filename)
 			shot = re.search(r"s([0-9]+)", filename, re.IGNORECASE).group(1)
 			number = re.search(r"_-([0-9]+)-", filename, re.IGNORECASE).group(1)
+
+			if shot not in tim_sets:
+				raise KeyError(f"please add {shot} to the tim_scan_info.txt file in the scans directory")
+
 			with h5py.File(os.path.join(SCAN_DIRECTORY, filename), "r") as f:
 				dataset = f["PSL_per_px"]
 				psl = dataset[:, :].transpose()
