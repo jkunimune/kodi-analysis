@@ -1,4 +1,5 @@
 import logging
+import re
 
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
@@ -155,7 +156,7 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 def plot_source(filename: str, show: bool,
                 x_centers: np.ndarray, y_centers: np.ndarray, B: np.ndarray,
                 contour_level: float, e_min: float, e_max: float, num_cuts=1) -> None:
-	particle, cut_index = filename.split("-")[-2:]
+	particle, cut_index = re.search(r"-(xray|deuteron)([0-9]+)", filename, re.IGNORECASE).groups()
 
 	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=1/6)
 	object_size = nearest_value(2*object_size/1e-4,

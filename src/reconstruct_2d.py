@@ -5,6 +5,7 @@ import logging
 import os
 import pickle
 import re
+import shutil
 import sys
 import time
 import warnings
@@ -34,7 +35,7 @@ from util import center_of_mass, execute_java, shape_parameters, find_intercept,
 warnings.filterwarnings("ignore")
 
 
-DEUTERON_ENERGY_CUTS = [("lo", [0, 6]), ("hi", [9, 100]), ("md", [6, 9])] # (MeV) (emitted, not detected)
+DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuteron1", (6, 9))] # (MeV) (emitted, not detected)
 # cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
 
 ASK_FOR_HELP = True
@@ -47,7 +48,7 @@ EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
 DEUTERON_RESOLUTION = 5e-4
-X_RAY_RESOLUTION = 2e-4
+X_RAY_RESOLUTION = 5e-4
 DEUTERON_CONTOUR = .50
 X_RAY_CONTOUR = .17
 MAX_OBJECT_SIZE = 250
@@ -222,7 +223,8 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 
-def find_circle_center(filename: str, r_nominal: float, s_nominal: float, region: list[Point]) -> tuple[float, float, float]:
+def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
+                       region: list[Point], show_plots: bool) -> tuple[float, float, float]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param r_nominal: the expected radius of the circles
@@ -230,6 +232,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float, region
 	              distance in a hexagonal array. a negative number means the nearest center-to-center distance in a
 	              rectangular array. a 0 means that there is only one aperture.
 		:param region: the region in which to care about tracks
+	    :param show_plots: if False, overrides SHOW_CENTER_FINDING_CALCULATION
 	    :return: the x and y of the center of one of the circles, and the factor by which the observed separation
 	             deviates from the given s
 	"""
@@ -301,7 +304,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float, region
 	y_contour = np.interp(ij_contour[:, 1], np.arange(y_centers.size), y_centers)
 	x0, y0, r0 = fit_circle(x_contour, y_contour)
 
-	if SHOW_CENTER_FINDING_CALCULATION:
+	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
 		plt.pcolormesh(x_bins, y_bins, N.T)
 		θ = np.linspace(0, 2*pi, 145)
@@ -317,7 +320,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float, region
 
 
 def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
-                       x0: float, y0: float, r0: float, region: list[Point]) -> Point:
+                       x0: float, y0: float, r0: float, region: list[Point], show_plots) -> Point:
 	""" precisely determine two key metrics of a penumbra's radius in a particular energy cut
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param diameter_min: the minimum track diameter to consider (μm)
@@ -326,6 +329,7 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 	    :param y0: the y coordinate of the center of the circle (cm)
 	    :param r0: the nominal radius of the 50% contour
 	    :param region: the polygon inside which we care about the data
+	    :param show_plots: if False, overrides SHOW_ELECTRIC_FIELD_CALCULATION
 	    :return the radius of the 50% contour, and the radius of the 1% contour
 	"""
 	if filename.endswith(".txt") or filename.endswith(".cpsa"): # if it's a cpsa-derived file
@@ -371,7 +375,7 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 	ρ_01 = max(ρ_max*.001 + ρ_min*.999, ρ_min + dρ_background)
 	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
 
-	if SHOW_ELECTRIC_FIELD_CALCULATION:
+	if show_plots and SHOW_ELECTRIC_FIELD_CALCULATION:
 		plt.errorbar(x=r, y=ρ, yerr=dρ, fmt='C0-')
 		r, ρ_charged = electric_field.get_modified_point_spread(
 			r0,
@@ -419,40 +423,54 @@ def analyze_scan(input_filename: str,
 	"""
 	assert abs(rotation) < 2*pi
 
-	num_tracks = count_tracks_in_scan(input_filename, 0, inf)
-	logging.info(f"found {num_tracks:.4g} tracks in the file")
-	if num_tracks < 1e+3:
-		logging.warning("Not enuff tracks to reconstruct")
-		return []
-
-	try:
-		data_region = user_defined_region(input_filename, "Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
-	except TimeoutError:
-		data_region = [(-inf, inf), (-inf, -inf), (inf, -inf), (inf, inf)]
-
-	# find the centers and spacings of the penumbral images
-	xI0, yI0, scale = find_circle_center(input_filename, M*rA, M*sA, region=data_region)
-	# update the magnification to be based on this check
-	M *= scale
-	r0 = M*rA
-
 	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
 	if particle == "deuteron":
 		contour = DEUTERON_CONTOUR
 	else:
 		contour = X_RAY_CONTOUR
 
-	if skip_reconstruction: # load the full image set now if you can
-		energy_cuts, xU, yU, image_stack = load_hdf5(f"results/data/{shot}-tim{tim}-reconstructed-source.h5",
-		                                             ["energy", "x", "y", "image"])
-		image_stack = image_stack.transpose((0, 2, 1)) # assume it was saved as [x,y] and switch to [i,j]
-	else: # or just prepare the grid
-		if particle == "xray":
-			energy_cuts = [("xray", [nan, nan])] # TODO: get these from the filename/filtering
-		elif shot.startswith("synth"):
-			energy_cuts = [("all", [0, inf])]
-		else:
-			energy_cuts = DEUTERON_ENERGY_CUTS
+	if particle == "xray":
+		i = int(re.search(r"ip([0-9]+)", input_filename, re.IGNORECASE).group(1))
+		energy_cuts = [(f"xray{i}", (nan, nan))] # TODO: get these from the filename/filtering
+	elif shot.startswith("synth"):
+		energy_cuts = [("all", (0, inf))]
+	else:
+		energy_cuts = DEUTERON_ENERGY_CUTS
+
+	particle_and_energy_specifier = particle if len(energy_cuts) == 1 else energy_cuts[0][0]
+
+	# load the full image set now if you can
+	if skip_reconstruction:
+		logging.info(f"re-loading the previous reconstructions")
+		M = M # TODO: load this from the summary just like the Qs
+		xI0, yI0, r0 = None, None, None
+		data_region = None
+		xU, yU, image_stack = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source.h5",
+		                                ["x", "y", "image"])
+		image_stack = image_stack.transpose((0, 2, 1)) # assume it was saved as [y,x] and switch to [i,j]
+		if len(energy_cuts) != image_stack.shape[0]:
+			logging.error("nvm there's the rong number of images here")
+			return []
+
+	# or just prepare the grid
+	else:
+		num_tracks = count_tracks_in_scan(input_filename, 0, inf)
+		logging.info(f"found {num_tracks:.4g} tracks in the file")
+		if num_tracks < 1e+3:
+			logging.warning("Not enuff tracks to reconstruct")
+			return []
+
+		try:
+			data_region = user_defined_region(input_filename, "Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
+		except TimeoutError:
+			data_region = [(-inf, inf), (-inf, -inf), (inf, -inf), (inf, inf)]
+
+		# find the centers and spacings of the penumbral images
+		xI0, yI0, scale = find_circle_center(input_filename, M*rA, M*sA, data_region, show_plots)
+		# update the magnification to be based on this check
+		M *= scale
+		r0 = M*rA
+
 		xU, yU, image_stack = None, None, None
 
 	sorted_energy_cuts, cut_indices = np.unique(
@@ -474,16 +492,20 @@ def analyze_scan(input_filename: str,
 			diameter_max, diameter_min = nan, nan
 
 		if skip_reconstruction:
-			logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max[1]:5.2f}μm")
+			logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
 			old_summary = pd.read_csv("results/summary.csv")
-			previus_parameters = old_summary[(old_summary.shot == shot) &
-			                                 (old_summary.tim == tim) &
-			                                 (old_summary.energy_cut == energy_cut_name)
-			                                 ].iloc[0]
+			matching_record = (old_summary.shot == shot) &\
+			                  (old_summary.tim == tim) &\
+			                  (old_summary.energy_cut == energy_cut_name)
+			if np.any(matching_record):
+				previus_parameters = old_summary[matching_record].iloc[0]
+			else:
+				logging.info(f"nvm couldn't find it in summary.csv")
+				continue
 			r0_eff, r_max, num_bins_K = 0, 0, 0
 			Q = previus_parameters.Q
 			xI_bins, yI_bins, NI_data = load_hdf5(
-				f"results/data/{shot}-tim{tim}-{cut_index}-penumbra", ["x", "y", "z"])
+				f"results/data/{shot}-tim{tim}-{energy_cut_name}-penumbra", ["x", "y", "z"])
 			NI_data = NI_data.T
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 
@@ -496,7 +518,7 @@ def analyze_scan(input_filename: str,
 				continue
 
 			# start with a 1D reconstruction
-			r0_eff, r_max = find_circle_radius(input_filename, diameter_min, diameter_max, xI0, yI0, M*rA, region=data_region) # TODO: should I actually save the results of a 1d abel-transformed reconstruction?
+			r0_eff, r_max = find_circle_radius(input_filename, diameter_min, diameter_max, xI0, yI0, M*rA, data_region, show_plots) # TODO: should I actually save the results of a 1d abel-transformed reconstruction?
 			if r_max > r0 + (M - 1)*MAX_OBJECT_SIZE*resolution:
 				logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
 				                f"but I'm cropping it at {MAX_OBJECT_SIZE*resolution/1e-4:.0f}μm to save time")
@@ -507,8 +529,7 @@ def analyze_scan(input_filename: str,
 				Q = electric_field.get_charging_parameter(M_eff/M, r0, *emission_energies)
 			else:
 				logging.info(f"observed a magnification discrepancy of {(M_eff/M - 1)*1e2:.2f}%")
-				Q = 0
-				rA = rA*M_eff/M #TODO the new rA should carry over to the KODI, as well as the new sA
+				Q = 0 # the discrepancy is probably due to the geometry of the psf, and need not be compensated
 			r_psf = electric_field.get_expansion_factor(Q, r0, *emission_energies)
 
 			r_object = (r_max - r_psf)/(M - 1) # (cm)
@@ -565,7 +586,7 @@ def analyze_scan(input_filename: str,
 				NI_data = resample_2d(N_scan, x_scan_bins, y_scan_bins, xI_bins, yI_bins) # resample to the chosen bin size
 				NI_data *= dxI*dyI/(dx_scan*dy_scan) # since these are in signal/bin, this factor is needed
 
-		save_and_plot_penumbra(f"{shot}-tim{tim}-{cut_index}", show_plots,
+		save_and_plot_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
 		                       xI_bins, yI_bins, NI_data, xI0, yI0,
 		                       energy_min=emission_energies[0], energy_max=emission_energies[1],
 		                       r0=rA*M, s0=sA*M)
@@ -573,7 +594,7 @@ def analyze_scan(input_filename: str,
 		if skip_reconstruction:
 			briteness_U = image_stack[energy_cuts, :, :]
 			NI_residu, = load_hdf5(
-				f"results/data/{shot}-tim{tim}-{cut_index}-penumbra-residual", ["z"])
+				f"results/data/{shot}-tim{tim}-{energy_cut_name}-penumbra-residual", ["z"])
 			NI_residu = NI_residu.T
 			NI_reconstruct = NI_data - NI_residu
 
@@ -595,6 +616,8 @@ def analyze_scan(input_filename: str,
 
 			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *emission_energies) # get the dimensionless shape of the penumbra
 			penumbral_kernel *= dxS*dyS*dxI*dyI/(M*L1)**2 # scale by the solid angle subtended by each image pixel
+
+			logging.info(f"  generating a data mask to reduce noise")
 
 			# mark pixels that are tuchd by all or none of the source pixels (and are therefore useless)
 			if XS.size*penumbral_kernel.size <= MAX_CONVOLUTION:
@@ -632,7 +655,9 @@ def analyze_scan(input_filename: str,
 				plt.show()
 
 			# perform the reconstruction
-			method = "gelfgat" if particle == "deuteron" else "wiener"
+			method = "wiener" if particle == "deuteron" else "wiener"
+			if not os.path.isdir("tmp"):
+				os.mkdir("tmp")
 			np.savetxt("tmp/penumbra.csv", clipd_data, delimiter=',')
 			np.savetxt("tmp/pointspread.csv", penumbral_kernel, delimiter=',')
 			execute_java("Deconvolution", method, r0/dxI)
@@ -647,6 +672,7 @@ def analyze_scan(input_filename: str,
 					plt.pcolormesh(values.T)
 				except IOError:
 					pass
+			shutil.rmtree("tmp")
 			plt.show()
 
 			if briteness_S.size*penumbral_kernel.size <= MAX_CONVOLUTION:
@@ -684,10 +710,11 @@ def analyze_scan(input_filename: str,
 		logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 		# save and plot the results
-		plot_source(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
+		plot_source(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
 		            xU, yU, briteness_U, contour,
-		            *emission_energies, num_cuts=cut_indices.size)
-		save_and_plot_overlaid_penumbra(f"{shot}-{tim}-{cut_index}", show_plots,
+		            *emission_energies,
+		            num_cuts=cut_indices.size if particle == "deuteron" else 3)
+		save_and_plot_overlaid_penumbra(f"{shot}-{tim}-{energy_cut_name}", show_plots,
 		                                xI_bins, yI_bins, NI_reconstruct, NI_data)
 
 		results.append(dict(
@@ -706,30 +733,31 @@ def analyze_scan(input_filename: str,
 		))
 
 	# finally, save the combined image set
-	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-source",
+	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source",
 	             energy=sorted_energy_cuts, x=xU, y=yU,
 	             image=image_stack.transpose((0, 2, 1)))
 
-	# calculate the differentials between energy cuts
-	dxL, dyL = center_of_mass(xU, yU, image_stack[0])
-	dxH, dyH = center_of_mass(xU, yU, image_stack[-1])
-	dx, dy = dxH - dxL, dyH - dyL
-	logging.info(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
-	for result in results:
-		result["separation_magnitude"] = np.hypot(dx, dy)/1e-4
-		result["separation_angle"] = np.degrees(np.arctan2(dy, dx))
+	if image_stack.shape[0] > 1:
+		# calculate the differentials between energy cuts
+		dxL, dyL = center_of_mass(xU, yU, image_stack[0])
+		dxH, dyH = center_of_mass(xU, yU, image_stack[-1])
+		dx, dy = dxH - dxL, dyH - dyL
+		logging.info(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
+		for result in results:
+			result["separation_magnitude"] = np.hypot(dx, dy)/1e-4
+			result["separation_angle"] = np.degrees(np.arctan2(dy, dx))
 
-	tim_basis = coordinate.tim_coordinates(tim)
-	projected_offset = coordinate.project(
-		shot_info["offset (r)"], shot_info["offset (θ)"], shot_info["offset (ф)"],
-		tim_basis)
-	projected_flow = coordinate.project(
-		shot_info["flow (r)"], shot_info["flow (θ)"], shot_info["flow (ф)"],
-		tim_basis)
+		tim_basis = coordinate.tim_coordinates(tim)
+		projected_offset = coordinate.project(
+			shot_info["offset (r)"], shot_info["offset (θ)"], shot_info["offset (ф)"],
+			tim_basis)
+		projected_flow = coordinate.project(
+			shot_info["flow (r)"], shot_info["flow (θ)"], shot_info["flow (ф)"],
+			tim_basis)
 
-	plot_overlaid_contors(
-		f"{shot}-{tim}-deuteron", xU, yU, image_stack, contour,
-		projected_offset, projected_flow)
+		plot_overlaid_contors(
+			f"{shot}-{tim}-{particle}", xU, yU, image_stack, contour,
+			projected_offset, projected_flow)
 
 	return results
 

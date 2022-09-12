@@ -99,9 +99,9 @@ if __name__ == "__main__":
 				if num_ip_per_scan > 1:
 					ip_position = i
 				else:
-					ip_position = number
+					ip_position = number - 1
 
-				new_filename = f"{shot}_tim{tim}_ip{ip_position}_0Al.h5"
+				new_filename = f"{shot}_tim{tim}_ip{ip_position}.h5"
 				with h5py.File(os.path.join(SCAN_DIRECTORY, new_filename), "w") as f:
 					f.attrs["scan_delay"] = scan_delay
 					x_dataset = f.create_dataset("x", (end - start + 1,), dtype="f")
