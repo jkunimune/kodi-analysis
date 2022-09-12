@@ -57,6 +57,35 @@ public class Deconvolution {
 	 * uniform background pixel
 	 * @param background_source the background component of the source
 	 * @param source the normalized source distribution
+	 * @param kernel the kernel
+	 * @param region which pixels are important
+	 * @return a convolved image whose sum is the same as the sum of g (as long as
+	 *         η and η0 were set correctly)
+	 */
+	private static double[][] convolve(double background_source, double[][] source,
+	                                   double[][] kernel, boolean[][] region) {
+		int n = source.length + kernel.length - 1;
+		int m = source.length;
+		double[][] result = new double[n][n];
+		for (int i = 0; i < n; i ++) {
+			for (int j = 0; j < n; j ++) {
+				if (region == null || region[i][j]) {
+					result[i][j] = background_source;
+					for (int k = Math.max(0, i + m - n); k < m && k <= i; k ++)
+						for (int l = Math.max(0, j + m - n); l < m && l <= j; l ++)
+							if (source[k][l] != 0)
+								result[i][j] += source[k][l]*kernel[i - k][j - l];
+				}
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * do a full 2D normalized convolution of a source with a kernel, including a
+	 * uniform background pixel, and applying elementwise scaling to the source beforehand
+	 * @param background_source the background component of the source
+	 * @param source the normalized source distribution
 	 * @param background_efficiency the efficiency of the background, used to normalize the transfer matrix
 	 * @param efficiency the efficiency of each source pixel, used to normalize the transfer matrix
 	 * @param kernel the kernel
@@ -64,9 +93,9 @@ public class Deconvolution {
 	 * @return a convolved image whose sum is the same as the sum of g (as long as
 	 *         η and η0 were set correctly)
 	 */
-	private static double[][] convolve(double background_source, double[][] source,
-	                                   double background_efficiency, double[][] efficiency,
-	                                   double[][] kernel, boolean[][] region) {
+	private static double[][] convolve_and_scale(double background_source, double[][] source,
+	                                             double background_efficiency, double[][] efficiency,
+	                                             double[][] kernel, boolean[][] region) {
 		int n = source.length + kernel.length - 1;
 		int m = source.length;
 		double[][] result = new double[n][n];
@@ -90,7 +119,7 @@ public class Deconvolution {
 	 * @param source the image to be filtered
 	 * @param kernel the kernel
 	 */
-	private static double[][] convolve(double[][] source, double[] kernel) {
+	private static double[][] convolve_on_axis(double[][] source, double[] kernel) {
 		if (kernel.length%2 == 0)
 			throw new IllegalArgumentException("equal convolution only works with odd kernels");
 		double[][] result = new double[source.length][source[0].length];
@@ -148,7 +177,7 @@ public class Deconvolution {
 	}
 
 	/**
-	 * perform the algorithm outlined in
+	 * perform the Richardson–Lucy-like algorithm outlined in
 	 *     Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
 	 * 	   data…" in *Comput. Phys. Commun.* 74 (1993)
 	 * to deconvolve a 2d kernel from a measured image. a uniform background will
@@ -157,14 +186,25 @@ public class Deconvolution {
 	 * @param q the point-spread function
 	 * @param data_region a mask for the data; only pixels marked as true will be considered
 	 * @param source_region a mask for the reconstruction; pixels marked as false will always be 0
+	 * @param D the expected variance on each data point.  you may normalize however you like since it's only the shape
+	 *          of this distribution that matters.  none may be 0.  alternatively, pass null if you want to use a
+	 *          Poisson noise model rather than a fixd Gaussian one.
 	 * @return the reconstructed image G such that Math2.convolve(G, q) \approx F
 	 */
-	public static double[][] gelfgat(int[][] F, double[][] q,
-	                                 boolean[][] data_region, boolean[][] source_region) {
+	public static double[][] gelfgat(double[][] F, double[][] q,
+	                                 boolean[][] data_region, boolean[][] source_region,
+	                                 double[][] D) {
 		int n = F.length;
 		int m = F.length - q.length + 1;
 		if (source_region.length != m || source_region[0].length != m)
 			throw new IllegalArgumentException("source_region must have the same shape as the reconstruction");
+
+		if (D == null) { // (this check is for poisson only)
+			for (double[] row: F)
+				for (double val: row)
+					if (val != Math.floor(val))
+						throw new IllegalArgumentException("you requested the Poisson noise model but passed noninteger measurements.");
+		}
 
 		// set the non-data-region sections of F to zero
 		F = Math2.deepCopy(F);
@@ -173,12 +213,12 @@ public class Deconvolution {
 				if (!data_region[i][j])
 					F[i][j] = 0;
 		// count the counts
-		int N = Math2.sum(F);
+		double N = Math2.sum(F);
 		// normalize the counts
 		double[][] f = new double[n][n];
 		for (int i = 0; i < n; i ++)
 			for (int j = 0; j < n; j ++)
-				f[i][j] = (double) F[i][j] / N;
+				f[i][j] = F[i][j] / N;
 
 		double α = 20.*N/(n*n); // TODO: implement Hans's and Peter's stopping condition
 
@@ -203,14 +243,16 @@ public class Deconvolution {
 		// NOTE: g does not have quite the same profile as the source image. g is the probability distribution
 		//       ansering the question, "given that I saw a deuteron, where did it most likely come from?"
 
-		double[][] s = convolve(g0, g, η0, η, q, data_region);
+		double[][] s = convolve_and_scale(g0, g, η0, η, q, data_region);
+
+		double M = N;
 
 		// set up to keep track of the termination condition
 		List<Double> scores = new ArrayList<>();
 		double[][] best_G = null;
 
 		// do the iteration
-		for (int t = 0; t < 200; t ++) {
+		for (int t = 0; t < 500; t ++) {
 			// always start by renormalizing
 			double g_error_factor = g0 + Math2.sum(g);
 			g0 /= g_error_factor;
@@ -222,13 +264,29 @@ public class Deconvolution {
 				for (int j = 0; j < n; j ++)
 					s[i][j] /= s_error_factor;
 
+			// recalculate the scaling term
+			if (D != null) { // (for gaussian only)
+				double numerator = 0, denominator = 0;
+				for (int i = 0; i < n; i ++) {
+					for (int j = 0; j < n; j ++) {
+						if (data_region[i][j]) {
+							numerator += F[i][j]*s[i][j]/D[i][j];
+							denominator += s[i][j]*s[i][j]/D[i][j];
+						}
+					}
+				}
+				M = numerator/denominator;
+			}
+
 			// then get the step size for this iteration
 			double δg0 = 0;
 			double[][] δg = new double[m][m];
 			for (int i = 0; i < n; i ++) {
 				for (int j = 0; j < n; j ++) {
 					if (data_region[i][j]) {
-						double dlds_ij = f[i][j]/s[i][j] - 1;
+						double dlds_ij = (D == null) ?
+								f[i][j]/s[i][j] - 1 : // poisson
+								(F[i][j] - M*s[i][j])/D[i][j]; // gaussian
 						δg0 += g0/η0*dlds_ij;
 						for (int k = Math.max(0, i + m - n); k < m && k <= i; k ++)
 							for (int l = Math.max(0, j + m - n); l < m && l <= j; l ++)
@@ -237,30 +295,57 @@ public class Deconvolution {
 					}
 				}
 			}
-			double[][] δs = convolve(δg0, δg, η0, η, q, data_region);
+			double[][] δs = convolve_and_scale(δg0, δg, η0, η, q, data_region);
 
 			// complete the line search algebraicly
-			double dLdh = δg0*δg0/g0;
-			for (int k = 0; k < m; k ++)
-				for (int l = 0; l < m; l ++)
-					if (g[k][l] != 0)
-						dLdh += N*δg[k][l]*δg[k][l]/g[k][l];
-			double d2Ldh2 = 0;
-			for (int i = 0; i < n; i ++)
-				for (int j = 0; j < n; j ++)
-					if (s[i][j] != 0)
-						d2Ldh2 += -N*f[i][j]*Math.pow(δs[i][j]/s[i][j], 2);
-			assert dLdh > 0 && d2Ldh2 < 0;
-			double h = -dLdh/d2Ldh2;
+			double h;
+			if (D == null) { // poisson
+				double dLdh = δg0*δg0/g0;
+				for (int k = 0; k < m; k ++)
+					for (int l = 0; l < m; l ++)
+						if (g[k][l] != 0)
+							dLdh += N*δg[k][l]*δg[k][l]/g[k][l];
+				double d2Ldh2 = 0;
+				for (int i = 0; i < n; i ++)
+					for (int j = 0; j < n; j ++)
+						if (s[i][j] != 0)
+							d2Ldh2 += -N*f[i][j]*Math.pow(δs[i][j]/s[i][j], 2);
+				assert dLdh > 0 && d2Ldh2 < 0;
+				h = -dLdh/d2Ldh2;
+			}
+			else { // gaussian
+				double Fs = 0, Fδ = 0, Dδ = 0, Sδ = 0, Ss = 0;
+				for (int i = 0; i < n; i ++) {
+					for (int j = 0; j < n; j++) {
+						if (data_region[i][j]) {
+							Fs += F[i][j]*s[i][j]/D[i][j];
+							Fδ += F[i][j]*δs[i][j]/D[i][j];
+							Dδ += δs[i][j]*δs[i][j]/D[i][j];
+							Sδ += s[i][j]*δs[i][j]/D[i][j];
+							Ss += s[i][j]*s[i][j]/D[i][j];
+						}
+					}
+				}
+				double A = δg0*δg0/g0;
+				for (int k = 0; k < m; k ++)
+					for (int l = 0; l < m; l ++)
+						if (g[k][l] != 0)
+							A += δg[k][l]*δg[k][l]/g[k][l];
+				h = A/(M*(Dδ - Sδ*Sδ/Ss) - A*Sδ/Ss);
+			}
 
+			System.out.println("well we're dun now.");
 			// limit the step length if necessary to prevent negative values
 			if (g0 + h*δg0 < 0)
 				h = -g0/δg0*5/6.; // don't let the background pixel even reach zero
+			double h_original = h;
 			for (int k = 0; k < m; k ++)
 				for (int l = 0; l < m; l ++)
 					if (g[k][l] + h*δg[k][l] < 0)
 						h = -g[k][l]/δg[k][l]; // the other ones can get there, tho, that's fine.
 			assert h > 0;
+			if (h_original != h)
+				System.out.println("the step was cut short by negative numbers");
 
 			// take the step
 			g0 += h*δg0;
@@ -271,6 +356,12 @@ public class Deconvolution {
 						g[k][l] = 0; // correct for roundoff
 				}
 			}
+			int num_zero = 0;
+			for (int k = 0; k < m; k ++)
+				for(int l = 0; l < m; l ++)
+					if (source_region[k][l] && g[k][l] == 0)
+						num_zero ++;
+			System.out.println(num_zero+" are at zero now.");
 			for (int i = 0; i < n; i ++)
 				for (int j = 0; j < n; j ++)
 					if (data_region[i][j])
@@ -281,8 +372,8 @@ public class Deconvolution {
 			for (int k = 0; k < m; k ++)
 				for (int l = 0; l < m; l ++)
 					if (source_region[k][l])
-						G[k][l] = N*g[k][l]/η[k][l];
-			double M = Math2.sum(G);
+						G[k][l] = M*g[k][l]/η[k][l];
+			double G_sum = Math2.sum(G);
 
 			// and the probability that this step is correct
 			double likelihood = 0;
@@ -294,8 +385,8 @@ public class Deconvolution {
 			for (int k = 0; k < m; k ++)
 				for (int l = 0; l < m; l ++)
 					if (G[k][l] != 0)
-						entropy += G[k][l]/M*Math.log(G[k][l]/M);
-			scores.add(likelihood - α*entropy);
+						entropy += G[k][l]/G_sum*Math.log(G[k][l]/G_sum);
+			scores.add(likelihood - α*entropy); // TODO: apply Hans's termination criterion
 			logger.info(String.format("[%d, %.3f, %.3f, %.3f],", t, likelihood, entropy, scores.get(t)));
 			if (Double.isNaN(scores.get(t)))
 				throw new RuntimeException("something's gone horribly rong.");
@@ -476,7 +567,7 @@ public class Deconvolution {
 			else if (Math.abs(dk)%2 == 1)
 				kernel[k] = -Math.pow(Math.PI*dk, -2);
 		} // TODO: it would be faster to do this in frequency space
-		double[][] dFdr_1 = convolve(dFdr, kernel);
+		double[][] dFdr_1 = convolve_on_axis(dFdr, kernel);
 
 		// wey it to compensate for the difference between the shapes of projections based on strait-line integrals and curved-line integrals
 		double[][] dFdr_weited = new double[r.length + 1][θ.length];
@@ -557,8 +648,8 @@ public class Deconvolution {
 			double[][] ones = new double[fake_source.length][fake_source.length];
 			for (double[] row: ones)
 				Arrays.fill(row, 1.);
-			penumbral_image = convolve(0, fake_source, 1, ones,
-			                           point_spread, null);
+			penumbral_image = convolve_and_scale(0, fake_source, 1, ones,
+			                                     point_spread, null);
 			for (int k = 0; k < fake_source.length; k ++)
 				for (int l = 0; l < fake_source.length; l ++)
 					penumbral_image[k][l] = Math2.poisson(penumbral_image[k][l]);
@@ -598,20 +689,23 @@ public class Deconvolution {
 		                          method));
 
 		double[][] source_image;
-		if (method.equals("gelfgat")) {
-			int[][] penumbral_image_i = new int[penumbral_image.length][];
-			for (int i = 0; i < penumbral_image.length; i ++) {
-				penumbral_image_i[i] = new int[penumbral_image[i].length];
-				for (int j = 0; j < penumbral_image[i].length; j ++) {
-					penumbral_image_i[i][j] = (int) penumbral_image[i][j];
-					if (data_region[i][j] && penumbral_image[i][j] != penumbral_image_i[i][j])
-						throw new IllegalArgumentException("gelfgat can't be used with non-integer bin values");
-				}
-			}
-			source_image = gelfgat(penumbral_image_i,
+		if (method.equals("gelfgat-poisson")) {
+			source_image = gelfgat(penumbral_image,
 			                       point_spread,
 			                       data_region,
-			                       source_region);
+			                       source_region,
+			                       null);
+		}
+		else if (method.equals("gelfgat-gaussian")) {
+			double[][] error_bars = new double[penumbral_image.length][penumbral_image[0].length];
+			for (int i = 0; i < penumbral_image.length; i ++)
+				for (int j = 0; j < penumbral_image[i].length; j ++)
+					error_bars[i][j] = 1; // TODO: when I implement penumbra stacking, I may need nonuniform noise distros
+			source_image = gelfgat(penumbral_image,
+			                       point_spread,
+			                       data_region,
+			                       source_region,
+			                       error_bars);
 		}
 		else if (method.equals("wiener")) {
 			for (double[] row: penumbral_image)
@@ -631,7 +725,7 @@ public class Deconvolution {
 			                      data_region,
 			                      source_region);
 		}
-		else { // TODO: implement Richardson-Lucy
+		else {
 			throw new IllegalArgumentException("the requested algorithm '"+method+"' is not in the list of reconstruction algorithms");
 		}
 
@@ -639,5 +733,9 @@ public class Deconvolution {
 			System.out.println(Arrays.deepToString(source_image));
 		else
 			CSV.write(source_image, new File("tmp/source.csv"), ',');
+	}
+
+	private enum NoiseModel {
+		POISSON, GAUSSIAN
 	}
 }
