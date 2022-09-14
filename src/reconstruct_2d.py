@@ -5,7 +5,6 @@ import logging
 import os
 import pickle
 import re
-import shutil
 import sys
 import time
 import warnings
@@ -22,13 +21,14 @@ from scipy import interpolate
 from skimage import measure
 
 import coordinate
+import deconvolution
 import detector
 import electric_field
 import fake_srim
 from cmap import SPIRAL
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
-from util import center_of_mass, execute_java, shape_parameters, find_intercept, fit_circle, resample_2d, \
+from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate
 
 
@@ -39,9 +39,9 @@ DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuter
 # cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
 
 ASK_FOR_HELP = True
-SHOW_CENTER_FINDING_CALCULATION = False
+SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
-SHOW_POINT_SPREAD_FUNCCION = False
+SHOW_POINT_SPREAD_FUNCCION = True
 
 MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
@@ -536,6 +536,7 @@ def analyze_scan(input_filename: str,
 			if r_object <= 0:
 				raise ValueError("something is rong but I don't understand what it is rite now.  check on the coordinate definitions.")
 
+			# rebin the image
 			if particle == "deuteron":
 				resolution = DEUTERON_RESOLUTION
 			else:
@@ -620,18 +621,18 @@ def analyze_scan(input_filename: str,
 			logging.info(f"  generating a data mask to reduce noise")
 
 			# mark pixels that are tuchd by all or none of the source pixels (and are therefore useless)
-			if XS.size*penumbral_kernel.size <= MAX_CONVOLUTION:
+			if Q == 0:
+				RI = np.hypot(XI - xI0, YI - yI0)
+				within_penumbra = RI < 2*r0 - r_max
+				without_penumbra = RI > r_max
+			elif XS.size*penumbral_kernel.size <= MAX_CONVOLUTION:
 				max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
 				max_source = max_source/np.sum(max_source)
-				reach = signal.convolve2d(max_source, penumbral_kernel, mode='full')
+				reach = signal.fftconvolve(max_source, penumbral_kernel, mode='full')
 				lower_cutoff = .005*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
 				upper_cutoff = .98*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
 				within_penumbra = reach < lower_cutoff
 				without_penumbra = reach > upper_cutoff
-			elif Q == 0:
-				RI = np.hypot(XI - xI0, YI - yI0)
-				within_penumbra = RI < 2*r0 - r_max
-				without_penumbra = RI > r_max
 			else:
 				logging.warning(f"it would be computationally inefficient to compute the reach of these "
 				                f"{XS.size*penumbral_kernel.size} data, so I'm setting the data region to"
@@ -645,39 +646,33 @@ def analyze_scan(input_filename: str,
 			clipd_data = np.where(within_penumbra, inner_value,
 			                      np.where(without_penumbra, outer_value,
 			                               NI_data))
+			data_region = ~(within_penumbra | without_penumbra)
+			source_region = np.hypot(XS - xS_bins.mean(), YS - yS_bins.mean()) <= (xS_bins[-1] - xS_bins[0])/2
 
 			if SHOW_POINT_SPREAD_FUNCCION:
 				plt.figure()
 				plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
-				plt.contour(XI - xI0, YI - yI0, within_penumbra | without_penumbra, levels=[0.5], colors="k")
+				plt.contour(XI - xI0, YI - yI0, data_region, levels=[0.5], colors="k")
 				plt.axis('square')
 				plt.title("Point spread function")
 				plt.show()
 
 			# perform the reconstruction
-			method = "wiener" if particle == "deuteron" else "wiener"
-			if not os.path.isdir("tmp"):
-				os.mkdir("tmp")
-			np.savetxt("tmp/penumbra.csv", clipd_data, delimiter=',')
-			np.savetxt("tmp/pointspread.csv", penumbral_kernel, delimiter=',')
-			execute_java("Deconvolution", method, r0/dxI)
-			briteness_S = np.loadtxt("tmp/source.csv", delimiter=',')
-			briteness_S = np.maximum(0, briteness_S) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
+			method = "gelfgat" if particle == "deuteron" else "wiener"
+			briteness_S = deconvolution.deconvolve(method,
+			                                       clipd_data,
+			                                       penumbral_kernel,
+			                                       r_psf=r0/dxI,
+			                                       data_region=data_region,
+			                                       source_region=source_region,
+			                                       noise="poisson",#np.full(data_region.shape, clipd_data.mean()),
+			                                       show_plots=show_plots)
 
-			for filename in ["penumbra", "pointspread", "source", "smooth_image", "sinogram", "sinogram_gradient", "sinogram_gradient_prime", "full_source"]:
-				try:
-					values = np.loadtxt(f"tmp/{filename}.csv", delimiter=",")
-					plt.figure()
-					plt.title(filename)
-					plt.pcolormesh(values.T)
-				except IOError:
-					pass
-			shutil.rmtree("tmp")
-			plt.show()
+			briteness_S = np.maximum(0, briteness_S) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
 
 			if briteness_S.size*penumbral_kernel.size <= MAX_CONVOLUTION:
 				# back-calculate the reconstructed penumbral image
-				NI_reconstruct = signal.convolve2d(briteness_S, penumbral_kernel)
+				NI_reconstruct = signal.fftconvolve(briteness_S, penumbral_kernel)
 				# and estimate background as whatever makes it fit best
 				NI_reconstruct += np.mean(NI_data - NI_reconstruct,
 				                          where=~(within_penumbra | without_penumbra))
@@ -713,7 +708,7 @@ def analyze_scan(input_filename: str,
 		plot_source(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
 		            xU, yU, briteness_U, contour,
 		            *emission_energies,
-		            num_cuts=cut_indices.size if particle == "deuteron" else 3)
+		            num_cuts=cut_indices.size if particle == "deuteron" else 2)
 		save_and_plot_overlaid_penumbra(f"{shot}-{tim}-{energy_cut_name}", show_plots,
 		                                xI_bins, yI_bins, NI_reconstruct, NI_data)
 

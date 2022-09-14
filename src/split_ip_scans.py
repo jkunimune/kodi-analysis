@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colors
 
-from util import downsample_2d, downsample_1d
+from util import downsample_2d
 
 
 SCAN_DIRECTORY = "../data/scans"
@@ -70,8 +70,8 @@ if __name__ == "__main__":
 			cut_positions = [x_bins.min(), x_bins.max()]
 			def on_click(event):
 				cut_positions.append(event.xdata)
-				plt.axvline(event.xdata, color="k")
-				plt.axvline(event.xdata, color="w", linestyle=(0, (3, 3)))
+				plt.axvline(event.xdata, color="w")
+				plt.axvline(event.xdata, color="k", linestyle=(0, (3, 3)))
 				fig.canvas.draw()
 			fig.canvas.mpl_connect('button_press_event', on_click)
 			plt.show()
