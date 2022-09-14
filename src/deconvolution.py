@@ -1,6 +1,6 @@
 """ the deconvolution algorithms, including the all-important Gelfgat reconstruction """
 import logging
-from math import nan, isnan, exp, sqrt, pi, acos, inf
+from math import nan, isnan, sqrt, pi, acos, inf
 from typing import cast
 
 import matplotlib.pyplot as plt
@@ -88,11 +88,11 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	q_star = q[::-1, ::-1]
 
 	# save the detection efficiency of each point (it will be approximately uniform)
-	η0 = np.sum(data_region)
+	η0 = np.count_nonzero(data_region)
 	η = signal.fftconvolve(data_region, q_star, mode="valid")
 
 	# start with a unifrm initial gess and a S/B ratio of about 1
-	g0 = η0*np.sum(source_region)/np.sum(q)
+	g0 = η0*np.count_nonzero(source_region)*np.max(q)
 	g = np.where(source_region, η, 0)
 	# NOTE: g does not have quite the same profile as the source image. g is the probability distribution
 	#       ansering the question, "given that I saw a deuteron, where did it most likely come from?"
@@ -136,33 +136,29 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 
 		# complete the line search algebraicly
 		if mode == "poisson":
-			dLdh = δg0**2/g0 + np.sum(δg**2/g, where=g!=0)
-			d2Ldh2 = -N*np.sum(f*δs**2/s**2, where=data_region)
-			assert dLdh > 0 and d2Ldh2 < 0, f"{dLdh} > 0; {d2Ldh2} < 0"
-			h = -dLdh/d2Ldh2 # compute step length
+			dldh = δg0**2/g0 + np.sum(δg**2/g, where=g!=0)
+			d2ldh2 = -np.sum(f*δs**2/s**2, where=data_region)
+			assert dldh > 0 and d2ldh2 < 0, f"{dldh} > 0; {d2ldh2} < 0"
+			h = -dldh/d2ldh2 # compute step length
 		else:
-			Dδ = np.sum(δs**2/D, where=data_region)
-			Sδ = np.sum(s*δs/D, where=data_region)
-			Ss = np.sum(s**2/D, where=data_region)
-			dLdh = δg0**2/g0 + np.sum(δg**2/g, where=g!=0)
-			h = dLdh/(M*(Dδ - Sδ*Sδ/Ss) - dLdh*Sδ/Ss)
+			δδ = np.sum(δs**2/D, where=data_region)
+			sδ = np.sum(s*δs/D, where=data_region)
+			ss = np.sum(s**2/D, where=data_region)
+			dldh = δg0**2/g0 + np.sum(δg**2/g, where=g!=0)
+			h = dldh/(M*(δδ - sδ*sδ/ss) - dldh*sδ/ss)
 
 		# limit the step length if necessary to prevent negative values
 		assert np.all(g >= 0) and g0 >= 0, g
 		if g0 + h*δg0 < 0:
 			h = -g0/δg0*5/6 # don't let the background pixel even reach zero
-		h_original = h
 		if np.min(g + h*δg) < 0:
 			h = np.amin(-g/δg, where=δg < 0, initial=h) # stop the other pixels as they reach zero
 		assert h > 0, h
-		if h != h_original:
-			print("the step was cut short by negative numbers")
 
 		# take the step
 		g0 += h*δg0
 		g += h*δg
 		g[abs(g) < 1e-15] = 0 # correct for roundoff
-		print(f"{np.sum(source_region & (g == 0))} are at zero now.")
 		s += h*δs
 
 		# then calculate the actual source
@@ -179,7 +175,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		if isnan(scores[-1]):
 			raise RuntimeError("something's gone horribly rong.")
 
-		logging.info(f"[{len(scores)}, {likelihood - L0}, {entropy}, {scores[-1] - L0}],")
+		logging.info(f"    {len(scores)}: {likelihood - L0} - {entropy}α = {scores[-1] - L0}")
 		if show_plots: # plot things
 			fig.clear()
 			axes = fig.subplots(nrows=3, ncols=2)
@@ -230,7 +226,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 		:param show_plots: whether to do the status report plot thing
 		:return: the reconstructed source G such that convolve2d(G, q) \\approx F
 	"""
-	max_iterations = 20
+	max_iterations = 30
 	if F.ndim != 2 or q.ndim != 2:
 		raise ValueError("these must be 2D")
 	height = F.shape[0] - q.shape[0] + 1
@@ -254,8 +250,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 	G, signal_to_noise = [], []
 	t_best = -1
 	for t in range(max_iterations):
-		noise_reduction = 1e-9 * np.sum(q)**2 * exp(t)
-		logging.info(f"trying a={noise_reduction:.2g}")
+		noise_reduction = 1e-9 * np.sum(q)**2 * 2**t
 
 		# apply the Wiener filter
 		f_G = f_F/f_q * f_q**2/(f_q**2 + noise_reduction)
@@ -274,7 +269,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 		rim_level = sqrt(np.mean(G[t]**2, where=rim))
 		peak_height = np.max(G[t], where=~rim, initial=-inf)
 		signal_to_noise.append(peak_height/rim_level)
-		logging.info(f"found a signal/noise of {peak_height:.3g}/{rim_level:.3g} = {signal_to_noise[t]:.2f}")
+		logging.info(f"    {noise_reduction:.3g} -> {peak_height:.3g}/{rim_level:.3g} = {signal_to_noise[t]:.2f}")
 
 		# keep track of the best G
 		if t_best == -1 or signal_to_noise[t] > signal_to_noise[t_best]:
@@ -325,7 +320,6 @@ def seguin(F: NDArray[float], r_psf: float, efficiency: float,
 	F = np.where(data_region, F, nan)
 
 	# now, interpolate it into polar coordinates
-	logging.info("differentiating...")
 	F_interpolator = interpolate.RectBivariateSpline(
 		np.arange(F.shape[0]), np.arange(F.shape[1]), F, kx=1, ky=1)
 	r = np.arange(F.shape[0]//2)
@@ -341,7 +335,6 @@ def seguin(F: NDArray[float], r_psf: float, efficiency: float,
 	dFdr[np.isnan(dFdr)] = 0
 
 	# then you must convolve a ram-lak ramp filter to weigh frequency information by how well-covered it is
-	logging.info("weying...")
 	kernel_size = 2*r.size
 	if kernel_size%2 == 0:
 		kernel_size -= 1
@@ -369,7 +362,6 @@ def seguin(F: NDArray[float], r_psf: float, efficiency: float,
 		plt.show()
 
 	# finally, do the integral
-	logging.info("integrating...")
 	dFdr_interpolator = interpolate.RectBivariateSpline(r, θ, dFdr_weited)
 	G = np.zeros(source_region.shape)
 	for i in range(G.shape[0]):
@@ -401,7 +393,7 @@ if __name__ == '__main__':
 	image = signal.convolve2d(source, kernel, mode="full") + 10
 	image = np.random.poisson(image)
 
-	reconstruction = deconvolve("wiener",
+	reconstruction = deconvolve("gelfgat",
 	                            image, kernel,
 	                            np.full(image.shape, True),
 	                            np.full(source.shape, True),

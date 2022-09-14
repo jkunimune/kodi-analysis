@@ -658,7 +658,8 @@ def analyze_scan(input_filename: str,
 				plt.show()
 
 			# perform the reconstruction
-			method = "gelfgat" if particle == "deuteron" else "wiener"
+			logging.info("  performing the reconstruction")
+			method = "gelfgat" if particle == "deuteron" else "gelfgat"
 			briteness_S = deconvolution.deconvolve(method,
 			                                       clipd_data,
 			                                       penumbral_kernel,
@@ -667,6 +668,7 @@ def analyze_scan(input_filename: str,
 			                                       source_region=source_region,
 			                                       noise="poisson",#np.full(data_region.shape, clipd_data.mean()),
 			                                       show_plots=show_plots)
+			logging.info("  done!")
 
 			briteness_S = np.maximum(0, briteness_S) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
 
