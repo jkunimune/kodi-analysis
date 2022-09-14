@@ -12,6 +12,7 @@ from math import log, pi, nan, ceil, radians, inf
 from typing import Any
 
 import h5py
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -25,13 +26,14 @@ import deconvolution
 import detector
 import electric_field
 import fake_srim
-from cmap import SPIRAL
+from cmap import SPIRAL, COFFEE
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate
 
 
+matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
@@ -39,7 +41,7 @@ DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuter
 # cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
 
 ASK_FOR_HELP = True
-SHOW_CENTER_FINDING_CALCULATION = True
+SHOW_CENTER_FINDING_CALCULATION = False
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = True
 
@@ -48,11 +50,11 @@ EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
 NON_STATISTICAL_NOISE = .0
 DEUTERON_RESOLUTION = 5e-4
-X_RAY_RESOLUTION = 5e-4
+X_RAY_RESOLUTION = 2e-4
 DEUTERON_CONTOUR = .50
 X_RAY_CONTOUR = .17
 MAX_OBJECT_SIZE = 250
-MAX_CONVOLUTION = 1e+10
+MAX_CONVOLUTION = 1e+12
 MAX_CONTRAST = 40
 MAX_ECCENTRICITY = 15
 
@@ -306,11 +308,11 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
-		plt.pcolormesh(x_bins, y_bins, N.T)
+		plt.pcolormesh(x_bins, y_bins, N.T, cmap=COFFEE)
 		θ = np.linspace(0, 2*pi, 145)
-		plt.plot(x_contour, y_contour, "C1", linewidth=.5)
-		plt.plot(x0 + r_nominal*np.cos(θ), y0 + r_nominal*np.sin(θ), "w--", linewidth=.9)
-		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "w-", linewidth=.9)
+		plt.plot(x_contour, y_contour, "C0", linewidth=.5)
+		plt.plot(x0 + r_nominal*np.cos(θ), y0 + r_nominal*np.sin(θ), "k--", linewidth=.9)
+		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "k-", linewidth=.9)
 		plt.xlim(np.min(x_bins), np.max(x_bins))
 		plt.ylim(np.min(y_bins), np.max(y_bins))
 		plt.axis("equal")
@@ -460,10 +462,13 @@ def analyze_scan(input_filename: str,
 			logging.warning("Not enuff tracks to reconstruct")
 			return []
 
-		try:
-			data_region = user_defined_region(input_filename, "Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
-		except TimeoutError:
-			data_region = [(-inf, inf), (-inf, -inf), (inf, -inf), (inf, inf)]
+		if show_plots:
+			try:
+				data_region = user_defined_region(input_filename, "Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
+			except TimeoutError:
+				data_region = [(-inf, inf), (-inf, -inf), (inf, -inf), (inf, inf)]
+		else:
+			data_region = [(-inf, inf), (-inf, -inf), (inf, -inf), (inf, inf)] # TODO: load previus data region
 
 		# find the centers and spacings of the penumbral images
 		xI0, yI0, scale = find_circle_center(input_filename, M*rA, M*sA, data_region, show_plots)
@@ -571,7 +576,7 @@ def analyze_scan(input_filename: str,
 				dy_scan = y_scan_bins[1] - y_scan_bins[0]
 				# if you're near the Nyquist frequency, consider *not* resampling
 				if abs(log(dx_scan/dxI)) < .5:
-					num_bins_K = int(round(num_bins_K/dx_scan*dxI)) # in which case you must recalculate all these numbers
+					num_bins_K = int(ceil(num_bins_K/dx_scan*dxI/2))*2 - 1 # in which case you must recalculate all these numbers
 					dxI, dyI = dx_scan, dy_scan
 					left, right = np.round((xI_bins[[0, -1]] - x_scan_bins[0])/dx_scan).astype(int)
 					bottom = np.round((yI_bins[0] - y_scan_bins[0])/dy_scan).astype(int)
@@ -664,7 +669,7 @@ def analyze_scan(input_filename: str,
 			                                       clipd_data,
 			                                       penumbral_kernel,
 			                                       r_psf=r0/dxI,
-			                                       data_region=data_region,
+			                                       data_region=data_region, # type: ignore
 			                                       source_region=source_region,
 			                                       noise="poisson",#np.full(data_region.shape, clipd_data.mean()),
 			                                       show_plots=show_plots)

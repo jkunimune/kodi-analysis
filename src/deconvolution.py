@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy import fft
 from numpy.typing import NDArray
-from scipy import ndimage, interpolate, signal
+from scipy import ndimage, interpolate, signal, stats
 
 from cmap import GREYS, SPIRAL
 
@@ -54,7 +54,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		:param q: the point-spread function
 		:param data_region: a mask for the data; only pixels marked as true will be considered
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
-		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
+		:param noise: either an array of relative variances for the data, or the string "poisson" to use a Poisson model
 		:param show_plots: whether to do the status report plot thing
 		:return: the reconstructed source G such that convolve2d(G, q) \\approx F
 	"""
@@ -111,11 +111,12 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		fig = None
 
 	# set up to keep track of the termination condition
-	L0 = N*np.sum(f*np.log(f), where=data_region & (f > 0))
-	likelihoods, scores, best_G, best_S = [], [], None, None
+	num_iterations = 500
+	log_L = np.empty(num_iterations)
+	G = np.empty((num_iterations, *g.shape))
 
 	# do the iteration
-	while len(scores) < 50:
+	for t in range(num_iterations):
 		# always start by renormalizing
 		g_error_factor = g0 + np.sum(g)
 		g, g0, s = g/g_error_factor, g0/g_error_factor, s/g_error_factor
@@ -162,20 +163,17 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		s += h*δs
 
 		# then calculate the actual source
-		G = M*g/η
+		G[t] = M*g/η
 
 		# and the probability that this step is correct
 		if mode == "poisson":
-			likelihood = N*np.sum(f*np.log(s), where=data_region)
+			log_L[t] = N*np.sum(f*np.log(s), where=data_region)
 		else:
-			likelihood = N*np.sum((F - M*s)/D, where=data_region)
-		entropy = np.sum(G/np.sum(G)*np.log(G/np.sum(G)), where=G!=0)
-		likelihoods.append(likelihood)
-		scores.append(likelihood - α*entropy) # TODO: apply Hans's termination criterion
-		if isnan(scores[-1]):
+			log_L[t] = N*np.sum((F - M*s)/D, where=data_region)
+		if isnan(log_L[t]):
 			raise RuntimeError("something's gone horribly rong.")
 
-		logging.info(f"    {len(scores)}: {likelihood - L0} - {entropy}α = {scores[-1] - L0}")
+		logging.info(f"    {t: 3d}/{num_iterations}: {log_L[t] - log_L[0]}")
 		if show_plots: # plot things
 			fig.clear()
 			axes = fig.subplots(nrows=3, ncols=2)
@@ -189,11 +187,14 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			axes[1,1].set_title("Synthetic")
 			axes[1,1].pcolormesh(np.where(data_region, N*s, np.nan).T, vmin=0, vmax=F.max(where=data_region, initial=0), cmap=SPIRAL)
 			axes[2,0].set_title("Convergence")
-			axes[2,0].plot(np.subtract(scores[-36:], scores[-1] - likelihoods[-1]), linestyle='solid')
-			axes[2,0].plot(likelihoods[-36:], linestyle='dashed')
+			axes[2,0].plot(log_L[:t] - log_L[t])
+			axes[2,0].set_xlim(0, t - 1)
+			axes[2,0].set_ylim(max(-np.count_nonzero(source_region), log_L[max(0, t - 10)]), 0)
 			axes[2,1].set_title("χ^2")
-			# axes[2,1].pcolormesh(np.where(where&(s>0), (N*s - F)**2/(N*s + 1)/2, 0).T, vmin= 0, vmax=6, cmap='inferno')
-			axes[2,1].pcolormesh(np.where(data_region & (s > 0), N*s - F*np.log(s) - (F - F*np.log(np.maximum(1e-20, f))), 0).T, vmin= 0, vmax=6, cmap='inferno')
+			if mode == "poisson":
+				axes[2,1].pcolormesh(np.where(data_region & (s > 0), N*s - F*np.log(s) - (F - F*np.log(np.maximum(1e-20, f))), 0).T, vmin=0, cmap='inferno')
+			else:
+				axes[2,1].pcolormesh(np.where(data_region, (N*s - F)**2/D, 0).T, vmin= 0, cmap='inferno')
 			for row in axes:
 				for axis in row:
 					if axis != axes[2,0]:
@@ -202,18 +203,28 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 						axis.set_yticks([])
 			plt.pause(1e-3)
 
-		# finally, do the termination condition
-		best_t = np.argmax(scores)
-		if best_t == len(scores) - 1: # keep track of the best we've found
-			best_G = G
-		elif best_t < len(scores) - 12: # if the value function decreases twelve times in a row, quit
-			return best_G
-
 	np.seterr('warn')
 	plt.close(fig)
 
-	logging.warning("the maximum number of iterations was reached.  Here, have a pity reconstruction.")
-	return best_G
+	λ = -2*(log_L - log_L[-1])
+	g_inf = G[-1]/np.sum(G[-1])
+	dof = np.sum(g_inf/(g_inf + 1/np.count_nonzero(source_region)), where=source_region)
+	cdf = stats.chi2.cdf(λ, dof)
+
+	if show_plots:
+		fig, (top, bottom) = plt.subplots(nrows=2, ncols=1)
+		top.plot(log_L - log_L[-1])
+		top.axhline(-dof/2)
+		bottom.plot(cdf)
+		bottom.axhline(0.5)
+		plt.show()
+
+	if np.any(cdf < .5):
+		t = np.nonzero(cdf < .5)[0][0]
+		return G[t]
+	else:
+		logging.warning("the gelfgat algorithm did not converge correctly.  here, have a pity reconstruction.")
+		return G[-1]
 
 
 def wiener(F: NDArray[float], q: NDArray[float],
