@@ -16,9 +16,9 @@ def range_curve(z: float, a: float, material: str):
 	"""
 	if z == 1:
 		try:
-			table = np.loadtxt(f"data/tables/stopping_power_protons_{material}.csv")
+			table = np.loadtxt(f"data/tables/stopping_power_protons_{material}.csv", delimiter=",")
 		except FileNotFoundError:
-			table = np.loadtxt(f"../data/tables/stopping_power_protons_{material}.csv")
+			table = np.loadtxt(f"../data/tables/stopping_power_protons_{material}.csv", delimiter=",")
 	else:
 		raise NotImplementedError("do I need another table for this?  I don't actually know.")
 	E = table[:, 0]*a*1e-3
@@ -58,7 +58,7 @@ def particle_E_in(E_out: Numeric, z: float, a: float, thickness: float, material
 	E, x = range_curve(z, a, material)
 	return np.interp(np.interp(E_out, E, x) + thickness, x, E)
 
-def track_energy(diameter, a, z, etch_time, vB=2.66, k=.8, n=1.2):
+def track_energy(diameter, z, a, etch_time, vB=2.66, k=.8, n=1.2):
 	""" calculate the energy of a particle given the diameter of the track it leaves in CR39.
 	    see B. Lahmann et al. *Rev. Sci. Instrum.* 91, 053502 (2020); doi: 10.1063/5.0004129.
 	    :param diameter: the track diameter (μm)
@@ -71,7 +71,7 @@ def track_energy(diameter, a, z, etch_time, vB=2.66, k=.8, n=1.2):
 	"""
 	return z**2*a*((2*etch_time*vB/diameter - 1)/k)**(1/n)
 
-def track_diameter(energy, etch_time=5, vB=2.66, k=.8, n=1.2, a=1, z=1):
+def track_diameter(energy, z, a, etch_time, vB=2.66, k=.8, n=1.2):
 	""" calculate the diameter of the track left in CR39 by a particle of a given energy
 	    :param energy: the particle energy (MeV)
 	    :param z: the charge number of the particle (e)
@@ -129,22 +129,24 @@ def xray_sensitivity(energy: Numeric, time: float, thickness=112., psl_attenuati
 if __name__ == '__main__':
 	plt.rcParams.update({'font.family': 'sans', 'font.size': 18})
 
-	deuteron = dict(a=2, z=1)
 	energies = np.linspace(2.2, 12.45)
 
 	hi_Es = np.linspace(9, 12.45)
 	lo_Es = np.linspace(2.2, 6)
 	significant_Es = [2.2, 6, 9, 12.45]
 
+	def energy_to_diameter(energy):
+		return track_diameter(particle_E_out(energy, 1, 2, 15, "Ta"), 1, 2, 5)
+
 	plt.figure()#figsize=(5.5, 4))
 
 	# for k, n in [(.849, .806), (.626, .867), (.651, .830), (.651, .779), (.868, 1.322)]:
 	# 	plt.plot(x, D(x, k=k, n=n), '-')
-	plt.plot(energies, track_diameter(energies, **deuteron), '-k', linewidth=2)
+	plt.plot(energies, energy_to_diameter(energies), '-k', linewidth=2)
 	for cut_Es, color in [(hi_Es, '#668afa'), (lo_Es, '#fd7f86')]:
-		plt.fill_between(cut_Es, np.zeros(cut_Es.shape), track_diameter(cut_Es, **deuteron), color=color, alpha=1)
+		plt.fill_between(cut_Es, np.zeros(cut_Es.shape), energy_to_diameter(cut_Es), color=color, alpha=1)
 	for E0 in significant_Es:
-		D0 = track_diameter(E0, **deuteron)
+		D0 = energy_to_diameter(E0)
 		plt.plot([0, E0, E0], [D0, D0, 0], '--k', linewidth=1)
 	# plt.title("Relationship between incident energy and track diameter")
 	plt.xlim(0, None)
