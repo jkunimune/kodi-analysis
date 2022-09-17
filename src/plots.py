@@ -8,7 +8,7 @@ from scipy import special
 
 from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS, COFFEE
 from hdf5_util import save_as_hdf5
-from util import downsample_2d, get_relative_aperture_positions, downsample_1d, median, saturate, center_of_mass, \
+from util import downsample_2d, get_relative_aperture_positions, downsample_1d, saturate, center_of_mass, \
 	bin_centers, Point, nearest_value, shape_parameters
 
 
@@ -47,8 +47,8 @@ def save_and_plot_radial_data(filename: str, show: bool,
 	plt.fill_between(np.repeat(rI_bins, 2)[1:-1], 0, np.repeat(zI, 2)/1e3,  label="Data", color='#f9A72E')
 	plt.plot(r_actual, z_actual/1e3, '-', color='#0C6004', linewidth=2, label="Fit with charging")
 	plt.plot(r_uncharged, z_uncharged/1e3, '--', color='#0F71F0', linewidth=2, label="Fit without charging")
-	plt.xlim(0, rI_bins.max())
-	plt.ylim(0, min(zI.max()*1.05, z_actual.max()*1.20)/1e3)
+	plt.xlim(0, np.max(rI_bins))
+	plt.ylim(0, min(np.max(zI)*1.05, np.max(z_actual)*1.20)/1e3)
 	plt.xlabel("Radius (cm)")
 	plt.ylabel("Track density (10³/cm²)")
 	plt.legend()
@@ -106,7 +106,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 		return A*special.erfc((x - x0 - r0)/d)*special.erfc(-(x - x0 + r0)/d) + b
 	popt, pcov = optimize.curve_fit(ideal_profile, xL, NL, [100, .1, 0])
 	plt.plot(x_bins, ideal_profile(x_bins, *popt), '--', color='#0F71F0', linewidth=2)
-	plt.xlim(x_bins.min(), x_bins.max())
+	plt.xlim(np.min(x_bins), np.max(x_bins))
 	plt.ylim(0, None)
 	plt.xlabel("x (cm)")
 	plt.ylabel("Track density (10³/cm²)")
@@ -158,7 +158,7 @@ def plot_source(filename: str, show: bool,
                 contour_level: float, e_min: float, e_max: float, num_cuts=1) -> None:
 	particle, cut_index = re.search(r"-(xray|deuteron)([0-9]+)", filename, re.IGNORECASE).groups()
 
-	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=1/6)
+	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=contour_level)
 	object_size = nearest_value(2*object_size/1e-4,
 	                            np.array([50, 100, 200, 500, 1000]))
 	x0, y0 = r0*np.cos(θ), r0*np.sin(θ)
