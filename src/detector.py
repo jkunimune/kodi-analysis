@@ -26,6 +26,7 @@ def range_curve(z: float, a: float, material: str):
 	x = integrate.cumulative_trapezoid(1/dEdx, E, initial=0)
 	return E, x
 
+
 def particle_range(E_init: Numeric, z: float, a: float, material: str):
 	""" calculate the distance a particle of a given energy can penetrate a material
 	    :param E_init: the initial energy of the particle
@@ -35,6 +36,7 @@ def particle_range(E_init: Numeric, z: float, a: float, material: str):
 	"""
 	E, x = range_curve(z, a, material)
 	return np.interp(E_init, E, x)
+
 
 def particle_E_out(E_in: Numeric, z: float, a: float, thickness: float, material: str):
 	""" calculate the energy of a particle after passing thru some material
@@ -47,6 +49,7 @@ def particle_E_out(E_in: Numeric, z: float, a: float, thickness: float, material
 	"""
 	return particle_E_in(E_in, z, a, -thickness, material)
 
+
 def particle_E_in(E_out: Numeric, z: float, a: float, thickness: float, material: str):
 	""" calculate the energy needed to exit some material with a given energy
 	    :param E_out: the final energy of the particle (MeV)
@@ -57,6 +60,7 @@ def particle_E_in(E_out: Numeric, z: float, a: float, thickness: float, material
 	"""
 	E, x = range_curve(z, a, material)
 	return np.interp(np.interp(E_out, E, x) + thickness, x, E)
+
 
 def track_energy(diameter, z, a, etch_time, vB=2.66, k=.8, n=1.2):
 	""" calculate the energy of a particle given the diameter of the track it leaves in CR39.
@@ -70,6 +74,7 @@ def track_energy(diameter, z, a, etch_time, vB=2.66, k=.8, n=1.2):
 	    :param n: the other response parameter in the two-parameter model
 	"""
 	return z**2*a*((2*etch_time*vB/diameter - 1)/k)**(1/n)
+
 
 def track_diameter(energy, z, a, etch_time, vB=2.66, k=.8, n=1.2):
 	""" calculate the diameter of the track left in CR39 by a particle of a given energy
@@ -85,9 +90,11 @@ def track_diameter(energy, z, a, etch_time, vB=2.66, k=.8, n=1.2):
 	                2*etch_time*vB/(1 + k*(energy/(z**2*a))**n),
 	                np.nan)
 
+
 def psl_fade(time: Numeric, A1=.436, A2=.403, τ1=18.9, τ2=1641.5):
 	""" the portion of PSL that remains after some minutes have passed """
 	return A1*np.exp(-time/τ1) + A2*np.exp(-time/τ2) + (1 - A1 - A2)
+
 
 def attenuation_curve(energy: Numeric, material: str) -> Numeric:
 	""" load the attenuation curve for x-rays in a material
@@ -101,6 +108,7 @@ def attenuation_curve(energy: Numeric, material: str) -> Numeric:
 		table = np.loadtxt(f"../data/tables/attenuation_{material}.csv", delimiter=",")
 	return np.interp(energy, table[:, 0], table[:, 1])
 
+
 def xray_transmission(energy: Numeric, thickness: float, material: str) -> Numeric:
 	""" calculate the fraction of photons at some energy that get thru some material
 	    :param energy: the photon energies (keV)
@@ -110,6 +118,7 @@ def xray_transmission(energy: Numeric, thickness: float, material: str) -> Numer
 	"""
 	attenuation = attenuation_curve(energy, material)
 	return np.exp(-attenuation*thickness)
+
 
 def xray_sensitivity(energy: Numeric, time: float, thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
 	""" calculate the fraction of photons at some energy that are measured by an image

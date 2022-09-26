@@ -8,8 +8,8 @@ import re
 import sys
 import time
 import warnings
-from math import log, pi, nan, ceil, radians, inf
-from typing import Any
+from math import log, pi, nan, ceil, radians, inf, isfinite, sqrt
+from typing import Any, cast
 
 import h5py
 import matplotlib
@@ -18,7 +18,8 @@ import numpy as np
 import pandas as pd
 import scipy.signal as signal
 from matplotlib.backend_bases import MouseEvent, MouseButton
-from scipy import interpolate
+from matplotlib.colors import SymLogNorm
+from scipy import interpolate, optimize
 from skimage import measure
 
 import coordinate
@@ -30,8 +31,8 @@ from cmap import SPIRAL, COFFEE
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
-	inside_polygon, bin_centers, downsample_2d, Point, dilate
-
+	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
+	line_search, quantile
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -40,9 +41,10 @@ warnings.filterwarnings("ignore")
 DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuteron1", (6, 9))] # (MeV) (emitted, not detected)
 # cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
 
-ASK_FOR_HELP = True
+ASK_FOR_HELP = False
+SHOW_DIAMETER_CUTS = False
 SHOW_CENTER_FINDING_CALCULATION = False
-SHOW_ELECTRIC_FIELD_CALCULATION = False
+SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
 MAX_NUM_PIXELS = 1000
@@ -59,7 +61,7 @@ MAX_CONTRAST = 40
 MAX_ECCENTRICITY = 15
 
 
-def where_is_the_ocean(x, y, z, title, timeout=None):
+def where_is_the_ocean(x, y, z, title, timeout=None) -> tuple[float, float]:
 	""" solicit the user's help in locating something """
 	fig = plt.figure()
 	plt.pcolormesh(x, y, z, vmax=np.quantile(z, .999), cmap=SPIRAL)
@@ -67,17 +69,17 @@ def where_is_the_ocean(x, y, z, title, timeout=None):
 	plt.colorbar()
 	plt.title(title)
 
-	center_guess = (None, None)
-	def on_click(event, center_guess=center_guess):
-		center_guess[0] = event.xdata
-		center_guess[1] = event.ydata
+	center_guess: tuple[float, float] | None = None
+	def on_click(event):
+		nonlocal center_guess
+		center_guess = (event.xdata, event.ydata)
 	fig.canvas.mpl_connect('button_press_event', on_click)
 
 	start = time.time()
-	while center_guess[0] is None and (timeout is None or time.time() - start < timeout):
+	while center_guess is None and (timeout is None or time.time() - start < timeout):
 		plt.pause(.01)
 	plt.close('all')
-	if center_guess[0] is not None:
+	if center_guess is not None:
 		return center_guess
 	else:
 		raise TimeoutError
@@ -113,7 +115,8 @@ def user_defined_region(filename, title, timeout=None) -> list[Point]:
 	def on_click(event: MouseEvent):
 		nonlocal last_click_time
 		if event.button == MouseButton.LEFT or len(vertices) == 0:
-			vertices.append((event.xdata, event.ydata))
+			if event.xdata is not None and event.ydata is not None:
+				vertices.append((event.xdata, event.ydata))
 		else:
 			vertices.pop()
 		last_click_time = time.time()
@@ -142,25 +145,13 @@ def user_defined_region(filename, title, timeout=None) -> list[Point]:
 		raise TimeoutError
 
 
-def simple_penumbra(r, Q, r0, з_min=1.e-15, з_max=1.):
-	""" synthesize a simple analytic single-apeture penumbral image. its peak value will
-	    be 1 in the absence of an electric field and slitely less than 1 in the presence
-	    of an electric field
-	"""
-	Δr = np.min(abs(r - r0), where = r != r0, initial=r0) # get an idea for how close to the edge we must sample
-	charging_width = Q/з_max/10 if Q > 0 else 0
-	required_resolution = max(charging_width, Δr/2) # resolution may be limited by charging or the pixel distances
-
-	rB, nB = electric_field.get_modified_point_spread(r0, Q, energy_min=з_min, energy_max=з_max) # start by accounting for aperture charging but not source size
-	n_pixel = min(int(r.max()/required_resolution), rB.size)
-	r_point = np.linspace(0, r.max(), n_pixel) # use a dirac kernel instead of a gaussian
-	penumbra = np.interp(r_point, rB, nB, right=0)
-	return np.interp(r, r_point, penumbra/np.max(penumbra), right=0) # map to the requested r values
-
-
 def point_spread_function(XK: np.ndarray, YK: np.ndarray,
                           Q: float, r0: float, з_min: float, з_max: float) -> np.ndarray:
 	""" build the dimensionless point spread function """
+	# calculate the profile using the electric field model
+	r_interp, n_interp = electric_field.get_modified_point_spread(
+		r0, Q, energy_min=з_min, energy_max=з_max)
+
 	dxK = XK[1, 0] - XK[0, 0]
 	dyK = YK[0, 1] - YK[0, 0]
 	assert dxK == dyK, f"{dxK} != {dyK}"
@@ -168,15 +159,16 @@ def point_spread_function(XK: np.ndarray, YK: np.ndarray,
 	offsets = np.linspace(-dxK/2, dxK/2, 15)[1:-1:2]
 	for dx in offsets: # sampling over a few pixels
 		for dy in offsets:
-			func += simple_penumbra(
-				np.hypot(XK + dx, YK + dy), Q, r0, з_min, з_max)
+			func += np.interp(np.hypot(XK + dx, YK + dy),
+			                  r_interp, n_interp, right=0)
 	func /= offsets.size**2 # divide by the number of samples
 	return func
 
 
 def load_cr39_scan_file(filename: str,
                         min_diameter=0., max_diameter=inf,
-                        max_contrast=50., max_eccentricity=15.) -> tuple[np.ndarray, np.ndarray]:
+                        max_contrast=50., max_eccentricity=15.,
+                        show_plots=False) -> tuple[np.ndarray, np.ndarray]:
 	""" load the track coordinates from a CR-39 scan file
 	    :return: the x coordinates (cm) and the y coordinates (cm)
 	"""
@@ -186,17 +178,33 @@ def load_cr39_scan_file(filename: str,
 		                         encoding='Latin-1',
 		                         dtype='float32') # load all track coordinates
 
+		if show_plots:
+			max_diameter_to_plot = track_list['d(µm)'].quantile(.99)
+			max_contrast_to_plot = track_list['cn(%)'].max()
+			plt.hist2d(track_list['d(µm)'], track_list['cn(%)'],
+			           bins=(np.linspace(0, max_diameter_to_plot + 5, 100),
+			                 np.arange(0.5, max_contrast_to_plot + 1)),
+			           norm=SymLogNorm(10, 1/np.log(10)),
+			           cmap=COFFEE)
+			x0 = max(min_diameter, 0)
+			x1 = min(max_diameter, max_diameter_to_plot)
+			y1 = min(max_contrast, max_contrast_to_plot)
+			plt.plot([x0, x0, x1, x1], [0, y1, y1, 0], "k--")
+			plt.show()
+
 		hi_contrast = (track_list['cn(%)'] < max_contrast) & (track_list['e(%)'] < max_eccentricity)
 		in_bounds = (track_list['d(µm)'] >= min_diameter) & (track_list['d(µm)'] <= max_diameter)
 		x_tracks = track_list[hi_contrast & in_bounds]['x(cm)']
 		y_tracks = track_list[hi_contrast & in_bounds]['y(cm)']
 
 	elif filename.endswith(".cpsa"):
-		raise NotImplementedError("I think Peter has not finishd this but will soon.")
 		# file = cr39py.CR39(filename)
 		# file.add_cut(cr39py.Cut(cmax=max_contrast, emax=max_eccentricity,
 		#                         dmin=min_diameter, dmax=max_diameter))
 		# x_tracks, y_tracks = file.get_x(), file.get_y()
+		# plt.pcolormesh(x_tracks, y_tracks, bins=216)
+		# plt.show()
+		raise NotImplementedError("I can't read these files yet")
 
 	else:
 		raise ValueError(f"the {os.path.splitext(filename)[-1]} filetype cannot be read as a CR-39 scan file.")
@@ -204,23 +212,27 @@ def load_cr39_scan_file(filename: str,
 	return x_tracks, y_tracks
 
 
-def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float) -> int:
+def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float, show_plots: bool
+                         ) -> tuple[float, float, float, float, float]:
 	""" open a scan file and simply count the total number of tracks without putting
 	    anything additional in memory.  if the scan file is an image plate scan, return inf
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param diameter_min: the minimum diameter to count (μm)
 	    :param diameter_max: the maximum diameter to count (μm)
-	    :return: the number of tracks if it's a CR-39 scan, inf if it's an image plate scan
+	    :param show_plots: whether to demand that we see the diameter cuts
+	    :return: the number of tracks if it's a CR-39 scan, inf if it's an image plate scan. also the bounding box.
 	"""
 	if filename.endswith(".txt") or filename.endswith(".cpsa"):
-		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max)
-		return x_tracks.size
+		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max,
+		                                         show_plots=show_plots)
+		return x_tracks.size, np.min(x_tracks), np.max(x_tracks), np.min(y_tracks), np.max(y_tracks)
 	elif filename.endswith(".pkl"):
 		with open(filename, "rb") as f:
 			x_bins, y_bins, N = pickle.load(f)
-		return int(np.sum(N))
+		return int(np.sum(N)), x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]
 	elif filename.endswith(".h5"):
-		return 1_000_000_000
+		x_bins, y_bins = load_hdf5(filename, ["x", "y"])
+		return 1_000_000_000, x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
@@ -238,9 +250,9 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 	    :return: the x and y of the center of one of the circles, and the factor by which the observed separation
 	             deviates from the given s
 	"""
-	if filename.endswith(".txt") or filename.endswith(".cpsa"): # if it's a cpsa-derived text file
-		x_tracks, y_tracks = load_cr39_scan_file(filename) # load all track coordinates
-		n_bins = max(6, int(min(MAX_NUM_PIXELS, np.sqrt(x_tracks.size)/10))) # get the image resolution needed to resolve the circle
+	if filename.endswith(".txt") or filename.endswith(".cpsa"):  # if it's a cpsa-derived text file
+		x_tracks, y_tracks = load_cr39_scan_file(filename)  # load all track coordinates
+		n_bins = max(6, int(min(sqrt(x_tracks.size)/10, MAX_NUM_PIXELS)))  # get the image resolution needed to resolve the circle
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
 		relative_bins = np.linspace(-r_data, r_data, n_bins + 1)
 		x_bins = (np.min(x_tracks) + np.max(x_tracks))/2 + relative_bins
@@ -250,19 +262,19 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 			x_tracks, y_tracks, bins=(x_bins, y_bins))
 
 		if ASK_FOR_HELP:
-			try: # ask the user for help finding the center
+			try:  # ask the user for help finding the center
 				x0, y0 = where_is_the_ocean(x_bins, y_bins, N, "Please click on the center of a penumbrum.", timeout=8.64)
-			except:
+			except TimeoutError:
 				x0, y0 = None, None
 		else:
 			x0, y0 = None, None
 
-	elif filename.endswith(".pkl"): # if it's a pickle file
+	elif filename.endswith(".pkl"):  # if it's a pickle file
 		with open(filename, "rb") as f:
 			x_bins, y_bins, N = pickle.load(f)
 		x0, y0 = (0, 0)
 
-	elif filename.endswith(".h5"): # if it's an h5 file
+	elif filename.endswith(".h5"):  # if it's an h5 file
 		with h5py.File(filename, "r") as f:
 			x_bins = f["x"][:]
 			y_bins = f["y"][:]
@@ -321,29 +333,35 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 	return x0, y0, 1
 
 
-def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
-                       x0: float, y0: float, r0: float, region: list[Point], show_plots) -> Point:
-	""" precisely determine two key metrics of a penumbra's radius in a particular energy cut
+def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
+                         energy_min: float, energy_max: float,
+                         x0: float, y0: float, r0: float, region: list[Point],
+                         show_plots: bool) -> Point:
+	""" perform an inverse Abel transformation while fitting for charging
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param diameter_min: the minimum track diameter to consider (μm)
 	    :param diameter_max: the maximum track diameter to consider (μm)
+	    :param energy_min: the minimum particle energy included (MeV)
+	    :param energy_max: the maximum particle energy included (MeV)
 	    :param x0: the x coordinate of the center of the circle (cm)
 	    :param y0: the y coordinate of the center of the circle (cm)
 	    :param r0: the nominal radius of the 50% contour
 	    :param region: the polygon inside which we care about the data
 	    :param show_plots: if False, overrides SHOW_ELECTRIC_FIELD_CALCULATION
-	    :return the radius of the 50% contour, and the radius of the 1% contour
+	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
 	"""
-	if filename.endswith(".txt") or filename.endswith(".cpsa"): # if it's a cpsa-derived file
-		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max) # load all track coordinates
+	# either bin the tracks in radius
+	if filename.endswith(".txt") or filename.endswith(".cpsa"):  # if it's a cpsa-derived file
+		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max)  # load all track coordinates
 		valid = inside_polygon(x_tracks, y_tracks, region)
 		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
 		r_tracks = np.hypot(x_tracks - x0, y_tracks - y0)
-		r_bins = np.linspace(0, 1.7*r0, int(np.sum(r_tracks <= r0)/1000))
+		r_bins = np.linspace(0, 2*r0, int(np.sum(r_tracks <= r0)/1000))
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
 
+	# or rebin the cartesian bins in radius
 	else:
-		if filename.endswith(".pkl"): # if it's a pickle file
+		if filename.endswith(".pkl"):  # if it's a pickle file
 			with open(filename, 'rb') as f:
 				xC_bins, yC_bins, NC = pickle.load(f)
 		elif filename.endswith(".h5"): # if it's an HDF5 file
@@ -372,28 +390,63 @@ def find_circle_radius(filename: str, diameter_min: float, diameter_max: float,
 	ρ_min = np.average(ρ[inside], weights=np.where(r > 1.5*r0, 1/dρ**2, 0)[inside])
 	dρ_background = np.std(ρ, where=r > 1.5*r0)
 	domain = r > r0/2
-	ρ_50 = ρ_max*.50 + ρ_min*.50
-	r_50 = find_intercept(r[domain], ρ[domain] - ρ_50)
 	ρ_01 = max(ρ_max*.001 + ρ_min*.999, ρ_min + dρ_background)
 	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
 
+	# now compute the relation between spherical radius and image radius
+	r_sph_bins = r_bins[:r_bins.size//2:2]
+	r_sph = bin_centers(r_sph_bins)
+	sphere_to_plane = abel_matrix(r_sph_bins)
+
+	def reconstruct_1d_assuming_Q(Q: float, return_other_stuff=False) -> float | tuple:
+		r_psf, f_psf = electric_field.get_modified_point_spread(
+			r0, Q, energy_min, energy_max)
+		source_to_image = cumul_pointspread_function_matrix(
+			r_sph, r, r_psf, f_psf)
+		forward_matrix = A[:, np.newaxis] * np.hstack([
+			source_to_image @ sphere_to_plane,
+			np.ones((r.size, 1))])
+		try:
+			profile = deconvolution.gelfgat1d(n, forward_matrix)
+		except ValueError:
+			profile = optimize.lsq_linear(forward_matrix, n, bounds=(0, inf)).x
+		reconstruction = forward_matrix@profile
+		χ2 = np.sum((reconstruction - n)**2/(reconstruction + 1))
+		if return_other_stuff:
+			return χ2, profile[:-1], reconstruction/A
+		else:
+			return cast(float, χ2)
+
+	if isfinite(diameter_min):
+		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e-0, 1e-3, 0)
+		logging.info(f"  inferred an aperture charge of {Q:.3f} MeV*cm")
+	else:
+		Q = 0
+
 	if show_plots and SHOW_ELECTRIC_FIELD_CALCULATION:
+		χ2, n_sph, ρ_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
+		plt.figure()
+		plt.plot(r_sph, n_sph)
+		plt.xlim(0, quantile(r_sph, .99, n_sph*r_sph**2))
+		plt.yscale("log")
+		plt.ylim(n_sph.max()*2e-3, n_sph.max()*2e+0)
+		plt.xlabel("Magnified spherical radius (cm)")
+		plt.ylabel("Emission")
+		plt.figure()
 		plt.errorbar(x=r, y=ρ, yerr=dρ, fmt='C0-')
-		r, ρ_charged = electric_field.get_modified_point_spread(
-			r0,
-			electric_field.get_charging_parameter(r_50/r0, r0, 5., 10.),
-			5., 10., normalize=True)
-		plt.plot(r, ρ_charged*(ρ_max - ρ_min) + ρ_min, 'C1--')
+		plt.plot(r, ρ_recon, 'C1-')
+		r_psf, ρ_psf = electric_field.get_modified_point_spread(
+			r0, Q, 5., 10., normalize=True)
+		plt.plot(r_psf, ρ_psf*(ρ_max - ρ_min) + ρ_min, 'C1--')
 		plt.axhline(ρ_max, color="C2", linestyle="dashed")
 		plt.axhline(ρ_min, color="C2", linestyle="dashed")
-		plt.axhline(ρ_50, color="C3")
 		plt.axhline(ρ_01, color="C4")
 		plt.axvline(r0, color="C3", linestyle="dashed")
-		plt.axvline(r_50, color="C3")
 		plt.axvline(r_01, color="C4")
-		plt.xlim(0, r_bins.max())
+		plt.xlim(0, r[-1])
 		plt.show()
-	return r_50, r_01
+
+	return Q, r_01
 
 
 def analyze_scan(input_filename: str,
@@ -456,19 +509,18 @@ def analyze_scan(input_filename: str,
 
 	# or just prepare the grid
 	else:
-		num_tracks = count_tracks_in_scan(input_filename, 0, inf)
+		num_tracks, xmin, xmax, ymin, ymax = count_tracks_in_scan(input_filename, 0, inf, False)
 		logging.info(f"found {num_tracks:.4g} tracks in the file")
 		if num_tracks < 1e+3:
 			logging.warning("Not enuff tracks to reconstruct")
 			return []
 
+		data_polygon = [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)] # TODO: load previus data region
 		if show_plots:
 			try:
 				data_polygon = user_defined_region(input_filename, "Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
 			except TimeoutError:
-				data_polygon = [(-inf, inf), (-inf, -inf), (inf, -inf), (inf, inf)]
-		else:
-			data_polygon = [(-inf, inf), (-inf, -inf), (inf, -inf), (inf, inf)] # TODO: load previus data region
+				pass
 
 		# find the centers and spacings of the penumbral images
 		xI0, yI0, scale = find_circle_center(input_filename, M*rA, M*sA, data_polygon, show_plots)
@@ -516,25 +568,24 @@ def analyze_scan(input_filename: str,
 
 		else:
 			logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
-			num_tracks = count_tracks_in_scan(input_filename, diameter_min, diameter_max)
+			num_tracks, _, _, _, _ = count_tracks_in_scan(input_filename, diameter_min, diameter_max,
+			                                              show_plots and SHOW_DIAMETER_CUTS)
 			logging.info(f"found {num_tracks:.4g} tracks in the cut")
 			if num_tracks < 1e+3:
 				logging.warning("Not enuff tracks to reconstruct")
 				continue
 
 			# start with a 1D reconstruction
-			r0_eff, r_max = find_circle_radius(input_filename, diameter_min, diameter_max, xI0, yI0, M*rA, data_polygon, show_plots) # TODO: should I actually save the results of a 1d abel-transformed reconstruction?
+			Q, r_max = do_1d_reconstruction(
+				input_filename, diameter_min, diameter_max,
+				emission_energies[0], emission_energies[1],
+				xI0, yI0, M*rA, data_polygon, show_plots) # TODO: should I actually save the results of a 1d abel-transformed reconstruction?
+
 			if r_max > r0 + (M - 1)*MAX_OBJECT_SIZE*resolution:
 				logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
 				                f"but I'm cropping it at {MAX_OBJECT_SIZE*resolution/1e-4:.0f}μm to save time")
 				r_max = r0 + (M - 1)*MAX_OBJECT_SIZE*resolution
 
-			M_eff = r0_eff/rA
-			if particle == "deuteron":
-				Q = electric_field.get_charging_parameter(M_eff/M, r0, *emission_energies)
-			else:
-				logging.info(f"observed a magnification discrepancy of {(M_eff/M - 1)*1e2:.2f}%")
-				Q = 0 # the discrepancy is probably due to the geometry of the psf, and need not be compensated
 			r_psf = electric_field.get_expansion_factor(Q, r0, *emission_energies)
 
 			r_object = (r_max - r_psf)/(M - 1) # (cm)
@@ -670,7 +721,7 @@ def analyze_scan(input_filename: str,
 
 			# perform the reconstruction
 			logging.info(f"  reconstructing a {data_region.shape} image into a {source_region.shape} source")
-			method = "richardson-lucy" if particle == "deuteron" else "seguin"
+			method = "wiener" if particle == "deuteron" else "wiener"
 			briteness_S = deconvolution.deconvolve(method,
 			                                       clipd_data,
 			                                       penumbral_kernel,
@@ -701,7 +752,9 @@ def analyze_scan(input_filename: str,
 					yU = np.linspace(yS[0], yS[-1], yS.size*2 - 1)
 				image_stack = np.zeros((len(energy_cuts), xU.size, yU.size))
 
-			briteness_U = interpolate.RectBivariateSpline(xS, yS, briteness_S)(xU, yU)
+			briteness_U = interpolate.RegularGridInterpolator(
+				(xS, yS), briteness_S, bounds_error=False, fill_value=0)(
+				np.stack(np.meshgrid(xU, yU, indexing="ij"), axis=-1))
 			image_stack[cut_index, :, :] = briteness_U
 
 		dxU, dyU = xU[1] - xU[0], yU[1] - yU[0]
@@ -718,11 +771,11 @@ def analyze_scan(input_filename: str,
 		logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 		# save and plot the results
-		plot_source(f"{shot}-tim{tim}-{energy_cut_name}", True,
+		plot_source(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
 		            xU, yU, briteness_U, contour,
 		            *emission_energies,
-		            num_cuts=cut_indices.size if particle == "deuteron" else 2)
-		save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", True,
+		            num_cuts=cut_indices.size if particle == "deuteron" else 3)
+		save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
 		                                xI_bins, yI_bins, NI_reconstruct, NI_data)
 
 		results.append(dict(
@@ -764,7 +817,7 @@ def analyze_scan(input_filename: str,
 			tim_basis)
 
 		plot_overlaid_contors(
-			f"{shot}-{tim}-{particle}", xU, yU, image_stack, contour,
+			f"{shot}-tim{tim}-{particle}", xU, yU, image_stack, contour,
 			projected_offset, projected_flow)
 
 	return results
@@ -829,8 +882,8 @@ if __name__ == '__main__':
 				tim_match = re.search(r"tim([0-9]+)", fname, re.IGNORECASE)
 			else:
 				tim_match = re.search(rf"tim({tim})", fname, re.IGNORECASE)
-			if (fname.endswith(".txt") or fname.endswith(".cpsa") or fname.endswith(".pkl") or fname.endswith(".h5")) \
-					and shot_match is not None and tim_match is not None:
+			if (fname.endswith(".txt") or fname.endswith(".pkl") or fname.endswith(".h5")) \
+			    and shot_match is not None and tim_match is not None:
 				matching_tim = tim_match.group(1) # these regexes would work much nicer if _ wasn't a word haracter
 				etch_time = float(etch_match.group(1)) if etch_match is not None else nan
 				matching_scans.append((shot, matching_tim, etch_time, f"data/scans/{fname}"))
@@ -845,8 +898,7 @@ if __name__ == '__main__':
 		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the data folder.")
 
 	# then iterate thru that list and do the analysis
-	for shot, tim, etch_time, filename in all_scans_to_analyze:
-		print()
+	for shot, tim, etch_time, filename in reversed(all_scans_to_analyze):
 		logging.info("Beginning reconstruction for TIM {} on shot {}".format(tim, shot))
 
 		try:
@@ -859,17 +911,17 @@ if __name__ == '__main__':
 
 		# perform the 2d reconstruccion
 		results = analyze_scan(
-			input_filename      = filename,
-			skip_reconstruction = skip_reconstruction,
-			show_plots          = show_plots,
-			shot                = shot_info["shot"],
-			tim                 = tim,
-			rA                  = shot_info["aperture radius"]*1e-4,
-			sA                  = shot_info["aperture spacing"]*1e-4,
-			L1                  = shot_info["standoff"]*1e-4,
-			M                   = shot_info["magnification"],
-			etch_time           = etch_time,
-			rotation            = radians(shot_info["rotation"]),
+			input_filename     =filename,
+			skip_reconstruction=skip_reconstruction,
+			show_plots         =show_plots,
+			shot               =shot_info["shot"],
+			tim                =tim,
+			rA                 =shot_info["aperture radius"]*1e-4,
+			sA                 =shot_info["aperture spacing"]*1e-4,
+			L1                 =shot_info["standoff"]*1e-4,
+			M                  =shot_info["magnification"],
+			etch_time          =etch_time,
+			rotation           =radians(shot_info["rotation"]),
 		)
 
 		for result in results:

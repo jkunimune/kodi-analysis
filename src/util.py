@@ -3,11 +3,13 @@ import datetime
 import os
 import shutil
 import subprocess
+from math import pi, cos, sin
+from typing import Callable
 
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
-from scipy import optimize
+from scipy import optimize, integrate
 from skimage import measure
 
 
@@ -40,12 +42,17 @@ def dilate(array: np.ndarray) -> np.ndarray:
 
 
 def median(x, weights=None):
-	""" weited median"""
+	""" weited median, assuming a sorted input """
+	return quantile(x, .5, weights)
+
+
+def quantile(x, q, weights=None):
+	""" weited quantile, assuming a sorted input """
 	if weights is None:
 		weights = np.ones(x.shape)
 	y = np.cumsum(weights)
 	y /= y[-1]
-	return np.interp(1/2, y, x)
+	return np.interp(q, y, x)
 
 
 def linregress(x, y, weights=None):
@@ -98,7 +105,7 @@ def downsample_2d(x_bins, y_bins, N):
 	Np = np.zeros((n, m))
 	for i in range(0, 2):
 		for j in range(0, 2):
-			Np += N[i:2*n:2,j:2*m:2]
+			Np += N[i:2*n:2, j:2*m:2]
 	return x_bins, y_bins, Np
 
 
@@ -163,13 +170,38 @@ def get_relative_aperture_positions(spacing, r_img, r_max):
 				yield dx, dy
 
 
+def abel_matrix(r_bins):
+	""" generate a matrix that converts a spherically radial histogram to a cylindrically
+	    radial histogram
+	    :param r_bins: the radii at which the bins are edged
+	"""
+	R_o, R_i = r_bins[np.newaxis, 1:], r_bins[np.newaxis, :-1]
+	r_bins = r_bins[:, np.newaxis]
+	def floor_sqrt(x): return np.sqrt(np.maximum(0, x))
+	edge_matrix = 2*(floor_sqrt(R_o**2 - r_bins**2) - floor_sqrt(R_i**2 - r_bins**2))
+	return (edge_matrix[:-1, :] + edge_matrix[1:, :])/2 # TODO: check this; I think it may be rong
+
+
+def cumul_pointspread_function_matrix(r_source, r_image, r_pointspread_ref, f_pointspread_ref):
+	""" generate a matrix that converts a circularly symmetric source to a circularly
+	    symmetric image given a circularly symmetric point spread function, ignoring
+	    magnification.
+	"""
+	θ = np.linspace(0, pi, 181)
+	r_image, r_source, θ = np.meshgrid(r_image, r_source, θ, indexing="ij", sparse=True)
+	r_pointspread = np.hypot(r_image + r_source*np.cos(θ), r_source*np.sin(θ))
+	f_pointspread = np.interp(r_pointspread, r_pointspread_ref, f_pointspread_ref)
+	res = integrate.trapezoid(f_pointspread, θ, axis=2)
+	return res
+
+
 def covariance_from_harmonics(p0, p1, θ1, p2, θ2):
 	""" convert a circular harmonic representation of a conture to a covariance matrix """
 	Σ = np.matmul(np.matmul(
-			np.array([[np.cos(θ2), -np.sin(θ2)], [np.sin(θ2), np.cos(θ2)]]),
+			np.array([[cos(θ2), -sin(θ2)], [sin(θ2), cos(θ2)]]),
 			np.array([[(p0 + p2)**2, 0], [0, (p0 - p2)**2]])),
-			np.array([[np.cos(θ2), np.sin(θ2)], [-np.sin(θ2), np.cos(θ2)]]))
-	μ = np.array([p1*np.cos(θ1), p1*np.sin(θ1)])
+			np.array([[cos(θ2), sin(θ2)], [-sin(θ2), cos(θ2)]]))
+	μ = np.array([p1*cos(θ1), p1*sin(θ1)])
 	return (Σ + Σ.T)/2, μ
 
 
@@ -185,7 +217,7 @@ def harmonics_from_covariance(Σ, μ):
 
 	p1, θ1 = np.hypot(μ[0], μ[1]), np.arctan2(μ[1], μ[0])
 
-	p2, θ2 = (a - b)/2, np.arctan2(eigvec[1,i1], eigvec[0,i1])
+	p2, θ2 = (a - b)/2, np.arctan2(eigvec[1, i1], eigvec[0, i1])
 	return p0, (p1, θ1), (p2, θ2)
 
 
@@ -196,7 +228,8 @@ def fit_ellipse(x, y, f, contour):
 
 	if contour is None:
 		μ0 = np.sum(f) # image sum
-		if μ0 == 0: return np.full((2, 2), np.nan)
+		if μ0 == 0:
+			return np.full((2, 2), np.nan)
 		μx = np.sum(X*f)/μ0 # image centroid
 		μy = np.sum(Y*f)/μ0
 		μxx = np.sum(X**2*f)/μ0 - μx**2 # image rotational inertia
@@ -207,10 +240,10 @@ def fit_ellipse(x, y, f, contour):
 	else:
 		contour_paths = measure.find_contours(f, contour*f.max())
 		if len(contour_paths) == 0:
-			return np.full((2,2), np.nan), np.full(2, np.nan)
+			return np.full((2, 2), np.nan), np.full(2, np.nan)
 		contour_path = max(contour_paths, key=len)
-		x_contour = np.interp(contour_path[:,0], np.arange(x.size), x)
-		y_contour = np.interp(contour_path[:,1], np.arange(y.size), y)
+		x_contour = np.interp(contour_path[:, 0], np.arange(x.size), x)
+		y_contour = np.interp(contour_path[:, 1], np.arange(y.size), y)
 		x0 = np.average(X, weights=f)
 		y0 = np.average(Y, weights=f)
 		r = np.hypot(x_contour - x0, y_contour - y0)
@@ -218,15 +251,15 @@ def fit_ellipse(x, y, f, contour):
 		θL, θR = np.concatenate([θ[1:], θ[:1]]), np.concatenate([θ[-1:], θ[:-1]])
 		dθ = abs(np.arcsin(np.sin(θL)*np.cos(θR) - np.cos(θL)*np.sin(θR)))/2
 
-		p0 = np.sum(r*dθ)/np.pi/2
+		p0 = np.sum(r*dθ)/pi/2
 
-		p1x = np.sum(r*np.cos(θ)*dθ)/np.pi + x0
-		p1y = np.sum(r*np.sin(θ)*dθ)/np.pi + y0
+		p1x = np.sum(r*np.cos(θ)*dθ)/pi + x0
+		p1y = np.sum(r*np.sin(θ)*dθ)/pi + y0
 		p1 = np.hypot(p1x, p1y)
 		θ1 = np.arctan2(p1y, p1x)
 
-		p2x = np.sum(r*np.cos(2*θ)*dθ)/np.pi
-		p2y = np.sum(r*np.sin(2*θ)*dθ)/np.pi
+		p2x = np.sum(r*np.cos(2*θ)*dθ)/pi
+		p2y = np.sum(r*np.sin(2*θ)*dθ)/pi
 		p2 = np.hypot(p2x, p2y)
 		θ2 = np.arctan2(p2y, p2x)/2
 
@@ -236,6 +269,24 @@ def fit_ellipse(x, y, f, contour):
 def shape_parameters(x, y, f, contour=None):
 	""" get some scalar parameters that describe the shape of this distribution. """
 	return harmonics_from_covariance(*fit_ellipse(x, y, f, contour))
+
+
+def line_search(func: Callable[[float], float], lower_bound: float, upper_bound: float,
+                abs_tolerance=0., rel_tolerance=1e-3):
+	""" this is a simple 1d minimization scheme based on parameter sweeps over
+	    progressively smaller intervals
+	"""
+	best_guess = (upper_bound + lower_bound)/2
+	import matplotlib.pyplot as plt
+	while upper_bound - lower_bound > 2*abs_tolerance and \
+		(lower_bound == 0 or (upper_bound - lower_bound)/lower_bound > 2*rel_tolerance):
+		points = np.linspace(lower_bound, upper_bound, 7)
+		values = [func(point) for point in points]
+		best = np.argmin(values)
+		best_guess = points[best]
+		lower_bound = points[max(0, best - 1)]
+		upper_bound = points[min(best + 1, len(points) - 1)]
+	return best_guess
 
 
 def fit_circle(x_data: np.ndarray, y_data: np.ndarray) -> tuple[float, float, float]:

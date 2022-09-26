@@ -8,11 +8,14 @@ import os
 import re
 
 import h5py
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colors
 
 from util import downsample_2d
+
+matplotlib.use("Qt5agg")
 
 
 SCAN_DIRECTORY = "../data/scans"
@@ -37,7 +40,7 @@ if __name__ == "__main__":
 			not re.search(r"tim[0-9]", filename, re.IGNORECASE):
 			print(filename)
 			shot = re.search(r"s([0-9]+)", filename, re.IGNORECASE).group(1)
-			number = re.search(r"_-([0-9]+)-", filename, re.IGNORECASE).group(1)
+			number = int(re.search(r"_-([0-9]+)-", filename, re.IGNORECASE).group(1))
 
 			if shot not in tim_sets:
 				raise KeyError(f"please add {shot} to the tim_scan_info.txt file in the scans directory")

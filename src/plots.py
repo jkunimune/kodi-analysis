@@ -95,23 +95,23 @@ def save_and_plot_penumbra(filename: str, show: bool,
 
 	save_current_figure(f"{filename}-penumbra")
 
-	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.locator_params(steps=[1, 2, 4, 5, 10])
-	xL_bins, NL = x_bins, N[:, N.shape[1]//2]/1e3
-	while xL_bins.size > MAX_NUM_PIXELS/3 + 1:
-		xL_bins, NL = downsample_1d(xL_bins, NL)
-	xL = (xL_bins[:-1] + xL_bins[1:])/2
-	plt.fill_between(np.repeat(xL_bins, 2)[1:-1], 0, np.repeat(NL, 2), color='#f9A72E')
-	def ideal_profile(x, A, d, b):
-		return A*special.erfc((x - x0 - r0)/d)*special.erfc(-(x - x0 + r0)/d) + b
-	popt, pcov = optimize.curve_fit(ideal_profile, xL, NL, [100, .1, 0])
-	plt.plot(x_bins, ideal_profile(x_bins, *popt), '--', color='#0F71F0', linewidth=2)
-	plt.xlim(np.min(x_bins), np.max(x_bins))
-	plt.ylim(0, None)
-	plt.xlabel("x (cm)")
-	plt.ylabel("Track density (10³/cm²)")
-	plt.tight_layout()
-	save_current_figure(f"{filename}-penumbra-lineout")
+	# plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
+	# plt.locator_params(steps=[1, 2, 4, 5, 10])
+	# xL_bins, NL = x_bins, N[:, N.shape[1]//2]/1e3
+	# while xL_bins.size > MAX_NUM_PIXELS/3 + 1:
+	# 	xL_bins, NL = downsample_1d(xL_bins, NL)
+	# xL = (xL_bins[:-1] + xL_bins[1:])/2
+	# plt.fill_between(np.repeat(xL_bins, 2)[1:-1], 0, np.repeat(NL, 2), color='#f9A72E')
+	# def ideal_profile(x, A, d, b):
+	# 	return A*special.erfc((x - x0 - r0)/d)*special.erfc(-(x - x0 + r0)/d) + b
+	# popt, pcov = optimize.curve_fit(ideal_profile, xL, NL, [100, .1, 0])
+	# plt.plot(x_bins, ideal_profile(x_bins, *popt), '--', color='#0F71F0', linewidth=2)
+	# plt.xlim(np.min(x_bins), np.max(x_bins))
+	# plt.ylim(0, None)
+	# plt.xlabel("x (cm)")
+	# plt.ylabel("Track density (10³/cm²)")
+	# plt.tight_layout()
+	# save_current_figure(f"{filename}-penumbra-lineout")
 
 	if show:
 		plt.show()
@@ -158,7 +158,7 @@ def plot_source(filename: str, show: bool,
                 contour_level: float, e_min: float, e_max: float, num_cuts=1) -> None:
 	particle, cut_index = re.search(r"-(xray|deuteron)([0-9]+)", filename, re.IGNORECASE).groups()
 
-	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=contour_level)
+	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=.10)
 	object_size = nearest_value(2*object_size/1e-4,
 	                            np.array([50, 100, 200, 500, 1000]))
 	x0, y0 = r0*np.cos(θ), r0*np.sin(θ)
@@ -208,7 +208,7 @@ def plot_source(filename: str, show: bool,
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
 	plt.xlim(-object_size, object_size)
-	plt.ylim(0, None)
+	plt.ylim(0, 2)
 	plt.yscale("symlog", linthresh=1e-2, linscale=1/np.log(10))
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source-lineout")
@@ -339,6 +339,6 @@ def plot_overlaid_contors(filename: str,
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.tight_layout()
-	save_current_figure(f"{filename}-deuteron-source")
+	save_current_figure(f"{filename}-source")
 
 	plt.close('all')

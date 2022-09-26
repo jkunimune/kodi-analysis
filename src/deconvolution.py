@@ -67,8 +67,8 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	if noise == "poisson":
 		mode = "poisson"
 		D = np.full(F.shape, nan)
-		if not np.array_equal(np.floor(F), F):
-			raise ValueError("the poisson noise model gelfgat reconstruction is only available for integer data (otherwise I don't know when to stop)")
+		if not np.array_equal(np.floor(F[data_region]), F[data_region]):
+			raise ValueError("the poisson noise model gelfgat reconstruction (aka richardson-lucy) is only available for integer data (otherwise I don't know when to stop)")
 	elif type(noise) is np.ndarray:
 		if noise.shape != F.shape:
 			raise ValueError("if you give a noise array, it must have the same shape as the data.")
@@ -105,7 +105,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	np.seterr('ignore')
 
 	if show_plots:
-		fig = plt.figure(figsize=(5.0, 7.5))
+		fig = plt.figure(figsize=(5.0, 7.0))
 	else:
 		fig = None
 
@@ -136,7 +136,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 
 		# complete the line search algebraicly
 		if mode == "poisson":
-			dldh = δg0**2/g0 + np.sum(δg**2/g, where=g!=0)
+			dldh = δg0**2/g0 + np.sum(δg**2/g, where=g != 0)
 			d2ldh2 = -np.sum(f*δs**2/s**2, where=data_region)
 			assert dldh > 0 and d2ldh2 < 0, f"{dldh} > 0; {d2ldh2} < 0"
 			h = -dldh/d2ldh2 # compute step length
@@ -173,36 +173,36 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			raise RuntimeError("something's gone horribly rong.")
 
 		# quit early if it seems like you're no longer making progress
-		if t >= 10 and log_L[t] < log_L[t - 10] + 1:
+		if t >= 12 and log_L[t] < log_L[t - 12] + 1/2:
 			num_iterations = t + 1
 			break
 
 		logging.info(f"    {t: 3d}/{num_iterations}: log(L) = {log_L[t] - log_L[0] - dof:.2f}")
-		if show_plots: # plot things
+		if show_plots:  # plot things
 			fig.clear()
 			axes = fig.subplots(nrows=3, ncols=2)
 			fig.subplots_adjust(top=.95, bottom=.04, left=.05, hspace=.05)
-			axes[0,0].set_title("Source")
-			axes[0,0].pcolormesh(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap=GREYS)
-			axes[0,1].set_title("Floor")
-			axes[0,1].pcolormesh(g, vmin=np.min(g), vmax=np.min(g, where=(g>0), initial=np.inf)*6, cmap=GREYS)
-			axes[1,0].set_title("Data")
-			axes[1,0].pcolormesh(np.where(data_region, F, np.nan).T, vmin=0, vmax=F.max(where=data_region, initial=0), cmap=SPIRAL)
-			axes[1,1].set_title("Synthetic")
-			axes[1,1].pcolormesh(np.where(data_region, N*s, np.nan).T, vmin=0, vmax=F.max(where=data_region, initial=0), cmap=SPIRAL)
-			axes[2,0].set_title("Log-likelihood")
-			axes[2,0].plot(log_L[:t] - log_L[t])
-			axes[2,0].set_xlim(0, t - 1)
-			axes[2,0].set_ylim(min(-dof, log_L[max(0, t - 10)]), dof/10)
-			axes[2,1].set_title("χ^2")
+			axes[0, 0].set_title("Source")
+			axes[0, 0].pcolormesh(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap=GREYS)
+			axes[0, 1].set_title("Floor")
+			axes[0, 1].pcolormesh(g, vmin=np.min(g), vmax=np.min(g, where=g > 0, initial=np.inf)*6, cmap=GREYS)
+			axes[1, 0].set_title("Data")
+			axes[1, 0].pcolormesh(np.where(data_region, F, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=SPIRAL)
+			axes[1, 1].set_title("Synthetic")
+			axes[1, 1].pcolormesh(np.where(data_region, N*s, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=SPIRAL)
+			axes[2, 0].set_title("Log-likelihood")
+			axes[2, 0].plot(log_L[:t] - log_L[t])
+			axes[2, 0].set_xlim(0, t - 1)
+			axes[2, 0].set_ylim(min(-dof, log_L[max(0, t - 10)] - log_L[t]), dof/10)
+			axes[2, 1].set_title("χ^2")
 			if mode == "poisson":
-				χ2 = N*s - F*np.log(s) - (F - F*np.log(np.maximum(1e-20, f)))
+				χ2 = 2*(N*s - F*np.log(s) - (F - F*np.log(np.maximum(1e-20, f))))
 			else:
-				χ2 = (N*s - F)**2/D
-			axes[2,1].pcolormesh(np.where(data_region, χ2, 0).T, vmin=0, vmax=6, cmap='inferno')
+				χ2 = (N*s - F)**2/(D/2)
+			axes[2, 1].pcolormesh(np.where(data_region, χ2, 0).T, vmin=0, vmax=12, cmap='inferno')
 			for row in axes:
 				for axis in row:
-					if axis != axes[2,0]:
+					if axis != axes[2, 0]:
 						axis.axis('square')
 						axis.set_xticks([])
 						axis.set_yticks([])
@@ -214,19 +214,140 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	t = num_iterations - 1
 	g_inf = G[t]/np.sum(G[t])
 	dof_effective = np.sum(g_inf/(g_inf + 1/dof), where=source_region)
-	χ2_relative = -2*(log_L[:t + 1] - log_L[t])
+	χ2 = -2*(log_L[:t + 1] - log_L[t])
 	χ2_cutoff = stats.chi2.ppf(.5, dof_effective)
 
 	if show_plots:
 		fig, ax = plt.subplots()
-		ax.plot(χ2_relative, "C0")
+		ax.plot(χ2, "C0")
 		ax.axhline(χ2_cutoff, color="C1")
 		ax.set_ylim(-.1*χ2_cutoff, 3*χ2_cutoff)
 		ax.set_xlim(0, num_iterations - 1)
 		plt.show()
 
-	assert np.any(χ2_relative < χ2_cutoff)
-	t = np.nonzero(χ2_relative < χ2_cutoff)[0][0]
+	assert np.any(χ2 < χ2_cutoff)
+	t = np.nonzero(χ2 < χ2_cutoff)[0][0]
+	return G[t]
+
+
+def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: str | NDArray[float] = "poisson") -> NDArray[float]:
+	""" perform the Richardson–Lucy-like algorithm outlined in
+			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
+			data…" in *Comput. Phys. Commun.* 74 (1993)
+		to solve a 1d linear problem with least squares.
+		:param F: the full convolution (counts/bin)
+		:param P: the linear response matrix
+		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
+		:return: the reconstructed source G such that P @ G \\approx F
+	"""
+	if F.ndim != 1 or P.ndim != 2:
+		raise ValueError("this is the *1D* version.")
+	if F.size != P.shape[0]:
+		raise ValueError("these dimensions don't match")
+
+	if noise == "poisson":
+		mode = "poisson"
+		D = np.full(F.shape, nan)
+		if not np.array_equal(np.floor(F), F):
+			raise ValueError("the poisson noise model gelfgat reconstruction (aka richardson-lucy) is only available for integer data (otherwise I don't know when to stop)")
+	elif type(noise) is np.ndarray:
+		if noise.shape != F.shape:
+			raise ValueError("if you give a noise array, it must have the same shape as the data.")
+		mode = "gaussian"
+		D = 2*noise
+	else:
+		raise ValueError(f"I don't understand the noise parameter you gave ({noise})")
+
+	# count the counts
+	N = np.sum(F)
+	# normalize the counts
+	f = F/N
+	# count the pixels
+	dof = P.shape[1]
+
+	# start with a uniform-ish initial gess
+	g = np.sum(P, axis=0)
+
+	# normalize the transfer matrix
+	p = P/np.sum(P, axis=0)
+
+	s = p @ g
+
+	np.seterr('ignore')
+
+	# set up to keep track of the termination condition
+	num_iterations = 500
+	log_L = np.empty(num_iterations)
+	G = np.empty((num_iterations, g.size))
+
+	# do the iteration
+	for t in range(num_iterations):
+		# always start by renormalizing
+		s /= g.sum()
+		g /= g.sum()
+
+		# recalculate the scaling term N (for gaussian only)
+		if mode == "gaussian":
+			N = np.sum(F*s/D)/np.sum(s**2/D)
+
+		# then get the step direction for this iteration
+		if mode == "poisson":
+			dlds = f/s - 1
+		else:
+			dlds = (F - N*s)/D
+		δg = g * (p.T @ dlds)
+		δs = p @ δg
+
+		# complete the line search algebraicly
+		if mode == "poisson":
+			dldh = np.sum(δg**2/g, where=g != 0)
+			d2ldh2 = -np.sum(f*δs**2/s**2)
+			assert dldh > 0 and d2ldh2 < 0, f"{dldh} > 0; {d2ldh2} < 0"
+			h = -dldh/d2ldh2 # compute step length
+		else:
+			δδ = np.sum(δs**2/D)
+			sδ = np.sum(s*δs/D)
+			ss = np.sum(s**2/D)
+			dldh = np.sum(δg**2/g)
+			h = dldh/(N*(δδ - sδ*sδ/ss) - dldh*sδ/ss)
+
+		# limit the step length if necessary to prevent negative values
+		assert np.all(g >= 0), g
+		if np.min(g + h*δg) < 0:
+			h = np.amin(-g/δg, where=δg < 0, initial=h)
+		assert h > 0, h
+
+		# take the step
+		g += h*δg
+		g[abs(g) < 1e-15] = 0 # correct for roundoff
+		s += h*δs
+
+		# then calculate the actual source
+		G[t] = N*g/np.sum(P, axis=0)
+
+		# and the probability that this step is correct
+		if mode == "poisson":
+			log_L[t] = N*np.sum(f*np.log(s))
+		else:
+			log_L[t] = -np.sum((N*s - F)**2/D)
+		if isnan(log_L[t]): # TODO: maybe if I'm feeling fancy, roll this with the other one by having a Response class that can be a convolution or a matmul
+			raise RuntimeError("something's gone horribly rong.")
+
+		# quit early if it seems like you're no longer making progress
+		if t >= 12 and log_L[t] < log_L[t - 12] + 1/2:
+			num_iterations = t + 1
+			break
+
+	np.seterr('warn')
+
+	t = num_iterations - 1
+	g_inf = G[t]/np.sum(G[t])
+	dof_effective = np.sum(g_inf/(g_inf + 1/dof))
+	χ2 = -2*(log_L[:t + 1] - log_L[t])
+	χ2_cutoff = stats.chi2.ppf(.5, dof_effective)
+
+	assert np.any(χ2 < χ2_cutoff)
+	t = np.nonzero(χ2 < χ2_cutoff)[0][0]
 	return G[t]
 
 
@@ -278,7 +399,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 
 		# estimate the signal/noise ratio in the reconstructed source
 		rim = (i < height) & (j < width) & \
-		      (np.hypot(i - height/2, j - width/2) > .42*height)
+		      (np.hypot(i - (height - 1)/2, j - (width - 1)/2) >= (height - 1)/2)
 		rim_level = sqrt(np.mean(G[t]**2, where=rim))
 		peak_height = np.max(G[t], where=~rim, initial=-inf)
 		signal_to_noise.append(peak_height/rim_level)

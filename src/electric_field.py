@@ -31,7 +31,7 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 	    :return: array of radii and array of corresponding brightnesses
 	"""
 	if Q == 0:
-		return r0*R, np.where(R < 1, 1, 0)
+		return r0*R, np.where(R < 1, 1, 0) # TODO: use nonuniform R
 
 	d_index = index[1] - index[0]
 	min_bound = min(np.log(energy_min*r0/Q) - d_index/2, np.log(energy_max*r0/Q) - d_index)

@@ -1,4 +1,4 @@
-# coordinates.py - I assume I will have more coordinate system garbage code to put here soon.
+# coordinate.py - I assume I will have more coordinate system garbage code to put here soon.
 
 import numpy as np
 
