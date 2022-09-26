@@ -194,6 +194,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			axes[2, 0].plot(log_L[:t] - log_L[t])
 			axes[2, 0].set_xlim(0, t - 1)
 			axes[2, 0].set_ylim(min(-dof, log_L[max(0, t - 10)] - log_L[t]), dof/10)
+			axes[2, 0].grid(axis="y")
 			axes[2, 1].set_title("χ^2")
 			if mode == "poisson":
 				χ2 = 2*(N*s - F*np.log(s) - (F - F*np.log(np.maximum(1e-20, f))))
@@ -361,7 +362,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 		:param show_plots: whether to do the status report plot thing
 		:return: the reconstructed source G such that convolve2d(G, q) \\approx F
 	"""
-	max_iterations = 30
+	max_iterations = 50
 	if F.ndim != 2 or q.ndim != 2:
 		raise ValueError("these must be 2D")
 	height = F.shape[0] - q.shape[0] + 1
@@ -384,7 +385,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 
 	G, signal_to_noise = [], []
 	for t in range(max_iterations):
-		noise_reduction = 1e-9 * np.sum(q)**2 * 2**t
+		noise_reduction = 1e-9 * np.sum(q)**2 * 1.5**t
 
 		# apply the Wiener filter
 		f_G = f_F/f_q * f_q**2/(f_q**2 + noise_reduction)
@@ -395,7 +396,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 			ax.clear()
 			ax.pcolormesh(G[t])
 			ax.axis("square")
-			plt.pause(.5)
+			plt.pause(.2)
 
 		# estimate the signal/noise ratio in the reconstructed source
 		rim = (i < height) & (j < width) & \

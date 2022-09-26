@@ -42,7 +42,7 @@ DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuter
 # cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
 
 ASK_FOR_HELP = False
-SHOW_DIAMETER_CUTS = False
+SHOW_DIAMETER_CUTS = True
 SHOW_CENTER_FINDING_CALCULATION = False
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
@@ -57,7 +57,6 @@ DEUTERON_CONTOUR = .50
 X_RAY_CONTOUR = .17
 MAX_OBJECT_SIZE = 250
 MAX_CONVOLUTION = 1e+12
-MAX_CONTRAST = 40
 MAX_ECCENTRICITY = 15
 
 
@@ -397,7 +396,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	r_sph_bins = r_bins[:r_bins.size//2:2]
 	r_sph = bin_centers(r_sph_bins)
 	sphere_to_plane = abel_matrix(r_sph_bins)
-
+	# do this nested 1d reconstruction
 	def reconstruct_1d_assuming_Q(Q: float, return_other_stuff=False) -> float | tuple:
 		r_psf, f_psf = electric_field.get_modified_point_spread(
 			r0, Q, energy_min, energy_max)
@@ -406,14 +405,19 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		forward_matrix = A[:, np.newaxis] * np.hstack([
 			source_to_image @ sphere_to_plane,
 			np.ones((r.size, 1))])
-		try:
-			profile = deconvolution.gelfgat1d(n, forward_matrix)
-		except ValueError:
-			profile = optimize.lsq_linear(forward_matrix, n, bounds=(0, inf)).x
-		reconstruction = forward_matrix@profile
-		χ2 = np.sum((reconstruction - n)**2/(reconstruction + 1))
+		# profile = deconvolution.gelfgat1d(n, forward_matrix)
+		def reconstruct_1d_assuming_Q_and_σ(r: np.ndarray, σ: float, background: float) -> float:
+			profile = np.concatenate([np.exp(-r_sph**2/(2*σ**2))/σ**3, [background*forward_matrix[-2, :].sum()/forward_matrix[-1, :].sum()]])
+			reconstruction = forward_matrix@profile
+			return reconstruction/np.sum(reconstruction)*np.sum(n)/A
+		(source_size, background), _ = optimize.curve_fit(
+			reconstruct_1d_assuming_Q_and_σ, r, ρ, sigma=dρ,
+			p0=[r_sph[-1]/6, 0], bounds=(0, [r_sph[-1], inf]))
+		profile = np.concatenate([np.exp(-r_sph**2/(2*source_size**2)), [background]])
+		reconstruction = reconstruct_1d_assuming_Q_and_σ(r, source_size, background)
+		χ2 = -np.sum(n*np.log(reconstruction*A))
 		if return_other_stuff:
-			return χ2, profile[:-1], reconstruction/A
+			return χ2, profile[:-1], reconstruction
 		else:
 			return cast(float, χ2)
 
@@ -428,8 +432,8 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		plt.figure()
 		plt.plot(r_sph, n_sph)
 		plt.xlim(0, quantile(r_sph, .99, n_sph*r_sph**2))
-		plt.yscale("log")
-		plt.ylim(n_sph.max()*2e-3, n_sph.max()*2e+0)
+		# plt.yscale("log")
+		# plt.ylim(n_sph.max()*2e-3, n_sph.max()*2e+0)
 		plt.xlabel("Magnified spherical radius (cm)")
 		plt.ylabel("Emission")
 		plt.figure()
@@ -437,7 +441,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		plt.plot(r, ρ_recon, 'C1-')
 		r_psf, ρ_psf = electric_field.get_modified_point_spread(
 			r0, Q, 5., 10., normalize=True)
-		plt.plot(r_psf, ρ_psf*(ρ_max - ρ_min) + ρ_min, 'C1--')
+		plt.plot(r_psf, ρ_psf*(np.max(ρ_recon) - np.min(ρ_recon)) + np.min(ρ_recon), 'C1--')
 		plt.axhline(ρ_max, color="C2", linestyle="dashed")
 		plt.axhline(ρ_min, color="C2", linestyle="dashed")
 		plt.axhline(ρ_01, color="C4")
@@ -721,7 +725,7 @@ def analyze_scan(input_filename: str,
 
 			# perform the reconstruction
 			logging.info(f"  reconstructing a {data_region.shape} image into a {source_region.shape} source")
-			method = "wiener" if particle == "deuteron" else "wiener"
+			method = "richardson-lucy" if particle == "deuteron" else "gelfgat"
 			briteness_S = deconvolution.deconvolve(method,
 			                                       clipd_data,
 			                                       penumbral_kernel,

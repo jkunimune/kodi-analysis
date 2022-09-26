@@ -158,7 +158,7 @@ def plot_source(filename: str, show: bool,
                 contour_level: float, e_min: float, e_max: float, num_cuts=1) -> None:
 	particle, cut_index = re.search(r"-(xray|deuteron)([0-9]+)", filename, re.IGNORECASE).groups()
 
-	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=.10)
+	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=.25)
 	object_size = nearest_value(2*object_size/1e-4,
 	                            np.array([50, 100, 200, 500, 1000]))
 	x0, y0 = r0*np.cos(θ), r0*np.sin(θ)

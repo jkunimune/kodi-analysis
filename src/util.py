@@ -277,7 +277,6 @@ def line_search(func: Callable[[float], float], lower_bound: float, upper_bound:
 	    progressively smaller intervals
 	"""
 	best_guess = (upper_bound + lower_bound)/2
-	import matplotlib.pyplot as plt
 	while upper_bound - lower_bound > 2*abs_tolerance and \
 		(lower_bound == 0 or (upper_bound - lower_bound)/lower_bound > 2*rel_tolerance):
 		points = np.linspace(lower_bound, upper_bound, 7)
