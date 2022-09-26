@@ -8,9 +8,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.logging.Logger;
 
 import static main.Math2.containsTheWordTest;
@@ -423,7 +421,7 @@ public class VoxelFit {
 		}
 
 		// for each line of sight
-		long position_index = 1, warningsPrinted = 0;
+		int position_index = 0, warningsPrinted = 0;
 		for (int l = 0; l < lines_of_sight.length; l ++) {
 			// define the rotated coordinate system (ζ points toward the TIM; ξ and υ are orthogonal)
 			Vector ζ_hat = lines_of_sight[l];
@@ -483,7 +481,7 @@ public class VoxelFit {
 
 								double[] local_production; // get the production
 								if (respond_to_production) // either by basing it on the basis function
-									local_production = basis.get(rP, position_index); // TODO: memoize this using a big array instead of the Map
+									local_production = basis.get(rP, position_index);
 								else // or taking it at this point
 									local_production = new double[] {basis.get(rP, production, position_index)};
 								position_index ++;
@@ -602,7 +600,7 @@ public class VoxelFit {
 		double production_gess = total_yield/
 			  (4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3));
 
-		VoxelFit.logger.info(String.format("using %d 3d basis functions on %.1fum/%.1fum morphology",
+		VoxelFit.logger.info(String.format("using %d 3d basis functions on %.1fum/%.1fum^3 morphology",
 										   basis.num_functions, r[r.length - 1], r[1]));
 
 		Vector production = DenseVector.zeros(basis.num_functions);
@@ -781,7 +779,7 @@ public class VoxelFit {
 		 * @param coefficients the value to multiply by each basis function (same units as output)
 		 * @return the value of the distribution in the same units as coefficients
 		 */
-		public double get(Vector r, Vector coefficients, long key) {
+		public double get(Vector r, Vector coefficients, int key) {
 			assert r.getLength() == 3 : "this vector is not in 3-space";
 			return this.get(r.get(0), r.get(1), r.get(2), coefficients, key);
 		}
@@ -795,7 +793,7 @@ public class VoxelFit {
 		 * @param coefficients the value to multiply by each basis function (same units as output)
 		 * @return the value of the distribution in the same units as coefficients
 		 */
-		public double get(double x, double y, double z, Vector coefficients, long key) {
+		public double get(double x, double y, double z, Vector coefficients, int key) {
 			assert coefficients.getLength() == num_functions : "this is the rong number of coefficients";
 			double result = 0;
 			for (int i = 0; i < num_functions; i ++)
@@ -810,7 +808,7 @@ public class VoxelFit {
 		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 doubles
 		 * @return the derivative of the distribution at this point with respect to basis function и
 		 */
-		public double[] get(Vector r, long key) {
+		public double[] get(Vector r, int key) {
 			assert r.getLength() == 3 : "this vector is not in 3-space";
 			return this.get(r.get(0), r.get(1), r.get(2), key);
 		}
@@ -824,7 +822,7 @@ public class VoxelFit {
 		 *            a tuple of 3 doubles, or 0 to forgo memorization
 		 * @return the derivative of the distribution at this point with respect to basis function и
 		 */
-		public double[] get(double x, double y, double z, long key) {
+		public double[] get(double x, double y, double z, int key) {
 			double[] result = new double[num_functions];
 			for (int i = 0; i < num_functions; i ++)
 				result[i] = this.get(x, y, z, i, key);
@@ -841,7 +839,7 @@ public class VoxelFit {
 		 *            a tuple of 3 doubles, or 0 to forgo memoization
 		 * @return the derivative of the distribution at this point with respect to basis function и
 		 */
-		public abstract double get(double x, double y, double z, int и, long key);
+		public abstract double get(double x, double y, double z, int и, int key);
 
 		/**
 		 * calculate the infinite 3d integral of this basis function dxdydz
@@ -874,7 +872,7 @@ public class VoxelFit {
 		private final int[] l;
 		private final int[] m;
 		private final double[] r_ref;
-		private final Map<Long, Double> memory;
+		private final ArrayList<Double> memory;
 
 		private static int stuff_that_should_go_before_super(int l_max, double[] r_ref) {
 			int[] shape = new int[r_ref.length];
@@ -915,22 +913,27 @@ public class VoxelFit {
 				}
 			}
 
-			this.memory = new HashMap<>();
+			this.memory = new ArrayList<>();
 		}
 
 		@Override
-		public double get(double x, double y, double z, int и, long key) {
+		public double get(double x, double y, double z, int и, int key) {
 			assert и < num_functions : "there are only "+num_functions+" modes";
+			if (Math.random() < 1e-7)
+				System.out.println(key);
 
 			key = (key != 0) ? key*num_functions + и : 0;
-			if (key != 0 && memory.containsKey(key))
+			if (key != -1 && key < memory.size())
 				return memory.get(key);
 			else {
 				double[][] harmonics = spherical_harmonics(x, y, z);
 				double s_partial = Math.sqrt(x*x + y*y + z*z)/r_ref[1];
 				double weit = Math.max(0, 1 - Math.abs(n[и] - s_partial));
 				double value = weit*harmonics[l[и]][l[и] + m[и]];
-				memory.put(key, value);
+				memory.ensureCapacity(key + 1);
+				while (memory.size() < key)
+					memory.add(0.);
+				memory.add(value);
 				return value;
 			}
 		}
@@ -984,7 +987,7 @@ public class VoxelFit {
 					}
 				}
 			}
-			System.out.println(bad_modes);
+			if (weit != 0) System.out.println(bad_modes);
 			return new Matrix(bad_modes.toArray(new Vector[0]));
 		}
 
@@ -1016,7 +1019,7 @@ public class VoxelFit {
 		}
 
 		@Override
-		public double get(double x, double y, double z, Vector coefficients, long key) {
+		public double get(double x, double y, double z, Vector coefficients, int key) {
 			double i_full = (x - this.x[0])/(this.x[1] - this.x[0]);
 			double j_full = (y - this.y[0])/(this.y[1] - this.y[0]);
 			double k_full = (z - this.z[0])/(this.z[1] - this.z[0]);
@@ -1044,7 +1047,7 @@ public class VoxelFit {
 		}
 
 		@Override
-		public double get(double x, double y, double z, int и, long key) {
+		public double get(double x, double y, double z, int и, int key) {
 			return get(x, y, z, new SparseVector(this.num_functions, и, 1), key);
 		}
 
@@ -1067,7 +1070,7 @@ public class VoxelFit {
 						these_coefficients.set((i*y.length + j)*z.length + k,
 						                       that.get(x[i], y[j], z[k],
 						                                those_coefficients,
-						                                0));
+						                                -1));
 			return these_coefficients;
 		}
 	}

@@ -37,6 +37,10 @@ if __name__ == '__main__':
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir(os.path.dirname(os.getcwd()))
 
+	# create the temporary directory if necessary
+	if not os.path.isdir("tmp"):
+		os.mkdir("tmp")
+
 	name = sys.argv[1] if len(sys.argv) > 1 else "--test"
 
 	if "--skip" in sys.argv:
