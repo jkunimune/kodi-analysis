@@ -20,55 +20,60 @@ public class VoxelFit {
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SHELL_DENSITY_GESS = 20; // (g/cm^3)
 	public static final double SHELL_RADIUS_GESS = 50;
-	public static final double SMOOTHING = 1e+1;
-	public static final double TOLERANCE = 1e-3;
+	public static final double SMOOTHING = 1e+1F;
+	public static final double TOLERANCE = 1e-3F;
 
-	public static final Vector UNIT_I = new DenseVector(1., 0., 0.);
-//	public static final Vector UNIT_J = new DenseVector(0., 1., 0.);
-	public static final Vector UNIT_K = new DenseVector(0., 0., 1.);
+	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
+//	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
+	public static final Vector UNIT_K = new DenseVector(0, 0, 1);
 
-	private static final double Da = 1.66e-27; // (kg)
-	private static final double g = 1e-3; // (kg)
-	private static final double cm = 1e-2; // (m)
-	private static final double μm = 1e-6; // (m)
-	private static final double b = 1e-28; // (m^2)
-	private static final double e = 1.6e-19; // (C)
-	private static final double ɛ0 = 8.85e-12; // (F/m)
-	private static final double keV = 1e3*e; // (J)
-	private static final double MeV = 1e6*e; // (J)
-	private static final double m_DT = (2.014 + 3.017)*Da; // (kg)
+	private static final float Da = 1.66e-27F; // (kg)
+	private static final float g = 1e-3F; // (kg)
+	private static final float cm = 1e-2F; // (m)
+	private static final float cm3 = cm*cm*cm; // (m)
+	private static final float μm = 1e-6F; // (m)
+	private static final float μm3 = μm*μm*μm; // (m)
+	private static final float b = 1e-28F; // (m^2)
+	private static final float e = 1.6e-19F; // (C)
+	private static final float ɛ0 = 8.85e-12F; // (F/m)
+	private static final float keV = 1e3F*e; // (J)
+	private static final float MeV = 1e6F*e; // (J)
+	private static final float m_DT = (2.014F + 3.017F)*Da; // (kg)
 
-	private static final double q_D = 1*1.6e-19; // (C)
-	private static final double m_D = 2.014*Da; // (kg)
-	private static final double[][] medium = {{e, 2.014*Da, 1./m_DT}, {e, 3.017*Da, 1./m_DT}, {e, 9.1e-31, 2./m_DT}}; // (C, kg, kg^-1)
+	private static final float q_D = 1*1.6e-19F; // (C)
+	private static final float m_D = 2.014F*Da; // (kg)
+	private static final float[][] medium = {{e, 2.014F*Da, 1F/m_DT}, {e, 3.017F*Da, 1F/m_DT}, {e, 9.1e-31F, 2F/m_DT}}; // (C, kg, kg^-1)
 
-	private static final double Э_KOD = 12.45;
+	private static final float Э_KOD = 12.45F;
+	
+	private static final float πF = (float) Math.PI;
 
 	private static final DiscreteFunction σ_nD; // (MeV -> μm^2/srad)
 	static {
-		double[][] cross_sections = new double[0][];
+		float[][] cross_sections = new float[0][];
 		try {
-			cross_sections = CSV.read(new File("data/tables/endf-6[58591].txt"), ',');
+			cross_sections = Math2.reducePrecision(CSV.read(new File(
+					"data/tables/endf-6[58591].txt"), ','));
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-		double[] Э_data = new double[cross_sections.length];
-		double[] σ_data = new double[cross_sections.length];
+		float[] Э_data = new float[cross_sections.length];
+		float[] σ_data = new float[cross_sections.length];
 		for (int i = 0; i < cross_sections.length; i ++) {
 			int j = cross_sections.length - 1 - i;
-			Э_data[j] = 14.1*4/9.*(1 - cross_sections[i][0]); // (MeV)
-			σ_data[j] = .64*b/(μm*μm)/(4*Math.PI)*2*cross_sections[i][1]; // (μm^2/srad)
+			Э_data[j] = 14.1F*4/9F*(1 - cross_sections[i][0]); // (MeV)
+			σ_data[j] = .64F*b/(μm*μm)/(4*πF)*2*cross_sections[i][1]; // (μm^2/srad)
 		}
 		σ_nD = new DiscreteFunction(Э_data, σ_data).indexed(20);
 	}
 
 	private static final DiscreteFunction maxwellFunction, maxwellIntegral;
 	static {
-		double[] x = new double[256];
-		double[] dμdx = new double[x.length];
+		float[] x = new float[256];
+		float[] dμdx = new float[x.length];
 		for (int i = 0; i < x.length; i ++) {
-			x[i] = i*6./x.length;
-			dμdx[i] = 2*Math.pow(x[i], 2)*Math.exp(-x[i])/Math.sqrt(Math.PI);
+			x[i] = i*6F/x.length;
+			dμdx[i] = 2*x[i]*x[i]*(float)Math.exp(-x[i])/(float)Math.sqrt(Math.PI);
 		}
 		dμdx[x.length - 2] = dμdx[x.length - 1] = 0;
 		maxwellFunction = new DiscreteFunction(x, dμdx, true);
@@ -161,21 +166,21 @@ public class VoxelFit {
 	 * @param T the local ion and electron temperature of the field (keV)
 	 * @return the stopping power on a deuteron (MeV/(g/cm^2))
 	 */
-	private static double dЭdρL(double Э, double T) {
-		double dЭdx_per_ρ = 0;
-		for (double[] properties: medium) {
-			double qf = properties[0], mf = properties[1], number = properties[2];
-			double vf2 = Math.abs(T*keV*2/mf);
-			double vt2 = Math.abs(Э*MeV*2/m_D);
-			double x = vt2/vf2;
-			double μ = maxwellIntegral.evaluate(x);
-			double dμdx = maxwellFunction.evaluate(x);
-			double ωpf2_per_ρ = number*qf*qf/(ɛ0*mf);
-			double lnΛ = Math.log(1000); // TODO calculate this for real
-			double Gx = μ - mf/m_D*(dμdx - 1/lnΛ*(μ + dμdx));
+	private static float dЭdρL(float Э, float T) {
+		float dЭdx_per_ρ = 0;
+		for (float[] properties: medium) {
+			float qf = properties[0], mf = properties[1], number = properties[2];
+			float vf2 = Math.abs(T*keV*2/mf);
+			float vt2 = Math.abs(Э*MeV*2/m_D);
+			float x = vt2/vf2;
+			float μ = maxwellIntegral.evaluate(x);
+			float dμdx = maxwellFunction.evaluate(x);
+			float ωpf2_per_ρ = number*qf*qf/(ɛ0*mf);
+			float lnΛ = (float) Math.log(1000); // TODO calculate this for real
+			float Gx = μ - mf/m_D*(dμdx - 1/lnΛ*(μ + dμdx));
 			if (Gx < 0) // if Gx is negative
 				Gx = 0; // that means the field thermal speed is hier than the particle speed, so no slowing
-			dЭdx_per_ρ += -lnΛ*q_D*q_D/(4*Math.PI*ɛ0) * Gx * ωpf2_per_ρ/vt2;
+			dЭdx_per_ρ += -lnΛ*q_D*q_D/(4*πF*ɛ0)*Gx*ωpf2_per_ρ/vt2;
 		}
 		return dЭdx_per_ρ/MeV*g/cm/cm;
 	}
@@ -187,15 +192,15 @@ public class VoxelFit {
 	 * energy, and the minimum birth energy of a particle as a function of ρL
 	 */
 	private static DiscreteFunction[] calculate_ranging_curves(
-		  double temperature) {
-		double[] energy = new double[STOPPING_POWER_RESOLUTION];
+		  float temperature) {
+		float[] energy = new float[STOPPING_POWER_RESOLUTION];
 		for (int i = 0; i < energy.length; i ++)
 			energy[i] = Э_KOD*i/(energy.length - 1); // (MeV)
-		double[] range = new double[energy.length];
+		float[] range = new float[energy.length];
 		range[0] = 0;
 		for (int i = 1; i < energy.length; i ++) {
-			double dЭ = energy[i] - energy[i-1];
-			double Э_mean = (energy[i-1] + energy[i])/2;
+			float dЭ = energy[i] - energy[i-1];
+			float Э_mean = (energy[i-1] + energy[i])/2;
 			range[i] = range[i - 1] - 1/dЭdρL(Э_mean, temperature)*dЭ; // (g/cm^2)
 		}
 		DiscreteFunction range_of_energy = new DiscreteFunction(energy, range, true);
@@ -211,26 +216,26 @@ public class VoxelFit {
 	 * @param z the z posicion relative to the origin
 	 * @return an array where P[l][l+m] is P_l^m(x, y, z)
 	 */
-	private static double[][] spherical_harmonics(double x, double y, double z) {
+	private static float[][] spherical_harmonics(float x, float y, float z) {
 		if (x != 0 || y != 0 || z != 0) {
-			double cosθ = z/Math.sqrt(x*x + y*y + z*z);
-			double ф = Math.atan2(y, x);
-			double[][] harmonics = new double[MAX_MODE + 1][];
+			float cosθ = z/(float)Math.sqrt(x*x + y*y + z*z);
+			float ф = (float)Math.atan2(y, x);
+			float[][] harmonics = new float[MAX_MODE + 1][];
 			for (int l = 0; l <= MAX_MODE; l ++) {
-				harmonics[l] = new double[2*l + 1];
+				harmonics[l] = new float[2*l + 1];
 				for (int m = -l; m <= l; m++) {
 					if (m >= 0)
-						harmonics[l][l + m] = Math2.legendre(l, m, cosθ)*Math.cos(m*ф);
+						harmonics[l][l + m] = Math2.legendre(l, m, cosθ)*(float)Math.cos(m*ф);
 					else
-						harmonics[l][l + m] = Math2.legendre(l, -m, cosθ)*Math.sin(m*ф);
+						harmonics[l][l + m] = Math2.legendre(l, -m, cosθ)*(float)Math.sin(m*ф);
 				}
 			}
 			return harmonics;
 		}
 		else {
-			double[][] harmonics = new double[MAX_MODE + 1][];
+			float[][] harmonics = new float[MAX_MODE + 1][];
 			for (int l = 0; l <= MAX_MODE; l ++)
-				harmonics[l] = new double[2*l + 1];
+				harmonics[l] = new float[2*l + 1];
 			harmonics[0][0] = 1;
 			return harmonics;
 		}
@@ -256,8 +261,8 @@ public class VoxelFit {
 		  Vector density,
 		  double temperature,
 		  Basis basis,
-		  double integral_step,
 		  double object_size,
+		  double integral_step,
 		  Vector[] lines_of_sight,
 		  Interval[][] Э_cuts,
 		  double[][] ξ,
@@ -267,7 +272,7 @@ public class VoxelFit {
 		return Matrix.verticly_stack(
 			  new Matrix(unravelRagged(synthesize_image_response(
 			  	  null, density, temperature, basis,
-				  integral_step, object_size, lines_of_sight, Э_cuts, ξ, υ,
+			      object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
 				  true, false))),
 			  basis.roughness_vectors(smoothing));
 	}
@@ -290,8 +295,8 @@ public class VoxelFit {
 		  Vector density,
 		  double temperature,
 		  Basis basis,
-		  double integral_step,
 		  double object_size,
+		  double integral_step,
 		  Vector[] lines_of_sight,
 		  Interval[][] Э_cuts,
 		  double[][] ξ,
@@ -301,7 +306,7 @@ public class VoxelFit {
 		return Matrix.verticly_stack(
 			  new Matrix(unravelRagged(synthesize_image_response(
 				  production, density, temperature, basis,
-				  integral_step, object_size, lines_of_sight, Э_cuts, ξ, υ,
+				  object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
 				  false, true))),
 			  basis.roughness_vectors(smoothing));
 	}
@@ -397,11 +402,14 @@ public class VoxelFit {
 		assert !(respond_to_production && respond_to_density) : "I can only respond to one at a time.";
 		assert integral_step < object_radius : "there must be at least one pixel.";
 
-		DiscreteFunction[] ranging_curves = calculate_ranging_curves(temperature);
+		DiscreteFunction[] ranging_curves = calculate_ranging_curves((float) temperature);
 		DiscreteFunction stopping_distance = ranging_curves[0]; // (MeV -> g/cm^2)
 		DiscreteFunction penetrating_energy = ranging_curves[1]; // (g/cm^2 -> MeV)
 
-		double V_voxel = Math.pow(integral_step, 3); // (μm^3)
+		float z_max = (float) object_radius;
+		float dl = (float) integral_step;
+		float V_voxel = dl*dl*dl; // (μm^3)
+		float[] ρ_coefs = Math2.reducePrecision(density.getValues());
 
 		int num_components; // figure if we need to resolve the output by basis function
 		if (respond_to_production || respond_to_density)
@@ -437,19 +445,19 @@ public class VoxelFit {
 			for (int iV = 0; iV < ξ[l].length; iV ++) {
 				for (int jV = 0; jV < υ[l].length; jV ++) {
 					// iterate from the detector along a chord thru the implosion
-					double ρL = 0; // tally up ρL as you go
-					double ρ_previus = 0;
-					for (double ζD = object_radius; ζD >= -object_radius; ζD -= integral_step) {
+					float ρL = 0; // tally up ρL as you go
+					float ρ_previus = 0;
+					for (float ζD = z_max; ζD >= -z_max; ζD -= dl) {
 						Vector rD = rotate.times(ξ[l][iV], υ[l][jV], ζD);
-						double[] local_density;
-						double ρD;
+						float[] local_density;
+						float ρD;
 						if (respond_to_density) {
 							local_density = basis.get(rD, position_index);
-							ρD = density.dot(new DenseVector(local_density));
+							ρD = Math2.dot(ρ_coefs, local_density);
 						}
 						else {
 							ρD = basis.get(rD, density, position_index);
-							local_density = new double[] {ρD};
+							local_density = new float[] {ρD};
 						}
 						position_index ++;
 						if (Math2.all_zero(local_density)) { // skip past the empty regions to focus on the implosion
@@ -458,7 +466,7 @@ public class VoxelFit {
 							else
 								break;
 						}
-						double dρL = (ρD + ρ_previus)/2.*integral_step*μm/cm;
+						float dρL = (ρD + ρ_previus)/2F*dl*μm/cm;
 						if (dρL > 50e-3 && warningsPrinted < 6) {
 							logger.warning(String.format(
 									"WARNING: the rhoL in a single integral step (%.3g mg/cm^2) is too hi.  you probably need " +
@@ -470,8 +478,8 @@ public class VoxelFit {
 
 						// iterate thru all possible scattering locations
 						ζ_scan:
-						for (double Δζ = -integral_step/2.; true; Δζ -= integral_step) {
-							double Δξ = 0, Δυ = 0;
+						for (float Δζ = -dl/2F; true; Δζ -= dl) {
+							float Δξ = 0, Δυ = 0;
 							ξ_scan:
 							while (true) { // there's a fancy 2D for-loop-type-thing here
 								boolean we_should_keep_looking_here = false;
@@ -479,31 +487,31 @@ public class VoxelFit {
 								Vector Δr = rotate.times(Δξ, Δυ, Δζ);
 								Vector rP = rD.plus(Δr);
 
-								double[] local_production; // get the production
+								float[] local_production; // get the production
 								if (respond_to_production) // either by basing it on the basis function
 									local_production = basis.get(rP, position_index);
 								else // or taking it at this point
-									local_production = new double[] {basis.get(rP, production, position_index)};
+									local_production = new float[] {basis.get(rP, production, position_index)};
 								position_index ++;
 								if (!Math2.all_zero(local_production)) {
 
-									double Δr2 = Δr.sqr(); // (μm^2)
-									double cosθ2 = (Δζ*Δζ)/Δr2;
-									double ЭD = Э_KOD*cosθ2;
+									float Δr2 = (float) Δr.sqr(); // (μm^2)
+									float cosθ2 = (Δζ*Δζ)/Δr2;
+									float ЭD = Э_KOD*cosθ2;
 
-									double ЭV = penetrating_energy.evaluate(
+									float ЭV = penetrating_energy.evaluate(
 										  stopping_distance.evaluate(ЭD) - ρL); // (MeV)
 									if (ЭV > 0) { // make sure it doesn't range out
 
 										int hV = Math2.bin(ЭV, Э_cuts[l]); // bin it in energy
 										if (hV >= 0 && hV < Э_cuts[l].length) {
 
-											double σ = σ_nD.evaluate(ЭD); // (μm^2)
+											float σ = σ_nD.evaluate(ЭD); // (μm^2)
 
-											double contribution =
-												  1./m_DT*
-												  σ/(4*Math.PI*Δr2)*
-												  V_voxel*V_voxel*Math.pow(μm/cm, 3); // (d/srad/(n/μm^3)/(g/cc))
+											float contribution =
+												  1F/m_DT*
+												  σ/(4*πF*Δr2)*
+												  V_voxel*V_voxel*μm3/cm3; // (d/srad/(n/μm^3)/(g/cc))
 
 											for (int и = 0; и < num_components; и ++) // finally, iterate over the basis functions
 												response[l][hV][iV][jV].increment(и,
@@ -517,19 +525,19 @@ public class VoxelFit {
 
 								// do the incrementation for the fancy 2D for-loop-type-thing
 								if (we_should_keep_looking_here) {
-									if (Δυ >= 0) Δυ += integral_step; // if you're scanning in the +υ direction, go up
-									else         Δυ -= integral_step; // if you're scanning in the -υ direction, go down
+									if (Δυ >= 0) Δυ += dl; // if you're scanning in the +υ direction, go up
+									else         Δυ -= dl; // if you're scanning in the -υ direction, go down
 								}
 								else {
 									if (Δυ > 0)
-										Δυ = -integral_step; // when you hit the end of the +υ scan, switch to -υ
+										Δυ = -dl; // when you hit the end of the +υ scan, switch to -υ
 									else { // when you hit the end of the -υ scan,
 										if (Δυ < 0) {
-											if (Δξ >= 0) Δξ += integral_step; // if you're scanning in the +ξ direction, go rite
-											else         Δξ -= integral_step; // if you're scanning in the -ξ direction, go left
+											if (Δξ >= 0) Δξ += dl; // if you're scanning in the +ξ direction, go rite
+											else         Δξ -= dl; // if you're scanning in the -ξ direction, go left
 										}
 										else { // if you hit the end of the ξ scan
-											if (Δξ > 0)      Δξ = -integral_step; // if it's the +ξ scan, switch to -ξ
+											if (Δξ > 0)      Δξ = -dl; // if it's the +ξ scan, switch to -ξ
 											else if (Δξ < 0) break ξ_scan; // if it's the end of the -ξ scan, we're done here
 											else             break ζ_scan; // when you hit the end of the --ζ scan
 										}
@@ -580,7 +588,7 @@ public class VoxelFit {
 		double[] basis_volumes = new double[basis.num_functions];
 		for (int и = 0; и < basis.num_functions; и ++)
 			basis_volumes[и] = basis.get_volume(и); // μm^3
-
+		
 		int num_smoothing_parameters = basis.roughness_vectors(0).n;
 
 		double[] image_vector = unravelRagged(images);
@@ -589,11 +597,11 @@ public class VoxelFit {
 		double[] data_vector = Math2.concatenate(
 			  image_vector, new double[num_smoothing_parameters]); // unroll the data
 		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
-		double data_scale = Math2.max(data_vector)/6.;
+		double data_scale = Math2.max(data_vector)/6F;
 		for (int i = 0; i < num_pixels; i ++)
-//			inverse_variance_vector[i] = 1./(data_scale*data_scale); // uniform
+//			inverse_variance_vector[i] = 1/(data_scale*data_scale); // uniform
 			inverse_variance_vector[i] = 1/(data_scale*(data_vector[i] + data_scale/36)); // unitless Poisson
-//			inverse_variance_vector[i] = 1./(data_vector[i] + 1); // corrected Poisson
+//			inverse_variance_vector[i] = 1/(data_vector[i] + 1); // corrected Poisson
 		for (int i = num_pixels; i < data_vector.length; i ++)
 			inverse_variance_vector[i] = 1;
 
@@ -695,7 +703,7 @@ public class VoxelFit {
 		double[][] ξ = new double[lines_of_site.length][];
 		double[][] υ = new double[lines_of_site.length][];
 		for (int l = 0; l < lines_of_site.length; l ++) {
-			double[][] Э_array = CSV.read(new File("tmp/energy-los"+l+".csv"), ','); // (MeV)
+			float[][] Э_array = Math2.reducePrecision(CSV.read(new File("tmp/energy-los"+l+".csv"), ',')); // (MeV)
 			Э_cuts[l] = new Interval[Э_array.length];
 			for (int h = 0; h < Э_cuts[l].length; h ++)
 				Э_cuts[l][h] = new Interval(Э_array[h][0], Э_array[h][1]);
@@ -779,9 +787,9 @@ public class VoxelFit {
 		 * @param coefficients the value to multiply by each basis function (same units as output)
 		 * @return the value of the distribution in the same units as coefficients
 		 */
-		public double get(Vector r, Vector coefficients, int key) {
+		public float get(Vector r, Vector coefficients, int key) {
 			assert r.getLength() == 3 : "this vector is not in 3-space";
-			return this.get(r.get(0), r.get(1), r.get(2), coefficients, key);
+			return this.get((float)r.get(0), (float)r.get(1), (float)r.get(2), coefficients, key);
 		}
 
 		/**
@@ -789,13 +797,13 @@ public class VoxelFit {
 		 * @param x the x coordinate (μm)
 		 * @param y the y coordinate (μm)
 		 * @param z the z coordinate (μm)
-		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 doubles
+		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 floats
 		 * @param coefficients the value to multiply by each basis function (same units as output)
 		 * @return the value of the distribution in the same units as coefficients
 		 */
-		public double get(double x, double y, double z, Vector coefficients, int key) {
+		public float get(float x, float y, float z, Vector coefficients, int key) {
 			assert coefficients.getLength() == num_functions : "this is the rong number of coefficients";
-			double result = 0;
+			float result = 0;
 			for (int i = 0; i < num_functions; i ++)
 				if (coefficients.get(i) != 0)
 					result += coefficients.get(i)*this.get(x, y, z, i, key);
@@ -805,12 +813,12 @@ public class VoxelFit {
 		/**
 		 * get the value of each basis function at a particular location in space
 		 * @param r the location vector (μm)
-		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 doubles
+		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 floats
 		 * @return the derivative of the distribution at this point with respect to basis function и
 		 */
-		public double[] get(Vector r, int key) {
+		public float[] get(Vector r, int key) {
 			assert r.getLength() == 3 : "this vector is not in 3-space";
-			return this.get(r.get(0), r.get(1), r.get(2), key);
+			return this.get((float) r.get(0), (float) r.get(1), (float) r.get(2), key);
 		}
 
 		/**
@@ -819,11 +827,11 @@ public class VoxelFit {
 		 * @param y the y coordinate (μm)
 		 * @param z the z coordinate (μm)
 		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memorize on
-		 *            a tuple of 3 doubles, or 0 to forgo memorization
+		 *            a tuple of 3 floats, or 0 to forgo memorization
 		 * @return the derivative of the distribution at this point with respect to basis function и
 		 */
-		public double[] get(double x, double y, double z, int key) {
-			double[] result = new double[num_functions];
+		public float[] get(float x, float y, float z, int key) {
+			float[] result = new float[num_functions];
 			for (int i = 0; i < num_functions; i ++)
 				result[i] = this.get(x, y, z, i, key);
 			return result;
@@ -836,10 +844,10 @@ public class VoxelFit {
 		 * @param z the z coordinate (μm)
 		 * @param и the index of the basis function
 		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on
-		 *            a tuple of 3 doubles, or 0 to forgo memoization
+		 *            a tuple of 3 floats, or 0 to forgo memoization
 		 * @return the derivative of the distribution at this point with respect to basis function и
 		 */
-		public abstract double get(double x, double y, double z, int и, int key);
+		public abstract float get(float x, float y, float z, int и, int key);
 
 		/**
 		 * calculate the infinite 3d integral of this basis function dxdydz
@@ -868,11 +876,13 @@ public class VoxelFit {
 	 * a 3d basis based on spherical harmonics with linear interpolation in the radial direction
 	 */
 	public static class SphericalHarmonicBasis extends Basis {
+		private static final int INCREMENT = 0x100000;
 		private final int[] n;
 		private final int[] l;
 		private final int[] m;
 		private final double[] r_ref;
-		private final ArrayList<Double> memory;
+		private final int[] cache_size;
+		private final float[][] memory;
 
 		private static int stuff_that_should_go_before_super(int l_max, double[] r_ref) {
 			int[] shape = new int[r_ref.length];
@@ -913,27 +923,33 @@ public class VoxelFit {
 				}
 			}
 
-			this.memory = new ArrayList<>();
+			this.cache_size = new int[num_functions];
+			this.memory = new float[num_functions][INCREMENT];
 		}
 
 		@Override
-		public double get(double x, double y, double z, int и, int key) {
+		public float get(float x, float y, float z, int и, int key) {
 			assert и < num_functions : "there are only "+num_functions+" modes";
-			if (Math.random() < 1e-7)
-				System.out.println(key);
+			if (Math.random() < 1e-6)
+				System.out.println(key+" / "+memory[и].length);
 
-			key = (key != 0) ? key*num_functions + и : 0;
-			if (key != -1 && key < memory.size())
-				return memory.get(key);
+			if (key != -1 && key < cache_size[и])
+				return memory[и][key];
 			else {
-				double[][] harmonics = spherical_harmonics(x, y, z);
-				double s_partial = Math.sqrt(x*x + y*y + z*z)/r_ref[1];
-				double weit = Math.max(0, 1 - Math.abs(n[и] - s_partial));
-				double value = weit*harmonics[l[и]][l[и] + m[и]];
-				memory.ensureCapacity(key + 1);
-				while (memory.size() < key)
-					memory.add(0.);
-				memory.add(value);
+				float[][] harmonics = spherical_harmonics(x, y, z);
+				float s_partial = (float)Math.sqrt(x*x + y*y + z*z)/(float)r_ref[1];
+				float weit = Math.max(0, 1 - Math.abs(n[и] - s_partial));
+				float value = weit*harmonics[l[и]][l[и] + m[и]];
+				if (key != -1) {
+					if (key >= memory[и].length) {
+						float[] new_memory = new float[memory[и].length + INCREMENT];
+						System.arraycopy(memory[и], 0, new_memory, 0, memory[и].length);
+						memory[и] = new_memory;
+						System.gc();
+					}
+					memory[и][key] = value;
+					cache_size[и] += 1;
+				}
 				return value;
 			}
 		}
@@ -945,7 +961,7 @@ public class VoxelFit {
 			else {
 				double r_и = r_ref[n[и]];
 				double dr = r_ref[1];
-				return 4*Math.PI*(r_и*r_и + dr*dr/6.)*dr;
+				return 4*Math.PI*(r_и*r_и + dr*dr/6F)*dr;
 			}
 		}
 
@@ -1019,22 +1035,23 @@ public class VoxelFit {
 		}
 
 		@Override
-		public double get(double x, double y, double z, Vector coefficients, int key) {
-			double i_full = (x - this.x[0])/(this.x[1] - this.x[0]);
-			double j_full = (y - this.y[0])/(this.y[1] - this.y[0]);
-			double k_full = (z - this.z[0])/(this.z[1] - this.z[0]);
-			double result = 0;
+		public float get(float x, float y, float z, Vector coefficients, int key) {
+			float[] coeflicients = Math2.reducePrecision(coefficients.getValues());
+			float i_full = (x - (float)this.x[0])/(float)(this.x[1] - this.x[0]);
+			float j_full = (y - (float)this.y[0])/(float)(this.y[1] - this.y[0]);
+			float k_full = (z - (float)this.z[0])/(float)(this.z[1] - this.z[0]);
+			float result = 0;
 			for (int i = (int)Math.floor(i_full); i <= (int)Math.ceil(i_full); i ++) {
 				if (i >= 0 && i < this.x.length) {
 					for (int j = (int)Math.floor(j_full); j <= (int)Math.ceil(j_full); j ++) {
 						if (j >= 0 && j < this.y.length) {
 							for (int k = (int)Math.floor(k_full); k <= (int)Math.ceil(k_full); k ++) {
 								if (k >= 0 && k < this.z.length) {
-									double corner_weit = (1 - Math.abs(i - i_full)) *
+									float corner_weit = (1 - Math.abs(i - i_full)) *
 									                     (1 - Math.abs(j - j_full)) *
 									                     (1 - Math.abs(k - k_full));
-									double corner_value = coefficients.get(
-										(i*this.y.length + j)*this.z.length + k);
+									float corner_value = coeflicients[
+										(i*this.y.length + j)*this.z.length + k];
 									result += corner_weit*corner_value;
 								}
 							}
@@ -1047,7 +1064,7 @@ public class VoxelFit {
 		}
 
 		@Override
-		public double get(double x, double y, double z, int и, int key) {
+		public float get(float x, float y, float z, int и, int key) {
 			return get(x, y, z, new SparseVector(this.num_functions, и, 1), key);
 		}
 
@@ -1068,7 +1085,9 @@ public class VoxelFit {
 				for (int j = 0; j < y.length; j ++)
 					for (int k = 0; k < z.length; k ++)
 						these_coefficients.set((i*y.length + j)*z.length + k,
-						                       that.get(x[i], y[j], z[k],
+						                       that.get((float) x[i],
+						                                (float) y[j],
+						                                (float) z[k],
 						                                those_coefficients,
 						                                -1));
 			return these_coefficients;

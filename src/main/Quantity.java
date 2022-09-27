@@ -30,17 +30,17 @@ package main;
  * @author Justin Kunimune
  */
 public abstract class Quantity {
-	public final double value;
+	public final float value;
 
-	protected Quantity(double value) {
+	protected Quantity(float value) {
 		this.value = value;
 	}
 
 	public abstract Quantity plus(Quantity that);
 
-	public abstract Quantity plus(double constant);
+	public abstract Quantity plus(float constant);
 
-	public Quantity minus(double constant) {
+	public Quantity minus(float constant) {
 		return this.plus(-constant);
 	}
 
@@ -48,24 +48,24 @@ public abstract class Quantity {
 		return this.plus(that.neg());
 	}
 
-	public Quantity subtractedFrom(double constant) {
+	public Quantity subtractedFrom(float constant) {
 		return this.minus(constant).neg();
 	}
 
-	public abstract Quantity times(double factor);
+	public abstract Quantity times(float factor);
 
 	public abstract Quantity times(Quantity that);
 
-	public abstract Quantity over(double divisor);
+	public abstract Quantity over(float divisor);
 
 	public abstract Quantity over(Quantity that);
 
 	public abstract Quantity neg();
 
-	public abstract Quantity pow(double exponent);
+	public abstract Quantity pow(float exponent);
 
 	public Quantity sqrt() {
-		return this.pow(1/2.);
+		return this.pow(1/2F);
 	}
 
 	public abstract Quantity exp();
@@ -75,7 +75,7 @@ public abstract class Quantity {
 	public abstract Quantity sin();
 
 	public Quantity cos() {
-		return this.subtractedFrom(Math.PI/2).sin();
+		return this.subtractedFrom((float)Math.PI/2).sin();
 	}
 
 	public abstract Quantity atan();
@@ -95,7 +95,7 @@ public abstract class Quantity {
 	 * do the modulo operator in a way that correctly accounts for negative numbers
 	 * @return x - ⌊x/d⌋*d
 	 */
-	public Quantity mod(double divisor) {
+	public Quantity mod(float divisor) {
 		return this.minus(this.over(divisor).floor()*divisor);
 	}
 

@@ -92,7 +92,7 @@ public class Matrix {
 	public static Matrix identity(int n) {
 		Vector[] rows = new Vector[n];
 		for (int i = 0; i < n; i ++)
-			rows[i] = new SparseVector(n, i, 1.);
+			rows[i] = new SparseVector(n, i, 1F);
 		return new Matrix(rows);
 	}
 

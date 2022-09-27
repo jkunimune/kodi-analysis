@@ -24,7 +24,7 @@
 package main;
 
 public class FixedQuantity extends Quantity {
-	public FixedQuantity(double value) {
+	public FixedQuantity(float value) {
 		super(value);
 	}
 
@@ -37,12 +37,12 @@ public class FixedQuantity extends Quantity {
 	}
 
 	@Override
-	public Quantity plus(double constant) {
+	public Quantity plus(float constant) {
 		return new FixedQuantity(this.value + constant);
 	}
 
 	@Override
-	public Quantity times(double factor) {
+	public Quantity times(float factor) {
 		return new FixedQuantity(this.value*factor);
 	}
 
@@ -55,7 +55,7 @@ public class FixedQuantity extends Quantity {
 	}
 
 	@Override
-	public Quantity over(double divisor) {
+	public Quantity over(float divisor) {
 		return new FixedQuantity(this.value/divisor);
 	}
 
@@ -73,27 +73,27 @@ public class FixedQuantity extends Quantity {
 	}
 
 	@Override
-	public Quantity pow(double exponent) {
-		return new FixedQuantity(Math.pow(this.value, exponent));
+	public Quantity pow(float exponent) {
+		return new FixedQuantity((float) Math.pow(this.value, exponent));
 	}
 
 	@Override
 	public Quantity exp() {
-		return new FixedQuantity(Math.exp(this.value));
+		return new FixedQuantity((float) Math.exp(this.value));
 	}
 
 	@Override
 	public Quantity log() {
-		return new FixedQuantity(Math.log(this.value));
+		return new FixedQuantity((float) Math.log(this.value));
 	}
 
 	@Override
 	public Quantity sin() {
-		return new FixedQuantity(Math.sin(this.value));
+		return new FixedQuantity((float) Math.sin(this.value));
 	}
 
 	@Override
 	public Quantity atan() {
-		return new FixedQuantity(Math.atan(this.value));
+		return new FixedQuantity((float) Math.atan(this.value));
 	}
 }

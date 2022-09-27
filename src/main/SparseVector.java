@@ -66,8 +66,7 @@ public class SparseVector extends Vector {
 
 	@Override
 	public Vector plus(Vector that){
-		if (that instanceof SparseVector) { // if both are sparse
-			SparseVector thot = (SparseVector) that;
+		if (that instanceof SparseVector thot) { // if both are sparse
 			Map<Integer, Double> sum = new HashMap<>(
 				  this.values.size() + thot.values.size()); // do this efficiently
 			for (int i: this.values.keySet())
