@@ -429,7 +429,7 @@ public class VoxelFit {
 		}
 
 		// for each line of sight
-		int position_index = 0, warningsPrinted = 0;
+		int warningsPrinted = 0;
 		for (int l = 0; l < lines_of_sight.length; l ++) {
 			// define the rotated coordinate system (ζ points toward the TIM; ξ and υ are orthogonal)
 			Vector ζ_hat = lines_of_sight[l];
@@ -452,14 +452,13 @@ public class VoxelFit {
 						float[] local_density;
 						float ρD;
 						if (respond_to_density) {
-							local_density = basis.get(rD, position_index);
+							local_density = basis.get(rD);
 							ρD = Math2.dot(ρ_coefs, local_density);
 						}
 						else {
-							ρD = basis.get(rD, density, position_index);
+							ρD = basis.get(rD, density);
 							local_density = new float[] {ρD};
 						}
-						position_index ++;
 						if (Math2.all_zero(local_density)) { // skip past the empty regions to focus on the implosion
 							if (ρL == 0)
 								continue;
@@ -489,10 +488,9 @@ public class VoxelFit {
 
 								float[] local_production; // get the production
 								if (respond_to_production) // either by basing it on the basis function
-									local_production = basis.get(rP, position_index);
+									local_production = basis.get(rP);
 								else // or taking it at this point
-									local_production = new float[] {basis.get(rP, production, position_index)};
-								position_index ++;
+									local_production = new float[] {basis.get(rP, production)};
 								if (!Math2.all_zero(local_production)) {
 
 									float Δr2 = (float) Δr.sqr(); // (μm^2)
@@ -697,7 +695,7 @@ public class VoxelFit {
 		double[] y = CSV.readColumn(new File("tmp/y.csv")); // (μm)
 		double[] z = CSV.readColumn(new File("tmp/z.csv")); // (μm)
 		Basis model_grid = new CartesianGrid(x, y, z);
-		double object_radius = Math.sqrt(x[0]*x[0] + y[0]*y[0] + z[0] + z[0]);
+		double object_radius = Math.sqrt(x[0]*x[0]);// + y[0]*y[0] + z[0]*z[0]);
 
 		Interval[][] Э_cuts = new Interval[lines_of_site.length][];
 		double[][] ξ = new double[lines_of_site.length][];
@@ -785,13 +783,12 @@ public class VoxelFit {
 		/**
 		 * get the value of the distribution at a particular location in space given the basis function coeffients
 		 * @param r the location vector (μm)
-		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 doubles
 		 * @param coefficients the value to multiply by each basis function (same units as output)
 		 * @return the value of the distribution in the same units as coefficients
 		 */
-		public float get(Vector r, Vector coefficients, int key) {
+		public float get(Vector r, Vector coefficients) {
 			assert r.getLength() == 3 : "this vector is not in 3-space";
-			return this.get((float)r.get(0), (float)r.get(1), (float)r.get(2), coefficients, key);
+			return this.get((float)r.get(0), (float)r.get(1), (float)r.get(2), coefficients);
 		}
 
 		/**
@@ -799,28 +796,26 @@ public class VoxelFit {
 		 * @param x the x coordinate (μm)
 		 * @param y the y coordinate (μm)
 		 * @param z the z coordinate (μm)
-		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 floats
 		 * @param coefficients the value to multiply by each basis function (same units as output)
 		 * @return the value of the distribution in the same units as coefficients
 		 */
-		public float get(float x, float y, float z, Vector coefficients, int key) {
+		public float get(float x, float y, float z, Vector coefficients) {
 			assert coefficients.getLength() == num_functions : "this is the rong number of coefficients";
 			float result = 0;
 			for (int i = 0; i < num_functions; i ++)
 				if (coefficients.get(i) != 0)
-					result += coefficients.get(i)*this.get(x, y, z, i, key);
+					result += coefficients.get(i)*this.get(x, y, z, i);
 			return result;
 		}
 
 		/**
 		 * get the value of each basis function at a particular location in space
 		 * @param r the location vector (μm)
-		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on a tuple of 3 floats
 		 * @return the derivative of the distribution at this point with respect to basis function и
 		 */
-		public float[] get(Vector r, int key) {
+		public float[] get(Vector r) {
 			assert r.getLength() == 3 : "this vector is not in 3-space";
-			return this.get((float) r.get(0), (float) r.get(1), (float) r.get(2), key);
+			return this.get((float) r.get(0), (float) r.get(1), (float) r.get(2));
 		}
 
 		/**
@@ -828,14 +823,12 @@ public class VoxelFit {
 		 * @param x the x coordinate (μm)
 		 * @param y the y coordinate (μm)
 		 * @param z the z coordinate (μm)
-		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memorize on
-		 *            a tuple of 3 floats, or 0 to forgo memorization
 		 * @return the derivative of the distribution at this point with respect to basis function и
 		 */
-		public float[] get(float x, float y, float z, int key) {
+		public float[] get(float x, float y, float z) {
 			float[] result = new float[num_functions];
 			for (int i = 0; i < num_functions; i ++)
-				result[i] = this.get(x, y, z, i, key);
+				result[i] = this.get(x, y, z, i);
 			return result;
 		}
 
@@ -845,11 +838,9 @@ public class VoxelFit {
 		 * @param y the y coordinate (μm)
 		 * @param z the z coordinate (μm)
 		 * @param и the index of the basis function
-		 * @param key a value that is unique to this x,y,z pair, because it would be hard to memoize on
-		 *            a tuple of 3 floats, or 0 to forgo memoization
 		 * @return the derivative of the distribution at this point with respect to basis function и
 		 */
-		public abstract float get(float x, float y, float z, int и, int key);
+		public abstract float get(float x, float y, float z, int и);
 
 		/**
 		 * calculate the infinite 3d integral of this basis function dxdydz
@@ -878,13 +869,10 @@ public class VoxelFit {
 	 * a 3d basis based on spherical harmonics with linear interpolation in the radial direction
 	 */
 	public static class SphericalHarmonicBasis extends Basis {
-		private static final int INCREMENT = 0x100000;
 		private final int[] n;
 		private final int[] l;
 		private final int[] m;
 		private final double[] r_ref;
-		private final int[] cache_size;
-		private final float[][] memory;
 
 		private static int stuff_that_should_go_before_super(int l_max, double[] r_ref) {
 			int num_functions = 0;
@@ -922,36 +910,16 @@ public class VoxelFit {
 					}
 				}
 			}
-
-			this.cache_size = new int[num_functions];
-			this.memory = new float[num_functions][INCREMENT];
 		}
 
 		@Override
-		public float get(float x, float y, float z, int и, int key) {
+		public float get(float x, float y, float z, int и) {
 			assert и < num_functions : "there are only "+num_functions+" modes";
-			if (Math.random() < 1e-6)
-				System.out.println(key+" / "+memory[и].length);
-
-			if (key != -1 && key < cache_size[и])
-				return memory[и][key];
-			else {
-				float[][] harmonics = spherical_harmonics(x, y, z);
-				float s_partial = (float)Math.sqrt(x*x + y*y + z*z)/(float)r_ref[1];
-				float weit = Math.max(0, 1 - Math.abs(n[и] - s_partial));
-				float value = weit*harmonics[l[и]][l[и] + m[и]];
-				if (key != -1) {
-					if (key >= memory[и].length) {
-						float[] new_memory = new float[memory[и].length + INCREMENT];
-						System.arraycopy(memory[и], 0, new_memory, 0, memory[и].length);
-						memory[и] = new_memory;
-						System.gc();
-					}
-					memory[и][key] = value;
-					cache_size[и] += 1;
-				}
-				return value;
-			}
+			
+			float[][] harmonics = spherical_harmonics(x, y, z);
+			float s_partial = (float)Math.sqrt(x*x + y*y + z*z)/(float)r_ref[1];
+			float weit = Math.max(0, 1 - Math.abs(n[и] - s_partial));
+			return weit*harmonics[l[и]][l[и] + m[и]];
 		}
 
 		@Override
@@ -1003,7 +971,6 @@ public class VoxelFit {
 					}
 				}
 			}
-			if (weit != 0) System.out.println(bad_modes);
 			return new Matrix(bad_modes.toArray(new Vector[0]));
 		}
 
@@ -1035,7 +1002,7 @@ public class VoxelFit {
 		}
 
 		@Override
-		public float get(float x, float y, float z, Vector coefficients, int key) {
+		public float get(float x, float y, float z, Vector coefficients) {
 			float i_full = (x - (float)this.x[0])/(float)(this.x[1] - this.x[0]);
 			float j_full = (y - (float)this.y[0])/(float)(this.y[1] - this.y[0]);
 			float k_full = (z - (float)this.z[0])/(float)(this.z[1] - this.z[0]);
@@ -1063,8 +1030,8 @@ public class VoxelFit {
 		}
 
 		@Override
-		public float get(float x, float y, float z, int и, int key) {
-			return get(x, y, z, new SparseVector(this.num_functions, и, 1), key);
+		public float get(float x, float y, float z, int и) {
+			return get(x, y, z, new SparseVector(this.num_functions, и, 1));
 		}
 
 		@Override
@@ -1087,8 +1054,7 @@ public class VoxelFit {
 						                       that.get((float) x[i],
 						                                (float) y[j],
 						                                (float) z[k],
-						                                those_coefficients,
-						                                -1));
+						                                those_coefficients));
 			return these_coefficients;
 		}
 	}

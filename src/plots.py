@@ -2,6 +2,7 @@ import logging
 import re
 
 import numpy as np
+import matplotlib
 from matplotlib import colors, pyplot as plt, ticker
 from scipy import optimize
 from scipy import special
@@ -10,6 +11,8 @@ from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS, C
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, get_relative_aperture_positions, downsample_1d, saturate, center_of_mass, \
 	bin_centers, Point, nearest_value, shape_parameters
+
+matplotlib.use("Qt5agg")
 
 
 PLOT_THEORETICAL_PROJECTION = True
@@ -246,8 +249,8 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 			maximum = np.amax([image_set[l][h, :, :] for image_set in image_sets])
 			for i, image_set in enumerate(image_sets):
 				plt.figure(figsize=(6, 5))
-				plt.contourf(x[l], y[l][h], image_set[l][h].T,
-				             min=min(0, np.min(image_set[l][h])),
+				plt.contourf(x[l], y[l], image_set[l][h, :, :].T,
+				             vmin=min(0, np.min(image_set[l][h])),
 				             vmax=maximum,
 				             cmap=cmaps[h])
 				plt.axis('square')
@@ -265,20 +268,19 @@ def save_and_plot_morphologies(filename: str,
 	peak_source = np.amax([source for source, density in morphologies])
 	peak_density = np.amax([density for source, density in morphologies])
 	for i, (source, density) in enumerate(morphologies):
-		print(source.min(), source.max(), density.min(), density.max())
 		plt.figure(figsize=(8, 5))
-		if np.any(source[len(x)//2,:,:] > 0):
+		if np.any(source[len(x)//2, :, :] > 0):
 			plt.contour(y, z,
-			            np.maximum(0, source[len(x)//2,:,:].T),
+			            np.maximum(0, source[len(x)//2, :, :].T),
 			            locator=ticker.MaxNLocator(
-				            nbins=8*np.max(source[len(x)//2,:,:])/peak_source,
+				            nbins=max(2, 8*np.max(source[len(x)//2, :, :])/peak_source),
 				            prune='lower'),
 			            colors='#1f7bbb',
 			            zorder=1)
 			plt.colorbar().set_label("Neutron source (μm^-3)")
-		if np.any(density[len(x)//2,:,:] > 0):
+		if np.any(density[len(x)//2, :, :] > 0):
 			plt.contourf(y, z,
-			             np.maximum(0, density[len(x)//2,:,:].T),
+			             np.maximum(0, density[len(x)//2, :, :].T),
 			             vmin=0, vmax=peak_density, levels=6,
 			             cmap='Reds',
 			             zorder=0)
