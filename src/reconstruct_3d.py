@@ -29,7 +29,7 @@ plt.rcParams.update({'font.family': 'serif', 'font.size': 16})
 r_max = 100 # (μm)
 
 energy_resolution = 3 # (MeV)
-spatial_resolution = 10 # (μm)
+spatial_resolution = 15 # (μm)
 
 
 if __name__ == '__main__':

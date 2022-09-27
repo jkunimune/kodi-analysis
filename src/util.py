@@ -326,7 +326,7 @@ def execute_java(script: str, *args: str, classpath="out/production/kodi-analysi
 	print(f"Starting reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")
 	statements = [
 		[shutil.which("javac"), "-sourcepath", "src", "-d", classpath, "-encoding", "utf8", f"src/main/{script}.java"],
-		[shutil.which("java"), "-classpath", classpath, f"main/{script}", *(str(arg) for arg in args)]
+		[shutil.which("java"), "-Xmx1G", "-classpath", classpath, f"main/{script}", *(str(arg) for arg in args)]
 	]
 	for statement in statements:
 		with subprocess.Popen(statement, stderr=subprocess.PIPE, encoding="cp850") as process: # what is this encoding and why does Java use it??

@@ -724,6 +724,8 @@ public class VoxelFit {
 					throw new IOException("this file had the rong number of things");
 			}
 			double temperature = CSV.readScalar(new File("tmp/temperature.csv")); // (keV)
+			
+			VoxelFit.logger.info("generating images from the example morphology...");
 
 			images = synthesize_images(
 				  new DenseVector(anser[0]), new DenseVector(anser[1]), temperature,
@@ -885,11 +887,9 @@ public class VoxelFit {
 		private final float[][] memory;
 
 		private static int stuff_that_should_go_before_super(int l_max, double[] r_ref) {
-			int[] shape = new int[r_ref.length];
 			int num_functions = 0;
 			for (int n = 0; n < r_ref.length; n ++) {
-				shape[n] = Math.min(n, l_max) + 1;
-				for (int l = 0; l < shape[n]; l ++) {
+				for (int l = 0; l <= Math.min(n, l_max); l ++) {
 					num_functions += 2*l + 1;
 				}
 			}
@@ -1036,7 +1036,6 @@ public class VoxelFit {
 
 		@Override
 		public float get(float x, float y, float z, Vector coefficients, int key) {
-			float[] coeflicients = Math2.reducePrecision(coefficients.getValues());
 			float i_full = (x - (float)this.x[0])/(float)(this.x[1] - this.x[0]);
 			float j_full = (y - (float)this.y[0])/(float)(this.y[1] - this.y[0]);
 			float k_full = (z - (float)this.z[0])/(float)(this.z[1] - this.z[0]);
@@ -1050,8 +1049,8 @@ public class VoxelFit {
 									float corner_weit = (1 - Math.abs(i - i_full)) *
 									                     (1 - Math.abs(j - j_full)) *
 									                     (1 - Math.abs(k - k_full));
-									float corner_value = coeflicients[
-										(i*this.y.length + j)*this.z.length + k];
+									float corner_value = (float) coefficients.get(
+										(i*this.y.length + j)*this.z.length + k);
 									result += corner_weit*corner_value;
 								}
 							}
