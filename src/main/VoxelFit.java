@@ -665,7 +665,7 @@ public class VoxelFit {
 		logger.info("starting...");
 
 		double model_resolution = Double.parseDouble(args[0]);
-		double integral_resolution = model_resolution;
+		double integral_resolution = model_resolution/1.01;
 
 		double[][] line_of_site_data = CSV.read(new File("tmp/lines_of_site.csv"), ',');
 		Vector[] lines_of_site = new Vector[line_of_site_data.length];
@@ -896,7 +896,7 @@ public class VoxelFit {
 				for (int j = 0; j <= num_steps; j ++) {
 					float y = -raster_size + j*raster_res;
 					double ф = Math.atan2(y, x);
-					if (ф < 0) ф += Math.PI;
+					if (ф < 0) ф += 2*Math.PI;
 					for (int k = 0; k <= num_steps; k ++) {
 						float z = -raster_size + k*raster_res;
 						double r = Math.sqrt(x*x + y*y + z*z);
@@ -910,7 +910,7 @@ public class VoxelFit {
 			for (int j = 0; j < Y_raster[0].length; j ++) {
 				double ф = j*2*Math.PI/Y_raster[0].length;
 				for (int k = 0; k < Y_raster[0][j].length; k ++) {
-					double cosθ = -1 + k*2F/(Y_raster[0][j].length - 1);
+					double cosθ = -1 + 2.*k/(Y_raster[0][j].length - 1);
 					for (и = 0; и < num_functions; и ++)
 						this.Y_raster[и][j][k] = (float) spherical_harmonics(
 								l[и], m[и], cosθ, ф);
@@ -927,7 +927,7 @@ public class VoxelFit {
 			float k = (z + raster_size)/raster_res;
 			float n = Math2.interp(n_raster, i, j, k);
 			float r = n*r_ref[1];
-			float z_index = (z/r + 1)/2*(Y_raster[0].length - 1);
+			float z_index = (r != 0) ? (z/r + 1)/2*(Y_raster[0].length - 1) : 1;
 			float ф_index = Math2.interp(k_raster, i, j);
 			float[] vector = new float[num_functions];
 			for (int и = 0; и < num_functions; и ++) {

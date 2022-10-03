@@ -37,7 +37,10 @@ def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
 	for filetype in filetypes:
 		extension = filetype[1:] if filetype.startswith('.') else filetype
 		filepath = f"results/plots/{filename}.{extension}"
-		plt.savefig(filepath, transparent=filetype != 'png') # TODO: why aren' these transparent?
+		try:
+			plt.savefig(filepath, transparent=filetype != 'png') # TODO: why aren't these transparent?
+		except ValueError:
+			print("there's some edge case that makes this fail for no good reason")
 		logging.debug(f"  saving {filepath}")
 
 
@@ -47,7 +50,11 @@ def choose_colormaps(particle: str, num_cuts: int) -> list[colors.ListedColormap
 
 def make_colorbar(vmin: float, vmax: float, label: str, facecolor=None) -> None:
 	ticks = ticker.MaxNLocator(nbins=8, steps=[1, 2, 5, 10]).tick_values(vmin, vmax)
-	colorbar = plt.colorbar(ticks=ticks, spacing='proportional')
+	try:
+		colorbar = plt.colorbar(ticks=ticks, spacing='proportional')
+	except IndexError:
+		print("I'm not sure what causes this, but creating a colorbar failed.")
+		return
 	colorbar.set_label(label)
 	colorbar.ax.set_ylim(vmin, vmax)
 	# colorbar.ax.set_yticks(ticks=ticks, labels=[f"{tick:.3g}" for tick in ticks])

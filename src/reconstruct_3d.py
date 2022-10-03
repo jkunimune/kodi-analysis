@@ -67,7 +67,7 @@ if __name__ == '__main__':
 
 	# if not skipping, find the necessary inputs and run the algorithm
 	else:
-		n_space_bins = math.ceil(2*r_max/(spatial_resolution/2)) # model spatial resolucion
+		n_space_bins = math.ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
 		x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
 		print(f"reconstructing a {n_space_bins}^3 morphology with r_max = {r_max} μm")
 
