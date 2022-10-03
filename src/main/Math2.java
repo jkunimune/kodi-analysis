@@ -413,41 +413,71 @@ public class Math2 {
 		}
 		return y[l].times(x0.minus(x[r]).over(x[l].minus(x[r]))).plus(y[r].times(x0.minus(x[l]).over(x[r].minus(x[l]))));
 	}
-
-	public static float interp3d(float[][][] values, float i, float j, float k, boolean smooth) {
-		if (
-			  (i < 0 || i > values.length - 1) ||
-					(j < 0 || j > values[0].length - 1) ||
-					(k < 0 || k > values[0][0].length - 1))
-			throw new ArrayIndexOutOfBoundsException(i+", "+j+", "+k+" out of bounds for "+values.length+"x"+values[0].length+"x"+values[0][0].length);
-		if (Float.isNaN(i) || Float.isNaN(j) || Float.isNaN(k))
+	
+	public static float interp(float[][] values, float i, float j) {
+		if (Float.isNaN(i) || Float.isNaN(j))
 			throw new IllegalArgumentException("is this a joke to you");
-
-		int i0 = Math.min((int)i, values.length - 2);
-		int j0 = Math.min((int)j, values[i0].length - 2);
-		int k0 = Math.min((int)k, values[i0][j0].length - 2);
-		float ci0, cj0, ck0;
-		if (smooth) {
-			ci0 = smooth_step(1 - (i - i0));
-			cj0 = smooth_step(1 - (j - j0));
-			ck0 = smooth_step(1 - (k - k0));
-		}
-		else {
-			ci0 = 1 - (i - i0);
-			cj0 = 1 - (j - j0);
-			ck0 = 1 - (k - k0);
-		}
+		
+		int i0 = (int) Math.floor(i), j0 = (int) Math.floor(j);
+		float ci0 = 1 - (i - i0);
+		float cj0 = 1 - (j - j0);
 		float value = 0;
 		for (int di = 0; di <= 1; di ++)
-			for (int dj = 0; dj <= 1; dj ++)
-				for (int dk = 0; dk <= 1; dk ++)
-					value += values[i0+di][j0+dj][k0+dk] *
-						  Math.abs(ci0 - di) *
-						  Math.abs(cj0 - dj) *
-						  Math.abs(ck0 - dk);
+			if (i0 + di >= 0 && i0 + di < values.length)
+				for (int dj = 0; dj <= 1; dj ++)
+					if (j0 + dj >= 0 && j0 + dj < values[i0 + di].length)
+							value += values[i0+di][j0+dj] *
+							         Math.abs(ci0 - di) *
+							         Math.abs(cj0 - dj);
 		return value;
 	}
-
+	
+	public static float interp(float[][][] values, float i, float j, float k) {
+		if (Float.isNaN(i) || Float.isNaN(j) || Float.isNaN(k))
+			throw new IllegalArgumentException("is this a joke to you");
+		
+		int i0 = (int) i, j0 = (int) j, k0 = (int) k;
+		float ci0 = 1 - (i - i0);
+		float cj0 = 1 - (j - j0);
+		float ck0 = 1 - (k - k0);
+		float value = 0;
+		for (int di = 0; di <= 1; di ++)
+			if (i0 + di >= 0 && i0 + di < values.length)
+				for (int dj = 0; dj <= 1; dj ++)
+					if (j0 + dj >= 0 && j0 + dj < values[i0 + di].length)
+						for (int dk = 0; dk <= 1; dk ++)
+							if (k0 + dk >= 0 && k0 + dk < values[i0 + di][j0 + dj].length)
+								value += values[i0+di][j0+dj][k0+dk] *
+								         Math.abs(ci0 - di) *
+								         Math.abs(cj0 - dj) *
+								         Math.abs(ck0 - dk);
+		return value;
+	}
+	
+	public static float interp(Vector values, int size, float i, float j, float k) {
+		if (Float.isNaN(i) || Float.isNaN(j) || Float.isNaN(k))
+			throw new IllegalArgumentException("is this a joke to you");
+		
+		int i0 = (int)i;
+		int j0 = (int)j;
+		int k0 = (int)k;
+		float ci0 = 1 - (i - i0);
+		float cj0 = 1 - (j - j0);
+		float ck0 = 1 - (k - k0);
+		float value = 0;
+		for (int di = 0; di <= 1; di ++)
+			if (i0 + di >= 0 && i0 + di < size)
+				for (int dj = 0; dj <= 1; dj ++)
+					if (j0 + dj >= 0 && j0 + dj < size)
+						for (int dk = 0; dk <= 1; dk ++)
+							if (k0 + dk >= 0 && k0 + dk < size)
+								value += Math.abs(ci0 - di) *
+								         Math.abs(cj0 - dj) *
+								         Math.abs(ck0 - dk) *
+								         values.get(((i0 + di)*size + (j0 + dj))*size + (k0 + dk));
+		return value;
+	}
+	
 	public static boolean all_zero(float[] values) {
 		for (float value: values)
 			if (value != 0)
@@ -917,16 +947,6 @@ public class Math2 {
 			}
 		}
 	}
-	
-	/**
-	 * Legendre polynomial of degree l
-	 * @param l the degree of the polynomial
-	 * @param z the cosine of the angle at which this is evaluated
-	 * @return P_l(z)
-	 */
-	public static float legendre(int l, float z) {
-		return legendre(l, 0, z);
-	}
 
 	/**
 	 * associated Legendre polynomial of degree l
@@ -935,13 +955,13 @@ public class Math2 {
 	 * @param x the cosine of the angle at which this is evaluated
 	 * @return P_l^m(z)
 	 */
-	public static float legendre(int l, int m, float x) {
+	public static double legendre(int l, int m, double x) {
 		if (Math.abs(m) > l)
 			throw new IllegalArgumentException("|m| must not exceed l, but |"+m+"| > "+l);
 
-		float x2 = x*x; // get some simple calculacions done out front
-		float y2 = 1 - x2;
-		float y = (m%2 == 1) ? (float) Math.sqrt(y2) : Float.NaN; // but avoid taking a square root if you can avoid it
+		double x2 = x*x; // get some simple calculacions done out front
+		double y2 = 1 - x2;
+		double y = (m%2 == 1) ? (double) Math.sqrt(y2) : Float.NaN; // but avoid taking a square root if you can avoid it
 
 		if (m == 0) {
 			if (l == 0)
@@ -949,21 +969,21 @@ public class Math2 {
 			else if (l == 1)
 				return x;
 			else if (l == 2)
-				return (3*x2 - 1)/2F;
+				return (3*x2 - 1)/2;
 			else if (l == 3)
-				return (5*x2 - 3)*x/2F;
+				return (5*x2 - 3)*x/2;
 			else if (l == 4)
-				return ((35*x2 - 30)*x2 + 3)/8F;
+				return ((35*x2 - 30)*x2 + 3)/8;
 			else if (l == 5)
-				return ((63*x2 - 70)*x2 + 15)*x/8F;
+				return ((63*x2 - 70)*x2 + 15)*x/8;
 			else if (l == 6)
-				return (((231*x2 - 315)*x2 + 105)*x2 - 5)/16F;
+				return (((231*x2 - 315)*x2 + 105)*x2 - 5)/16;
 			else if (l == 7)
-				return (((429*x2 - 693)*x2 + 315)*x2 - 35)*x/16F;
+				return (((429*x2 - 693)*x2 + 315)*x2 - 35)*x/16;
 			else if (l == 8)
-				return ((((6435*x2 - 12012)*x2 + 6930)*x2 - 1260)*x2 + 35)/128F;
+				return ((((6435*x2 - 12012)*x2 + 6930)*x2 - 1260)*x2 + 35)/128;
 			else if (l == 9)
-				return ((((12155*x2 - 25740)*x2 + 18018)*x2 - 4620)*x2 + 315)*x/128F;
+				return ((((12155*x2 - 25740)*x2 + 18018)*x2 - 4620)*x2 + 315)*x/128;
 		}
 		else if (m == 1) {
 			if (l == 1)

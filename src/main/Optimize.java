@@ -278,7 +278,8 @@ public class Optimize {
 				// calculate the step given the normalization λ and limited freedom
 				Matrix reduced_hessian = realign.times(modified_hessian);
 				Vector reduced_gradient = constrain.times(gradient);
-				Vector step = reduced_hessian.pseudoinverse_times(reduced_gradient, false).neg();
+				Vector step = reduced_hessian.inverse().times(reduced_gradient).neg();
+//				Vector step = reduced_hessian.pseudoinverse_times(reduced_gradient, false).neg();
 				if (Double.isNaN(step.get(0)))
 					throw new RuntimeException("singular hessian");
 				Vector new_input = input.plus(step);

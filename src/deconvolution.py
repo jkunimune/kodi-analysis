@@ -173,7 +173,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			raise RuntimeError("something's gone horribly rong.")
 
 		# quit early if it seems like you're no longer making progress
-		if t >= 12 and log_L[t] < log_L[t - 12] + 1/2:
+		if t >= 12 and log_L[t] < log_L[t - 12] + 1:
 			num_iterations = t + 1
 			break
 
@@ -335,7 +335,7 @@ def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: str | NDArray[float] 
 			raise RuntimeError("something's gone horribly rong.")
 
 		# quit early if it seems like you're no longer making progress
-		if t >= 12 and log_L[t] < log_L[t - 12] + 1/2:
+		if t >= 12 and log_L[t] < log_L[t - 12] + 1:
 			num_iterations = t + 1
 			break
 

@@ -137,6 +137,9 @@ public class Matrix {
 	 * @return the inverse of this matrix
 	 */
 	public Matrix inverse() {
+		if (this.n != this.m || this.n > 10_000)
+			throw new RuntimeException(String.format("for a %dx%d, I think you should use the " +
+			                                         "pseudoinverse_times function.", n, m));
 		return new Matrix(Math2.matinv(this.getValues()));
 	}
 
@@ -182,9 +185,13 @@ public class Matrix {
 	 * @return x the vector that solves the equation
 	 */
 	public Vector pseudoinverse_times(Vector b, boolean nonnegative) {
+		if (this.n == this.m && this.n < 1_000)
+			throw new IllegalArgumentException(String.format("for a %dx%d, you would be better off just " +
+			                                                 "doing a direct inverse, I think.", n, m));
 		if (this.n != b.getLength())
 			throw new IllegalArgumentException("the array sizes do not match");
 		Vector x = DenseVector.zeros(m);
+		int num_iterations = 0;
 		while (true) {
 			double discrepancy = 0;
 			// each iteration of the while loop is really a loop thru the rows
@@ -207,6 +214,9 @@ public class Matrix {
 			discrepancy = discrepancy/x.sqr();
 			if (discrepancy <= 1e-12)
 				return x;
+			num_iterations ++;
+			if (num_iterations >= 10_000)
+				throw new RuntimeException("stop it already! isn't this enuff‽");
 		}
 	}
 

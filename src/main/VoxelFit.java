@@ -211,34 +211,15 @@ public class VoxelFit {
 
 	/**
 	 * calculate the first few spherical harmonicks
-	 * @param x the x posicion relative to the origin
-	 * @param y the y posicion relative to the origin
-	 * @param z the z posicion relative to the origin
-	 * @return an array where P[l][l+m] is P_l^m(x, y, z)
+	 * @param z the cosine of the polar angle
+	 * @param ф the azimuthal angle
+	 * @return the value of the specified harmonic P_l^m (z, ф)
 	 */
-	private static float[][] spherical_harmonics(float x, float y, float z) {
-		if (x != 0 || y != 0 || z != 0) {
-			float cosθ = z/(float)Math.sqrt(x*x + y*y + z*z);
-			float ф = (float)Math.atan2(y, x);
-			float[][] harmonics = new float[MAX_MODE + 1][];
-			for (int l = 0; l <= MAX_MODE; l ++) {
-				harmonics[l] = new float[2*l + 1];
-				for (int m = -l; m <= l; m++) {
-					if (m >= 0)
-						harmonics[l][l + m] = Math2.legendre(l, m, cosθ)*(float)Math.cos(m*ф);
-					else
-						harmonics[l][l + m] = Math2.legendre(l, -m, cosθ)*(float)Math.sin(m*ф);
-				}
-			}
-			return harmonics;
-		}
-		else {
-			float[][] harmonics = new float[MAX_MODE + 1][];
-			for (int l = 0; l <= MAX_MODE; l ++)
-				harmonics[l] = new float[2*l + 1];
-			harmonics[0][0] = 1;
-			return harmonics;
-		}
+	private static double spherical_harmonics(int l, int m, double z, double ф) {
+		if (m >= 0)
+			return Math2.legendre(l, m, z)*Math.cos(m*ф);
+		else
+			return Math2.legendre(l, -m, z)*Math.sin(m*ф);
 	}
 
 
@@ -684,18 +665,19 @@ public class VoxelFit {
 		logger.info("starting...");
 
 		double model_resolution = Double.parseDouble(args[0]);
-		double integral_resolution = model_resolution/2;
+		double integral_resolution = model_resolution;
 
 		double[][] line_of_site_data = CSV.read(new File("tmp/lines_of_site.csv"), ',');
 		Vector[] lines_of_site = new Vector[line_of_site_data.length];
 		for (int i = 0; i < lines_of_site.length; i ++)
 			lines_of_site[i] = new DenseVector(line_of_site_data[i]);
 
-		double[] x = CSV.readColumn(new File("tmp/x.csv")); // load the coordinate system for 3d input and output (μm)
-		double[] y = CSV.readColumn(new File("tmp/y.csv")); // (μm)
-		double[] z = CSV.readColumn(new File("tmp/z.csv")); // (μm)
-		Basis model_grid = new CartesianGrid(x, y, z);
-		double object_radius = Math.sqrt(x[0]*x[0]);// + y[0]*y[0] + z[0]*z[0]);
+		float[] x = Math2.reducePrecision(CSV.readColumn(new File("tmp/x.csv"))); // load the coordinate system for 3d input and output (μm)
+		float[] y = Math2.reducePrecision(CSV.readColumn(new File("tmp/y.csv"))); // (μm)
+		float[] z = Math2.reducePrecision(CSV.readColumn(new File("tmp/z.csv"))); // (μm)
+		int n = x.length - 1;
+		Basis model_grid = new CartesianGrid(x[0], x[n], y[0], y[n], z[0], z[n], n);
+		double object_radius = Math.abs(x[0]);
 
 		Interval[][] Э_cuts = new Interval[lines_of_site.length][];
 		double[][] ξ = new double[lines_of_site.length][];
@@ -739,11 +721,10 @@ public class VoxelFit {
 				images[l] = reravel(CSV.readColumn(new File("tmp/image-los"+l+".csv")),
 				                    new int[] {});
 				for (int h = 0; h < Э_cuts[l].length; h ++) {
-					int n = images[l][h].length, m = images[l][h][0].length;
-					if (n != ξ[l].length || m != υ[l].length)
+					if (images[l][h].length != ξ[l].length || images[l][h][0].length != υ[l].length)
 						throw new IllegalArgumentException(
-								"image size "+n+"x"+m+" does not match array lengths ("+ξ[l].length+" for xi and "+
-								υ[l].length+" for ypsilon)");
+								"image size "+images[l][h].length+"x"+images[l][h][0].length+" does not match array " +
+								"lengths ("+ξ[l].length+" for xi and "+υ[l].length+" for ypsilon)");
 				}
 			}
 
@@ -801,10 +782,11 @@ public class VoxelFit {
 		 */
 		public float get(float x, float y, float z, Vector coefficients) {
 			assert coefficients.getLength() == num_functions : "this is the rong number of coefficients";
+			float[] values = this.get(x, y, z);
 			float result = 0;
 			for (int i = 0; i < num_functions; i ++)
 				if (coefficients.get(i) != 0)
-					result += coefficients.get(i)*this.get(x, y, z, i);
+					result += coefficients.get(i)*values[i];
 			return result;
 		}
 
@@ -823,31 +805,16 @@ public class VoxelFit {
 		 * @param x the x coordinate (μm)
 		 * @param y the y coordinate (μm)
 		 * @param z the z coordinate (μm)
-		 * @return the derivative of the distribution at this point with respect to basis function и
+		 * @return the gradient of the distribution at this point with respect to the basis functions
 		 */
-		public float[] get(float x, float y, float z) {
-			float[] result = new float[num_functions];
-			for (int i = 0; i < num_functions; i ++)
-				result[i] = this.get(x, y, z, i);
-			return result;
-		}
-
-		/**
-		 * get the value of the иth basis function at a particular location in space
-		 * @param x the x coordinate (μm)
-		 * @param y the y coordinate (μm)
-		 * @param z the z coordinate (μm)
-		 * @param и the index of the basis function
-		 * @return the derivative of the distribution at this point with respect to basis function и
-		 */
-		public abstract float get(float x, float y, float z, int и);
+		public abstract float[] get(float x, float y, float z);
 
 		/**
 		 * calculate the infinite 3d integral of this basis function dxdydz
 		 * @param и the index of the desired basis function
 		 * @return ∫∫∫ this.get(x, y, z, и) dx dy dz
 		 */
-		public abstract double get_volume(int и);
+		public abstract float get_volume(int и);
 
 		/**
 		 * figure out the coefficients that will, together with this basis, approximately reproduce
@@ -872,7 +839,12 @@ public class VoxelFit {
 		private final int[] n;
 		private final int[] l;
 		private final int[] m;
-		private final double[] r_ref;
+		private final float[] r_ref;
+		private final float raster_size;
+		private final float raster_res;
+		private final float[][][] n_raster;
+		private final float[][] k_raster;
+		private final float[][][] Y_raster;
 
 		private static int stuff_that_should_go_before_super(int l_max, double[] r_ref) {
 			int num_functions = 0;
@@ -893,43 +865,91 @@ public class VoxelFit {
 		public SphericalHarmonicBasis(int l_max, double[] r_ref) {
 			super(stuff_that_should_go_before_super(l_max, r_ref));
 
-			this.r_ref = r_ref;
+			// take the defining radii
+			this.r_ref = Math2.reducePrecision(r_ref);
 
+			// choose the relevant harmonic modes
 			this.n = new int[num_functions];
 			this.l = new int[num_functions];
 			this.m = new int[num_functions];
-
-			int index = 0;
+			int и = 0;
 			for (int n = 0; n < r_ref.length; n ++) {
 				for (int l = 0; l <= n && l <= l_max; l ++) {
 					for (int m = - l; m <= l; m++) {
-						this.n[index] = n;
-						this.l[index] = l;
-						this.m[index] = m;
-						index ++;
+						this.n[и] = n;
+						this.l[и] = l;
+						this.m[и] = m;
+						и ++;
 					}
 				}
 			}
-		}
-
-		@Override
-		public float get(float x, float y, float z, int и) {
-			assert и < num_functions : "there are only "+num_functions+" modes";
 			
-			float[][] harmonics = spherical_harmonics(x, y, z);
-			float s_partial = (float)Math.sqrt(x*x + y*y + z*z)/(float)r_ref[1];
-			float weit = Math.max(0, 1 - Math.abs(n[и] - s_partial));
-			return weit*harmonics[l[и]][l[и] + m[и]];
+			// cache a raster of the cylindrical coordinate conversion so that it's easy to get to the harmonics
+			raster_size = (float)(2*r_ref[r_ref.length - 1] - r_ref[r_ref.length - 2]);
+			int num_steps = 4*r_ref.length;
+			raster_res = 2*raster_size/num_steps;
+			this.n_raster = new float[num_steps + 1][num_steps + 1][num_steps + 1];
+			this.k_raster = new float[num_steps + 1][num_steps + 1];
+			this.Y_raster = new float[num_functions][2*num_steps][3*num_steps];
+			for (int i = 0; i <= num_steps; i ++) {
+				float x = -raster_size + i*raster_res;
+				for (int j = 0; j <= num_steps; j ++) {
+					float y = -raster_size + j*raster_res;
+					double ф = Math.atan2(y, x);
+					if (ф < 0) ф += Math.PI;
+					for (int k = 0; k <= num_steps; k ++) {
+						float z = -raster_size + k*raster_res;
+						double r = Math.sqrt(x*x + y*y + z*z);
+						this.n_raster[i][j][k] = (float) (r/r_ref[1]);
+					}
+					this.k_raster[i][j] = (float) (ф/(2*Math.PI)*Y_raster[0][0].length);
+				}
+			}
+			
+			// cache a raster of the harmonics so that we never need to calculate them agen
+			for (int j = 0; j < Y_raster[0].length; j ++) {
+				double ф = j*2*Math.PI/Y_raster[0].length;
+				for (int k = 0; k < Y_raster[0][j].length; k ++) {
+					double cosθ = -1 + k*2F/(Y_raster[0][j].length - 1);
+					for (и = 0; и < num_functions; и ++)
+						this.Y_raster[и][j][k] = (float) spherical_harmonics(
+								l[и], m[и], cosθ, ф);
+				}
+			}
+		}
+		
+		@Override
+		public float[] get(float x, float y, float z) {
+			if (x < -raster_size || x > raster_size || y < -raster_size || y > raster_size ||z < -raster_size || z > raster_size)
+				return new float[num_functions];
+			float i = (x + raster_size)/raster_res;
+			float j = (y + raster_size)/raster_res;
+			float k = (z + raster_size)/raster_res;
+			float n = Math2.interp(n_raster, i, j, k);
+			float r = n*r_ref[1];
+			float z_index = (z/r + 1)/2*(Y_raster[0].length - 1);
+			float ф_index = Math2.interp(k_raster, i, j);
+			float[] vector = new float[num_functions];
+			for (int и = 0; и < num_functions; и ++) {
+				float weit = Math.max(0, 1 - Math.abs(this.n[и] - n));
+				if (weit > 0)
+					vector[и] = weit*Math2.interp(Y_raster[и], z_index, ф_index);
+			}
+			return vector;
 		}
 
 		@Override
-		public double get_volume(int и) {
+		public float get_volume(int и) {
 			if (l[и] != 0)
 				return 0;
+			else if (n[и] == 0) {
+				float dr = r_ref[1];
+				return πF*dr*dr*dr/3;
+			}
 			else {
-				double r_и = r_ref[n[и]];
-				double dr = r_ref[1];
-				return 4*Math.PI*(r_и*r_и + dr*dr/6F)*dr;
+				float r_и = r_ref[n[и]];
+				float dr = r_ref[1];
+				return 4*πF*(r_и*r_и + dr*dr/6)*dr;
 			}
 		}
 
@@ -984,59 +1004,42 @@ public class VoxelFit {
 	 * a basis where values are interpolated between evenly spaced points in a cubic grid
 	 */
 	public static class CartesianGrid extends Basis {
-		private final double[] x;
-		private final double[] y;
-		private final double[] z;
+		private final float x_min, x_step;
+		private final float y_min, y_step;
+		private final float z_min, z_step;
+		private final int num_points;
 
 		/**
 		 * generate a basis given the grid values at which stuff is defined
-		 * @param x the x values (must be evenly spaced)
-		 * @param y the y values (must be evenly spaced)
-		 * @param z the z values (must be evenly spaced)
 		 */
-		public CartesianGrid(double[] x, double[] y, double[] z) {
-			super(x.length*y.length*z.length);
-			this.x = x;
-			this.y = y;
-			this.z = z;
+		public CartesianGrid(float x_min, float x_max, float y_min, float y_max,
+		                     float z_min, float z_max, int num_steps) {
+			super((int) Math.pow(num_steps + 1, 3));
+			this.x_min = x_min;
+			this.x_step = (x_max - x_min)/num_steps;
+			this.y_min = y_min;
+			this.y_step = (y_max - y_min)/num_steps;
+			this.z_min = z_min;
+			this.z_step = (z_max - z_min)/num_steps;
+			this.num_points = num_steps + 1;
+		}
+		
+		@Override
+		public float[] get(float x, float y, float z) {
+			throw new UnsupportedOperationException("I haven't implementd this.");
 		}
 
 		@Override
 		public float get(float x, float y, float z, Vector coefficients) {
-			float i_full = (x - (float)this.x[0])/(float)(this.x[1] - this.x[0]);
-			float j_full = (y - (float)this.y[0])/(float)(this.y[1] - this.y[0]);
-			float k_full = (z - (float)this.z[0])/(float)(this.z[1] - this.z[0]);
-			float result = 0;
-			for (int i = (int)Math.floor(i_full); i <= (int)Math.ceil(i_full); i ++) {
-				if (i >= 0 && i < this.x.length) {
-					for (int j = (int)Math.floor(j_full); j <= (int)Math.ceil(j_full); j ++) {
-						if (j >= 0 && j < this.y.length) {
-							for (int k = (int)Math.floor(k_full); k <= (int)Math.ceil(k_full); k ++) {
-								if (k >= 0 && k < this.z.length) {
-									float corner_weit = (1 - Math.abs(i - i_full)) *
-									                     (1 - Math.abs(j - j_full)) *
-									                     (1 - Math.abs(k - k_full));
-									float corner_value = (float) coefficients.get(
-										(i*this.y.length + j)*this.z.length + k);
-									result += corner_weit*corner_value;
-								}
-							}
-						}
-					}
-				}
-			}
-
-			return result;
+			float i_full = (x - this.x_min)/this.x_step;
+			float j_full = (y - this.y_min)/this.y_step;
+			float k_full = (z - this.z_min)/this.z_step;
+			return Math2.interp(coefficients, this.num_points, i_full, j_full, k_full);
 		}
 
 		@Override
-		public float get(float x, float y, float z, int и) {
-			return get(x, y, z, new SparseVector(this.num_functions, и, 1));
-		}
-
-		@Override
-		public double get_volume(int и) {
-			return (x[1] - x[0])*(y[1] - y[0])*(z[1] - z[0]);
+		public float get_volume(int и) {
+			return this.x_step*this.y_step*this.z_step;
 		}
 
 		@Override
@@ -1047,13 +1050,13 @@ public class VoxelFit {
 		@Override
 		public Vector rebase(Basis that, Vector those_coefficients) {
 			Vector these_coefficients = DenseVector.zeros(this.num_functions);
-			for (int i = 0; i < x.length; i ++)
-				for (int j = 0; j < y.length; j ++)
-					for (int k = 0; k < z.length; k ++)
-						these_coefficients.set((i*y.length + j)*z.length + k,
-						                       that.get((float) x[i],
-						                                (float) y[j],
-						                                (float) z[k],
+			for (int i = 0; i < this.num_points; i ++)
+				for (int j = 0; j < this.num_points; j ++)
+					for (int k = 0; k < this.num_points; k ++)
+						these_coefficients.set((i*num_points + j)*num_points + k,
+						                       that.get(x_min + i*x_step,
+						                                y_min + j*y_step,
+						                                z_min + k*z_step,
 						                                those_coefficients));
 			return these_coefficients;
 		}

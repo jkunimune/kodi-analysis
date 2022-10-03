@@ -24,6 +24,11 @@ def bin_centers(bin_edges: np.ndarray):
 	return (bin_edges[1:] + bin_edges[:-1])/2
 
 
+def expand_bins(bin_centers: np.ndarray):
+	""" take an array """
+	return np.concatenate([[1.5*bin_centers[0] - 0.5*bin_centers[1]], bin_centers + 0.5*bin_centers[1] - 0.5*bin_centers[0]])
+
+
 def center_of_mass(x, y, N):
 	""" get the center of mass of a 2d function """
 	return np.array([

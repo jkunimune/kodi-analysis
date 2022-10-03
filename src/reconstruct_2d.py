@@ -19,7 +19,7 @@ import pandas as pd
 import scipy.signal as signal
 from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.colors import SymLogNorm
-from scipy import interpolate, optimize
+from scipy import interpolate
 from skimage import measure
 
 import coordinate
@@ -32,17 +32,17 @@ from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
-	line_search, quantile
+	line_search, quantile, get_relative_aperture_positions
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
 DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuteron1", (6, 9))] # (MeV) (emitted, not detected)
-# cuts = [[11, 100], [10, 11], [9, 10], [8, 9], [6, 8], [4, 6], [2, 4], [0, 2]]
+SUPPORTED_FILETYPES = [".pkl", ".txt", ".h5"] # , ".cpsa"]
 
 ASK_FOR_HELP = False
-SHOW_DIAMETER_CUTS = True
+SHOW_DIAMETER_CUTS = False
 SHOW_CENTER_FINDING_CALCULATION = False
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
@@ -55,7 +55,8 @@ DEUTERON_RESOLUTION = 5e-4
 X_RAY_RESOLUTION = 2e-4
 DEUTERON_CONTOUR = .50
 X_RAY_CONTOUR = .17
-MAX_OBJECT_SIZE = 250
+MIN_OBJECT_SIZE = 100e-4
+MAX_OBJECT_PIXELS = 250
 MAX_CONVOLUTION = 1e+12
 MAX_ECCENTRICITY = 15
 
@@ -257,12 +258,12 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 		x_bins = (np.min(x_tracks) + np.max(x_tracks))/2 + relative_bins
 		y_bins = (np.min(y_tracks) + np.max(y_tracks))/2 + relative_bins
 
-		N, x_bins, y_bins = np.histogram2d( # make a histogram
+		N_full, x_bins, y_bins = np.histogram2d( # make a histogram
 			x_tracks, y_tracks, bins=(x_bins, y_bins))
 
 		if ASK_FOR_HELP:
 			try:  # ask the user for help finding the center
-				x0, y0 = where_is_the_ocean(x_bins, y_bins, N, "Please click on the center of a penumbrum.", timeout=8.64)
+				x0, y0 = where_is_the_ocean(x_bins, y_bins, N_full, "Please click on the center of a penumbrum.", timeout=8.64)
 			except TimeoutError:
 				x0, y0 = None, None
 		else:
@@ -270,14 +271,14 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 
 	elif filename.endswith(".pkl"):  # if it's a pickle file
 		with open(filename, "rb") as f:
-			x_bins, y_bins, N = pickle.load(f)
+			x_bins, y_bins, N_full = pickle.load(f)
 		x0, y0 = (0, 0)
 
 	elif filename.endswith(".h5"):  # if it's an h5 file
 		with h5py.File(filename, "r") as f:
 			x_bins = f["x"][:]
 			y_bins = f["y"][:]
-			N = f["PSL_per_px"][:, :]
+			N_full = f["PSL_per_px"][:, :]
 		x0, y0 = None, None
 
 	else:
@@ -285,8 +286,8 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 
 	x_centers, y_centers = bin_centers(x_bins), bin_centers(y_bins)
 	X_pixels, Y_pixels = np.meshgrid(x_centers, y_centers, indexing="ij")
-	N[~inside_polygon(X_pixels, Y_pixels, region)] = nan
-	assert not np.all(np.isnan(N))
+	N_clipd = np.where(inside_polygon(X_pixels, Y_pixels, region), N_full, nan)
+	assert not np.all(np.isnan(N_clipd))
 
 	# if we don't have a good gess, do a scan
 	if x0 is None or y0 is None:
@@ -298,7 +299,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 			y_scan = np.linspace(y0 - scale, y0 + scale, 7)
 			for x in x_scan:
 				for y in y_scan:
-					umbra_height = np.nanmean(N, where=np.hypot(X_pixels - x, Y_pixels - y) < .7*r_nominal)
+					umbra_height = np.nanmean(N_clipd, where=np.hypot(X_pixels - x, Y_pixels - y) < .7*r_nominal)
 					if umbra_height > best_umbra:
 						best_umbra = umbra_height
 						x0, y0 = x, y
@@ -306,10 +307,10 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 
 	# now that's squared away, find the largest 50% conture
 	R_pixels = np.hypot(X_pixels - x0, Y_pixels - y0)
-	max_density = np.nanmean(N, where=R_pixels < .5*r_nominal)
-	min_density = np.nanmean(N, where=R_pixels > 1.5*r_nominal)
+	max_density = np.nanmean(N_clipd, where=R_pixels < .5*r_nominal)
+	min_density = np.nanmean(N_clipd, where=R_pixels > 1.5*r_nominal)
 	haff_density = (max_density + min_density)/2
-	contours = measure.find_contours(N, haff_density)
+	contours = measure.find_contours(N_clipd, haff_density)
 	if len(contours) == 0:
 		raise ValueError("there were no tracks.  we should have caut that by now.")
 	ij_contour = max(contours, key=len)
@@ -319,10 +320,11 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
-		plt.pcolormesh(x_bins, y_bins, N.T, cmap=COFFEE)
+		plt.pcolormesh(x_bins, y_bins, N_full.T, cmap=COFFEE)
 		θ = np.linspace(0, 2*pi, 145)
 		plt.plot(x_contour, y_contour, "C0", linewidth=.5)
-		plt.plot(x0 + r_nominal*np.cos(θ), y0 + r_nominal*np.sin(θ), "k--", linewidth=.9)
+		for dx, dy in get_relative_aperture_positions(s_nominal, r_nominal, np.max(np.abs(x_bins))):
+			plt.plot(x0 + dx + r_nominal*np.cos(θ), y0 + dy + r_nominal*np.sin(θ), "k--", linewidth=.9)
 		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "k-", linewidth=.9)
 		plt.xlim(np.min(x_bins), np.max(x_bins))
 		plt.ylim(np.min(y_bins), np.max(y_bins))
@@ -357,6 +359,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		r_tracks = np.hypot(x_tracks - x0, y_tracks - y0)
 		r_bins = np.linspace(0, 2*r0, int(np.sum(r_tracks <= r0)/1000))
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
+		histogram = True
 
 	# or rebin the cartesian bins in radius
 	else:
@@ -378,6 +381,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		dr = (xC_bins[1] - xC_bins[0] + yC_bins[1] - yC_bins[0])/2
 		r_bins = np.linspace(0, 2*r0, int(r0/(dr*2)))
 		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
+		histogram = False
 
 	r = bin_centers(r_bins)
 	dr = r_bins[1:] - r_bins[:-1]
@@ -386,10 +390,11 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
 	inside = A > 0
 	ρ_max = np.average(ρ[inside], weights=np.where(r < 0.5*r0, 1/dρ**2, 0)[inside])
-	ρ_min = np.average(ρ[inside], weights=np.where(r > 1.5*r0, 1/dρ**2, 0)[inside])
-	dρ_background = np.std(ρ, where=r > 1.5*r0)
+	ρ_min = np.average(ρ[inside], weights=np.where(r > 1.8*r0, 1/dρ**2, 0)[inside])
+	n_background = np.mean(n, where=r > 1.8*r0)
+	dρ2_background = np.var(ρ, where=r > 1.8*r0)
 	domain = r > r0/2
-	ρ_01 = max(ρ_max*.001 + ρ_min*.999, ρ_min + dρ_background)
+	ρ_01 = ρ_max*.001 + ρ_min*.999
 	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
 
 	# now compute the relation between spherical radius and image radius
@@ -405,17 +410,22 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		forward_matrix = A[:, np.newaxis] * np.hstack([
 			source_to_image @ sphere_to_plane,
 			np.ones((r.size, 1))])
-		# profile = deconvolution.gelfgat1d(n, forward_matrix)
-		def reconstruct_1d_assuming_Q_and_σ(r: np.ndarray, σ: float, background: float) -> float:
-			profile = np.concatenate([np.exp(-r_sph**2/(2*σ**2))/σ**3, [background*forward_matrix[-2, :].sum()/forward_matrix[-1, :].sum()]])
-			reconstruction = forward_matrix@profile
-			return reconstruction/np.sum(reconstruction)*np.sum(n)/A
-		(source_size, background), _ = optimize.curve_fit(
-			reconstruct_1d_assuming_Q_and_σ, r, ρ, sigma=dρ,
-			p0=[r_sph[-1]/6, 0], bounds=(0, [r_sph[-1], inf]))
-		profile = np.concatenate([np.exp(-r_sph**2/(2*source_size**2)), [background]])
-		reconstruction = reconstruct_1d_assuming_Q_and_σ(r, source_size, background)
-		χ2 = -np.sum(n*np.log(reconstruction*A))
+		profile = deconvolution.gelfgat1d(
+			n, forward_matrix,
+			noise="poisson" if histogram else n/n_background*dρ2_background/ρ_min**2)
+		# def reconstruct_1d_assuming_Q_and_σ(_, σ: float, background: float) -> float:
+		# 	profile = np.concatenate([np.exp(-r_sph**2/(2*σ**2))/σ**3, [background*forward_matrix[-2, :].sum()/forward_matrix[-1, :].sum()]])
+		# 	reconstruction = forward_matrix@profile
+		# 	return reconstruction/np.sum(reconstruction)*np.sum(n)/A
+		# try:
+		# 	(source_size, background), _ = cast(tuple[list, list], optimize.curve_fit(
+		# 		reconstruct_1d_assuming_Q_and_σ, r, ρ, sigma=dρ,
+		# 		p0=[r_sph[-1]/6, 0], bounds=(0, [r_sph[-1], inf])))
+		# except RuntimeError:
+		# 	source_size, background = r_sph[-1]/36, 0
+		# profile = np.concatenate([np.exp(-r_sph**2/(2*source_size**2)), [background]])
+		reconstruction = forward_matrix@profile
+		χ2 = -np.sum(n*np.log(reconstruction))
 		if return_other_stuff:
 			return χ2, profile[:-1], reconstruction
 		else:
@@ -496,12 +506,11 @@ def analyze_scan(input_filename: str,
 	else:
 		energy_cuts = DEUTERON_ENERGY_CUTS
 
-	particle_and_energy_specifier = particle if len(energy_cuts) == 1 else energy_cuts[0][0]
+	particle_and_energy_specifier = particle if particle == "deuteron" else energy_cuts[0][0]
 
 	# load the full image set now if you can
 	if skip_reconstruction:
 		logging.info(f"re-loading the previous reconstructions")
-		M = M # TODO: load this from the summary just like the Qs
 		xI0, yI0, r0 = None, None, None
 		data_polygon = None
 		xU, yU, image_stack = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source.h5",
@@ -554,12 +563,12 @@ def analyze_scan(input_filename: str,
 
 		if skip_reconstruction:
 			logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
-			old_summary = pd.read_csv("results/summary.csv")
+			old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'tim': str})
 			matching_record = (old_summary.shot == shot) &\
 			                  (old_summary.tim == tim) &\
 			                  (old_summary.energy_cut == energy_cut_name)
 			if np.any(matching_record):
-				previus_parameters = old_summary[matching_record].iloc[0]
+				previus_parameters = old_summary[matching_record].iloc[-1]
 			else:
 				logging.info(f"nvm couldn't find it in summary.csv")
 				continue
@@ -567,6 +576,7 @@ def analyze_scan(input_filename: str,
 			Q = previus_parameters.Q
 			xI_bins, yI_bins, NI_data = load_hdf5(
 				f"results/data/{shot}-tim{tim}-{energy_cut_name}-penumbra", ["x", "y", "z"])
+			xI0, yI0 = xI_bins.mean(), yI_bins.mean()
 			NI_data = NI_data.T
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 
@@ -583,14 +593,17 @@ def analyze_scan(input_filename: str,
 			Q, r_max = do_1d_reconstruction(
 				input_filename, diameter_min, diameter_max,
 				emission_energies[0], emission_energies[1],
-				xI0, yI0, M*rA, data_polygon, show_plots) # TODO: should I actually save the results of a 1d abel-transformed reconstruction?
+				xI0, yI0, M*rA, data_polygon, show_plots)
 
-			if r_max > r0 + (M - 1)*MAX_OBJECT_SIZE*resolution:
+			if r_max > r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution:
 				logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
-				                f"but I'm cropping it at {MAX_OBJECT_SIZE*resolution/1e-4:.0f}μm to save time")
-				r_max = r0 + (M - 1)*MAX_OBJECT_SIZE*resolution
+				                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
+				r_max = r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution
 
 			r_psf = electric_field.get_expansion_factor(Q, r0, *emission_energies)
+
+			if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
+				r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
 
 			r_object = (r_max - r_psf)/(M - 1) # (cm)
 			if r_object <= 0:
@@ -865,7 +878,7 @@ if __name__ == '__main__':
 		logging.error("my shot table!  I can't do analysis without my shot table!")
 		raise e
 	try:
-		summary = pd.read_csv("results/summary.csv", dtype={'shot': str})
+		summary = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
 	except IOError:
 		summary = pd.DataFrame(data={"shot": ['placeholder'], "tim": [0], "energy_cut": ['placeholder']}) # be explicit that shots can be str, but usually look like int
 
@@ -879,18 +892,18 @@ if __name__ == '__main__':
 			shot, tim = specifier, None
 
 		matching_scans: list[tuple[str, str, float, str]] = []
-		for fname in os.listdir("data/scans"): # search for filenames that match each row
-			shot_match = re.search(rf"{shot}", fname, re.IGNORECASE)
-			etch_match = re.search(r"([0-9]+)hr?", fname, re.IGNORECASE)
+		for filename in os.listdir("data/scans"): # search for filenames that match each row
+			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
+			etch_match = re.search(r"([0-9]+)hr?", filename, re.IGNORECASE)
 			if tim is None:
-				tim_match = re.search(r"tim([0-9]+)", fname, re.IGNORECASE)
+				tim_match = re.search(r"tim([0-9]+)", filename, re.IGNORECASE)
 			else:
-				tim_match = re.search(rf"tim({tim})", fname, re.IGNORECASE)
-			if (fname.endswith(".txt") or fname.endswith(".pkl") or fname.endswith(".h5")) \
-			    and shot_match is not None and tim_match is not None:
+				tim_match = re.search(rf"tim({tim})", filename, re.IGNORECASE)
+			if (os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES
+			    and shot_match is not None and tim_match is not None):
 				matching_tim = tim_match.group(1) # these regexes would work much nicer if _ wasn't a word haracter
 				etch_time = float(etch_match.group(1)) if etch_match is not None else nan
-				matching_scans.append((shot, matching_tim, etch_time, f"data/scans/{fname}"))
+				matching_scans.append((shot, matching_tim, etch_time, f"data/scans/{filename}"))
 		if len(matching_scans) == 0:
 			logging.info("  Could not find any text file for TIM {} on shot {}".format(tim, shot))
 		else:

@@ -1,18 +1,21 @@
 import logging
 import re
+from typing import cast
 
-import numpy as np
 import matplotlib
+import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
 from scipy import optimize
 from scipy import special
 
 from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS, COFFEE
 from hdf5_util import save_as_hdf5
-from util import downsample_2d, get_relative_aperture_positions, downsample_1d, saturate, center_of_mass, \
+from util import downsample_2d, get_relative_aperture_positions, saturate, center_of_mass, \
 	bin_centers, Point, nearest_value, shape_parameters
 
 matplotlib.use("Qt5agg")
+plt.rcParams["legend.framealpha"] = 1
+plt.rcParams.update({'font.family': 'sans', 'font.size': 18})
 
 
 PLOT_THEORETICAL_PROJECTION = True
@@ -22,6 +25,7 @@ PLOT_OFFSET = False
 MAX_NUM_PIXELS = 200
 SQUARE_FIGURE_SIZE = (6.4, 5.4)
 RECTANGULAR_FIGURE_SIZE = (6.4, 4.8)
+LONG_FIGURE_SIZE = (8, 5)
 
 COLORMAPS = {"deuteron": [(7, GREYS), (1, REDS), (2, ORANGES), (0, YELLOWS), (3, GREENS),
                           (4, CYANS), (5, BLUES), (6, VIOLETS)],
@@ -33,12 +37,22 @@ def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
 	for filetype in filetypes:
 		extension = filetype[1:] if filetype.startswith('.') else filetype
 		filepath = f"results/plots/{filename}.{extension}"
-		plt.savefig(filepath, transparent=filetype!='png')
+		plt.savefig(filepath, transparent=filetype != 'png') # TODO: why aren' these transparent?
 		logging.debug(f"  saving {filepath}")
 
 
 def choose_colormaps(particle: str, num_cuts: int) -> list[colors.ListedColormap]:
 	return [cmap for priority, cmap in COLORMAPS[particle] if priority < num_cuts]
+
+
+def make_colorbar(vmin: float, vmax: float, label: str, facecolor=None) -> None:
+	ticks = ticker.MaxNLocator(nbins=8, steps=[1, 2, 5, 10]).tick_values(vmin, vmax)
+	colorbar = plt.colorbar(ticks=ticks, spacing='proportional')
+	colorbar.set_label(label)
+	colorbar.ax.set_ylim(vmin, vmax)
+	# colorbar.ax.set_yticks(ticks=ticks, labels=[f"{tick:.3g}" for tick in ticks])
+	if facecolor is not None:
+		colorbar.ax.set_facecolor(facecolor)
 
 
 def save_and_plot_radial_data(filename: str, show: bool,
@@ -163,20 +177,18 @@ def plot_source(filename: str, show: bool,
 
 	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=.25)
 	object_size = nearest_value(2*object_size/1e-4,
-	                            np.array([50, 100, 200, 500, 1000]))
+	                            np.array([100, 250, 800, 2000]))
 	x0, y0 = r0*np.cos(θ), r0*np.sin(θ)
-
-	levels = np.linspace(0, np.max(B), 21)
-	levels[0] = -np.inf
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE) # plot the reconstructed source image
 	plt.locator_params(steps=[1, 2, 5, 10])
-	plt.contourf((x_centers - x0)/1e-4, (y_centers - y0)/1e-4, B.T,
-	             cmap=choose_colormaps(particle, num_cuts)[int(cut_index)],
-	             levels=levels)
+	plt.pcolormesh((x_centers - x0)/1e-4, (y_centers - y0)/1e-4, B.T,
+	               cmap=choose_colormaps(particle, num_cuts)[int(cut_index)],
+	               vmin=0,
+	               shading="gouraud")
 	if PLOT_SOURCE_CONTOUR:
 		plt.contour((x_centers - x0)/1e-4, (y_centers - y0)/1e-4, B.T,
-		            levels=[contour_level*np.max(B)], colors='#ddd', linestyles='dashed', linewidths=1)
+		            levels=[contour_level*np.max(B)], colors='#ddd', linestyles='solid', linewidths=1)
 	# T = np.linspace(0, 2*np.pi, 144)
 	# R = p0 + p2*np.cos(2*(T - θ2))
 	# plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
@@ -201,10 +213,10 @@ def plot_source(filename: str, show: bool,
 		def blurred_boxcar(x, A, d):
 			return A*special.erfc((x - 100e-4)/d/np.sqrt(2))*special.erfc(-(x + 100e-4)/d/np.sqrt(2))/4
 		r_centers = np.hypot(*np.meshgrid(x_centers, y_centers))
-		popt, pcov = optimize.curve_fit(
+		popt, pcov = cast(tuple[list, list], optimize.curve_fit(
 			blurred_boxcar,
 			r_centers.ravel(), B.ravel(),
-			[np.max(B), 10e-4])
+			[np.max(B), 10e-4]))
 		logging.info(f"  1σ resolution = {popt[1]/1e-4} μm")
 		plt.plot(x_centers/1e-4, blurred_boxcar(x_centers, *popt)*scale, '--')
 
@@ -222,7 +234,7 @@ def plot_source(filename: str, show: bool,
 
 
 def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.ndarray],
-                    x: list[np.ndarray], y: list[np.ndarray], *image_sets: list[np.ndarray]) -> None:
+                              x: list[np.ndarray], y: list[np.ndarray], *image_sets: list[np.ndarray]) -> None:
 	""" plot a bunch of source images, specificly in comparison (e.g. between data and reconstruction)
 	    :param filename: the filename with which to save them
 	    :param energy_bins: the energy bins for each line of site, which must be the same between image sets
@@ -239,8 +251,7 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 		if num_cuts == 1:
 			cmaps = [GREYS]
 		elif num_cuts < 7:
-			cmap_priorities = [(0, REDS), (5, ORANGES), (2, YELLOWS), (3, GREENS), (6, CYANS), (1, BLUES), (4, VIOLETS)]
-			cmaps = [cmap for priority, cmap in cmap_priorities if priority < num_cuts]
+			cmaps = choose_colormaps("deuteron", num_cuts)
 		else:
 			cmaps = ['plasma']*num_cuts
 		assert len(cmaps) == num_cuts
@@ -248,14 +259,19 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 		for h in [0, num_cuts - 1]:
 			maximum = np.amax([image_set[l][h, :, :] for image_set in image_sets])
 			for i, image_set in enumerate(image_sets):
-				plt.figure(figsize=(6, 5))
-				plt.contourf(x[l], y[l], image_set[l][h, :, :].T,
-				             vmin=min(0, np.min(image_set[l][h])),
-				             vmax=maximum,
-				             cmap=cmaps[h])
+				minimum = min(0, np.min(image_set[l][h]))
+				plt.figure(figsize=SQUARE_FIGURE_SIZE)
+				plt.pcolormesh(x[l], y[l], image_set[l][h, :, :].T,
+				               vmin=minimum,
+				               vmax=maximum,
+				               cmap=cmaps[h],
+				               shading="gouraud")
+				plt.gca().set_facecolor(cmaps[h].colors[0])
 				plt.axis('square')
 				# plt.axis([-r_max, r_max, -r_max, r_max])
 				plt.title(f"$E_\\mathrm{{d}}$ = {energy_bins[l][h][0]:.1f} – {energy_bins[l][h][1]:.1f} MeV")
+				plt.xlabel("x (μm)")
+				plt.ylabel("y (μm)")
 				plt.colorbar()
 				plt.tight_layout()
 				save_current_figure(f"{filename}-{i}-{l}-{h}")
@@ -268,26 +284,27 @@ def save_and_plot_morphologies(filename: str,
 	peak_source = np.amax([source for source, density in morphologies])
 	peak_density = np.amax([density for source, density in morphologies])
 	for i, (source, density) in enumerate(morphologies):
-		plt.figure(figsize=(8, 5))
+		plt.figure(figsize=LONG_FIGURE_SIZE)
 		if np.any(source[len(x)//2, :, :] > 0):
+			# for j, (linestyle, color) in enumerate([("solid", "#fdce45"), ([(0, (4, 4))], "#0223b0")]):
 			plt.contour(y, z,
 			            np.maximum(0, source[len(x)//2, :, :].T),
-			            locator=ticker.MaxNLocator(
-				            nbins=max(2, 8*np.max(source[len(x)//2, :, :])/peak_source),
-				            prune='lower'),
-			            colors='#1f7bbb',
+			            levels=np.linspace(0, peak_source, 9)[1:-1],
+			            linestyles="solid",
+			            colors="#000",
 			            zorder=1)
-			plt.colorbar().set_label("Neutron source (μm^-3)")
+			make_colorbar(vmin=0, vmax=peak_source, label="Neutron emission (μm^-3)")# , facecolor="#fdce45")
 		if np.any(density[len(x)//2, :, :] > 0):
 			plt.contourf(y, z,
 			             np.maximum(0, density[len(x)//2, :, :].T),
-			             vmin=0, vmax=peak_density, levels=6,
+			             vmin=0, vmax=peak_density,
+			             levels=np.linspace(0, peak_density, 9),
 			             cmap='Reds',
 			             zorder=0)
-			plt.colorbar().set_label("Density (g/cc)")
+			make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
 		# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
-		plt.xlabel("y (cm)")
-		plt.ylabel("z (cm)")
+		plt.xlabel("x (μm)")
+		plt.ylabel("y (μm)")
 		plt.axis('square')
 		# plt.axis([-r_max, r_max, -r_max, r_max])
 		plt.tight_layout()
