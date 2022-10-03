@@ -24,7 +24,6 @@
 package main;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -68,16 +67,6 @@ public class Math2 {
 		return s;
 	}
 
-	public static Quantity sum(Quantity[][][][] arr) {
-		Quantity s = new FixedQuantity(0);
-		for (Quantity[][][] mat: arr)
-			for (Quantity[][] lvl: mat)
-				for (Quantity[] row: lvl)
-					for (Quantity x: row)
-						s = s.plus(x);
-		return s;
-	}
-	
 	public static float[][] reducePrecision(double[][] input) {
 		float[][] output = new float[input.length][];
 		for (int i = 0; i < output.length; i ++) {
@@ -95,53 +84,11 @@ public class Math2 {
 		return output;
 	}
 	
-	public static float[] minus(float[] x) {
-		float[] out = new float[x.length];
-		for (int i = 0; i < out.length; i ++)
-			out[i] = -x[i];
-		return out;
-	}
-
-	public static Quantity[] minus(Quantity[] x) {
-		Quantity[] out = new Quantity[x.length];
-		for (int i = 0; i < out.length; i ++)
-			out[i] = x[i].neg();
-		return out;
-	}
-
 	public static double sqr(double[] v) {
 		float s = 0;
 		for (double x: v)
 			s += Math.pow(x, 2);
 		return s;
-	}
-
-	public static int lastIndexBefore(float level, float[] v, int start) {
-		int l = start;
-		while (l-1 >= 0 && v[l-1] > level)
-			l --;
-		return l;
-	}
-
-	public static int firstIndexAfter(float level, float[] v, int start) {
-		int r = start;
-		while (r < v.length && v[r] > level)
-			r ++;
-		return r;
-	}
-
-	public static int firstLocalMin(float[] v) {
-		for (int i = 0; i < v.length-1; i ++)
-			if (v[i] < v[i+1])
-				return i;
-		return v.length-1;
-	}
-
-	public static int lastLocalMin(float[] v) {
-		for (int i = v.length-1; i >= 1; i --)
-			if (v[i] < v[i-1])
-				return i;
-		return 0;
 	}
 
 	public static double max(double[] arr) {
@@ -161,262 +108,9 @@ public class Math2 {
 		return max;
 	}
 
-	/**
-	 * find the last index of the highest value
-	 * @param x the array of values
-	 * @return i such that x[i] >= x[j] for all j
-	 */
-	public static int argmax(float[] x) {
-		int argmax = -1;
-		for (int i = 0; i < x.length; i ++)
-			if (!Float.isNaN(x[i]) && (argmax == -1 || x[i] > x[argmax]))
-				argmax = i;
-		return argmax;
-	}
-
-	public static int argmax(List<Float> x) {
-		float[] arr = new float[x.size()];
-		for (int i = 0; i < arr.length; i ++)
-			arr[i] = x.get(i);
-		return argmax(arr);
-	}
-
-	/**
-	 * find the last index of the second highest value
-	 * @param x the array of values
-	 * @return i such that x[i] >= x[j] for all j
-	 */
-	public static int argpenmax(float[] x) {
-		int argmax = argmax(x);
-		int argpenmax = -1;
-		for (int i = 0; i < x.length; i ++)
-			if (i != argmax && !Float.isNaN(x[i]) && (argpenmax == -1 || x[i] > x[argpenmax]))
-				argpenmax = i;
-		return argpenmax;
-	}
-
-	/**
-	 * find the last index of the lowest value
-	 * @param x the array of values
-	 * @return i such that x[i] >= x[j] for all j
-	 */
-	public static int argmin(float[] x) {
-		return argmax(minus(x));
-	}
-
-	/**
-	 * find the interpolative index of the highest value
-	 * @param x the array of values
-	 * @return i such that x[i] >= x[j] for all j
-	 */
-	public static Quantity quadargmin(int left, int right, Quantity[] x) {
-		return quadargmax(left, right, minus(x));
-	}
-
-	/**
-	 * find the interpolative index of the highest value
-	 * @param x the array of values
-	 * @return i such that x[i] >= x[j] for all j
-	 */
-	public static float quadargmax(float[] x) {
-		return quadargmax(0, x.length, x);
-	}
-
-	/**
-	 * find the interpolative index of the highest value in [left, right)
-	 * @param left the leftmost acceptable index
-	 * @param right the leftmost unacceptable index
-	 * @param x the array of values
-	 * @return i such that x[i] >= x[j] for all j in [left, right)
-	 */
-	public static float quadargmax(int left, int right, float[] x) {
-		int i = -1;
-		for (int j = left; j < right; j ++)
-			if (!Float.isNaN(x[j]) && (i == -1 || x[j] > x[i]))
-				i = j;
-		if (i == left || Float.isNaN(x[i-1]) || i == right-1 || Float.isNaN(x[i+1])) return i;
-		float dxdi = (x[i+1] - x[i-1])/2;
-		float d2xdi2 = (x[i+1] - 2*x[i] + x[i-1]);
-		assert d2xdi2 < 0;
-		return i - dxdi/d2xdi2;
-	}
-
-	/**
-	 * find the x coordinate of the highest value
-	 * @param x the horizontal axis
-	 * @param y the array of values
-	 * @return x such that y(x) >= y(z) for all z
-	 */
-	public static float quadargmax(float[] x, float[] y) {
-		try {
-			return interp(x, quadargmax(y));
-		} catch (IndexOutOfBoundsException e) { // y is empty or all NaN
-			return -1;
-		}
-	}
-
-	/**
-	 * find the interpolative index of the highest value
-	 * @param x the array of values
-	 * @return i such that x[i] >= x[j] for all j
-	 */
-	public static Quantity quadargmax(Quantity[] x) {
-		return quadargmax(0, x.length, x);
-	}
-
-	/**
-	 * find the interpolative index of the highest value
-	 * @param x the array of values
-	 * @return i such that x[i] >= x[j] for all j
-	 */
-	public static Quantity quadargmax(int left, int right, Quantity[] x) {
-		int i = -1;
-		for (int j = left; j < right; j ++)
-			if (i == -1 || x[j].value > x[i].value)
-				i = j;
-		if (i <= left || i >= right-1)
-			return new FixedQuantity(i);
-		Quantity dxdi = (x[i+1].minus(x[i-1])).over(2);
-		Quantity d2xdi2 = (x[i+1]).plus(x[i].times(-2)).plus(x[i-1]);
-		assert d2xdi2.value < 0;
-		return dxdi.over(d2xdi2).subtractedFrom(i);
-	}
-
-	/**
-	 * find the x coordinate of the highest value in the bounds [left, right)
-	 * @param left the leftmost acceptable index
-	 * @param right the leftmost unacceptable index
-	 * @param x the horizontal axis
-	 * @param y the array of values
-	 * @return x such that y(x) >= y(z) for all z in [x[left], x[right])
-	 */
-	public static float quadargmax(int left, int right, float[] x, float[] y) {
-		if (x.length != y.length)
-			throw new IllegalArgumentException("These array lengths don't match.");
-		try {
-			return interp(x, quadargmax(Math.max(0, left), Math.min(x.length, right), y));
-		} catch (IndexOutOfBoundsException e) { // y is empty or all NaN
-			return -1;
-		}
-	}
-
-	/**
-	 * find the x coordinate of the highest value in the bounds [left, right)
-	 * @param left the leftmost acceptable index
-	 * @param right the leftmost unacceptable index
-	 * @param x the horizontal axis
-	 * @param y the array of values
-	 * @return x such that y(x) >= y(z) for all z in [x[left], x[right])
-	 */
-	public static Quantity quadargmax(int left, int right, float[] x, Quantity[] y) {
-		if (x.length != y.length)
-			throw new IllegalArgumentException("These array lengths don't match.");
-		try {
-			return interp(x, quadargmax(Math.max(0, left), Math.min(x.length, right), y));
-		} catch (IndexOutOfBoundsException e) { // y is empty or all NaN
-			return new FixedQuantity(-1);
-		}
-	}
-
-	public static float index(float x, float[] arr) {
-		float[] index = new float[arr.length];
-		for (int i = 0; i < index.length; i ++)
-			index[i] = i;
-		return interp(x, arr, index);
-	}
-
-	/**
-	 * take the floating-point index of an array using linear interpolation.
-	 * @param x the array of values
-	 * @param i the partial index
-	 * @return x[i], more or less
-	 */
-	public static float interp(float[] x, float i) {
-		if (i < 0 || i > x.length-1)
-			throw new IndexOutOfBoundsException("Even partial indices have limits: "+i);
-		int i0 = Math.max(0, Math.min(x.length-2, (int) i));
-		return (i0+1-i)*x[i0] + (i-i0)*x[i0+1];
-	}
-
-	/**
-	 * interpolate a value onto a line
-	 */
-	public static float interp(float x, float x1, float x2, float y1, float y2) {
-		return y1 + (x - x1)/(x2 - x1)*(y2 - y1);
-	}
-
-	/**
-	 * take the floating-point index of an array using linear interpolation.
-	 * @param x the array of values
-	 * @param i the partial index
-	 * @return x[i], more or less
-	 */
-	public static Quantity interp(float[] x, Quantity i) {
-		Quantity[] x_q = new Quantity[x.length];
-		for (int j = 0; j < x_q.length; j ++)
-			x_q[j] = new FixedQuantity(x[j]);
-		return interp(x_q, i);
-	}
-
-	/**
-	 * take the floating-point index of an array using linear interpolation.
-	 * @param x the array of values
-	 * @param i the partial index
-	 * @return x[i], more or less
-	 */
-	public static Quantity interp(Quantity[] x, Quantity i) {
-		if (i.value < 0 || i.value > x.length-1)
-			throw new IndexOutOfBoundsException("Even partial indices have limits: "+i);
-		int i0 = Math.max(0, Math.min(x.length-2, (int) i.value));
-		return i.minus(i0).times(x[i0+1]).minus(i.minus(i0+1).times(x[i0]));
-	}
-
-	public static float interp(float x0, float[] x, float[] y) {
-		Quantity[] x_q = new Quantity[x.length];
-		for (int i = 0; i < x_q.length; i ++)
-			x_q[i] = new FixedQuantity(x[i]);
-		return interp(x0, x_q, y).value;
-	}
-
-	public static Quantity interp(float x0, Quantity[] x, float[] y) {
-		Quantity x0_q = new FixedQuantity(x0);
-		Quantity[] y_q = new Quantity[y.length];
-		for (int i = 0; i < y_q.length; i ++)
-			y_q[i] = new FixedQuantity(y[i]);
-		return interp(x0_q, x, y_q);
-	}
-
-	public static Quantity interp(Quantity x0, float[] x, Quantity[] y) {
-		Quantity[] x_q = new Quantity[x.length];
-		for (int i = 0; i < x_q.length; i ++)
-			x_q[i] = new FixedQuantity(x[i]);
-		return interp(x0, x_q, y);
-	}
-
-	/**
-	 * interpolate the value onto the given array.
-	 * @param x0 the desired coordinate
-	 * @param x the array of coordinates (must be unimodally increasing)
-	 * @param y the array of values
-	 * @return y(x0), more or less
-	 */
-	public static Quantity interp(Quantity x0, Quantity[] x, Quantity[] y) {
-		if (x0.value < x[0].value || x0.value > x[x.length-1].value)
-			throw new IndexOutOfBoundsException("Nope. Not doing extrapolation: "+x0);
-		int l = 0, r = x.length - 1;
-		while (r - l > 1) {
-			int m = (l + r)/2;
-			if (x0.value < x[m].value)
-				r = m;
-			else
-				l = m;
-		}
-		return y[l].times(x0.minus(x[r]).over(x[l].minus(x[r]))).plus(y[r].times(x0.minus(x[l]).over(x[r].minus(x[l]))));
-	}
-	
 	public static float interp(float[][] values, float i, float j) {
 		if (Float.isNaN(i) || Float.isNaN(j))
-			throw new IllegalArgumentException("is this a joke to you");
+			throw new IllegalArgumentException("is this a joke to you ("+i+","+j+")");
 		
 		int i0 = (int) Math.floor(i), j0 = (int) Math.floor(j);
 		float ci0 = 1 - (i - i0);
@@ -486,19 +180,6 @@ public class Math2 {
 	}
 
 	/**
-	 * return the index of the pair of bin edges in an evenly spaced array that contains
-	 * the value
-	 * @return int in the range [0, bins.length-1), or -1 if it's out of range
-	 */
-	public static int bin(float value, float[] binEdges) {
-		if (Float.isNaN(value))
-			return -1;
-		int bin = (int)Math.floor(
-			  (value - binEdges[0])/(binEdges[binEdges.length-1] - binEdges[0])*(binEdges.length-1));
-		return (bin >= 0 && bin < binEdges.length-1) ? bin : -1;
-	}
-
-	/**
 	 * return the index of the pair of bin edges in an array of pairs of bin edges
 	 * @return int in the range [0, bins.length-1), or -1 if it's out of range
 	 */
@@ -510,43 +191,7 @@ public class Math2 {
 				return i;
 		return -1;
 	}
-
-	/**
-	 * return the number of trues in arr
-	 */
-	public static int count(boolean[] arr) {
-		int count = 0;
-		for (boolean val: arr)
-			if (val)
-				count ++;
-		return count;
-	}
-
-	/**
-	 * extract a colum from a matrix as a 1d array.
-	 * @param matrix the matrix of values
-	 * @param j the index of the colum to extract
-	 */
-	public static float[] collum(float[][] matrix, int j) {
-		float[] collum = new float[matrix.length];
-		for (int i = 0; i < matrix.length; i ++) {
-			collum[i] = matrix[i][j];
-		}
-		return collum;
-	}
-
-	/**
-	 * extract a colum from a matrix as a 1d array.
-	 * @param matrix the matrix of values
-	 */
-	public static float[] collum(float[][][][] matrix, int j, int k, int l) {
-		float[] collum = new float[matrix.length];
-		for (int i = 0; i < matrix.length; i ++) {
-			collum[i] = matrix[i][j][k][l];
-		}
-		return collum;
-	}
-
+	
 	/**
 	 * concatenate the rows of two 2d matrices
 	 */
@@ -555,28 +200,6 @@ public class Math2 {
 		System.arraycopy(a, 0, c, 0, a.length);
 		System.arraycopy(b, 0, c, a.length, b.length);
 		return c;
-	}
-
-	public static float[][] transpose(float[][] a) {
-		float[][] at = new float[a[0].length][a.length];
-		for (int i = 0; i < at.length; i ++)
-			for (int j = 0; j < at[i].length; j ++)
-				at[i][j] = a[j][i];
-		return at;
-	}
-
-	public static float[][] deepCopy(float[][] a) {
-		float[][] b = new float[a.length][];
-		for (int i = 0; i < a.length; i ++)
-			b[i] = Arrays.copyOf(a[i], a[i].length);
-		return b;
-	}
-
-	public static int[][] deepCopy(int[][] a) {
-		int[][] b = new int[a.length][];
-		for (int i = 0; i < a.length; i ++)
-			b[i] = Arrays.copyOf(a[i], a[i].length);
-		return b;
 	}
 
 	/**
@@ -638,83 +261,6 @@ public class Math2 {
 	}
 
 	/**
-	 * @param active an array of whether each value should be replaced
-	 * @param base an array of default values
-	 * @param reduced the values to replace with, in order
-	 * @return an array whose elements corresponding to true in active are taken
-	 * from reduced, maintaining order, and whose elements corresponding to false
-	 * in active are taken from reduced, maintaining order.
-	 */
-	public static float[] insert(boolean[] active, float[] base, float[] reduced) {
-		float[] full = new float[active.length];
-		int j = 0;
-		for (int i = 0; i < full.length; i ++) {
-			if (active[i]) {
-				full[i] = reduced[j];
-				j ++;
-			}
-			else {
-				full[i] = base[i];
-			}
-		}
-		return full;
-	}
-
-
-	/**
-	 * coerce x into the range [min, max]
-	 * @param min inclusive minimum
-	 * @param max inclusive maximum
-	 * @param x floating point value
-	 * @return int in the range [min, max]
-	 */
-	public static int coerce(int min, int max, float x) {
-		if (x <= min)
-			return min;
-		else if (x >= max)
-			return max;
-		else
-			return (int) x;
-	}
-
-	/**
-	 * convert this 2d histogram to a lower resolution. the output bins must be uniform.
-	 * only works if the input spectrum has a higher resolution than the output spectrum :P
-	 * @param xI the horizontal bin edges of the input histogram
-	 * @param yI the vertical bin edges of the input histogram
-	 * @param zI the counts of the input histogram
-	 * @param xO the horizontal bin edges of the desired histogram. these must be uniform.
-	 * @param yO the vertical bin edges of the desired histogram. these must be uniform.
-	 * @return zO the counts of the new histogram
-	 */
-	public static float[][] downsample(float[] xI, float[] yI, float[][] zI,
-										float[] xO, float[] yO) {
-		if (yI.length-1 != zI.length || xI.length-1 != zI[0].length)
-			throw new IllegalArgumentException("Array sizes don't match fix it.");
-
-		float[][] zO = new float[yO.length-1][xO.length-1]; // resize the input array to match the output array
-		for (int iI = 0; iI < yI.length-1; iI ++) {
-			for (int jI = 0; jI < xI.length-1; jI ++) { // for each small pixel on the input spectrum
-				float iO = (yI[iI] - yO[0])/(yO[1] - yO[0]); // find the big pixel of the scaled spectrum
-				float jO = (xI[jI] - xO[0])/(xO[1] - xO[0]); // that contains the upper left corner
-				int iOint = (int) Math.floor(iO);
-				float iOmod = iO - iOint;
-				int jOint = (int) Math.floor(jO);
-				float jOmod = jO - jOint;
-				float cU = Math.min(1, (1 - iOmod)*(yO[1] - yO[0])/(yI[iI+1] - yI[iI])); // find the fraction of it that is above the next pixel
-				float cL = Math.min(1, (1 - jOmod)*(xO[1] - xO[0])/(xI[jI+1] - xI[jI])); // and left of the next pixel
-
-				addIfInBounds(zO, iOint,   jOint,   zI[iI][jI]*cU*cL); // now add the contents of this spectrum
-				addIfInBounds(zO, iOint,   jOint+1, zI[iI][jI]*cU*(1-cL)); // being careful to distribute them properly
-				addIfInBounds(zO, iOint+1, jOint,   zI[iI][jI]*(1-cU)*cL); // (I used this convenience method because otherwise I would have to check all the bounds all the time)
-				addIfInBounds(zO, iOint+1, jOint+1, zI[iI][jI]*(1-cU)*(1-cL));
-			}
-		}
-
-		return zO;
-	}
-
-	/**
 	 * create an iterable with a for loop bilt in
 	 * @param start the initial number, inclusive for forward iteration and
 	 *              exclusive for backward
@@ -732,46 +278,6 @@ public class Math2 {
 		return values;
 	}
 
-	/**
-	 * do a Runge-Kutta 4-5 integral to get the final value of y after some interval
-	 * @param f dy/dt as a function of y
-	 * @param Δt the amount of time to let y ject
-	 * @param y0 the inicial value of y
-	 * @param numSteps the number of steps to use
-	 * @return the final value of y
-	 */
-	public static float odeSolve(DiscreteFunction f, float Δt, float y0, int numSteps) {
-		final float dt = Δt/numSteps;
-		float y = y0;
-		for (int i = 0; i < numSteps; i ++) {
-			float k1 = f.evaluate(y);
-			float k2 = f.evaluate(y + k1/2F*dt);
-			float k3 = f.evaluate(y + k2/2F*dt);
-			float k4 = f.evaluate(y + k3*dt);
-			y = y + (k1 + 2*k2 + 2*k3 + k4)/6F*dt;
-		}
-		return y;
-	}
-
-	/**
-	 * a simple convenience method to avoid excessive if statements
-	 */
-	private static void addIfInBounds(float[][] arr, int i, int j, float val) {
-		if (i >= 0 && i < arr.length)
-			if (j >= 0 && j < arr[i].length)
-				arr[i][j] += val;
-	}
-
-	public static float smooth_step(float x) {
-		assert x >= 0 && x <= 1;
-		return (((-20*x + 70)*x - 84)*x + 35)*x*x*x*x;
-	}
-
-	public static Quantity smooth_step(Quantity x) {
-		assert x.value >= 0 && x.value <= 1 : x;
-		return x.pow(4).times(x.times(x.times(x.times(-20).plus(70)).plus(-84)).plus(35));
-	}
-	
 	/**
 	 * multiply a vector by a vector
 	 * @return u.v scalar
@@ -961,7 +467,7 @@ public class Math2 {
 
 		double x2 = x*x; // get some simple calculacions done out front
 		double y2 = 1 - x2;
-		double y = (m%2 == 1) ? (double) Math.sqrt(y2) : Float.NaN; // but avoid taking a square root if you can avoid it
+		double y = (m%2 == 1) ? Math.sqrt(y2) : Double.NaN; // but avoid taking a square root if you can avoid it
 
 		if (m == 0) {
 			if (l == 0)
@@ -1045,37 +551,7 @@ public class Math2 {
 		private final boolean log; // whether to use log interpolation instead of linear
 		private final float[] X;
 		private final float[] Y;
-
-		/**
-		 * instantiate a new function given x and y data in columns. x must
-		 * monotonically increase, or the evaluation technique won't work.
-		 * @param data array of {x, y}
-		 */
-		public DiscreteFunction(float[][] data) {
-			this(data, false);
-		}
-
-		/**
-		 * instantiate a new function given x and y data in columns. x must
-		 * monotonically increase, or the evaluation technique won't work.
-		 * @param data array of {x, y}
-		 * @param equal whether the x values are all equally spaced
-		 */
-		public DiscreteFunction(float[][] data, boolean equal) {
-			this(data, equal, false);
-		}
-
-		/**
-		 * instantiate a new function given x and y data in columns. x must
-		 * monotonically increase, or the evaluation technique won't work.
-		 * @param data array of {x, y}
-		 * @param equal whether the x values are all equally spaced
-		 * @param log whether to use log interpolation instead of linear
-		 */
-		public DiscreteFunction(float[][] data, boolean equal, boolean log) {
-			this(collum(data, 0), collum(data, 1));
-		}
-
+		
 		/**
 		 * instantiate a new function given raw data. x must monotonically
 		 * increase, or the evaluation technique won't work.
@@ -1148,19 +624,7 @@ public class Math2 {
 			else
 				return Y[i] + (x - X[i]) / (X[i+1] - X[i]) * (Y[i+1] - Y[i]); // linearly interpolate x from X[i] to Y[i]
 		}
-
-		/**
-		 * return the inverse of this, assuming it has an increasing inverse.
-		 * @return the inverse.
-		 */
-		public DiscreteFunction inv() {
-			try {
-				return new DiscreteFunction(this.Y, this.X);
-			} catch (IllegalArgumentException e) {
-				throw new IllegalArgumentException("cannot invert a non-monotonically increasing function.");
-			}
-		}
-
+		
 		/**
 		 * return the antiderivative of this, shifted so the zeroth value is 0
 		 * @return the antiderivative.
@@ -1191,21 +655,7 @@ public class Math2 {
 
 			return new DiscreteFunction(xOut, yOut, true, this.log);
 		}
-
-		/**
-		 * @return the least x value for which this is not an extrapolation.
-		 */
-		public float minDatum() {
-			return this.X[0];
-		}
-
-		/**
-		 * @return the greatest value for which this is not an extrapolation.
-		 */
-		public float maxDatum() {
-			return this.X[this.X.length-1];
-		}
-
+		
 		@Override
 		public String toString() {
 			StringBuilder s = new StringBuilder("np.array([");
