@@ -842,8 +842,7 @@ public class VoxelFit {
 		private final float[] r_ref;
 		private final float raster_size;
 		private final float raster_res;
-		private final float[][][] n_raster;
-		private final float[][] k_raster;
+		private final float[][][] r_raster;
 		private final float[][][] Y_raster;
 
 		private static int stuff_that_should_go_before_super(int l_max, double[] r_ref) {
@@ -885,35 +884,33 @@ public class VoxelFit {
 			}
 			
 			// cache a raster of the cylindrical coordinate conversion so that it's easy to get to the harmonics
-			raster_size = (float)(2*r_ref[r_ref.length - 1] - r_ref[r_ref.length - 2]);
-			int num_steps = 4*r_ref.length;
+			raster_size = (float)(r_ref[r_ref.length - 1] + r_ref[1]);
+			int num_steps = 6*r_ref.length; // (important: num_steps must be even to get good behavior at the origin)
 			raster_res = 2*raster_size/num_steps;
-			this.n_raster = new float[num_steps + 1][num_steps + 1][num_steps + 1];
-			this.k_raster = new float[num_steps + 1][num_steps + 1];
+			this.r_raster = new float[num_steps + 1][num_steps + 1][num_steps + 1];
 			this.Y_raster = new float[num_functions][2*num_steps][3*num_steps];
 			for (int i = 0; i <= num_steps; i ++) {
 				float x = -raster_size + i*raster_res;
 				for (int j = 0; j <= num_steps; j ++) {
 					float y = -raster_size + j*raster_res;
-					double ф = Math.atan2(y, x);
-					if (ф < 0) ф += 2*Math.PI;
 					for (int k = 0; k <= num_steps; k ++) {
 						float z = -raster_size + k*raster_res;
-						double r = Math.sqrt(x*x + y*y + z*z);
-						this.n_raster[i][j][k] = (float) (r/r_ref[1]);
+						this.r_raster[i][j][k] = (float) Math.sqrt(x*x + y*y + z*z);
 					}
-					this.k_raster[i][j] = (float) (ф/(2*Math.PI)*Y_raster[0][0].length);
 				}
 			}
 			
 			// cache a raster of the harmonics so that we never need to calculate them agen
-			for (int j = 0; j < Y_raster[0].length; j ++) {
-				double ф = j*2*Math.PI/Y_raster[0].length;
-				for (int k = 0; k < Y_raster[0][j].length; k ++) {
-					double cosθ = -1 + 2.*k/(Y_raster[0][j].length - 1);
-					for (и = 0; и < num_functions; и ++)
+			for (и = 0; и < Y_raster.length; и ++) {
+				for (int j = 0; j < Y_raster[и].length; j ++) {
+					double cosθ = -1 + 2.*j/(Y_raster[и].length - 1);
+					for (int k = 0; k < Y_raster[и][j].length; k ++) {
+						double ф̃ = k*8./Y_raster[и][j].length;
+						double ф̃_offset = Math.floor((ф̃ + 1)/2.)*2.;
+						double ф = Math.atan(ф̃ - ф̃_offset) + Math.PI/4*ф̃_offset;
 						this.Y_raster[и][j][k] = (float) spherical_harmonics(
 								l[и], m[и], cosθ, ф);
+					}
 				}
 			}
 		}
@@ -925,15 +922,27 @@ public class VoxelFit {
 			float i = (x + raster_size)/raster_res;
 			float j = (y + raster_size)/raster_res;
 			float k = (z + raster_size)/raster_res;
-			float n = Math2.interp(n_raster, i, j, k);
-			float r = n*r_ref[1];
+			float r = Math.max(Math.abs(z), Math2.interp(r_raster, i, j, k));
+			float n = r/r_ref[1];
 			float z_index = (r != 0) ? (z/r + 1)/2*(Y_raster[0].length - 1) : 1;
-			float ф_index = Math2.interp(k_raster, i, j);
+			float ф̃ = 0;
+			if (x != 0 || y != 0) {
+				float abs_x = Math.abs(x), abs_y = Math.abs(y);
+				if (abs_x > abs_y) {
+					if (x > 0) ф̃ = y/x;
+					else       ф̃ = 4 + y/x;
+				}
+				else {
+					if (y > 0) ф̃ = 2 - x/y;
+					else       ф̃ = 6 - x/y;
+				}
+			}
+			float ф̃_index = ф̃/8*Y_raster[0][0].length;
 			float[] vector = new float[num_functions];
 			for (int и = 0; и < num_functions; и ++) {
 				float weit = Math.max(0, 1 - Math.abs(this.n[и] - n));
 				if (weit > 0)
-					vector[и] = weit*Math2.interp(Y_raster[и], z_index, ф_index);
+					vector[и] = weit*Math2.interpPeriodic(Y_raster[и], z_index, ф̃_index);
 			}
 			return vector;
 		}

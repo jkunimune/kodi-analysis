@@ -107,25 +107,48 @@ public class Math2 {
 					max = x;
 		return max;
 	}
-
-	public static float interp(float[][] values, float i, float j) {
+	
+	/**
+	 * index a 2D array with non-integers, assuming that intermediate indices give intermediate
+	 * values.  going out of bounds on the first axis with throw an error; doing so on the following
+	 * axis will wrap around and query the other side (because it's periodic).
+	 * @param values the values at the specified integer indices
+	 * @param i the partial index along the first axis
+	 * @param j the partial index along the following axis
+	 * @return the interpolated value
+	 */
+	public static float interpPeriodic(float[][] values, float i, float j) {
 		if (Float.isNaN(i) || Float.isNaN(j))
 			throw new IllegalArgumentException("is this a joke to you ("+i+","+j+")");
+		if (i < 0 || i > values.length - 1)
+			throw new IndexOutOfBoundsException(i + " is out of bounds on axis of length " +values.length);
 		
-		int i0 = (int) Math.floor(i), j0 = (int) Math.floor(j);
+		int i0 = Math.min((int) Math.floor(i), values.length - 2);
+		int j0 = (int) Math.floor(j);
 		float ci0 = 1 - (i - i0);
 		float cj0 = 1 - (j - j0);
 		float value = 0;
-		for (int di = 0; di <= 1; di ++)
-			if (i0 + di >= 0 && i0 + di < values.length)
-				for (int dj = 0; dj <= 1; dj ++)
-					if (j0 + dj >= 0 && j0 + dj < values[i0 + di].length)
-							value += values[i0+di][j0+dj] *
-							         Math.abs(ci0 - di) *
-							         Math.abs(cj0 - dj);
+		for (int di = 0; di <= 1; di ++) {
+			float[] row = values[i0 + di];
+			for (int dj = 0; dj <= 1; dj ++) {
+				float element = row[Math.floorMod(j0 + dj, row.length)];
+				value += element*
+				         Math.abs(ci0 - di)*
+				         Math.abs(cj0 - dj);
+			}
+		}
 		return value;
 	}
 	
+	/**
+	 * index a 3D array with non-integers, assuming that intermediate indices give intermediate
+	 * values.  the array is treated as infinite in extent; all out of bounds queries will go to 0.
+	 * @param values the values at the specified integer indices
+	 * @param i the partial index along the first axis
+	 * @param j the partial index along the following axis
+	 * @param k the partial index along the final axis
+	 * @return the interpolated value
+	 */
 	public static float interp(float[][][] values, float i, float j, float k) {
 		if (Float.isNaN(i) || Float.isNaN(j) || Float.isNaN(k))
 			throw new IllegalArgumentException("is this a joke to you");
@@ -148,6 +171,16 @@ public class Math2 {
 		return value;
 	}
 	
+	/**
+	 * index with non-integers a vector representing a C-contiguus cube array, assuming that
+	 * intermediate indices give intermediate values.  the array is treated as infinite in extent;
+	 * all out of bounds queries will go to 0.
+	 * @param values the values at each integral index-triplet
+	 * @param i the partial index along the first axis
+	 * @param j the partial index along the following axis
+	 * @param k the partial index along the final axis
+	 * @return the interpolated value
+	 */
 	public static float interp(Vector values, int size, float i, float j, float k) {
 		if (Float.isNaN(i) || Float.isNaN(j) || Float.isNaN(k))
 			throw new IllegalArgumentException("is this a joke to you");
