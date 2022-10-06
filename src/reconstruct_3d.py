@@ -7,9 +7,9 @@
 # ζ^ points toward the TIM, υ^ points perpendicular to ζ^ and upward, and ξ^ makes it rite-handed.
 # Э stands for Энергия
 # и is the index of a basis function
-import math
 import os
 import sys
+from math import ceil, sqrt
 from typing import cast
 
 import matplotlib.pyplot as plt
@@ -27,7 +27,7 @@ from util import execute_java
 r_max = 100 # (μm)
 
 energy_resolution = 4 # (MeV)
-spatial_resolution = 10 # (μm)
+spatial_resolution = 7 # (μm)
 
 
 def get_shot_yield(shot: str) -> float:
@@ -68,7 +68,7 @@ if __name__ == '__main__':
 
 	# if not skipping, find the necessary inputs and run the algorithm
 	else:
-		n_space_bins = math.ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
+		n_space_bins = ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
 		x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
 		print(f"reconstructing a {n_space_bins}^3 morphology with r_max = {r_max} μm")
 
@@ -87,7 +87,7 @@ if __name__ == '__main__':
 
 			Э = np.linspace(Э_min, Э_max, round((Э_max - Э_min)/energy_resolution) + 1) # (MeV)
 			Э_cuts = np.transpose([Э[:-1], Э[1:]]) # (MeV)
-			n_pixels = math.ceil(2*r_max/spatial_resolution) # image pixel number
+			n_pixels = ceil(2*r_max/spatial_resolution) # image pixel number
 			ξ_centers = υ_centers = np.linspace(-r_max, r_max, n_pixels + 1) # (μm)
 			for l in range(lines_of_sight.shape[0]):
 				np.savetxt(f"tmp/energy-los{l}.csv", Э_cuts, delimiter=',') # type: ignore
@@ -96,8 +96,8 @@ if __name__ == '__main__':
 
 			X, Y, Z = np.meshgrid(x_model, y_model, z_model, indexing='ij')
 			tru_production = 1e+8*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/40)**4/2) # (μm^-3)
-			tru_density = 10*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/60)**4/2) *\
-				np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2) # (g/cc)
+			tru_density = 10*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/60)**4/2) * \
+			              np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2) # (g/cc)
 			tru_temperature = 1 # (keV)
 
 			np.savetxt("tmp/production.csv", tru_production.ravel())
@@ -106,7 +106,7 @@ if __name__ == '__main__':
 
 			tru_images = None # we won't have the input images until after the Java runs
 
-			print(f"the {lines_of_sight.shape[0]} synthetic images will have {lines_of_sight.shape[0]*n_pixels**2*Э_cuts.shape[0]} total pixels")
+			print(f"there are {Э_cuts.shape[0]} synthetic {n_pixels}^2 images on {lines_of_sight.shape[0]} lines of sight")
 
 		else:
 			# load some real images and save them to disk in the correct format
@@ -186,7 +186,7 @@ if __name__ == '__main__':
 		np.savetxt("tmp/z.csv", z_model) # type: ignore
 
 		# run the reconstruction!
-		execute_java("VoxelFit", str(spatial_resolution), name)
+		execute_java("VoxelFit", str(spatial_resolution*sqrt(2)), name)
 
 	# load the results
 	recon_production = np.loadtxt("tmp/production-recon.csv").reshape((x_model.size,)*3) # (μm^-3)

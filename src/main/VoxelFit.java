@@ -24,7 +24,7 @@ public class VoxelFit {
 	public static final double TOLERANCE = 1e-3F;
 
 	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
-//	public static final Vector UNIT_J = new DenseVector(0, 1, 0);
+	// public static final Vector UNIT_J = new DenseVector(0, 1, 0);
 	public static final Vector UNIT_K = new DenseVector(0, 0, 1);
 
 	private static final float Da = 1.66e-27F; // (kg)
@@ -45,7 +45,7 @@ public class VoxelFit {
 	private static final float[][] medium = {{e, 2.014F*Da, 1F/m_DT}, {e, 3.017F*Da, 1F/m_DT}, {e, 9.1e-31F, 2F/m_DT}}; // (C, kg, kg^-1)
 
 	private static final float Э_KOD = 12.45F;
-	
+
 	private static final float πF = (float) Math.PI;
 
 	private static final DiscreteFunction σ_nD; // (MeV -> μm^2/srad)
@@ -192,7 +192,7 @@ public class VoxelFit {
 	 * energy, and the minimum birth energy of a particle as a function of ρL
 	 */
 	private static DiscreteFunction[] calculate_ranging_curves(
-		  float temperature) {
+			float temperature) {
 		float[] energy = new float[STOPPING_POWER_RESOLUTION];
 		for (int i = 0; i < energy.length; i ++)
 			energy[i] = Э_KOD*i/(energy.length - 1); // (MeV)
@@ -239,23 +239,23 @@ public class VoxelFit {
 	 * coefficients and y is the images
 	 */
 	private static Matrix generate_production_response_matrix(
-		  Vector density,
-		  double temperature,
-		  Basis basis,
-		  double object_size,
-		  double integral_step,
-		  Vector[] lines_of_sight,
-		  Interval[][] Э_cuts,
-		  double[][] ξ,
-		  double[][] υ,
-		  double smoothing
+			Vector density,
+			double temperature,
+			Basis basis,
+			double object_size,
+			double integral_step,
+			Vector[] lines_of_sight,
+			Interval[][] Э_cuts,
+			double[][] ξ,
+			double[][] υ,
+			double smoothing
 	) {
 		return Matrix.verticly_stack(
-			  new Matrix(unravelRagged(synthesize_image_response(
-			  	  null, density, temperature, basis,
-			      object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
-				  true, false))),
-			  basis.roughness_vectors(smoothing));
+				new Matrix(unravelRagged(synthesize_image_response(
+						null, density, temperature, basis,
+						object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
+						true, false))),
+				basis.roughness_vectors(smoothing));
 	}
 
 	/**
@@ -272,24 +272,24 @@ public class VoxelFit {
 	 * coefficients and y is the images
 	 */
 	private static Matrix generate_density_response_matrix(
-		  Vector production,
-		  Vector density,
-		  double temperature,
-		  Basis basis,
-		  double object_size,
-		  double integral_step,
-		  Vector[] lines_of_sight,
-		  Interval[][] Э_cuts,
-		  double[][] ξ,
-		  double[][] υ,
-		  double smoothing
+			Vector production,
+			Vector density,
+			double temperature,
+			Basis basis,
+			double object_size,
+			double integral_step,
+			Vector[] lines_of_sight,
+			Interval[][] Э_cuts,
+			double[][] ξ,
+			double[][] υ,
+			double smoothing
 	) {
 		return Matrix.verticly_stack(
-			  new Matrix(unravelRagged(synthesize_image_response(
-				  production, density, temperature, basis,
-				  object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
-				  false, true))),
-			  basis.roughness_vectors(smoothing));
+				new Matrix(unravelRagged(synthesize_image_response(
+						production, density, temperature, basis,
+						object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
+						false, true))),
+				basis.roughness_vectors(smoothing));
 	}
 
 	/**
@@ -306,21 +306,21 @@ public class VoxelFit {
 	 * @return the image in (#/srad/μm^2)
 	 */
 	private static double[][][][] synthesize_images(
-		  Vector production,
-		  Vector density,
-		  double temperature,
-		  Basis basis,
-		  double object_radius,
-		  double integral_step,
-		  Vector[] lines_of_sight,
-		  Interval[][] Э_cuts,
-		  double[][] ξ,
-		  double[][] υ
+			Vector production,
+			Vector density,
+			double temperature,
+			Basis basis,
+			double object_radius,
+			double integral_step,
+			Vector[] lines_of_sight,
+			Interval[][] Э_cuts,
+			double[][] ξ,
+			double[][] υ
 	) {
 		Vector[][][][] wrapd = synthesize_image_response(
-			  production, density, temperature, basis,
-			  object_radius, integral_step, lines_of_sight, Э_cuts, ξ, υ,
-			  false, false
+				production, density, temperature, basis,
+				object_radius, integral_step, lines_of_sight, Э_cuts, ξ, υ,
+				false, false
 		);
 		double[][][][] image = new double[wrapd.length][][][];
 		for (int l = 0; l < wrapd.length; l ++) {
@@ -367,18 +367,18 @@ public class VoxelFit {
 	 * is the response of pixel i,j in cut h on line of sight l to basis function и
 	 */
 	private static Vector[][][][] synthesize_image_response(
-		  Vector production,
-		  Vector density,
-		  double temperature,
-		  Basis basis,
-		  double object_radius,
-		  double integral_step,
-		  Vector[] lines_of_sight,
-		  Interval[][] Э_cuts,
-		  double[][] ξ,
-		  double[][] υ,
-		  boolean respond_to_production,
-		  boolean respond_to_density
+			Vector production,
+			Vector density,
+			double temperature,
+			Basis basis,
+			double object_radius,
+			double integral_step,
+			Vector[] lines_of_sight,
+			Interval[][] Э_cuts,
+			double[][] ξ,
+			double[][] υ,
+			boolean respond_to_production,
+			boolean respond_to_density
 	) {
 		assert !(respond_to_production && respond_to_density) : "I can only respond to one at a time.";
 		assert integral_step < object_radius : "there must be at least one pixel.";
@@ -450,7 +450,7 @@ public class VoxelFit {
 						if (dρL > 50e-3 && warningsPrinted < 6) {
 							logger.warning(String.format(
 									"WARNING: the rhoL in a single integral step (%.3g mg/cm^2) is too hi.  you probably need " +
-											"a hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
+									"a hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
 									dρL*1e3, ρD, 20e-3/ρD*cm/μm));
 							warningsPrinted++;
 						}
@@ -479,7 +479,7 @@ public class VoxelFit {
 									float ЭD = Э_KOD*cosθ2;
 
 									float ЭV = penetrating_energy.evaluate(
-										  stopping_distance.evaluate(ЭD) - ρL); // (MeV)
+											stopping_distance.evaluate(ЭD) - ρL); // (MeV)
 									if (ЭV > 0) { // make sure it doesn't range out
 
 										int hV = Math2.bin(ЭV, Э_cuts[l]); // bin it in energy
@@ -488,15 +488,15 @@ public class VoxelFit {
 											float σ = σ_nD.evaluate(ЭD); // (μm^2)
 
 											float contribution =
-												  1F/m_DT*
-												  σ/(4*πF*Δr2)*
-												  V_voxel*V_voxel*μm3/cm3; // (d/srad/(n/μm^3)/(g/cc))
+													1F/m_DT*
+													σ/(4*πF*Δr2)*
+													V_voxel*V_voxel*μm3/cm3; // (d/srad/(n/μm^3)/(g/cc))
 
 											for (int и = 0; и < num_components; и ++) // finally, iterate over the basis functions
 												response[l][hV][iV][jV].increment(и,
-												      local_production[respond_to_production ? и : 0]*
-													  local_density[respond_to_density ? и : 0]*
-													  contribution);
+												                                  local_production[respond_to_production ? и : 0]*
+												                                  local_density[respond_to_density ? и : 0]*
+												                                  contribution);
 											we_should_keep_looking_here = true;
 										}
 									}
@@ -545,36 +545,36 @@ public class VoxelFit {
 	 * @param lines_of_sight the normalized z vector of each line of site
 	 * @param output_basis the basis to use to represent the resulting morphology
 	 * @param object_radius the maximum radial extent of the implosion
-	 * @param feature_scale the minimum size of features to be reconstructed
+	 * @param model_resolution the minimum size of features to be reconstructed
 	 * @return an array of two 3d matrices:
 	 *     the neutron production (m^-3),
 	 *     the mass density (g/L), and
 	 *     the temperature (keV) (this one is actually a scalar)
 	 */
 	private static Vector[] reconstruct_images(
-		  double total_yield, double[][][][] images,
-		  Vector[] lines_of_sight, Interval[][] Э_cuts, double[][] ξ, double[][] υ,
-		  double object_radius, double feature_scale, Basis output_basis) { // TODO: multithread?
+			double total_yield, double[][][][] images,
+			Vector[] lines_of_sight, Interval[][] Э_cuts, double[][] ξ, double[][] υ,
+			double object_radius, double model_resolution, Basis output_basis) { // TODO: multithread?
 
 		VoxelFit.logger.info(String.format("reconstructing %dx%d (%d total) images",
-										   images.length, images[0].length, images.length*images[0].length));
+		                                   images.length, images[0].length, images.length*images[0].length));
 
 		// start by defining the spherical-harmonick basis functions
-		double[] r = new double[(int)Math.round(object_radius/feature_scale)];
+		double[] r = new double[(int)Math.round(object_radius/model_resolution)];
 		for (int n = 0; n < r.length; n ++)
-			r[n] = feature_scale*n; // (μm)
+			r[n] = model_resolution*n; // (μm)
 		Basis basis = new SphericalHarmonicBasis(MAX_MODE, r);
 		double[] basis_volumes = new double[basis.num_functions];
 		for (int и = 0; и < basis.num_functions; и ++)
 			basis_volumes[и] = basis.get_volume(и); // μm^3
-		
+
 		int num_smoothing_parameters = basis.roughness_vectors(0).n;
 
 		double[] image_vector = unravelRagged(images);
 		int num_pixels = image_vector.length;
 
 		double[] data_vector = Math2.concatenate(
-			  image_vector, new double[num_smoothing_parameters]); // unroll the data
+				image_vector, new double[num_smoothing_parameters]); // unroll the data
 		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
 		double data_scale = Math2.max(data_vector)/6F;
 		for (int i = 0; i < num_pixels; i ++)
@@ -585,10 +585,10 @@ public class VoxelFit {
 			inverse_variance_vector[i] = 1;
 
 		double production_gess = total_yield/
-			  (4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3));
+		                         (4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3));
 
 		VoxelFit.logger.info(String.format("using %d 3d basis functions on %.1fum/%.1fum^3 morphology",
-										   basis.num_functions, r[r.length - 1], r[1]));
+		                                   basis.num_functions, r[r.length - 1], r[1]));
 
 		Vector production = DenseVector.zeros(basis.num_functions);
 		production.set(0, total_yield/basis.get_volume(0)); // set the production to satisfy the total yield constraint
@@ -597,7 +597,7 @@ public class VoxelFit {
 		int и = 0;
 		for (int s = 0; s < r.length; s ++) {
 			density.set(и, SHELL_DENSITY_GESS*
-				  Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2)))); // then set the density p0 terms to be this gaussian profile
+			               Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2)))); // then set the density p0 terms to be this gaussian profile
 			и += Math.pow(Math.min(s + 1, MAX_MODE + 1), 2);
 		}
 		double temperature = SHELL_TEMPERATURE_GESS;
@@ -613,35 +613,35 @@ public class VoxelFit {
 
 			// start by optimizing the hot spot subject to the yield constraint
 			Optimum production_optimum = Optimize.quasilinear_least_squares(
-				  (coefs) -> generate_production_response_matrix(
-						current_density,
-						current_temperature,
-						basis, object_radius, feature_scale/2,
-						lines_of_sight, Э_cuts, ξ, υ,
-						SMOOTHING/(production_gess/Math.sqrt(r[r.length-1]))),
-				  data_vector,
-				  inverse_variance_vector,
-				  production.getValues(),
-				  Double.POSITIVE_INFINITY,
-				  logger,
-				  basis_volumes);
+					(coefs) -> generate_production_response_matrix(
+							current_density,
+							current_temperature,
+							basis, object_radius, model_resolution,
+							lines_of_sight, Э_cuts, ξ, υ,
+							SMOOTHING/(production_gess/Math.sqrt(r[r.length-1]))),
+					data_vector,
+					inverse_variance_vector,
+					production.getValues(),
+					Double.POSITIVE_INFINITY,
+					logger,
+					basis_volumes);
 			production = new DenseVector(production_optimum.location);
 
 			// then optimize the cold fuel (fully unconstraind)
 			final Vector current_production = production;
 			Optimum density_optimum = Optimize.quasilinear_least_squares(
-				  (coefs) -> generate_density_response_matrix(
-						current_production,
-						new DenseVector(coefs),
-						current_temperature,
-						basis, object_radius, feature_scale/2,
-						lines_of_sight, Э_cuts, ξ, υ,
-						SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length-1]))),
-				  data_vector,
-				  inverse_variance_vector,
-				  density.getValues(),
-				  1e-3,
-				  logger);
+					(coefs) -> generate_density_response_matrix(
+							current_production,
+							new DenseVector(coefs),
+							current_temperature,
+							basis, object_radius, model_resolution,
+							lines_of_sight, Э_cuts, ξ, υ,
+							SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length-1]))),
+					data_vector,
+					inverse_variance_vector,
+					density.getValues(),
+					1e-3,
+					logger);
 			density = new DenseVector(density_optimum.location);
 
 //			temperature = temperature; TODO: fit temperature
@@ -660,12 +660,10 @@ public class VoxelFit {
 		Logging.configureLogger(
 				logger,
 				(args.length == 6) ?
-						String.format("3d-%3$s-%4$s-%5$s-%6$s", (Object[]) args) :
-						"3d");
-		logger.info("starting...");
+					String.format("3d-%3$s-%4$s-%5$s-%6$s", (Object[]) args) :
+					"3d");
 
 		double model_resolution = Double.parseDouble(args[0]);
-		double integral_resolution = model_resolution/1.01;
 
 		double[][] line_of_site_data = CSV.read(new File("tmp/lines_of_site.csv"), ',');
 		Vector[] lines_of_site = new Vector[line_of_site_data.length];
@@ -699,17 +697,17 @@ public class VoxelFit {
 			double[][] anser = new double[morphology_filenames.length][];
 			for (int q = 0; q < morphology_filenames.length; q++) {
 				anser[q] = CSV.readColumn(new File(
-					  String.format("tmp/%s.csv", morphology_filenames[q]))); // load the input morphology (μm^-3, g/cm^3)
+						String.format("tmp/%s.csv", morphology_filenames[q]))); // load the input morphology (μm^-3, g/cm^3)
 				if (anser[q].length != model_grid.num_functions)
 					throw new IOException("this file had the rong number of things");
 			}
 			double temperature = CSV.readScalar(new File("tmp/temperature.csv")); // (keV)
-			
+
 			VoxelFit.logger.info("generating images from the example morphology...");
 
 			images = synthesize_images(
-				  new DenseVector(anser[0]), new DenseVector(anser[1]), temperature,
-				  model_grid, object_radius, integral_resolution, lines_of_site, Э_cuts, ξ, υ); // synthesize the true images (d/μm^2/srad)
+					new DenseVector(anser[0]), new DenseVector(anser[1]), temperature,
+					model_grid, object_radius, model_resolution/2, lines_of_site, Э_cuts, ξ, υ); // synthesize the true images (d/μm^2/srad)
 			for (int l = 0; l < lines_of_site.length; l ++)
 				CSV.writeColumn(unravel(images[l]), new File("tmp/image-los"+l+".csv"));
 
@@ -732,14 +730,14 @@ public class VoxelFit {
 		}
 
 		Vector[] anser = reconstruct_images(
-			  neutronYield, images,
-			  lines_of_site, Э_cuts, ξ, υ,
-			  object_radius, model_resolution, model_grid); // reconstruct the morphology
+				neutronYield, images,
+				lines_of_site, Э_cuts, ξ, υ,
+				object_radius, model_resolution, model_grid); // reconstruct the morphology
 
 		images = synthesize_images(
-			  anser[0], anser[1], anser[2].get(0),
-			  model_grid, object_radius, integral_resolution,
-			  lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphologie's images
+				anser[0], anser[1], anser[2].get(0),
+				model_grid, object_radius, model_resolution/2,
+				lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphology's images
 
 		CSV.writeColumn(anser[0].getValues(), new File("tmp/production-recon.csv"));
 		CSV.writeColumn(anser[1].getValues(), new File("tmp/density-recon.csv"));
@@ -839,6 +837,7 @@ public class VoxelFit {
 		private final int[] n;
 		private final int[] l;
 		private final int[] m;
+		private final int[][] иs_at_n;
 		private final float[] r_ref;
 		private final float raster_size;
 		private final float raster_res;
@@ -871,18 +870,21 @@ public class VoxelFit {
 			this.n = new int[num_functions];
 			this.l = new int[num_functions];
 			this.m = new int[num_functions];
+			this.иs_at_n = new int[r_ref.length][];
 			int и = 0;
 			for (int n = 0; n < r_ref.length; n ++) {
+				this.иs_at_n[n] = new int[(int) Math.pow(Math.min(n + 1, MAX_MODE + 1), 2)];
 				for (int l = 0; l <= n && l <= l_max; l ++) {
 					for (int m = - l; m <= l; m++) {
 						this.n[и] = n;
 						this.l[и] = l;
 						this.m[и] = m;
+						this.иs_at_n[n][l*l + l + m] = и;
 						и ++;
 					}
 				}
 			}
-			
+
 			// cache a raster of the cylindrical coordinate conversion so that it's easy to get to the harmonics
 			raster_size = (float)(r_ref[r_ref.length - 1] + r_ref[1]);
 			int num_steps = 6*r_ref.length; // (important: num_steps must be even to get good behavior at the origin)
@@ -899,7 +901,7 @@ public class VoxelFit {
 					}
 				}
 			}
-			
+
 			// cache a raster of the harmonics so that we never need to calculate them agen
 			for (и = 0; и < Y_raster.length; и ++) {
 				for (int j = 0; j < Y_raster[и].length; j ++) {
@@ -914,7 +916,7 @@ public class VoxelFit {
 				}
 			}
 		}
-		
+
 		@Override
 		public float[] get(float x, float y, float z) {
 			if (x < -raster_size || x > raster_size || y < -raster_size || y > raster_size ||z < -raster_size || z > raster_size)
@@ -939,10 +941,11 @@ public class VoxelFit {
 			}
 			float ф̃_index = ф̃/8*Y_raster[0][0].length;
 			float[] vector = new float[num_functions];
-			for (int и = 0; и < num_functions; и ++) {
-				float weit = Math.max(0, 1 - Math.abs(this.n[и] - n));
-				if (weit > 0)
-					vector[и] = weit*Math2.interpPeriodic(Y_raster[и], z_index, ф̃_index);
+			for (int n0 = (int) n; n0 <= (int) n + 1 && n0 < r_ref.length; n0 ++) {
+				float weit = Math.max(0, 1 - Math.abs(n0 - n));
+				for (int и : this.иs_at_n[n0])
+					if (weit > 0)
+						vector[и] = weit*Math2.interpPeriodic(Y_raster[и], z_index, ф̃_index);
 			}
 			return vector;
 		}
@@ -1032,7 +1035,7 @@ public class VoxelFit {
 			this.z_step = (z_max - z_min)/num_steps;
 			this.num_points = num_steps + 1;
 		}
-		
+
 		@Override
 		public float[] get(float x, float y, float z) {
 			throw new UnsupportedOperationException("I haven't implementd this.");
