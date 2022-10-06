@@ -719,7 +719,7 @@ public class VoxelFit {
 		else {
 			for (int l = 0; l < lines_of_site.length; l ++) {
 				images[l] = reravel(CSV.readColumn(new File("tmp/image-los"+l+".csv")),
-				                    new int[] {});
+				                    new int[] {Э_cuts[l].length, ξ[l].length, υ[l].length});
 				for (int h = 0; h < Э_cuts[l].length; h ++) {
 					if (images[l][h].length != ξ[l].length || images[l][h][0].length != υ[l].length)
 						throw new IllegalArgumentException(

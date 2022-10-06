@@ -34,6 +34,7 @@ shot,             standoff, magnification, aperture radius, aperture spacing, ro
 105631,           5.85,     11,            1000,              0,                0,      15Ta|100Al||200Al,     8.03e10
 105632,           5.85,     11,            1000,              0,                0,      15Ta|100Al||200Al,     8.16e10
 105634,           5.85,     11,            1000,              0,                0,      15Ta|100Al||200Al,     1.01e11
+ben,                 0,      0,               0,              0,                0,      |,                     1.413e14
 synth-square,     4.21,     15,            1000,              0,                0,      16Ta
 synth-ring,       4.21,     15,            1000,              0,                0,      16Ta
 synth-cross,      10.0,     35,             100,            400,                0,      16Ta
@@ -47,48 +48,48 @@ synth95521,       4.21,     15,            1000,              0,              18
 synth95522,       4.21,     15,            1000,              0,              180,      16Ta
 synth95523,       4.21,     15,            1000,              0,              180,      16Ta
 synth95524,       4.21,     15,            1000,              0,              180,      16Ta
-synth-disk-small-2e+03, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-5e+03, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-1e+04, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-2e+04, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-5e+04, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-1e+05, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-2e+05, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-5e+05, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-1e+06, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-2e+06, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-5e+06, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-1e+07, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-2e+07, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-5e+07, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-small-1e+08, 2, 4.21, 15.00,  436,   0, 0, 16Ta
-synth-disk-big-2e+03,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-5e+03,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-1e+04,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-2e+04,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-5e+04,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-1e+05,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-2e+05,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-5e+05,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-1e+06,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-2e+06,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-5e+06,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-1e+07,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-2e+07,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-5e+07,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-big-1e+08,     2, 4.21, 15.00, 1900,   0, 0, 16Ta
-synth-disk-multi-2e+03, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-5e+03, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-1e+04, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-2e+04, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-5e+04, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-1e+05, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-2e+05, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-5e+05, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-1e+06, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-2e+06, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-5e+06, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-1e+07, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-2e+07, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-5e+07, 2, 4.21, 15.00,  100, 600, 0, 16Ta
-synth-disk-multi-1e+08, 2, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-small-2e+03, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-5e+03, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-1e+04, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-2e+04, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-5e+04, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-1e+05, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-2e+05, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-5e+05, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-1e+06, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-2e+06, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-5e+06, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-1e+07, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-2e+07, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-5e+07, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-small-1e+08, 4.21, 15.00,  436,   0, 0, 16Ta
+synth-disk-big-2e+03,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-5e+03,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-1e+04,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-2e+04,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-5e+04,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-1e+05,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-2e+05,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-5e+05,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-1e+06,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-2e+06,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-5e+06,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-1e+07,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-2e+07,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-5e+07,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-big-1e+08,   4.21, 15.00, 1900,   0, 0, 16Ta
+synth-disk-multi-2e+03, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-5e+03, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-1e+04, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-2e+04, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-5e+04, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-1e+05, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-2e+05, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-5e+05, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-1e+06, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-2e+06, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-5e+06, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-1e+07, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-2e+07, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-5e+07, 4.21, 15.00,  100, 600, 0, 16Ta
+synth-disk-multi-1e+08, 4.21, 15.00,  100, 600, 0, 16Ta

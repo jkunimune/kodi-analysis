@@ -27,15 +27,16 @@ from util import execute_java
 r_max = 100 # (μm)
 
 energy_resolution = 4 # (MeV)
-spatial_resolution = 15 # (μm)
+spatial_resolution = 10 # (μm)
 
 
 def get_shot_yield(shot: str) -> float:
 	shot_list = pd.read_csv("data/shots.csv", dtype={"shot": str})
+	shot_list = shot_list.rename(columns=lambda name: name.strip())
 	if np.any(shot_list["shot"] == shot):
 		return shot_list["yield"][shot_list["shot"] == shot].iloc[0]
 	else:
-		raise KeyError(f"you askd for the yield of shot {shot}, but {shot} wasn't in the shots.csv table.")
+		raise KeyError(f"please add the shot {repr(shot)} to the shots.csv table.")
 
 
 if __name__ == '__main__':
@@ -111,10 +112,7 @@ if __name__ == '__main__':
 			# load some real images and save them to disk in the correct format
 			print(f"reconstructing images marked '{name}'")
 
-			try:
-				total_yield = get_shot_yield(name) # TODO: figure out a way for it to automatically look this up
-			except KeyError:
-				raise ValueError(f"please add the shot {name} to the shot table")
+			total_yield = get_shot_yield(name)
 
 			tru_production, tru_density, tru_temperature = None, None, None
 
