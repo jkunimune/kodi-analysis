@@ -812,8 +812,8 @@ def analyze_scan(input_filename: str,
 
 	# finally, save the combined image set
 	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source",
-	             energy=sorted_energy_cuts, x=xU, y=yU,
-	             image=image_stack.transpose((0, 2, 1)))
+	             energy=sorted_energy_cuts, x=xU/1e-4, y=yU/1e-4,
+	             image=image_stack.transpose((0, 2, 1))*1e-4**2)
 
 	if image_stack.shape[0] > 1:
 		# calculate the differentials between energy cuts

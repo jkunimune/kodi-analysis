@@ -1,11 +1,12 @@
 import logging
 import re
+from math import pi
 from typing import cast
 
 import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
-from scipy import optimize
+from scipy import optimize, interpolate
 from scipy import special
 
 from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS, COFFEE
@@ -180,6 +181,19 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 def plot_source(filename: str, show: bool,
                 x_centers: np.ndarray, y_centers: np.ndarray, B: np.ndarray,
                 contour_level: float, e_min: float, e_max: float, num_cuts=1) -> None:
+	"""
+	plot a single reconstructed deuteron/xray source
+	:param filename: the name with which to save the resulting files, minus the fluff
+	:param show: whether to make the user look at it
+	:param x_centers: the x-coordinates that go with axis 0 of the brightness array (cm)
+	:param y_centers: the y-coordinates that go with axis 1 of the brightness array (cm)
+	:param B: the brightness of each pixel (d/cm^2/srad)
+	:param contour_level:
+	:param e_min:
+	:param e_max:
+	:param num_cuts:
+	:return:
+	"""
 	particle, cut_index = re.search(r"-(xray|deuteron)([0-9]+)", filename, re.IGNORECASE).groups()
 
 	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=.25)
@@ -245,13 +259,14 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 	""" plot a bunch of source images, specificly in comparison (e.g. between data and reconstruction)
 	    :param filename: the filename with which to save them
 	    :param energy_bins: the energy bins for each line of site, which must be the same between image sets
-	    :param x: the x coordinates of the pixel centers for each line of site
-	    :param y: the x coordinates of the pixel centers for each line of site
-	    :param image_sets: each image set is a list, where each element of the list is a 3d array, which is a stack of all the images in one set on one line of site.
+	    :param x: the x coordinates of the pixel centers for each line of site (μm)
+	    :param y: the x coordinates of the pixel centers for each line of site (μm)
+	    :param image_sets: each image set is a list, where each element of the list is a 3d array, which is
+	                       a stack of all the images in one set on one line of site. (d/μm^2/srad)
 	"""
 	pairs_plotted = 0
 	for l in range(len(image_sets[0])): # go thru every line of site
-		if pairs_plotted > 0 and pairs_plotted + len(image_sets[0][l]) > 6:
+		if pairs_plotted > 0 and pairs_plotted + len(image_sets[0][l]) > 9:
 			break # but stop when you think you're about to plot too many
 
 		num_cuts = len(energy_bins[l])
@@ -260,7 +275,7 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 		elif num_cuts < 7:
 			cmaps = choose_colormaps("deuteron", num_cuts)
 		else:
-			cmaps = ['plasma']*num_cuts
+			cmaps = [matplotlib.colormaps["plasma"]]*num_cuts
 		assert len(cmaps) == num_cuts
 
 		for h in [0, num_cuts - 1]:
@@ -279,7 +294,7 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 				plt.title(f"$E_\\mathrm{{d}}$ = {energy_bins[l][h][0]:.1f} – {energy_bins[l][h][1]:.1f} MeV")
 				plt.xlabel("x (μm)")
 				plt.ylabel("y (μm)")
-				plt.colorbar()
+				plt.colorbar().set_label("Image (d/μm^2/srad)")
 				plt.tight_layout()
 				save_current_figure(f"{filename}-{i}-{l}-{h}")
 			pairs_plotted += 1
@@ -288,28 +303,47 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 def save_and_plot_morphologies(filename: str,
                                x: np.ndarray, y: np.ndarray, z: np.ndarray,
                                *morphologies: tuple[np.ndarray, np.ndarray]) -> None:
-	peak_source = np.amax([source for source, density in morphologies])
-	peak_density = np.amax([density for source, density in morphologies])
-	for i, (source, density) in enumerate(morphologies):
+	slices = [[array[array.shape[0]//2, :, :] for array in morphology] for morphology in morphologies]
+	peak_source = np.amax([abs(source) for source, density in slices])
+	peak_density = np.amax([abs(density) for source, density in slices])
+	for i, ((source, density), (source_slice, density_slice)) in enumerate(zip(morphologies, slices)):
+		r = np.linspace(0, np.sqrt(x[-1]**2 + y[-1]**2 + z[-1]**2))
+		θ = np.arccos(np.linspace(-1, 1, 20))
+		ф = np.linspace(0, 2*pi, 63, endpoint=False)
+		dx, dy, dz, dr = x[1] - x[0], y[1] - y[0], z[1] - z[0], r[1] - r[0]
+		r, θ, ф = np.meshgrid(r, θ, ф, indexing="ij")
+		density_polar = interpolate.RegularGridInterpolator((x, y, z), density)((
+			np.sin(θ)*np.cos(ф), np.sin(θ)*np.sin(ф), np.cos(θ)))
+		print(f"Y = {np.sum(source*dx*dy*dz):.4g} neutrons")
+		print(f"ρ ∈ [{np.min(density):.4g}, {np.max(density):.4g}] g/cm^3")
+		print(f"⟨ρR⟩ (harmonic) = {1/np.mean(1/np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
+		print(f"⟨ρR⟩ (arithmetic) = {np.mean(np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
+
 		plt.figure(figsize=LONG_FIGURE_SIZE)
-		if np.any(source[len(x)//2, :, :] > 0):
-			# for j, (linestyle, color) in enumerate([("solid", "#fdce45"), ([(0, (4, 4))], "#0223b0")]):
-			plt.contour(y, z,
-			            np.maximum(0, source[len(x)//2, :, :].T),
-			            levels=np.linspace(0, peak_source, 9)[1:-1],
-			            linestyles="solid",
-			            colors="#000",
-			            zorder=1)
-			make_colorbar(vmin=0, vmax=peak_source, label="Neutron emission (μm^-3)")# , facecolor="#fdce45")
-		if np.any(density[len(x)//2, :, :] > 0):
+		levels = np.concatenate([np.linspace(-peak_source, 0, 9)[1:-1],
+		                         np.linspace(0, peak_source, 9)[1:-1]])
+		# for j, (linestyle, color) in enumerate([("solid", "#fdce45"), ([(0, (4, 4))], "#0223b0")]):
+		plt.contour(y, z,
+		            source_slice.T,
+		            levels=levels,
+		            negative_linestyles="dotted",
+		            colors="#000",
+		            zorder=2)
+		make_colorbar(vmin=0, vmax=peak_source, label="Neutron emission (μm^-3)")# , facecolor="#fdce45")
+		if np.any(density_slice > 0):
 			plt.contourf(y, z,
-			             np.maximum(0, density[len(x)//2, :, :].T),
+			             np.maximum(0, density_slice.T),
 			             vmin=0, vmax=peak_density,
 			             levels=np.linspace(0, peak_density, 9),
 			             cmap='Reds',
 			             zorder=0)
 			make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
-		# plt.scatter(*np.meshgrid(y, z), c='k', s=10)
+		if np.any(density_slice < 0):
+			plt.contourf(y, z,
+			             -density_slice.T,
+			             levels=[0, abs(np.max(density_slice))],
+			             cmap=CYANS,
+			             zorder=1)
 		plt.xlabel("x (μm)")
 		plt.ylabel("y (μm)")
 		plt.axis('square')

@@ -27,7 +27,7 @@ from util import execute_java
 r_max = 100 # (μm)
 
 energy_resolution = 4 # (MeV)
-spatial_resolution = 7 # (μm)
+spatial_resolution = 4 # (μm)
 
 
 def get_shot_yield(shot: str) -> float:
@@ -68,14 +68,9 @@ if __name__ == '__main__':
 
 	# if not skipping, find the necessary inputs and run the algorithm
 	else:
-		n_space_bins = ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
-		x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
-		print(f"reconstructing a {n_space_bins}^3 morphology with r_max = {r_max} μm")
-
 		# generate or load a new input and run the reconstruction algorithm
 		if name == "--test":
 			# generate a synthetic morphology
-
 			lines_of_sight = np.array([
 				[1, 0, 0],
 				[0, 0, 1],
@@ -87,6 +82,7 @@ if __name__ == '__main__':
 
 			Э = np.linspace(Э_min, Э_max, round((Э_max - Э_min)/energy_resolution) + 1) # (MeV)
 			Э_cuts = np.transpose([Э[:-1], Э[1:]]) # (MeV)
+
 			n_pixels = ceil(2*r_max/spatial_resolution) # image pixel number
 			ξ_centers = υ_centers = np.linspace(-r_max, r_max, n_pixels + 1) # (μm)
 			for l in range(lines_of_sight.shape[0]):
@@ -94,6 +90,8 @@ if __name__ == '__main__':
 				np.savetxt(f"tmp/xye-los{l}.csv", ξ_centers) # type: ignore
 				np.savetxt(f"tmp/ypsilon-los{l}.csv", υ_centers) # type: ignore
 
+			n_space_bins = ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
+			x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
 			X, Y, Z = np.meshgrid(x_model, y_model, z_model, indexing='ij')
 			tru_production = 1e+8*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/40)**4/2) # (μm^-3)
 			tru_density = 10*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/60)**4/2) * \
@@ -137,7 +135,6 @@ if __name__ == '__main__':
 
 					Э_cuts, ξ_centers, υ_centers, images = load_hdf5(filepath, ["energy", "x", "y", "image"])
 					images = images.transpose((0, 2, 1)) # assume they were loaded in with [y,x] indices and change to [x,y]
-					images *= 1e-4**2 # assume they were loaded in (d/cm^2/srad) and convert to (d/μm^2/srad)
 					assert images.shape == (Э_cuts.shape[0], ξ_centers.size, υ_centers.size), (images.shape, ξ_centers.shape, υ_centers.shape)
 
 					# automatically detect and convert the spatial units to (μm)
@@ -145,13 +142,13 @@ if __name__ == '__main__':
 						ξ_centers, υ_centers = ξ_centers*1e6, υ_centers*1e6
 					elif ξ_centers.max() - ξ_centers.min() < 1e-1:
 						ξ_centers, υ_centers = ξ_centers*1e4, υ_centers*1e4
-					elif ξ_centers.max() - ξ_centers.min() < 1e-0:
-						ξ_centers, υ_centers = ξ_centers*1e3, υ_centers*1e3
 
-					μξ = np.average(ξ_centers, weights=np.sum(images, axis=(0, 2))) # TODO: remove this once I make the 2D reconstruction algorithm fix this automatically
+					μξ = np.average(ξ_centers, weights=np.sum(images, axis=(0, 2)))
 					μυ = np.average(υ_centers, weights=np.sum(images, axis=(0, 1)))
 					ξ_centers -= μξ
 					υ_centers -= μυ
+
+					r_max = min(r_max, -ξ_centers[0], ξ_centers[-1], -υ_centers[0], υ_centers[-1])
 
 					ξ_in_bounds = (ξ_centers >= -r_max) & (ξ_centers <= r_max) # crop out excessive empty space
 					υ_in_bounds = (υ_centers >= -r_max) & (υ_centers <= r_max)
@@ -171,6 +168,9 @@ if __name__ == '__main__':
 					lines_of_sight.append(coordinate.tim_direction(los))
 					num_pixels += images.size
 
+			n_space_bins = ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
+			x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
+
 			if len(lines_of_sight) == 0:
 				raise ValueError("no images were found")
 			else:
@@ -178,6 +178,8 @@ if __name__ == '__main__':
 			lines_of_sight = np.array(lines_of_sight)
 
 			np.savetxt("tmp/total-yield.csv", [total_yield]) # type: ignore
+
+		print(f"reconstructing a {n_space_bins}^3 morphology with r_max = {r_max} μm")
 
 		# save the parameters that always need to be saved
 		np.savetxt("tmp/lines_of_site.csv", lines_of_sight, delimiter=',') # type: ignore

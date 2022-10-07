@@ -20,8 +20,8 @@ public class VoxelFit {
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SHELL_DENSITY_GESS = 20; // (g/cm^3)
 	public static final double SHELL_RADIUS_GESS = 50;
-	public static final double SMOOTHING = 1e+1F;
-	public static final double TOLERANCE = 1e-3F;
+	public static final double SMOOTHING = 1e+2;
+	public static final double TOLERANCE = 1e-3;
 
 	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
 	// public static final Vector UNIT_J = new DenseVector(0, 1, 0);
@@ -383,13 +383,22 @@ public class VoxelFit {
 		assert !(respond_to_production && respond_to_density) : "I can only respond to one at a time.";
 		assert integral_step < object_radius : "there must be at least one pixel.";
 
+		// reduce the production if necessary to avoid overflow
+		double production_scaling = 0;
+		if (production != null && Math2.max(production.getValues()) > 1e26) {
+			production_scaling = 1e-26*Math.max(
+					Math2.max(production.getValues()),
+					Math2.max(production.neg().getValues()));
+			production = production.over(production_scaling);
+		}
+
 		DiscreteFunction[] ranging_curves = calculate_ranging_curves((float) temperature);
 		DiscreteFunction stopping_distance = ranging_curves[0]; // (MeV -> g/cm^2)
 		DiscreteFunction penetrating_energy = ranging_curves[1]; // (g/cm^2 -> MeV)
 
 		float z_max = (float) object_radius;
 		float dl = (float) integral_step;
-		float V_voxel = dl*dl*dl; // (μm^3)
+		float dx1dy1dz1dz2 = dl*dl*dl*dl; // (μm^3)
 		float[] ρ_coefs = Math2.reducePrecision(density.getValues());
 
 		int num_components; // figure if we need to resolve the output by basis function
@@ -420,11 +429,11 @@ public class VoxelFit {
 			else
 				ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
 			Vector υ_hat = ζ_hat.cross(ξ_hat);
-			Matrix rotate = new Matrix(new Vector[] {ξ_hat, υ_hat, ζ_hat}).trans();
+			Matrix rotate = new Matrix(new Vector[]{ξ_hat, υ_hat, ζ_hat}).trans();
 
 			// iterate thru the pixels
-			for (int iV = 0; iV < ξ[l].length; iV ++) {
-				for (int jV = 0; jV < υ[l].length; jV ++) {
+			for (int iV = 0; iV < ξ[l].length; iV++) {
+				for (int jV = 0; jV < υ[l].length; jV++) {
 					// iterate from the detector along a chord thru the implosion
 					float ρL = 0; // tally up ρL as you go
 					float ρ_previus = 0;
@@ -435,10 +444,9 @@ public class VoxelFit {
 						if (respond_to_density) {
 							local_density = basis.get(rD);
 							ρD = Math2.dot(ρ_coefs, local_density);
-						}
-						else {
+						} else {
 							ρD = basis.get(rD, density);
-							local_density = new float[] {ρD};
+							local_density = new float[]{ρD};
 						}
 						if (Math2.all_zero(local_density)) { // skip past the empty regions to focus on the implosion
 							if (ρL == 0)
@@ -471,7 +479,7 @@ public class VoxelFit {
 								if (respond_to_production) // either by basing it on the basis function
 									local_production = basis.get(rP);
 								else // or taking it at this point
-									local_production = new float[] {basis.get(rP, production)};
+									local_production = new float[]{basis.get(rP, production)};
 								if (!Math2.all_zero(local_production)) {
 
 									float Δr2 = (float) Δr.sqr(); // (μm^2)
@@ -490,13 +498,17 @@ public class VoxelFit {
 											float contribution =
 													1F/m_DT*
 													σ/(4*πF*Δr2)*
-													V_voxel*V_voxel*μm3/cm3; // (d/srad/(n/μm^3)/(g/cc))
+													dx1dy1dz1dz2*μm3/cm3; // (d/μm^2/srad/(n/μm^3)/(g/cc))
+											assert Float.isFinite(contribution);
 
 											for (int и = 0; и < num_components; и ++) // finally, iterate over the basis functions
 												response[l][hV][iV][jV].increment(и,
-												                                  local_production[respond_to_production ? и : 0]*
-												                                  local_density[respond_to_density ? и : 0]*
-												                                  contribution);
+														local_production[respond_to_production ? и : 0]*
+														local_density[respond_to_density ? и : 0]*
+														contribution);
+											for (int x = 0; x < num_components; x ++)
+												if (!Double.isFinite(response[l][hV][iV][jV].get(x)))
+													throw new RuntimeException("bleh");
 											we_should_keep_looking_here = true;
 										}
 									}
@@ -530,6 +542,13 @@ public class VoxelFit {
 			}
 		}
 
+		if (production_scaling != 0) {
+			for (int l = 0; l < lines_of_sight.length; l++)
+				for (int h = 0; h < Э_cuts[l].length; h++)
+					for (int i = 0; i < ξ[l].length; i++)
+						for (int j = 0; j < υ[l].length; j++)
+							response[l][h][i][j] = response[l][h][i][j].times(production_scaling);
+		}
 		return response;
 	}
 
@@ -567,6 +586,9 @@ public class VoxelFit {
 		double[] basis_volumes = new double[basis.num_functions];
 		for (int и = 0; и < basis.num_functions; и ++)
 			basis_volumes[и] = basis.get_volume(и); // μm^3
+		double[] outer_ring = new double[basis.num_functions];
+		int и_n00 = basis.num_functions - (int) Math.pow(Math.min(r.length, MAX_MODE + 1), 2);
+		outer_ring[и_n00] = 1;
 
 		int num_smoothing_parameters = basis.roughness_vectors(0).n;
 
@@ -611,23 +633,7 @@ public class VoxelFit {
 			final double current_temperature = temperature;
 			final Vector current_density = density;
 
-			// start by optimizing the hot spot subject to the yield constraint
-			Optimum production_optimum = Optimize.quasilinear_least_squares(
-					(coefs) -> generate_production_response_matrix(
-							current_density,
-							current_temperature,
-							basis, object_radius, model_resolution,
-							lines_of_sight, Э_cuts, ξ, υ,
-							SMOOTHING/(production_gess/Math.sqrt(r[r.length-1]))),
-					data_vector,
-					inverse_variance_vector,
-					production.getValues(),
-					Double.POSITIVE_INFINITY,
-					logger,
-					basis_volumes);
-			production = new DenseVector(production_optimum.location);
-
-			// then optimize the cold fuel (fully unconstraind)
+			// start by optimizing the cold fuel with no constraints
 			final Vector current_production = production;
 			Optimum density_optimum = Optimize.quasilinear_least_squares(
 					(coefs) -> generate_density_response_matrix(
@@ -644,7 +650,24 @@ public class VoxelFit {
 					logger);
 			density = new DenseVector(density_optimum.location);
 
-//			temperature = temperature; TODO: fit temperature
+			// then optimize the hot spot subject to the yield constraint
+			Optimum production_optimum = Optimize.quasilinear_least_squares(
+					(coefs) -> generate_production_response_matrix(
+							current_density,
+							current_temperature,
+							basis, object_radius, model_resolution,
+							lines_of_sight, Э_cuts, ξ, υ,
+							SMOOTHING/(production_gess/Math.sqrt(r[r.length-1]))),
+					data_vector,
+					inverse_variance_vector,
+					production.getValues(),
+					Double.POSITIVE_INFINITY,
+					logger,
+					basis_volumes,
+					outer_ring);
+			production = new DenseVector(production_optimum.location);
+
+			// temperature = temperature; TODO: fit temperature
 
 			next_error = density_optimum.value;
 			iter ++;
@@ -771,7 +794,8 @@ public class VoxelFit {
 		}
 
 		/**
-		 * get the value of the distribution at a particular location in space given the basis function coeffients
+		 * get the value of the distribution at a particular location in space given the basis
+		 * function coeffients, with single-precision.
 		 * @param x the x coordinate (μm)
 		 * @param y the y coordinate (μm)
 		 * @param z the z coordinate (μm)
@@ -780,11 +804,30 @@ public class VoxelFit {
 		 */
 		public float get(float x, float y, float z, Vector coefficients) {
 			assert coefficients.getLength() == num_functions : "this is the rong number of coefficients";
-			float[] values = this.get(x, y, z);
+			float[] function_values = this.get(x, y, z);
 			float result = 0;
 			for (int i = 0; i < num_functions; i ++)
 				if (coefficients.get(i) != 0)
-					result += coefficients.get(i)*values[i];
+					result += coefficients.get(i)*function_values[i];
+			return result;
+		}
+
+		/**
+		 * get the value of the distribution at a particular location in space given the basis
+		 * function coeffients, with double precision.
+		 * @param x the x coordinate (μm)
+		 * @param y the y coordinate (μm)
+		 * @param z the z coordinate (μm)
+		 * @param coefficients the value to multiply by each basis function (same units as output)
+		 * @return the value of the distribution in the same units as coefficients
+		 */
+		public double get(double x, double y, double z, Vector coefficients) {
+			assert coefficients.getLength() == num_functions : "this is the rong number of coefficients";
+			float[] function_values = this.get((float) x, (float) y, (float) z);
+			double result = 0;
+			for (int i = 0; i < num_functions; i ++)
+				if (coefficients.get(i) != 0)
+					result += coefficients.get(i)*function_values[i];
 			return result;
 		}
 
@@ -1066,9 +1109,9 @@ public class VoxelFit {
 				for (int j = 0; j < this.num_points; j ++)
 					for (int k = 0; k < this.num_points; k ++)
 						these_coefficients.set((i*num_points + j)*num_points + k,
-						                       that.get(x_min + i*x_step,
-						                                y_min + j*y_step,
-						                                z_min + k*z_step,
+						                       that.get((double)(x_min + i*x_step),
+						                                (double)(y_min + j*y_step),
+						                                (double)(z_min + k*z_step),
 						                                those_coefficients));
 			return these_coefficients;
 		}

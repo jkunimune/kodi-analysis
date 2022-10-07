@@ -24,6 +24,9 @@
 package main;
 
 import java.io.IOException;
+import java.io.PrintStream;
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.logging.FileHandler;
 import java.util.logging.Formatter;
 import java.util.logging.LogRecord;
@@ -32,14 +35,17 @@ import java.util.logging.SimpleFormatter;
 
 public class Logging {
 
-	public static void configureLogger(Logger logger, String name) {
-		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$tm-%1$td %1$tH:%1$tM:%1tS | %2$s | %3$s%4$s%n"));
+	public static void configureLogger(Logger logger, String name) throws UnsupportedEncodingException {
+		System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
+
+		logger.getParent().getHandlers()[0].setFormatter(newFormatter("%1$ta %1$tH:%1$tM:%1tS | %2$s | %3$s%4$s%n"));
+		logger.getParent().getHandlers()[0].setEncoding("UTF-8");
 		try {
 			String filename = String.format("results/log-%s.log", name);
 			FileHandler handler = new FileHandler(filename, true);
 			handler.setFormatter(newFormatter("%1$tY-%1$tm-%1$td %1$tH:%1$tM:%1$tS | %2$s | %3$s%4$s%n"));
 			logger.addHandler(handler);
-			System.out.println("logging to `"+filename+"`");
+			System.out.println("logging in　to `"+filename+"`");
 		} catch (IOException e) {
 			e.printStackTrace();
 			System.exit(1);

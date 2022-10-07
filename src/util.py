@@ -334,9 +334,9 @@ def execute_java(script: str, *args: str, classpath="out/production/kodi-analysi
 		[shutil.which("java"), "-Xmx1G", "-classpath", classpath, f"main/{script}", *(str(arg) for arg in args)]
 	]
 	for statement in statements:
-		with subprocess.Popen(statement, stderr=subprocess.PIPE, encoding="cp850") as process: # what is this encoding and why does Java use it??
+		with subprocess.Popen(statement, stderr=subprocess.PIPE, encoding="utf-8") as process: # what is this encoding and why does Java use it??
 			for line in process.stderr:
 				print(line, end='')
 			if process.wait() > 0:
-				raise RuntimeError("see above.")
+				raise RuntimeError(f"`{' '.join(repr(arg) for arg in statement)}` failed with the above error message.")
 	print(f"Completed reconstruccion at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}")

@@ -257,6 +257,8 @@ public class Optimize {
 		double zai_error = 1/2.*residuals.dot(weights.times(residuals)); // compute the inicial total error ("zai" is the Pandunia word for "current")
 		if (logger != null)
 			logger.info(String.format("inicial value: %.8e", zai_error));
+		if (Double.isNaN(zai_error))
+			throw new RuntimeException("invalid initial value");
 		double new_error;
 
 		// then start searching for a solution
