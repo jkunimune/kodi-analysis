@@ -1,63 +1,24 @@
+import os.path
+from math import inf
+from typing import Optional
+
 import numpy as np
 from numpy.typing import NDArray
-from scipy import integrate, sparse
+from scipy import integrate, signal
 
 from interpolate import RegularInterpolator
-from sparse import SparseMatrixBuilder
 from util import find_intercept
 
 MODELS = ["planar", "cylindrical"]
-E_ref_dict: dict[str, RegularInterpolator] = {}
+E_interpolator_dict: dict[str, RegularInterpolator] = {}
+
+R: Optional[NDArray[float]] = None
+N: Optional[NDArray[float]] = None
+dE: Optional[NDArray[float]] = None
+index: Optional[NDArray[float]] = None
 
 
-def solve_poisson(size: tuple[float, float], outer_boundry: NDArray[bool], bottom_boundry: NDArray[bool], top_boundry: NDArray[bool]) -> NDArray[float]:
-	""" solve poisson's equation in axisymmetric cylindrical coordinates using whatever
-	    optimize.lsq_linear is.  there are currently only two supported boundary conditions: fixing
-	    the value at 0 and setting the gradient to unity
-	    :param size: the spacial extent
-	    :param outer_boundry: where the r=r_max boundary condition should be dψ/dr=1 rather than ψ=0
-	    :param bottom_boundry: where the z=0 boundary condition should be dψ/dz=1 rather than ψ=0
-	    :param top_boundry: where the z=z_max boundary condition should be dψ/dz=1 rather than ψ=0
-	"""
-	assert top_boundry.shape == bottom_boundry.shape
-
-	n, m = bottom_boundry.size, outer_boundry.size
-	dr, dz = size[0]/n, size[1]/m
-	matrix, vector = SparseMatrixBuilder((n, m)), []
-
-	# start by defining the boundary conditions sparsely
-	def set_boundry_conditions(grad, axis, left):
-		step = [dr, dz][axis]
-		matrix.start_new_section(grad.size)
-		for where, kernel in [(~grad, [1., 0., 0.]), (grad, [-1.5/step, 2.0/step, -0.5/step])]:
-			i = np.where(where)[0]
-			for offset, value in enumerate(kernel):
-				j = offset if left else -1 - offset
-				indices = (i, j, i) if axis == 0 else (i, i, j)
-				matrix[indices] = value
-	set_boundry_conditions(np.full(m, True), 0, True)
-	vector.append(np.zeros(m))
-	set_boundry_conditions(outer_boundry, 0, False)
-	vector.append(np.where(outer_boundry, 1, 0))
-	set_boundry_conditions(bottom_boundry, 1, True)
-	vector.append(np.where(bottom_boundry, 1, 0))
-	set_boundry_conditions(top_boundry, 1, False)
-	vector.append(np.where(top_boundry, 1, 0))
-	# then define the laplacian operator sparsely
-	matrix.start_new_section((n - 2)*(m - 2))
-	i, j = np.reshape(np.meshgrid(np.arange(1, n - 1), np.arange(1, m - 1)), (2, (n - 2)*(m - 2)))
-	kernel = [(0, 0, -2/dz**2 - 2/dr**2),
-	          (0, -1, 1/dz**2), (0, 1, 1/dz**2),
-	          (-1, 0, (1 - .5/i)/dr**2), (1, 0, (1 + .5/i)/dr**2)]
-	for di, dj, value in kernel:
-		matrix[np.arange(i.size), i + di, j + dj] = value
-	vector.append(np.zeros((n - 2)*(m - 2)))
-	# finally, make them into real arrays and solve
-	anser = sparse.linalg.lsqr(matrix.to_coo(), np.concatenate(vector))[0]
-	return anser.reshape((n, m))
-
-
-def calculate_electric_field(r: NDArray[float], model: str) -> NDArray[float]:
+def calculate_electric_field(r: NDArray[float], model: str, inverse_aspect_ratio: float) -> NDArray[float]:
 	""" calculate the dimensionless electric field by using some first-principles model """
 	if model == "planar":
 		E0 = np.empty(r.shape)
@@ -72,41 +33,65 @@ def calculate_electric_field(r: NDArray[float], model: str) -> NDArray[float]:
 			E0[i] = integrate.quad(left, -1, 2*a - 1)[0] + integrate.quad(right, 2*a - 1, a)[0]
 		return E0
 	elif model == "cylindrical":
-		Z = np.linspace(0, 4, 63)
-		R = np.linspace(0, 4, 123)
-		V = solve_poisson((4, 4),
-		                  bottom_boundry=R < 1,
-		                  outer_boundry=np.full(Z.size, False),
-		                  top_boundry=np.full(R.size, False))
-		import matplotlib.pyplot as plt
-		import matplotlib
-		matplotlib.use("qtagg")
-		plt.figure()
-		plt.pcolormesh(Z, R, V, shading="gouraud")
-		plt.axis("equal")
-		E = np.sum(np.gradient(V, R, axis=0), axis=1)
-		plt.figure()
-		plt.plot(R, E, "-o")
-		plt.show()
-		return np.interp(r, R, E)
+		r_extend = np.linspace(0, 4, int(2/(1 - r[-1]))*4 + 3)
+		z = np.linspace(0, 4, r_extend.size)
+		dr, dz = r_extend[1] - r_extend[0], z[1] - z[0]
+		V = np.zeros((r_extend.size, z.size))
+		i, j = np.meshgrid(np.arange(r_extend.size), np.arange(z.size), indexing="ij")
+		nai, gai = r_extend < 1, r_extend > 1
+		guu = ((i + j)%2 == 0) & (i > 0) & (i < np.max(i)) & (j > 0) & (j < np.max(j))
+		odd = ((i + j)%2 == 1) & (i > 0) & (i < np.max(i)) & (j > 0) & (j < np.max(j))
+		for t in range(1000):
+			# relax the evens, then the odds
+			laplacian = np.zeros_like(V)
+			for eranda in [guu, odd]:
+				residual = np.zeros(np.count_nonzero(eranda))
+				kernel = [(0, 0, -2/dr**2 - 2/dz**2), (0, -1, 1/dz**2), (0, 1, 1/dz**2),
+				          (-1, 0, (1 - .5/i[eranda])/dr**2), (1, 0, (1 + .5/i[eranda])/dr**2)]
+				for di, dj, weit in kernel:
+					residual += V[i[eranda] + di, j[eranda] + dj]*weit
+				laplacian[eranda] = residual
+				V[eranda] += residual/(kernel[0][2])
+			# apply some smoothing
+			V = signal.convolve2d(V, np.ones((3, 3))/9, mode="same")
+			# fix the boundry conditions
+			V[nai, 0] = 4/3*V[nai, 1] - 1/3*V[nai, 2] - dz  # detectorward (inside)
+			V[gai, 0] = 0  # detectorward (outside)
+			V[:, -1] = 0  # TCCward
+			V[0, :] = 4/3*V[1, :] - 1/3*V[2, :]  # axial
+			V[-1, :] = 0  # outer
+		# then add in this janky pseudocartesian rim factor, which actually dominates
+		V += inverse_aspect_ratio/np.hypot(r_extend[i] - 1, z[j])
+		V[gai, 0] = inf
+		E = 2*integrate.trapezoid(np.gradient(V, r_extend, axis=0, edge_order=2), z, axis=1)
+		# import matplotlib.pyplot as plt
+		# import matplotlib
+		# matplotlib.use("qtagg")
+		# plt.figure()
+		# plt.pcolormesh(z, r_extend, V, shading="gouraud")
+		# plt.axis("equal")
+		# plt.colorbar()
+		# plt.show()
+		return np.interp(r, r_extend, E)
 	else:
 		raise KeyError(f"unrecognized model: '{model}'")
 
 
-def electric_field(r: NDArray[float], model="cylindrical"):
+def electric_field(r: NDArray[float], model="cylindrical", normalized_aperture_thickness=0.1):
 	""" interpolate the dimensionless electric field as a function of normalized radius from the
 	    precalculated reference curves
 	"""
-	if model not in E_ref_dict:
-		x_ref = np.linspace(0, 4, 300, endpoint=False)
-		r_ref = 1 - np.exp(-x_ref)
-		E_ref_dict[model] = RegularInterpolator(x_ref[0], x_ref[-1], calculate_electric_field(r_ref, model))
-		import matplotlib.pyplot as plt
-		plt.figure()
-		plt.plot(r, E_ref_dict[model](-np.log(1 - r)), "-o")
-		plt.show()
-	E_ref = E_ref_dict[model]
-	return E_ref(-np.log(1 - r))
+	if model not in E_interpolator_dict:
+		filename = f"data/tables/electric_field_{model}_{normalized_aperture_thickness}.csv"
+		if not os.path.isfile(filename):
+			x_ref = np.linspace(0, 4, 300, endpoint=False)
+			r_ref = 1 - np.exp(-x_ref)
+			E_ref = calculate_electric_field(r_ref, model, normalized_aperture_thickness)
+			np.savetxt(filename, np.stack([x_ref, r_ref, E_ref], axis=-1)) # type: ignore
+		x_ref, r_ref, E_ref = np.loadtxt(filename).T
+		E_interpolator_dict[model] = RegularInterpolator(x_ref[0], x_ref[-1], E_ref)
+	E_interpolator = E_interpolator_dict[model]
+	return E_interpolator(-np.log(1 - r))
 
 
 def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max=1., normalize=False,
@@ -122,6 +107,10 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 	    :param normalize: if true, scale so the peak value is 1.
 	    :return: array of radii and array of corresponding brightnesses
 	"""
+	global R, N, dE, index
+	if R is None:
+		R, N, dE, index = generate_modified_point_spread()
+
 	if Q == 0:
 		return r0*R, np.where(R < 1, 1, 0) # TODO: use nonuniform R
 
@@ -175,23 +164,26 @@ def get_charging_parameter(dilation: float, r0: float, energy_min: float, energy
 				Q_min = Q_gess
 
 
-np.seterr(divide='ignore', invalid='ignore')
+def generate_modified_point_spread():
+	np.seterr(divide='ignore', invalid='ignore')
 
-R = np.linspace(0, 3, 3000) # the normalized position
-E = np.geomspace(1e-1, 1e6, 1000) # the sample energy
-K = 1/E # the sample lethargy
-index = np.log(E)
-N = np.empty((len(K), len(R))) # calculate the track density profile for an array of charge coefficients
-for i, k in enumerate(K):
-	rS = np.concatenate([np.linspace(0, .9, 50, endpoint=False), (1 - np.geomspace(.1, 1e-6, 50))])
-	rB = rS + k*electric_field(rS)
-	nB = 1/(np.gradient(rB, rS)*rB/rS)
-	nB[rS > 1] = 0
-	nB[0] = nB[1] # deal with this singularity
-	N[i,:] = np.interp(R, rB, nB, right=0)
-dE = np.gradient(E) # weights for uniform energy distribution
+	R = np.linspace(0, 3, 3000) # the normalized position
+	E = np.geomspace(1e-1, 1e6, 1000) # the sample energy
+	K = 1/E # the sample lethargy
+	index = np.log(E)
+	N = np.empty((len(K), len(R))) # calculate the track density profile for an array of charge coefficients
+	for i, k in enumerate(K):
+		rS = np.concatenate([np.linspace(0, .9, 50, endpoint=False), (1 - np.geomspace(.1, 1e-6, 50))])
+		rB = rS + k*electric_field(rS)
+		nB = 1/(np.gradient(rB, rS, edge_order=2)*rB/rS)
+		nB[rS > 1] = 0
+		nB[0] = nB[1] # deal with this singularity
+		N[i, :] = np.interp(R, rB, nB, right=0)
+	dE = np.gradient(E, edge_order=2) # weights for uniform energy distribution
 
-np.seterr(divide='warn', invalid='warn')
+	np.seterr(divide='warn', invalid='warn')
+
+	return R, N, dE, index
 
 
 if __name__ == '__main__':
@@ -199,12 +191,14 @@ if __name__ == '__main__':
 	import matplotlib.pyplot as plt
 	matplotlib.use("qtagg")
 
+	os.chdir("..")
+
 	plt.figure()
 	for Q in [.112, .112/4.3, 0]:
 		x, y = get_modified_point_spread(1.5, Q, 2, 6)
 		plt.plot(x, y, label="Brightness")
 		plt.fill_between(x, 0, y, alpha=0.5, label="Brightness")
-	x = np.linspace(0, 1.5, 1000)
+	x = np.linspace(0, 1.5, 1000, endpoint=False)
 	plt.plot(x, electric_field(x/1.5)/6, label="Electric field")
 	plt.xlim(0, 2.0)
 	plt.ylim(0, 1.2)
