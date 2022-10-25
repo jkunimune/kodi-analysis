@@ -5,7 +5,7 @@ import numpy as np
 import scipy.signal as signal
 from matplotlib import path
 
-from electric_field import e_field
+from electric_field import electric_field
 from plots import plot_source, save_and_plot_penumbra
 from simulations import load_shot, make_image
 
@@ -206,7 +206,7 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 				xA = r*np.cos(θ)
 				yA = r*np.sin(θ)
 
-				δr = Q/energy*e_field(r/rA)
+				δr = Q/energy*electric_field(r/rA)
 				δx = δr*np.cos(θ) #+ δx_noise(xA, yA)/energy
 				δy = δr*np.sin(θ) #+ δx_noise(xA, yA)/energy
 

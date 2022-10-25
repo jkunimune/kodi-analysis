@@ -36,6 +36,11 @@ def center_of_mass(x, y, N):
 		np.average(y, weights=N.sum(axis=0))])
 
 
+def normalize(x):
+	""" reduce a vector so it sums to 1 """
+	return np.divide(x, np.sum(x))
+
+
 def dilate(array: np.ndarray) -> np.ndarray:
 	""" it's just erosion. """
 	result = np.array(array)

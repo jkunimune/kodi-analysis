@@ -1,13 +1,9 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy.interpolate as sp
-import matplotlib.colors as colors
-from mpl_toolkits.mplot3d import Axes3D
 import pickle
 
-from cmap import REDS, GREENS, BLUES, VIOLETS, GREYS
-from util import bin_centers
+import matplotlib.pyplot as plt
+import numpy as np
 
+from util import bin_centers, normalize
 
 N_simul = 1000000
 # SHOT = 95520
@@ -33,9 +29,6 @@ def load_shot(shot_num):
 		time, profiles = pickle.load(f)
 
 	return np.array(time), [np.array(profile) for profile in profiles]
-
-def normalize(a):
-	return a/a.sum()
 
 def nonunimodal_interp(x, x_ref, y_ref):
 	for i in range(1, len(x_ref)):
