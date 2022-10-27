@@ -24,6 +24,11 @@ def bin_centers(bin_edges: np.ndarray):
 	return (bin_edges[1:] + bin_edges[:-1])/2
 
 
+def bin_centers_and_sizes(bin_edges: np.ndarray):
+	""" take an array of bin edges and convert it to the centers of the bins """
+	return (bin_edges[1:] + bin_edges[:-1])/2, bin_edges[1:] - bin_edges[:-1]
+
+
 def expand_bins(bin_centers: np.ndarray):
 	""" take an array """
 	return np.concatenate([[1.5*bin_centers[0] - 0.5*bin_centers[1]], bin_centers + 0.5*bin_centers[1] - 0.5*bin_centers[0]])

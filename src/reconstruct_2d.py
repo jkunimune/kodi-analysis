@@ -9,7 +9,7 @@ import sys
 import time
 import warnings
 from math import log, pi, nan, ceil, radians, inf, isfinite, sqrt
-from typing import Any, cast
+from typing import Any
 
 import h5py
 import matplotlib
@@ -32,7 +32,7 @@ from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
-	line_search, quantile, get_relative_aperture_positions
+	line_search, quantile, get_relative_aperture_positions, bin_centers_and_sizes
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -43,7 +43,7 @@ SUPPORTED_FILETYPES = [".pkl", ".txt", ".h5"] # , ".cpsa"]
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = False
-SHOW_CENTER_FINDING_CALCULATION = False
+SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
@@ -299,9 +299,10 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 			y_scan = np.linspace(y0 - scale, y0 + scale, 7)
 			for x in x_scan:
 				for y in y_scan:
-					umbra_height = np.nanmean(N_clipd, where=np.hypot(X_pixels - x, Y_pixels - y) < .7*r_nominal)
-					if umbra_height > best_umbra:
-						best_umbra = umbra_height
+					umbra_counts = np.nansum(
+						N_clipd, where=np.hypot(X_pixels - x, Y_pixels - y) < r_nominal)
+					if umbra_counts > best_umbra:
+						best_umbra = umbra_counts
 						x0, y0 = x, y
 			scale /= 6
 
@@ -326,9 +327,9 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 		for dx, dy in get_relative_aperture_positions(s_nominal, r_nominal, np.max(np.abs(x_bins))):
 			plt.plot(x0 + dx + r_nominal*np.cos(θ), y0 + dy + r_nominal*np.sin(θ), "k--", linewidth=.9)
 		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "k-", linewidth=.9)
-		plt.xlim(np.min(x_bins), np.max(x_bins))
-		plt.ylim(np.min(y_bins), np.max(y_bins))
 		plt.axis("equal")
+		plt.ylim(np.min(y_bins), np.max(y_bins))
+		plt.xlim(np.min(x_bins), np.max(x_bins))
 		plt.show()
 
 	return x0, y0, 1
@@ -383,8 +384,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
 		histogram = False
 
-	r = bin_centers(r_bins)
-	dr = r_bins[1:] - r_bins[:-1]
+	r, dr = bin_centers_and_sizes(r_bins)
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 	A = pi*r*dr*np.mean(inside_polygon(x0 + r*np.cos(θ), y0 + r*np.sin(θ), region), axis=0)
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
@@ -429,7 +429,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		if return_other_stuff:
 			return χ2, profile[:-1], reconstruction
 		else:
-			return cast(float, χ2)
+			return χ2
 
 	if isfinite(diameter_min):
 		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e-0, 1e-3, 0)
@@ -438,7 +438,8 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		Q = 0
 
 	if show_plots and SHOW_ELECTRIC_FIELD_CALCULATION:
-		χ2, n_sph, ρ_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
+		χ2, n_sph, n_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
+		ρ_recon = n_recon/A
 		plt.figure()
 		plt.plot(r_sph, n_sph)
 		plt.xlim(0, quantile(r_sph, .99, n_sph*r_sph**2))
@@ -446,11 +447,12 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		# plt.ylim(n_sph.max()*2e-3, n_sph.max()*2e+0)
 		plt.xlabel("Magnified spherical radius (cm)")
 		plt.ylabel("Emission")
+		plt.tight_layout()
 		plt.figure()
 		plt.errorbar(x=r, y=ρ, yerr=dρ, fmt='C0-')
 		plt.plot(r, ρ_recon, 'C1-')
 		r_psf, ρ_psf = electric_field.get_modified_point_spread(
-			r0, Q, 5., 10., normalize=True)
+			r0, Q, 5., 12., normalize=True)
 		plt.plot(r_psf, ρ_psf*(np.max(ρ_recon) - np.min(ρ_recon)) + np.min(ρ_recon), 'C1--')
 		plt.axhline(ρ_max, color="C2", linestyle="dashed")
 		plt.axhline(ρ_min, color="C2", linestyle="dashed")
@@ -458,6 +460,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		plt.axvline(r0, color="C3", linestyle="dashed")
 		plt.axvline(r_01, color="C4")
 		plt.xlim(0, r[-1])
+		plt.tight_layout()
 		plt.show()
 
 	return Q, r_01
@@ -873,7 +876,7 @@ if __name__ == '__main__':
 
 	# read in some of the existing information
 	try:
-		shot_table = pd.read_csv('data/shots.csv', dtype={"shot": str}, skipinitialspace=True)
+		shot_table = pd.read_csv('data/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
 	except IOError as e:
 		logging.error("my shot table!  I can't do analysis without my shot table!")
 		raise e
@@ -915,13 +918,13 @@ if __name__ == '__main__':
 		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the data folder.")
 
 	# then iterate thru that list and do the analysis
-	for shot, tim, etch_time, filename in reversed(all_scans_to_analyze):
+	for shot, tim, etch_time, filename in all_scans_to_analyze:
 		logging.info("Beginning reconstruction for TIM {} on shot {}".format(tim, shot))
 
 		try:
-			shot_info = shot_table[shot_table.shot == shot].iloc[0]
+			shot_info = shot_table.loc[shot]
 		except IndexError:
-			raise KeyError(f"please add shot {shot!r} to the shot table file.")
+			raise KeyError(f"please add shot {shot!r} to the data/shots.csv file.")
 
 		# clear any previous versions of this reconstruccion
 		summary = summary[(summary.shot != shot) | (summary.tim != tim)]
@@ -931,7 +934,7 @@ if __name__ == '__main__':
 			input_filename     =filename,
 			skip_reconstruction=skip_reconstruction,
 			show_plots         =show_plots,
-			shot               =shot_info["shot"],
+			shot               =shot,
 			tim                =tim,
 			rA                 =shot_info["aperture radius"]*1e-4,
 			sA                 =shot_info["aperture spacing"]*1e-4,

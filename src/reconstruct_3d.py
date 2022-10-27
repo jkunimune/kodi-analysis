@@ -31,12 +31,11 @@ spatial_resolution = 4 # (μm)
 
 
 def get_shot_yield(shot: str) -> float:
-	shot_list = pd.read_csv("data/shots.csv", dtype={"shot": str})
-	shot_list = shot_list.rename(columns=lambda name: name.strip())
-	if np.any(shot_list["shot"] == shot):
-		return shot_list["yield"][shot_list["shot"] == shot].iloc[0]
-	else:
-		raise KeyError(f"please add the shot {repr(shot)} to the shots.csv table.")
+	shot_table = pd.read_csv("data/shots.csv", dtype={"shot": str}, index_col="shot", skipinitialspace=True)
+	try:
+		return shot_table.loc[shot]["yield"]
+	except KeyError:
+		raise KeyError(f"please add shot {shot!r} to the shots.csv table.")
 
 
 if __name__ == '__main__':

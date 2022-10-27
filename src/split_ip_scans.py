@@ -11,8 +11,10 @@ import h5py
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from matplotlib import colors
 
+from cmap import SPIRAL
 from util import downsample_2d
 
 matplotlib.use("Qt5agg")
@@ -34,13 +36,16 @@ if __name__ == "__main__":
 			f.write("N210808: 2, 4, 5")
 		raise FileNotFoundError("please fill out the tim_scan_info.txt file in the scans directory")
 
+	# and the general shot info
+	shot_table = pd.read_csv("../data/shots.csv", index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+
 	# then search for scan files (most recent first)
 	for filename in reversed(os.listdir(SCAN_DIRECTORY)):
 		if re.match(r"^pcis[-_].*s[0-9]+.*\.h5$", filename, re.IGNORECASE) and \
 			not re.search(r"tim[0-9]", filename, re.IGNORECASE):
 			print(filename)
 			shot = re.search(r"s([0-9]+)", filename, re.IGNORECASE).group(1)
-			number = int(re.search(r"_-([0-9]+)-", filename, re.IGNORECASE).group(1))
+			scan_index = int(re.search(r"_pcis([0-9+])", filename, re.IGNORECASE).group(1)) - 1
 
 			if shot not in tim_sets:
 				raise KeyError(f"please add {shot} to the tim_scan_info.txt file in the scans directory")
@@ -62,8 +67,11 @@ if __name__ == "__main__":
 
 			# show the data on a plot
 			fig = plt.figure(figsize=(9, 5))
-			plt.pcolormesh(x_bins_reduc, y_bins_reduc, psl_reduc.T, norm=colors.LogNorm(
-				vmin=np.quantile(psl_reduc[psl_reduc != 0], .1), vmax=np.quantile(psl_reduc, .9)))
+			plt.imshow(psl_reduc.T, extent=(x_bins.min(), x_bins.max(), y_bins.min(), y_bins.max()),
+			           norm=colors.LogNorm(
+				           vmin=np.quantile(psl_reduc[psl_reduc != 0], .01),
+				           vmax=np.quantile(psl_reduc, .99)),
+			           cmap=SPIRAL, origin="lower")
 			plt.xlabel("x (cm)")
 			plt.ylabel("y (cm)")
 			plt.axis('equal')
@@ -79,30 +87,36 @@ if __name__ == "__main__":
 			fig.canvas.mpl_connect('button_press_event', on_click)
 			plt.show()
 
-			tim_set = tim_sets[shot][:]
+			try:
+				tim_set = tim_sets[shot][:]
+			except KeyError:
+				raise KeyError(f"please add shot {shot} to the data/scans/tim_scan_info.txt file.")
+			try:
+				num_ip_positions = shot_table.loc[shot].filtering.count("|")
+			except KeyError: # TODO: I think this would be the place to load the filtering info
+				raise KeyError(f"please add shot {shot} to the data/shots.csv file.")
 
-			# then split it up and save the image plate scans as separate files
-			cut_positions = np.round(np.interp(sorted(cut_positions), x_bins, np.arange(x_bins.size))).astype(int)
+			# then split it up
+			cut_positions = np.round(np.interp(sorted(cut_positions),
+			                                   x_bins, np.arange(x_bins.size))).astype(int)
 			cut_intervals = []
-			for i in range(1, len(cut_positions)):
-				if cut_positions[i] - cut_positions[i - 1] >= psl.shape[1]/2:
-					cut_intervals.append((cut_positions[i - 1], cut_positions[i]))
+			for cut_index in range(1, len(cut_positions)):
+				if cut_positions[cut_index] - cut_positions[cut_index - 1] >= psl.shape[1]/2:
+					cut_intervals.append((cut_positions[cut_index - 1], cut_positions[cut_index]))
 
-			if len(cut_intervals)%len(tim_set) != 0:
-				raise ValueError(f"the number of image plates ({len(cut_intervals)} does "
-				                 f"not match the number of TIMs ({len(tim_sets[shot])})")
-			num_ip_per_scan = len(cut_intervals)//len(tim_set)
+			# and save each section with the correct filename
+			for cut_index, (start, end) in enumerate(cut_intervals):
 
-			for i, (start, end) in enumerate(cut_intervals):
-				try:
-					tim = tim_set[i//num_ip_per_scan]
-				except IndexError:
-					raise ValueError(f"the number of image plates ({len(cut_intervals)} does "
-					                 f"not match the number of TIMs ({len(tim_sets[shot])})")
-				if num_ip_per_scan > 1:
-					ip_position = i
+				if len(cut_intervals) == num_ip_positions:
+					tim = tim_set[scan_index]
+					ip_position = cut_index
+				elif len(cut_intervals) == len(tim_set):
+					tim = tim_set[cut_index]
+					ip_position = scan_index
 				else:
-					ip_position = number - 1
+					raise ValueError(f"I expected {len(tim_set)} TIMs with {num_ip_positions} IPs "
+					                 f"each, so I don't understand why there are {len(cut_intervals)} "
+					                 f"image plates in this scan.")
 
 				new_filename = f"{shot}_tim{tim}_ip{ip_position}.h5"
 				with h5py.File(os.path.join(SCAN_DIRECTORY, new_filename), "w") as f:

@@ -63,6 +63,8 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	m = F.shape[0] - q.shape[0] + 1
 	if source_region.shape != (m, m):
 		raise ValueError("the source region must have the same shape as the reconstruction.")
+	if np.any(np.isnan(F)) or np.any(np.isnan(q)):
+		raise ValueError("no nan allowd")
 
 	if noise == "poisson":
 		mode = "poisson"
@@ -144,7 +146,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			δδ = np.sum(δs**2/D, where=data_region)
 			sδ = np.sum(s*δs/D, where=data_region)
 			ss = np.sum(s**2/D, where=data_region)
-			dldh = δg0**2/g0 + np.sum(δg**2/g, where=g!=0)
+			dldh = δg0**2/g0 + np.sum(δg**2/g, where=g != 0)
 			h = dldh/(N*(δδ - sδ*sδ/ss) - dldh*sδ/ss)
 
 		# limit the step length if necessary to prevent negative values
@@ -181,7 +183,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		if show_plots:  # plot things
 			fig.clear()
 			axes = fig.subplots(nrows=3, ncols=2)
-			fig.subplots_adjust(top=.95, bottom=.04, left=.05, hspace=.05)
+			fig.subplots_adjust(top=.95, bottom=.04, left=.09, right=.99, hspace=.00)
 			axes[0, 0].set_title("Source")
 			axes[0, 0].pcolormesh(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap=GREYS)
 			axes[0, 1].set_title("Floor")
@@ -191,10 +193,14 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			axes[1, 1].set_title("Synthetic")
 			axes[1, 1].pcolormesh(np.where(data_region, N*s, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=SPIRAL)
 			axes[2, 0].set_title("Log-likelihood")
+			g_t = G[t]/np.sum(G[t])
+			dof_effective = np.sum(g_t/(g_t + 1/dof), where=source_region)
+			axes[2, 0].axhline(-dof_effective - sqrt(2*dof_effective), color="#bbb")
+			axes[2, 0].axhline(-dof_effective, color="#bbb")
+			axes[2, 0].axhline(-dof_effective + sqrt(2*dof_effective), color="#bbb")
 			axes[2, 0].plot(log_L[:t] - log_L[t])
-			axes[2, 0].set_xlim(0, t - 1)
+			axes[2, 0].set_xlim(0, t)
 			axes[2, 0].set_ylim(min(-dof, log_L[max(0, t - 10)] - log_L[t]), dof/10)
-			axes[2, 0].grid(axis="y")
 			axes[2, 1].set_title("χ^2")
 			if mode == "poisson":
 				χ2 = 2*(N*s - F*np.log(s) - (F - F*np.log(np.maximum(1e-20, f))))
@@ -245,6 +251,8 @@ def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: str | NDArray[float] 
 		raise ValueError("this is the *1D* version.")
 	if F.size != P.shape[0]:
 		raise ValueError("these dimensions don't match")
+	if np.any(np.isnan(F)) or np.any(np.isnan(P)):
+		raise ValueError("no nan allowd")
 
 	if noise == "poisson":
 		mode = "poisson"
@@ -309,7 +317,7 @@ def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: str | NDArray[float] 
 			δδ = np.sum(δs**2/D)
 			sδ = np.sum(s*δs/D)
 			ss = np.sum(s**2/D)
-			dldh = np.sum(δg**2/g)
+			dldh = np.sum(δg**2/g, where=g != 0)
 			h = dldh/(N*(δδ - sδ*sδ/ss) - dldh*sδ/ss)
 
 		# limit the step length if necessary to prevent negative values

@@ -144,10 +144,12 @@ if __name__ == '__main__':
 	lo_Es = np.linspace(2.2, 6)
 	significant_Es = [2.2, 6, 9, 12.45]
 
+
 	def energy_to_diameter(energy):
 		return track_diameter(particle_E_out(energy, 1, 2, 15, "Ta"), 1, 2, 5)
 
-	plt.figure()#figsize=(5.5, 4))
+
+	plt.figure()  # figsize=(5.5, 4))
 
 	# for k, n in [(.849, .806), (.626, .867), (.651, .830), (.651, .779), (.868, 1.322)]:
 	# 	plt.plot(x, D(x, k=k, n=n), '-')
@@ -168,16 +170,18 @@ if __name__ == '__main__':
 
 	energies = np.geomspace(1, 1000)
 	plt.figure()
-	for filter_thickness, filter_material in [(50, "Al"), (200, "Al"), (15, "Ta")]:
-		plt.plot(energies,
-		         xray_transmission(energies, filter_thickness, filter_material)*
-		         xray_sensitivity(energies, 30),
-		         label=f"{filter_thickness}μm {filter_material}")
+	for filters in [[(15, "Ta"), (400, "Al")], [(250, "Al")]]:#[[(50, "Al")], [(200, "Al")], [(15, "Ta")]]:
+		sensitivity = xray_sensitivity(energies, 30)
+		for filter_thickness, filter_material in filters:
+			sensitivity *= xray_transmission(energies, filter_thickness, filter_material)
+		plt.plot(energies, sensitivity,
+		         label=f"{filters[0][0]}μm {filters[0][1]}")
 	plt.xscale("log")
-	plt.yscale("log")
+	# plt.yscale("log")
 	plt.xlabel("Energy (keV)")
 	plt.ylabel("Sensitivity")
-	plt.ylim(2e-3, 5e-1)
+	# plt.ylim(2e-3, 5e-1)
+	plt.ylim(0, None)
 	plt.xlim(1e+0, 1e+3)
 	plt.legend()
 	plt.tight_layout()

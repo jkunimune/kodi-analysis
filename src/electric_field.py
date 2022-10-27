@@ -1,5 +1,5 @@
 import os.path
-from math import inf
+from math import inf, pi, sin, cos
 from typing import Optional
 
 import numpy as np
@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from scipy import integrate, signal
 
 from interpolate import RegularInterpolator
-from util import find_intercept
+from util import find_intercept, bin_centers, bin_centers_and_sizes
 
 MODELS = ["planar", "cylindrical"]
 E_interpolator_dict: dict[str, RegularInterpolator] = {}
@@ -60,24 +60,27 @@ def calculate_electric_field(r: NDArray[float], model: str, inverse_aspect_ratio
 			V[:, -1] = 0  # TCCward
 			V[0, :] = 4/3*V[1, :] - 1/3*V[2, :]  # axial
 			V[-1, :] = 0  # outer
-		# then add in this janky pseudocartesian rim factor, which actually dominates
-		V += inverse_aspect_ratio/np.hypot(r_extend[i] - 1, z[j])
+		# then add in this somewhat janky not fully-physical rim factor, which actually dominates
+		for θ in np.linspace(0, 2*pi, 24, endpoint=False):
+			distance = np.sqrt((r_extend[i] - cos(θ))**2 + sin(θ)**2 + z[j]**2)
+			V += inverse_aspect_ratio/distance*pi/12
+		# finally, do the finite difference stuff
 		V[gai, 0] = inf
-		E = 2*integrate.trapezoid(np.gradient(V, r_extend, axis=0, edge_order=2), z, axis=1)
+		E = 2*np.diff(integrate.trapezoid(V, z, axis=1))/np.diff(r_extend)
+		r_field = np.concatenate([[0], bin_centers(r_extend)])
+		E = np.concatenate([[0], E])
 		# import matplotlib.pyplot as plt
-		# import matplotlib
-		# matplotlib.use("qtagg")
 		# plt.figure()
-		# plt.pcolormesh(z, r_extend, V, shading="gouraud")
+		# plt.contourf(z, r_extend, V, levels=np.linspace(-1.5, 1.5, 13))
 		# plt.axis("equal")
 		# plt.colorbar()
 		# plt.show()
-		return np.interp(r, r_extend, E)
+		return np.interp(r, r_field, E)
 	else:
 		raise KeyError(f"unrecognized model: '{model}'")
 
 
-def electric_field(r: NDArray[float], model="cylindrical", normalized_aperture_thickness=0.1):
+def electric_field(r: NDArray[float], model: str, normalized_aperture_thickness: float):
 	""" interpolate the dimensionless electric field as a function of normalized radius from the
 	    precalculated reference curves
 	"""
@@ -95,6 +98,7 @@ def electric_field(r: NDArray[float], model="cylindrical", normalized_aperture_t
 
 
 def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max=1., normalize=False,
+                              model="planar", normalized_aperture_thickness=0.1,
                               ) -> tuple[NDArray[float], NDArray[float]]:
 	""" get the effective brightness as a function of radius, accounting for a point
 	    source and roughly boxcar energy spectrum. the units can be whatever as long
@@ -109,7 +113,7 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 	"""
 	global R, N, dE, index
 	if R is None:
-		R, N, dE, index = generate_modified_point_spread()
+		R, N, dE, index = generate_modified_point_spread(model, normalized_aperture_thickness)
 
 	if Q == 0:
 		return r0*R, np.where(R < 1, 1, 0) # TODO: use nonuniform R
@@ -164,7 +168,7 @@ def get_charging_parameter(dilation: float, r0: float, energy_min: float, energy
 				Q_min = Q_gess
 
 
-def generate_modified_point_spread():
+def generate_modified_point_spread(model: str, normalized_aperture_thickness: float):
 	np.seterr(divide='ignore', invalid='ignore')
 
 	R = np.linspace(0, 3, 3000) # the normalized position
@@ -174,7 +178,7 @@ def generate_modified_point_spread():
 	N = np.empty((len(K), len(R))) # calculate the track density profile for an array of charge coefficients
 	for i, k in enumerate(K):
 		rS = np.concatenate([np.linspace(0, .9, 50, endpoint=False), (1 - np.geomspace(.1, 1e-6, 50))])
-		rB = rS + k*electric_field(rS)
+		rB = rS + k*electric_field(rS, model, normalized_aperture_thickness)
 		nB = 1/(np.gradient(rB, rS, edge_order=2)*rB/rS)
 		nB[rS > 1] = 0
 		nB[0] = nB[1] # deal with this singularity
