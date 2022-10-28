@@ -27,9 +27,9 @@ import deconvolution
 import detector
 import electric_field
 import fake_srim
-from cmap import SPIRAL, COFFEE
+from cmap import CMAP
 from hdf5_util import load_hdf5, save_as_hdf5
-from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
+from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
 	line_search, quantile, bin_centers_and_sizes
@@ -64,7 +64,7 @@ MAX_ECCENTRICITY = 15
 def where_is_the_ocean(x, y, z, title, timeout=None) -> tuple[float, float]:
 	""" solicit the user's help in locating something """
 	fig = plt.figure()
-	plt.pcolormesh(x, y, z, vmax=np.quantile(z, .999), cmap=SPIRAL)
+	plt.pcolormesh(x, y, z, vmax=np.quantile(z, .999), cmap=CMAP["spiral"])
 	plt.axis("equal")
 	plt.colorbar()
 	plt.title(title)
@@ -102,7 +102,7 @@ def user_defined_region(filename, title, timeout=None) -> list[Point]:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 	fig = plt.figure()
-	plt.pcolormesh(x, y, z.T, vmax=np.quantile(z, .999), cmap=SPIRAL)
+	plt.pcolormesh(x, y, z.T, vmax=np.quantile(z, .999), cmap=CMAP["spiral"])
 	polygon, = plt.plot([], [], "k-")
 	cap, = plt.plot([], [], "k:")
 	cursor, = plt.plot([], [], "ko")
@@ -185,7 +185,7 @@ def load_cr39_scan_file(filename: str,
 			           bins=(np.linspace(0, max_diameter_to_plot + 5, 100),
 			                 np.arange(0.5, max_contrast_to_plot + 1)),
 			           norm=SymLogNorm(10, 1/np.log(10)),
-			           cmap=COFFEE)
+			           cmap=CMAP["coffee"])
 			x0 = max(min_diameter, 0)
 			x1 = min(max_diameter, max_diameter_to_plot)
 			y1 = min(max_contrast, max_contrast_to_plot)
@@ -327,7 +327,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
-		plt.pcolormesh(x_bins, y_bins, N_full.T, cmap=COFFEE)
+		plt.pcolormesh(x_bins, y_bins, N_full.T, cmap=CMAP["coffee"])
 		θ = np.linspace(0, 2*pi, 145)
 		for x0, y0, r_apparent in circles:
 			plt.plot(x0 + r_apparent*np.cos(θ), y0 + r_apparent*np.sin(θ), "C0", linewidth=1.2)
@@ -854,7 +854,7 @@ def analyze_scan(input_filename: str,
 			shot_info["flow (r)"], shot_info["flow (θ)"], shot_info["flow (ф)"],
 			tim_basis)
 
-		plot_overlaid_contors(
+		plot_overlaid_contores(
 			f"{shot}-tim{tim}-{particle}", xU, yU, image_stack, contour,
 			projected_offset, projected_flow)
 

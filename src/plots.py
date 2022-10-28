@@ -1,6 +1,6 @@
 import logging
 import re
-from math import pi, isnan
+from math import pi
 from typing import cast
 
 import matplotlib
@@ -9,7 +9,7 @@ from matplotlib import colors, pyplot as plt, ticker
 from scipy import optimize, interpolate
 from scipy import special
 
-from cmap import GREYS, ORANGES, YELLOWS, GREENS, CYANS, BLUES, VIOLETS, REDS, COFFEE
+from cmap import CMAP
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, get_relative_aperture_positions, saturate, center_of_mass, \
 	bin_centers, Point, nearest_value, shape_parameters
@@ -28,10 +28,12 @@ SQUARE_FIGURE_SIZE = (6.4, 5.4)
 RECTANGULAR_FIGURE_SIZE = (6.4, 4.8)
 LONG_FIGURE_SIZE = (8, 5)
 
-COLORMAPS = {"deuteron": [(7, GREYS), (1, REDS), (2, ORANGES), (0, YELLOWS), (3, GREENS),
-                          (4, CYANS), (5, BLUES), (6, VIOLETS)],
-             "xray":     [(7, GREYS), (6, REDS), (5, ORANGES), (4, YELLOWS), (3, GREENS),
-                          (2, CYANS), (1, BLUES), (0, VIOLETS)]}
+COLORMAPS: dict[str, list[tuple[int, str]]] = {
+	"deuteron": [(7, "greys"), (1, "reds"), (2, "oranges"), (0, "yellows"), (3, "greens"),
+	             (4, "cyans"), (5, "blues"), (6, "violets")],
+	"xray":     [(7, "greys"), (6, "reds"), (5, "oranges"), (4, "yellows"), (3, "greens"),
+	             (2, "cyans"), (1, "blues"), (0, "violets")],
+}
 
 
 def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
@@ -46,7 +48,7 @@ def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
 
 
 def choose_colormaps(particle: str, num_cuts: int) -> list[colors.ListedColormap]:
-	return [cmap for priority, cmap in COLORMAPS[particle] if priority < num_cuts]
+	return [CMAP[cmap_name] for priority, cmap_name in COLORMAPS[particle] if priority < num_cuts]
 
 
 def make_colorbar(vmin: float, vmax: float, label: str, facecolor=None) -> None:
@@ -102,7 +104,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	vmax = max(np.quantile(N, (N.size-6)/N.size),
 	           np.quantile(N, 1 - A_circle/A_square/2)*1.25)
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	plt.pcolormesh(x_bins, y_bins, N.T, cmap=COFFEE, rasterized=True, vmax=vmax)
+	plt.pcolormesh(x_bins, y_bins, N.T, cmap=CMAP["coffee"], rasterized=True, vmax=vmax)
 	T = np.linspace(0, 2*np.pi)
 	if PLOT_THEORETICAL_PROJECTION:
 		for dx, dy in get_relative_aperture_positions(s0, r0, np.ptp(x_bins)/2):
@@ -284,7 +286,7 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 
 		num_cuts = len(energy_bins[l])
 		if num_cuts == 1:
-			cmaps = [GREYS]
+			cmaps = [CMAP["greys"]]
 		elif num_cuts < 7:
 			cmaps = choose_colormaps("deuteron", num_cuts)
 		else:
@@ -354,7 +356,7 @@ def save_and_plot_morphologies(filename: str,
 			plt.contourf(y, z,
 			             -density_slice.T,
 			             levels=[0, abs(np.max(density_slice))],
-			             cmap=CYANS,
+			             cmap=CMAP["cyans"],
 			             zorder=1)
 		plt.xlabel("x (μm)")
 		plt.ylabel("y (μm)")
@@ -364,12 +366,12 @@ def save_and_plot_morphologies(filename: str,
 		save_current_figure(f"{filename}-morphology-section-{i}")
 
 
-def plot_overlaid_contors(filename: str,
-                          x_centers: np.ndarray, y_centers: np.ndarray,
-                          images: np.ndarray,
-                          contour_level: float,
-                          projected_offset: tuple[float, float, float],
-                          projected_flow: tuple[float, float, float]) -> None:
+def plot_overlaid_contores(filename: str,
+                           x_centers: np.ndarray, y_centers: np.ndarray,
+                           images: np.ndarray,
+                           contour_level: float,
+                           projected_offset: tuple[float, float, float],
+                           projected_flow: tuple[float, float, float]) -> None:
 	""" plot the plot with the multiple energy cuts overlaid
 	    :param filename: the extensionless filename with which to save the figure
 	    :param x_centers: a 1d array of the x coordinates of the pixel centers

@@ -9,7 +9,7 @@ from numpy import fft
 from numpy.typing import NDArray
 from scipy import ndimage, interpolate, signal, stats
 
-from cmap import GREYS, SPIRAL
+from cmap import CMAP
 
 
 MAX_ARRAY_SIZE = 1.5e9/4 # an upper limit on the number of elements in a float32 array
@@ -185,13 +185,13 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			axes = fig.subplots(nrows=3, ncols=2)
 			fig.subplots_adjust(top=.95, bottom=.04, left=.09, right=.99, hspace=.00)
 			axes[0, 0].set_title("Source")
-			axes[0, 0].pcolormesh(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap=GREYS)
+			axes[0, 0].pcolormesh(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap=CMAP["greys"])
 			axes[0, 1].set_title("Floor")
-			axes[0, 1].pcolormesh(g, vmin=np.min(g), vmax=np.min(g, where=g > 0, initial=np.inf)*6, cmap=GREYS)
+			axes[0, 1].pcolormesh(g, vmin=np.min(g), vmax=np.min(g, where=g > 0, initial=np.inf)*6, cmap=CMAP["greys"])
 			axes[1, 0].set_title("Data")
-			axes[1, 0].pcolormesh(np.where(data_region, F, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=SPIRAL)
+			axes[1, 0].pcolormesh(np.where(data_region, F, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=CMAP["spiral"])
 			axes[1, 1].set_title("Synthetic")
-			axes[1, 1].pcolormesh(np.where(data_region, N*s, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=SPIRAL)
+			axes[1, 1].pcolormesh(np.where(data_region, N*s, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=CMAP["spiral"])
 			axes[2, 0].set_title("Log-likelihood")
 			g_t = G[t]/np.sum(G[t])
 			dof_effective = np.sum(g_t/(g_t + 1/dof), where=source_region)
