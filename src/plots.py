@@ -1,6 +1,6 @@
 import logging
 import re
-from math import pi
+from math import pi, isnan
 from typing import cast
 
 import matplotlib
@@ -109,7 +109,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 			plt.plot(x0 + dx + r0*np.cos(T), y0 + dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
 	if "xray" in filename:
-		plt.title(f"$h\\nu$ = {energy_min:.1f} – {energy_max:.1f} keV")
+		plt.title(f"X-ray image") # TODO: plt.title(f"$h\\nu$ = {energy_min:.1f} – {energy_max:.1f} keV")
 	elif energy_min is not None:
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
@@ -149,7 +149,12 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	save_as_hdf5(f'results/data/{filename}-penumbra-residual',
 	             x=x_bins, y=y_bins, z=(N_top - N_bottom).T)
 
-	while x_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
+	# sometimes this is all nan, but we don't need to plot it
+	if np.all(np.isnan(N_top - N_bottom)):
+		return
+
+	# resample the penumbral images to increase the bin size
+	while x_bins.size > MAX_NUM_PIXELS+1:
 		_, _, N_top = downsample_2d(x_bins, y_bins, N_top)
 		x_bins, y_bins, N_bottom = downsample_2d(x_bins, y_bins, N_bottom)
 
@@ -188,20 +193,25 @@ def plot_source(filename: str, show: bool,
 	:param x_centers: the x-coordinates that go with axis 0 of the brightness array (cm)
 	:param y_centers: the y-coordinates that go with axis 1 of the brightness array (cm)
 	:param B: the brightness of each pixel (d/cm^2/srad)
-	:param contour_level:
-	:param e_min:
-	:param e_max:
-	:param num_cuts:
-	:return:
+	:param contour_level: the value of the contour, relative to the peak, to draw around the source
+	:param e_min: the minimum energy being plotted (for the label)
+	:param e_max: the maximum energy being plotted (for the label)
+	:param num_cuts: the total number of images in this set (for choosing the color)
 	"""
+	# sometimes this is all nan, but we don't need to plot it
+	if np.all(np.isnan(B)):
+		return
+
 	particle, cut_index = re.search(r"-(xray|deuteron)([0-9]+)", filename, re.IGNORECASE).groups()
 
+	# choose the plot limits
 	object_size, (r0, θ), _ = shape_parameters(x_centers, y_centers, B, contour=.25)
 	object_size = nearest_value(2*object_size/1e-4,
 	                            np.array([100, 250, 800, 2000]))
 	x0, y0 = r0*np.cos(θ), r0*np.sin(θ)
 
-	plt.figure(figsize=SQUARE_FIGURE_SIZE) # plot the reconstructed source image
+	# plot the reconstructed source image
+	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
 	plt.pcolormesh((x_centers - x0)/1e-4, (y_centers - y0)/1e-4, B.T,
 	               cmap=choose_colormaps(particle, num_cuts)[int(cut_index)],
@@ -216,7 +226,7 @@ def plot_source(filename: str, show: bool,
 	# plt.colorbar()
 	plt.axis('square')
 	if "xray" in filename:
-		plt.title("X-ray image")
+		plt.title("X-ray image") # TODO: the x-ray energies
 	elif e_max is not None:
 		plt.title(f"$E_\\mathrm{{d}}$ = {e_min:.1f} – {min(12.5, e_max):.1f} MeV")
 	plt.xlabel("x (μm)")
@@ -225,12 +235,14 @@ def plot_source(filename: str, show: bool,
 	plt.tight_layout()
 	save_current_figure(filename)
 
+	# plot a lineout
 	j_lineout = np.argmax(np.sum(B, axis=0))
 	scale = 1/B[:, j_lineout].max()
-	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE) # plot a lineout
+	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
 	plt.plot((x_centers - x0)/1e-4, B[:, j_lineout]*scale)
 
-	if "disc" in filename: # and fit a curve to it if it's a "disc"
+	# and fit a curve to it if it's a "disc"
+	if "disc" in filename:
 		def blurred_boxcar(x, A, d):
 			return A*special.erfc((x - 100e-4)/d/np.sqrt(2))*special.erfc(-(x + 100e-4)/d/np.sqrt(2))/4
 		r_centers = np.hypot(*np.meshgrid(x_centers, y_centers))
@@ -264,10 +276,11 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 	    :param image_sets: each image set is a list, where each element of the list is a 3d array, which is
 	                       a stack of all the images in one set on one line of site. (d/μm^2/srad)
 	"""
+	# go thru every line of site
 	pairs_plotted = 0
-	for l in range(len(image_sets[0])): # go thru every line of site
+	for l in range(len(image_sets[0])):
 		if pairs_plotted > 0 and pairs_plotted + len(image_sets[0][l]) > 9:
-			break # but stop when you think you're about to plot too many
+			break  # but stop when you think you're about to plot too many
 
 		num_cuts = len(energy_bins[l])
 		if num_cuts == 1:
@@ -322,7 +335,6 @@ def save_and_plot_morphologies(filename: str,
 		plt.figure(figsize=LONG_FIGURE_SIZE)
 		levels = np.concatenate([np.linspace(-peak_source, 0, 9)[1:-1],
 		                         np.linspace(0, peak_source, 9)[1:-1]])
-		# for j, (linestyle, color) in enumerate([("solid", "#fdce45"), ([(0, (4, 4))], "#0223b0")]):
 		plt.contour(y, z,
 		            source_slice.T,
 		            levels=levels,
@@ -367,7 +379,8 @@ def plot_overlaid_contors(filename: str,
 	    :param projected_offset: the capsule offset from TCC, given as (x, y, z)
 	    :param projected_flow: the measured hot spot velocity, given as (x, y, z)
 	"""
-	x0, y0 = center_of_mass(x_centers, y_centers, images[-1, :, :]) # calculate the centroid of the highest energy bin
+	# calculate the centroid of the highest energy bin
+	x0, y0 = center_of_mass(x_centers, y_centers, images[-1, :, :])
 
 	x_off, y_off, z_off = projected_offset
 	x_flo, y_flo, z_flo = projected_flow

@@ -3,7 +3,7 @@ import datetime
 import os
 import shutil
 import subprocess
-from math import pi, cos, sin
+from math import pi, cos, sin, nan
 from typing import Callable
 
 import numpy as np
@@ -305,6 +305,15 @@ def line_search(func: Callable[[float], float], lower_bound: float, upper_bound:
 
 def fit_circle(x_data: np.ndarray, y_data: np.ndarray) -> tuple[float, float, float]:
 	""" fit a circle to a list of points """
+	if x_data.ndim > 1:
+		raise ValueError("it must be a 1D array")
+	if x_data.size == 0:
+		return nan, nan, nan
+	elif x_data.size == 1:
+		return x_data[0], y_data[0], 0
+	elif x_data.size == 2:
+		return np.mean(x_data), np.mean(y_data), np.hypot(np.ptp(x_data), np.ptp(y_data))/2  # type: ignore
+
 	def residuals(state: np.ndarray) -> np.ndarray:
 		x0, y0, r = state
 		return np.hypot(x_data - x0, y_data - y0) - r

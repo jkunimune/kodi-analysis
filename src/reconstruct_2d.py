@@ -32,7 +32,7 @@ from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contors, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
-	line_search, quantile, get_relative_aperture_positions, bin_centers_and_sizes
+	line_search, quantile, bin_centers_and_sizes
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -237,18 +237,20 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 
-def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
-                       region: list[Point], show_plots: bool) -> tuple[float, float, float]:
+def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
+                        region: list[Point], show_plots: bool
+                        ) -> tuple[list[tuple[float, float]], float, float]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param r_nominal: the expected radius of the circles
-	    :param s_nominal: the expected spacing between the circles. a positive number means the nearest center-to-center
-	              distance in a hexagonal array. a negative number means the nearest center-to-center distance in a
-	              rectangular array. a 0 means that there is only one aperture.
+	    :param s_nominal: the expected spacing between the circles. a positive number means the
+	                      nearest center-to-center distance in a hexagonal array. a negative number
+	                      means the nearest center-to-center distance in a rectangular array. a 0
+	                      means that there is only one aperture.
 		:param region: the region in which to care about tracks
 	    :param show_plots: if False, overrides SHOW_CENTER_FINDING_CALCULATION
-	    :return: the x and y of the center of one of the circles, and the factor by which the observed separation
-	             deviates from the given s
+	    :return: the x and y of the centers of the circles, the factor by which the observed
+	             spacing deviates from the nominal spacing, and the angle of the array (radians)
 	"""
 	if filename.endswith(".txt") or filename.endswith(".cpsa"):  # if it's a cpsa-derived text file
 		x_tracks, y_tracks = load_cr39_scan_file(filename)  # load all track coordinates
@@ -284,7 +286,8 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
-	x_centers, y_centers = bin_centers(x_bins), bin_centers(y_bins)
+	x_centers, dx = bin_centers_and_sizes(x_bins)
+	y_centers, dy = bin_centers_and_sizes(y_bins)
 	X_pixels, Y_pixels = np.meshgrid(x_centers, y_centers, indexing="ij")
 	N_clipd = np.where(inside_polygon(X_pixels, Y_pixels, region), N_full, nan)
 	assert not np.all(np.isnan(N_clipd))
@@ -306,7 +309,7 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 						x0, y0 = x, y
 			scale /= 6
 
-	# now that's squared away, find the largest 50% conture
+	# now that's squared away, find the largest 50% contures
 	R_pixels = np.hypot(X_pixels - x0, Y_pixels - y0)
 	max_density = np.nanmean(N_clipd, where=R_pixels < .5*r_nominal)
 	min_density = np.nanmean(N_clipd, where=R_pixels > 1.5*r_nominal)
@@ -314,25 +317,30 @@ def find_circle_center(filename: str, r_nominal: float, s_nominal: float,
 	contours = measure.find_contours(N_clipd, haff_density)
 	if len(contours) == 0:
 		raise ValueError("there were no tracks.  we should have caut that by now.")
-	ij_contour = max(contours, key=len)
-	x_contour = np.interp(ij_contour[:, 0], np.arange(x_centers.size), x_centers)
-	y_contour = np.interp(ij_contour[:, 1], np.arange(y_centers.size), y_centers)
-	x0, y0, r0 = fit_circle(x_contour, y_contour)
+	circles = []
+	for contour in contours:
+		x_contour = np.interp(contour[:, 0], np.arange(x_centers.size), x_centers)
+		y_contour = np.interp(contour[:, 1], np.arange(y_centers.size), y_centers)
+		x0, y0, r_apparent = fit_circle(x_contour, y_contour)
+		if 0.8*r_nominal < r_apparent < 1.2*r_nominal:
+			circles.append((x0, y0, r_apparent))  # check the radius to avoid picking up noise
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
 		plt.pcolormesh(x_bins, y_bins, N_full.T, cmap=COFFEE)
 		θ = np.linspace(0, 2*pi, 145)
-		plt.plot(x_contour, y_contour, "C0", linewidth=.5)
-		for dx, dy in get_relative_aperture_positions(s_nominal, r_nominal, np.max(np.abs(x_bins))):
-			plt.plot(x0 + dx + r_nominal*np.cos(θ), y0 + dy + r_nominal*np.sin(θ), "k--", linewidth=.9)
-		plt.plot(x0 + r0*np.cos(θ), y0 + r0*np.sin(θ), "k-", linewidth=.9)
+		for x0, y0, r_apparent in circles:
+			plt.plot(x0 + r_apparent*np.cos(θ), y0 + r_apparent*np.sin(θ), "C0", linewidth=1.2)
+		plt.contour(x_centers, y_centers, N_clipd.T, levels=[haff_density], colors="C3", linewidths=.6)
 		plt.axis("equal")
 		plt.ylim(np.min(y_bins), np.max(y_bins))
 		plt.xlim(np.min(x_bins), np.max(x_bins))
 		plt.show()
 
-	return x0, y0, 1
+	centers = [(x, y) for x, y, r in circles]
+	r_mean = np.mean([r for x, y, r in circles])
+
+	return centers, 1, 0  # TODO: fit centers a hex grid
 
 
 def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
@@ -389,8 +397,11 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	A = pi*r*dr*np.mean(inside_polygon(x0 + r*np.cos(θ), y0 + r*np.sin(θ), region), axis=0)
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
 	inside = A > 0
-	ρ_max = np.average(ρ[inside], weights=np.where(r < 0.5*r0, 1/dρ**2, 0)[inside])
-	ρ_min = np.average(ρ[inside], weights=np.where(r > 1.8*r0, 1/dρ**2, 0)[inside])
+	umbra, exterior = (r < 0.5*r0), (r > 1.8*r0)
+	if not np.any(inside & umbra) or not np.any(inside & exterior):
+		raise ValueError("too much of the image is clipped.")
+	ρ_max = np.average(ρ[inside], weights=np.where(umbra, 1/dρ**2, 0)[inside])
+	ρ_min = np.average(ρ[inside], weights=np.where(exterior, 1/dρ**2, 0)[inside])
 	n_background = np.mean(n, where=r > 1.8*r0)
 	dρ2_background = np.var(ρ, where=r > 1.8*r0)
 	domain = r > r0/2
@@ -523,7 +534,7 @@ def analyze_scan(input_filename: str,
 			logging.error("nvm there's the rong number of images here")
 			return []
 
-	# or just prepare the grid
+	# or just prepare the coordinate grids
 	else:
 		num_tracks, xmin, xmax, ymin, ymax = count_tracks_in_scan(input_filename, 0, inf, False)
 		logging.info(f"found {num_tracks:.4g} tracks in the file")
@@ -539,9 +550,14 @@ def analyze_scan(input_filename: str,
 				pass
 
 		# find the centers and spacings of the penumbral images
-		xI0, yI0, scale = find_circle_center(input_filename, M*rA, M*sA, data_polygon, show_plots)
+		centers, array_scale, array_angle = find_circle_centers(
+			input_filename, M*rA, M*sA, data_polygon, show_plots)
+		xI0, yI0 = centers[0]
 		# update the magnification to be based on this check
-		M *= scale
+		if particle == "xray":
+			M *= array_scale
+		else:
+			pass # TODO: load the previus M for this los, which should be roentgen derived
 		r0 = M*rA
 
 		xU, yU, image_stack = None, None, None
@@ -740,17 +756,21 @@ def analyze_scan(input_filename: str,
 			estimated_data_variance = NI_data/umbra_height*umbra_variance
 
 			# perform the reconstruction
-			logging.info(f"  reconstructing a {data_region.shape} image into a {source_region.shape} source")
-			method = "richardson-lucy" if particle == "deuteron" else "gelfgat"
-			briteness_S = deconvolution.deconvolve(method,
-			                                       clipd_data,
-			                                       penumbral_kernel,
-			                                       r_psf=r0/dxI,
-			                                       data_region=data_region,
-			                                       source_region=source_region,
-			                                       noise=estimated_data_variance,
-			                                       show_plots=show_plots)
-			logging.info("  done!")
+			if umbra_variance < umbra_height/1e3:
+				logging.warning("  I think this image is saturated. I'm not going to try to reconstruct it. :(")
+				briteness_S = np.full(source_region.shape, nan)
+			else:
+				logging.info(f"  reconstructing a {data_region.shape} image into a {source_region.shape} source")
+				method = "richardson-lucy" if particle == "deuteron" else "gelfgat"
+				briteness_S = deconvolution.deconvolve(method,
+				                                       clipd_data,
+				                                       penumbral_kernel,
+				                                       r_psf=r0/dxI,
+				                                       data_region=data_region,
+				                                       source_region=source_region,
+				                                       noise=estimated_data_variance,
+				                                       show_plots=show_plots)
+				logging.info("  done!")
 
 			briteness_S = np.maximum(0, briteness_S) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
 
@@ -781,12 +801,10 @@ def analyze_scan(input_filename: str,
 		logging.info(f"  ∫B = {np.sum(briteness_U*dxU*dyU)*4*pi :.4g} deuterons")
 		χ2_red = np.sum((NI_reconstruct - NI_data)**2/NI_reconstruct)
 		logging.info(f"  χ^2/n = {χ2_red}")
-		# if χ2_red >= 1.5: # throw it away if it looks unreasonable
-		# 	logging.info("  Could not find adequate fit")
-		# 	continue
 
+		# calculate and print the main shape parameters
 		p0, (_, _), (p2, θ2) = shape_parameters(
-			xU, yU, briteness_U, contour=contour) # compute the three number summary
+			xU, yU, briteness_U, contour=contour)
 		logging.info(f"  P0 = {p0/1e-4:.2f} μm")
 		logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
