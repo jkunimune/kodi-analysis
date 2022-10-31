@@ -3,12 +3,13 @@ import datetime
 import os
 import shutil
 import subprocess
-from math import pi, cos, sin, nan
-from typing import Callable
+from math import pi, cos, sin, nan, sqrt
+from typing import Callable, Generator
 
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
+from numpy._typing import NDArray
 from scipy import optimize, integrate
 from skimage import measure
 
@@ -32,6 +33,14 @@ def bin_centers_and_sizes(bin_edges: np.ndarray):
 def expand_bins(bin_centers: np.ndarray):
 	""" take an array """
 	return np.concatenate([[1.5*bin_centers[0] - 0.5*bin_centers[1]], bin_centers + 0.5*bin_centers[1] - 0.5*bin_centers[0]])
+
+
+def periodic_mean(values: np.ndarray, minimum: float, maximum: float):
+	""" find the mean of some values as tho they were angles on a circle
+	"""
+	angles = (values - minimum)/(maximum - minimum)*2*pi
+	mean_angle = np.arctan2(np.mean(np.sin(angles)), np.mean(np.cos(angles)))
+	return mean_angle/(2*pi)*(maximum - minimum) + minimum
 
 
 def center_of_mass(x, y, N):
@@ -166,23 +175,20 @@ def inside_polygon(x: np.ndarray, y: np.ndarray, polygon: list[Point]):
 	return num_crossings%2 == 1
 
 
-def get_relative_aperture_positions(spacing, r_img, r_max):
+def get_relative_aperture_positions(spacing: NDArray[float], r_img: float, r_max: float) -> Generator[tuple[float, float], None, None]:
 	""" yield the positions of the individual penumbral images in the array relative
 		to the center, in the detector plane
 	"""
-	if spacing == 0:
+	if np.all(spacing == 0):
 		yield 0, 0
-	elif spacing > 0:
+	else:
 		for i in range(-6, 6):
-			dy = i*np.sqrt(3)/2*spacing
+			dυ = i*sqrt(3)/2
 			for j in range(-6, 6):
-				dx = (2*j + i%2)*spacing/2
+				dξ = (2*j + i%2)/2
+				dx, dy = spacing@[dξ, dυ]
 				if np.hypot(dx, dy) + r_img <= r_max:
 					yield dx, dy
-	else:
-		for dx in [-spacing/2, spacing/2]:
-			for dy in [-spacing/2, spacing/2]:
-				yield dx, dy
 
 
 def abel_matrix(r_bins):
@@ -325,9 +331,9 @@ def fit_circle(x_data: np.ndarray, y_data: np.ndarray) -> tuple[float, float, fl
 		                 -np.ones(d.shape)], axis=-1)
 	x0_gess, y0_gess = x_data.mean(), y_data.mean()
 	r_gess = np.mean(np.hypot(x_data - x0_gess, y_data - y0_gess))
-	(x0, y0, r), _ = optimize.leastsq(func=residuals,
-	                                  Dfun=jacobian,
-	                                  x0=np.array([x0_gess, y0_gess, r_gess]))
+	x0, y0, r = optimize.leastsq(func=residuals,
+	                             Dfun=jacobian,
+	                             x0=np.array([x0_gess, y0_gess, r_gess]))[0]
 	return x0, y0, r
 
 

@@ -19,20 +19,21 @@ import pandas as pd
 import scipy.signal as signal
 from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.colors import SymLogNorm
-from scipy import interpolate
+from numpy.typing import NDArray
+from scipy import interpolate, optimize, linalg
 from skimage import measure
 
-import coordinate
 import deconvolution
 import detector
 import electric_field
 import fake_srim
 from cmap import CMAP
+from coordinate import project, tim_coordinates, rotation_matrix
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
-	line_search, quantile, bin_centers_and_sizes
+	line_search, quantile, bin_centers_and_sizes, get_relative_aperture_positions, periodic_mean
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -237,9 +238,88 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 
+def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_points: NDArray[float]
+                       ) -> NDArray[float]:
+	""" take some points approximately arranged in a hexagonal grid and find the size and angle of it
+	"""
+	if x_points.size <= 1:
+		return np.identity(2)
+
+	def cost_function(args):
+		transform = np.reshape(args, (2, 2))
+		_, _, cost = snap_to_grid(x_points, y_points, nominal_spacing*transform)
+		return cost
+
+	# first do a scan thru a few reasonable values
+	scale, angle, cost = None, None, inf
+	for test_scale in np.linspace(0.9, 1.1, 5):
+		for test_angle in np.linspace(-pi/6, pi/6, 12, endpoint=False):
+			test_cost = cost_function(np.ravel(test_scale*rotation_matrix(test_angle)))
+			if test_cost < cost:
+				scale, angle, cost = test_scale, test_angle, test_cost
+	# then use Powell's method
+	solution = optimize.minimize(method="Powell",
+	                             fun=cost_function,
+	                             x0=np.ravel(scale*rotation_matrix(angle)),
+	                             bounds=[(0.8, 1.2), (-0.6, 0.6), (-0.6, 0.6), (0.8, 1.2)])
+	return np.reshape(solution.x, (2, 2))
+
+
+def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float]
+                 ) -> tuple[NDArray[float], NDArray[float], float]:
+	""" take a bunch of points that are supposed to be in a grid structure with some known spacing
+	    and orientation but unknown alignment, and return where you think they really are; the
+	    output points will all be exactly on that grid.
+	    :param x_points: the x coordinate of each point
+	    :param y_points: the y coordinate of each point
+	    :param grid_matrix: the matrix that defines the grid scale and orientation.  for a horizontally-
+	                 oriented orthogonal hex grid, this should be [[s, 0], [0, s]] where s is the
+	                 distance from each aperture to its nearest neibor, but it can also encode
+	                 rotation and skew.  variations on the plain scaling work as 2d affine
+	                 transformations usually do.
+	    :return: the new x coordinates, the new y coordinates, and the total squared distances from
+	             the old points to the new ones
+	"""
+	n = x_points.size
+	assert y_points.size == n
+
+	if np.linalg.det(grid_matrix) == 0:
+		return np.full(x_points.shape, nan), np.full(y_points.shape, nan), inf
+
+	# start by applying the projection and fitting the phase in x and y separately and algebraicly
+	ξ_points, υ_points = np.linalg.inv(grid_matrix)@[x_points, y_points]
+	ξ0, υ0 = np.mean(ξ_points), np.mean(υ_points)
+	ξ0 = periodic_mean(ξ_points, ξ0 - 1/4, ξ0 + 1/4)
+	υ0 = periodic_mean(υ_points, υ0 - sqrt(3)/4, υ0 + sqrt(3)/4)
+	x0, y0 = grid_matrix@[ξ0, υ0]
+	image_size = np.max(np.hypot(x_points - x0, y_points - y0)) + 2*np.max(grid_matrix)
+
+	# there's a degeneracy here, so I haff to compare these two cases...
+	results = []
+	for ξ_offset in [0, 1/2]:
+		grid_x0, grid_y0 = [x0, y0] + grid_matrix@[ξ_offset, 0]
+		x_fit = np.full(n, nan)
+		y_fit = np.full(n, nan)
+		errors = np.full(n, inf)
+		x_aps, y_aps = [], []
+		for i, (dx, dy) in enumerate(get_relative_aperture_positions(grid_matrix, 0, image_size)):
+			distances = np.hypot(grid_x0 + dx - x_points, grid_y0 + dy - y_points)
+			point_is_close_to_here = distances < errors
+			errors[point_is_close_to_here] = distances[point_is_close_to_here]
+			x_fit[point_is_close_to_here] = grid_x0 + dx
+			y_fit[point_is_close_to_here] = grid_y0 + dy
+			x_aps.append(grid_x0 + dx)
+			y_aps.append(grid_y0 + dy)
+		results.append((np.sum(errors**2), x_fit, y_fit))
+
+	total_error, x_fit, y_fit = min(results)
+
+	return x_fit, y_fit, total_error  # type: ignore
+
+
 def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
                         region: list[Point], show_plots: bool
-                        ) -> tuple[list[tuple[float, float]], float, float]:
+                        ) -> tuple[list[tuple[float, float]], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param r_nominal: the expected radius of the circles
@@ -249,9 +329,12 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	                      means that there is only one aperture.
 		:param region: the region in which to care about tracks
 	    :param show_plots: if False, overrides SHOW_CENTER_FINDING_CALCULATION
-	    :return: the x and y of the centers of the circles, the factor by which the observed
-	             spacing deviates from the nominal spacing, and the angle of the array (radians)
+	    :return: the x and y of the centers of the circles, and the transformation matrix that
+	             converts apertures locations from their nominal ones
 	"""
+	if s_nominal < 0:
+		raise NotImplementedError("I haven't accounted for this.")
+
 	if filename.endswith(".txt") or filename.endswith(".cpsa"):  # if it's a cpsa-derived text file
 		x_tracks, y_tracks = load_cr39_scan_file(filename)  # load all track coordinates
 		n_bins = max(6, int(min(sqrt(x_tracks.size)/10, MAX_NUM_PIXELS)))  # get the image resolution needed to resolve the circle
@@ -316,31 +399,39 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	haff_density = (max_density + min_density)/2
 	contours = measure.find_contours(N_clipd, haff_density)
 	if len(contours) == 0:
-		raise ValueError("there were no tracks.  we should have caut that by now.")
+		raise RuntimeError("there were no tracks.  we should have caut that by now.")
 	circles = []
 	for contour in contours:
 		x_contour = np.interp(contour[:, 0], np.arange(x_centers.size), x_centers)
 		y_contour = np.interp(contour[:, 1], np.arange(y_centers.size), y_centers)
 		x0, y0, r_apparent = fit_circle(x_contour, y_contour)
-		if 0.8*r_nominal < r_apparent < 1.2*r_nominal:
-			circles.append((x0, y0, r_apparent))  # check the radius to avoid picking up noise
+		if np.hypot(x_contour.ptp(), y_contour.ptp()) > r_apparent:
+			if 0.8*r_nominal < r_apparent < 1.2*r_nominal:
+				circles.append((x0, y0, r_apparent))  # check the radius to avoid picking up noise
+	if len(circles) == 0:
+		raise RuntimeError("I couldn't find any circles in this region")
+
+	# use a simplex algorithm to fit for scale and angle
+	x_circles = np.array([x for x, y, r in circles])
+	y_circles = np.array([y for x, y, r in circles])
+	grid_transform = fit_grid_to_points(s_nominal, x_circles, y_circles)
+
+	x_circles, y_circles, _ = snap_to_grid(x_circles, y_circles, s_nominal*grid_transform)
+	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
 		plt.pcolormesh(x_bins, y_bins, N_full.T, cmap=CMAP["coffee"])
 		θ = np.linspace(0, 2*pi, 145)
-		for x0, y0, r_apparent in circles:
-			plt.plot(x0 + r_apparent*np.cos(θ), y0 + r_apparent*np.sin(θ), "C0", linewidth=1.2)
-		plt.contour(x_centers, y_centers, N_clipd.T, levels=[haff_density], colors="C3", linewidths=.6)
+		for x0, y0 in zip(x_circles, y_circles):
+			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ), "C0", linewidth=1.2)
+		plt.contour(x_centers, y_centers, N_clipd.T, levels=[haff_density], colors="C6", linewidths=.6)
 		plt.axis("equal")
 		plt.ylim(np.min(y_bins), np.max(y_bins))
 		plt.xlim(np.min(x_bins), np.max(x_bins))
 		plt.show()
 
-	centers = [(x, y) for x, y, r in circles]
-	r_mean = np.mean([r for x, y, r in circles])
-
-	return centers, 1, 0  # TODO: fit centers a hex grid
+	return [(x, y) for x, y in zip(x_circles, y_circles)], grid_transform
 
 
 def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
@@ -399,7 +490,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	inside = A > 0
 	umbra, exterior = (r < 0.5*r0), (r > 1.8*r0)
 	if not np.any(inside & umbra) or not np.any(inside & exterior):
-		raise ValueError("too much of the image is clipped.")
+		raise RuntimeError("too much of the image is clipped.")
 	ρ_max = np.average(ρ[inside], weights=np.where(umbra, 1/dρ**2, 0)[inside])
 	ρ_min = np.average(ρ[inside], weights=np.where(exterior, 1/dρ**2, 0)[inside])
 	n_background = np.mean(n, where=r > 1.8*r0)
@@ -478,7 +569,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 
 
 def analyze_scan(input_filename: str,
-                 shot: str, tim: str, rA: float, sA: float, M: float, L1: float,
+                 shot: str, tim: str, rA: float, sA: float, M_gess: float, L1: float,
                  rotation: float, etch_time: float, skip_reconstruction: bool, show_plots: bool
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct a penumbral KOD image.
@@ -490,7 +581,7 @@ def analyze_scan(input_filename: str,
 		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
 		           center-to-center distance in a rectangular array. a 0 means that there is only one aperture.
 		:param L1: the distance between the aperture and the implosion
-		:param M: the nominal radiography magnification (L1 + L2)/L1
+		:param M_gess: the nominal radiography magnification (L1 + L2)/L1
 		:param rotation: the rotational error in the scan in degrees (if the detector was fielded correctly such that
 		                 the top of the scan is the top of the detector as it was oriented in the target chamber, then
 		                 this parameter should be 0)
@@ -527,6 +618,7 @@ def analyze_scan(input_filename: str,
 		logging.info(f"re-loading the previous reconstructions")
 		xI0, yI0, r0 = None, None, None
 		data_polygon = None
+		M = M_gess # TODO: re-load the previus data_polygon and M
 		xU, yU, image_stack = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source.h5",
 		                                ["x", "y", "image"])
 		image_stack = image_stack.transpose((0, 2, 1)) # assume it was saved as [y,x] and switch to [i,j]
@@ -550,15 +642,18 @@ def analyze_scan(input_filename: str,
 				pass
 
 		# find the centers and spacings of the penumbral images
-		centers, array_scale, array_angle = find_circle_centers(
-			input_filename, M*rA, M*sA, data_polygon, show_plots)
-		xI0, yI0 = centers[0]
+		centers, array_transform = find_circle_centers(
+			input_filename, M_gess*rA, M_gess*sA, data_polygon, show_plots)
+		array_major_scale, array_minor_scale = linalg.svdvals(array_transform)
+		xs, ys = zip(*data_polygon)
+		xI0, yI0 = (np.min(xs) + np.max(xs))/2, (np.min(ys) + np.max(ys)/2)
+		xI0, yI0 = centers[np.argmin(np.hypot(np.array(centers)[:, 0] - xI0, np.array(centers)[:, 1] - yI0))]
 		# update the magnification to be based on this check
-		if particle == "xray":
-			M *= array_scale
-		else:
-			pass # TODO: load the previus M for this los, which should be roentgen derived
-		r0 = M*rA
+		M = M_gess*array_major_scale
+		logging.info(f"  inferred a magnification of {M:.2f} (nominal was {M_gess:.1f})")
+		if array_major_scale/array_minor_scale > 1.01:
+			logging.info(f"  detected an aperture array skewness of {array_major_scale/array_minor_scale - 1:.2f}")
+		r0 = M*rA # TODO: instead of discarding the full transform matrix, I'll need to keep it for when I bild the PSF
 
 		xU, yU, image_stack = None, None, None
 
@@ -626,7 +721,7 @@ def analyze_scan(input_filename: str,
 
 			r_object = (r_max - r_psf)/(M - 1) # (cm)
 			if r_object <= 0:
-				raise ValueError("something is rong but I don't understand what it is rite now.  check on the coordinate definitions.")
+				raise RuntimeError("something is rong but I don't understand what it is rite now.  check on the coordinate definitions.")
 
 			# rebin the image
 			if particle == "deuteron":
@@ -670,7 +765,7 @@ def analyze_scan(input_filename: str,
 					top = bottom + right - left
 					xI_bins = x_scan_bins[left:right + 1]
 					yI_bins = y_scan_bins[bottom:top + 1]
-					assert xI_bins.size == yI_bins.size
+					assert xI_bins.size == yI_bins.size, (left, right, bottom, top)
 				elif dx_scan > dxI:
 					logging.warning(f"The scan resolution of this image plate scan ({dx_scan/1e-4:.0f}/{M - 1:.1f} μm) is "
 					                f"insufficient to support the requested reconstruction resolution ({dxI/(M - 1)/1e-4:.0f}μm); "
@@ -846,11 +941,11 @@ def analyze_scan(input_filename: str,
 			result["separation_magnitude"] = np.hypot(dx, dy)/1e-4
 			result["separation_angle"] = np.degrees(np.arctan2(dy, dx))
 
-		tim_basis = coordinate.tim_coordinates(tim)
-		projected_offset = coordinate.project(
+		tim_basis = tim_coordinates(tim)
+		projected_offset = project(
 			shot_info["offset (r)"], shot_info["offset (θ)"], shot_info["offset (ф)"],
 			tim_basis)
-		projected_flow = coordinate.project(
+		projected_flow = project(
 			shot_info["flow (r)"], shot_info["flow (θ)"], shot_info["flow (ф)"],
 			tim_basis)
 
@@ -957,7 +1052,7 @@ if __name__ == '__main__':
 			rA                 =shot_info["aperture radius"]*1e-4,
 			sA                 =shot_info["aperture spacing"]*1e-4,
 			L1                 =shot_info["standoff"]*1e-4,
-			M                  =shot_info["magnification"],
+			M_gess             =shot_info["magnification"],
 			etch_time          =etch_time,
 			rotation           =radians(shot_info["rotation"]),
 		)

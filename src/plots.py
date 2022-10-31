@@ -11,7 +11,7 @@ from scipy import special
 
 from cmap import CMAP
 from hdf5_util import save_as_hdf5
-from util import downsample_2d, get_relative_aperture_positions, saturate, center_of_mass, \
+from util import downsample_2d, saturate, center_of_mass, \
 	bin_centers, Point, nearest_value, shape_parameters
 
 matplotlib.use("Qt5agg")
@@ -107,8 +107,8 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	plt.pcolormesh(x_bins, y_bins, N.T, cmap=CMAP["coffee"], rasterized=True, vmax=vmax)
 	T = np.linspace(0, 2*np.pi)
 	if PLOT_THEORETICAL_PROJECTION:
-		for dx, dy in get_relative_aperture_positions(s0, r0, np.ptp(x_bins)/2):
-			plt.plot(x0 + dx + r0*np.cos(T), y0 + dy + r0*np.sin(T), 'k--')
+		# for dx, dy in get_relative_aperture_positions(s0, r0, np.ptp(x_bins)/2):
+			plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), 'k--')
 	plt.axis('square')
 	if "xray" in filename:
 		plt.title(f"X-ray image") # TODO: plt.title(f"$h\\nu$ = {energy_min:.1f} – {energy_max:.1f} keV")
