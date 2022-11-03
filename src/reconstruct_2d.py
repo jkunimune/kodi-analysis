@@ -50,7 +50,7 @@ ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = True
 SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
-SHOW_POINT_SPREAD_FUNCCION = False
+SHOW_POINT_SPREAD_FUNCCION = True
 
 BELIEVE_IN_APERTURE_TILTING = True
 MAX_NUM_PIXELS = 1000
@@ -151,21 +151,26 @@ def user_defined_region(filename, title, default=None, timeout=None) -> list[Poi
 	return vertices
 
 
-def point_spread_function(XK: np.ndarray, YK: np.ndarray,
-                          Q: float, r0: float, з_min: float, з_max: float) -> np.ndarray:
+def point_spread_function(X: np.ndarray, Y: np.ndarray,
+                          Q: float, r0: float, transform: np.ndarray,
+                          з_min: float, з_max: float) -> np.ndarray:
 	""" build the dimensionless point spread function """
 	# calculate the profile using the electric field model
 	r_interp, n_interp = electric_field.get_modified_point_spread(
 		r0, Q, energy_min=з_min, energy_max=з_max)
 
-	dxK = XK[1, 0] - XK[0, 0]
-	dyK = YK[0, 1] - YK[0, 0]
-	assert dxK == dyK, f"{dxK} != {dyK}"
-	func = np.zeros(XK.shape) # build the point spread function
-	offsets = np.linspace(-dxK/2, dxK/2, 15)[1:-1:2]
-	for dx in offsets: # sampling over a few pixels
-		for dy in offsets:
-			func += np.interp(np.hypot(XK + dx, YK + dy),
+	transform = np.linalg.inv(transform)
+
+	x_step = X[1, 0] - X[0, 0]
+	y_step = Y[0, 1] - Y[0, 0]
+	assert x_step == y_step, f"{x_step} != {y_step}"
+	func = np.zeros(X.shape) # build the point spread function
+	offsets = np.linspace(-x_step/2, y_step/2, 15)[1:-1:2]
+	for x_offset in offsets: # sampling over a few pixels
+		for y_offset in offsets:
+			X_prime, Y_prime = np.transpose(
+				transform @ np.transpose([X + x_offset, Y + y_offset], (1, 0, 2)), (1, 0, 2))
+			func += np.interp(np.hypot(X_prime, Y_prime),
 			                  r_interp, n_interp, right=0)
 	func /= offsets.size**2 # divide by the number of samples
 	return func
@@ -648,6 +653,7 @@ def analyze_scan(input_filename: str,
 		logging.info(f"re-loading the previous reconstructions")
 		xI0, yI0, r0 = None, None, None
 		data_polygon = None
+		array_transform = None
 		M = M_gess # TODO: re-load the previus M
 		xU, yU, image_stack = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source.h5",
 		                                ["x", "y", "image"])
@@ -692,15 +698,17 @@ def analyze_scan(input_filename: str,
 		centers, array_transform = find_circle_centers(
 			input_filename, M_gess*rA, M_gess*sA, data_polygon, show_plots)
 		array_major_scale, array_minor_scale = linalg.svdvals(array_transform)
-		xs, ys = zip(*data_polygon)
-		xI0, yI0 = (np.min(xs) + np.max(xs))/2, (np.min(ys) + np.max(ys)/2)
+		array_mean_scale = sqrt(array_major_scale*array_minor_scale)
+		xs, ys = zip(*data_polygon) # TODO: keep all of the apertures instead of picking one
+		xI0, yI0 = (np.min(xs) + np.max(xs))/2, (np.min(ys) + np.max(ys))/2
 		xI0, yI0 = centers[np.argmin(np.hypot(np.array(centers)[:, 0] - xI0, np.array(centers)[:, 1] - yI0))]
 		# update the magnification to be based on this check
-		M = M_gess*array_major_scale # TODO: for deuteron data, defer to x-ray data
+		array_transform = array_transform/array_mean_scale
+		M = M_gess*array_mean_scale # TODO: for deuteron data, defer to x-ray data
 		logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f})")
 		if array_major_scale/array_minor_scale > 1.01:
 			logging.info(f"detected an aperture array skewness of {array_major_scale/array_minor_scale - 1:.3f}")
-		r0 = M*rA # TODO: instead of discarding the full transform matrix, I'll need to keep it for when I bild the PSF
+		r0 = M*rA
 
 		xU, yU, image_stack = None, None, None
 
@@ -850,7 +858,7 @@ def analyze_scan(input_filename: str,
 
 			logging.info(f"  generating a {XK.shape} point spread function with Q={Q}")
 
-			penumbral_kernel = point_spread_function(XK, YK, Q, r0, *emission_energies) # get the dimensionless shape of the penumbra
+			penumbral_kernel = point_spread_function(XK, YK, Q, r0, array_transform, *emission_energies) # get the dimensionless shape of the penumbra
 			penumbral_kernel *= dxS*dyS*dxI*dyI/(M*L1)**2 # scale by the solid angle subtended by each image pixel
 
 			logging.info(f"  generating a data mask to reduce noise")
