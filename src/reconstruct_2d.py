@@ -52,6 +52,7 @@ SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
+BELIEVE_IN_APERTURE_TILTING = False
 MAX_NUM_PIXELS = 1000
 EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
 EXPECTED_SIGNAL_TO_NOISE = 5
@@ -256,7 +257,12 @@ def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_point
 		return np.identity(2)
 
 	def cost_function(args):
-		transform = np.reshape(args, (2, 2))
+		if len(args) == 2:
+			transform = args[0]*rotation_matrix(args[1])
+		elif len(args) == 4:
+			transform = np.reshape(args, (2, 2))
+		else:
+			raise ValueError
 		_, _, cost = snap_to_grid(x_points, y_points, nominal_spacing*transform)
 		return cost
 
@@ -264,15 +270,23 @@ def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_point
 	scale, angle, cost = None, None, inf
 	for test_scale in np.linspace(0.9, 1.1, 5):
 		for test_angle in np.linspace(-pi/6, pi/6, 12, endpoint=False):
-			test_cost = cost_function(np.ravel(test_scale*rotation_matrix(test_angle)))
+			test_cost = cost_function((test_scale, test_angle))
 			if test_cost < cost:
 				scale, angle, cost = test_scale, test_angle, test_cost
+
 	# then use Powell's method
-	solution = optimize.minimize(method="Powell",
-	                             fun=cost_function,
-	                             x0=np.ravel(scale*rotation_matrix(angle)),
-	                             bounds=[(0.8, 1.2), (-0.6, 0.6), (-0.6, 0.6), (0.8, 1.2)])
-	return np.reshape(solution.x, (2, 2))
+	if BELIEVE_IN_APERTURE_TILTING:
+		solution = optimize.minimize(method="Powell",
+		                             fun=cost_function,
+		                             x0=np.ravel(scale*rotation_matrix(angle)),
+		                             bounds=[(0.8, 1.2), (-0.6, 0.6), (-0.6, 0.6), (0.8, 1.2)])
+		return np.reshape(solution.x, (2, 2))
+	else:
+		solution = optimize.minimize(method="Powell",
+		                             fun=cost_function,
+		                             x0=np.array([scale, angle]),
+		                             bounds=[(0.8, 1.2), (angle - pi/6, angle + pi/6)])
+		return solution.x[0]*rotation_matrix(solution.x[1])
 
 
 def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float]
@@ -415,16 +429,22 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		x_contour = np.interp(contour[:, 0], np.arange(x_centers.size), x_centers)
 		y_contour = np.interp(contour[:, 1], np.arange(y_centers.size), y_centers)
 		x0, y0, r_apparent = fit_circle(x_contour, y_contour)
-		if hypot(x_contour.ptp(), y_contour.ptp()) > r_apparent:
-			if 0.7*r_nominal < r_apparent < 1.3*r_nominal:
-				circles.append((x0, y0, r_apparent))  # check the radius to avoid picking up noise
+		if 0.7*r_nominal < r_apparent < 1.3*r_nominal:  # check the radius to avoid picking up noise
+			linear_gap = hypot(x_contour[-1] - x_contour[0], y_contour[-1] - y_contour[0])
+			diameter = np.max(np.hypot(x_contour - x_contour[0], y_contour - y_contour[0]))
+			if diameter > r_apparent:  # circle is big enuff to use its data…
+				if diameter < 1.5*r_apparent or linear_gap > r_apparent:  # …but not complete enuff to trust its center
+					circles.append((x0, y0, r_apparent, False))
+				else:  # …and big enuff to trust its center
+					circles.append((x0, y0, r_apparent, True))
 	if len(circles) == 0:
 		raise RuntimeError("I couldn't find any circles in this region")
 
 	# use a simplex algorithm to fit for scale and angle
-	x_circles = np.array([x for x, y, r in circles])
-	y_circles = np.array([y for x, y, r in circles])
-	grid_transform = fit_grid_to_points(s_nominal, x_circles, y_circles)
+	x_circles = np.array([x for x, y, r, full in circles])
+	y_circles = np.array([y for x, y, r, full in circles])
+	circle_fullness = np.array([full for x, y, r, full in circles])
+	grid_transform = fit_grid_to_points(s_nominal, x_circles[circle_fullness], y_circles[circle_fullness])
 
 	x_circles, y_circles, _ = snap_to_grid(x_circles, y_circles, s_nominal*grid_transform)
 	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
@@ -433,8 +453,8 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		plt.figure()
 		plt.pcolormesh(x_bins, y_bins, N_full.T, cmap=CMAP["coffee"])
 		θ = np.linspace(0, 2*pi, 145)
-		for x0, y0 in zip(x_circles, y_circles):
-			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ), "C0", linewidth=1.2)
+		for x0, y0, full in zip(x_circles, y_circles, circle_fullness):
+			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ), "C0-" if full else "C0--", linewidth=1.2)
 		plt.contour(x_centers, y_centers, N_clipd.T, levels=[haff_density], colors="C6", linewidths=.6)
 		plt.axis("equal")
 		plt.ylim(np.min(y_bins), np.max(y_bins))

@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from scipy import integrate, signal
 
 from interpolate import RegularInterpolator
-from util import find_intercept, bin_centers, bin_centers_and_sizes
+from util import find_intercept, bin_centers
 
 MODELS = ["planar", "cylindrical"]
 E_interpolator_dict: dict[str, RegularInterpolator] = {}
@@ -100,7 +100,7 @@ def electric_field(r: NDArray[float], model: str, normalized_aperture_thickness:
 
 
 def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max=1., normalize=False,
-                              model="planar", normalized_aperture_thickness=0.1,
+                              model="planar", normalized_aperture_thickness=0.0,
                               ) -> tuple[NDArray[float], NDArray[float]]:
 	""" get the effective brightness as a function of radius, accounting for a point
 	    source and roughly boxcar energy spectrum. the units can be whatever as long
@@ -111,6 +111,9 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 	    :param energy_min: the minimum deuteron energy in the image. must be greater than 0.
 	    :param energy_max: the maximum deuteron energy in the image. must be greater than e_min.
 	    :param normalize: if true, scale so the peak value is 1.
+	    :param model: either "planar" for the model used in previus work or "cylindrical" for a full axisymmetric
+	                  Poisson equation solution
+        :param normalized_aperture_thickness: a parameter that adds some stuff to the cylindrical model.
 	    :return: array of radii and array of corresponding brightnesses
 	"""
 	global R, N, dE, index
