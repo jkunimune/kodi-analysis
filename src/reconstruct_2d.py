@@ -52,11 +52,8 @@ SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
-BELIEVE_IN_APERTURE_TILTING = False
+BELIEVE_IN_APERTURE_TILTING = True
 MAX_NUM_PIXELS = 1000
-EXPECTED_MAGNIFICATION_ACCURACY = 4e-3
-EXPECTED_SIGNAL_TO_NOISE = 5
-NON_STATISTICAL_NOISE = .0
 DEUTERON_RESOLUTION = 5e-4
 X_RAY_RESOLUTION = 2e-4
 DEUTERON_CONTOUR = .50
@@ -264,7 +261,8 @@ def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_point
 		else:
 			raise ValueError
 		_, _, cost = snap_to_grid(x_points, y_points, nominal_spacing*transform)
-		return cost
+		s0, s1 = linalg.svdvals(transform)
+		return cost + 1e-2*nominal_spacing**2*log(s0/s1)**2
 
 	# first do a scan thru a few reasonable values
 	scale, angle, cost = None, None, inf
@@ -275,7 +273,7 @@ def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_point
 				scale, angle, cost = test_scale, test_angle, test_cost
 
 	# then use Powell's method
-	if BELIEVE_IN_APERTURE_TILTING:
+	if BELIEVE_IN_APERTURE_TILTING and x_points.size >= 3:
 		solution = optimize.minimize(method="Powell",
 		                             fun=cost_function,
 		                             x0=np.ravel(scale*rotation_matrix(angle)),
