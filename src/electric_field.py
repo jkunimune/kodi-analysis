@@ -61,18 +61,20 @@ def calculate_electric_field(r: NDArray[float], model: str, inverse_aspect_ratio
 			V[0, :] = 4/3*V[1, :] - 1/3*V[2, :]  # axial
 			V[-1, :] = 0  # outer
 		# then add in this somewhat janky not fully-physical rim factor, which actually dominates
-		for θ in np.linspace(0, 2*pi, 24, endpoint=False):
-			distance = np.sqrt((r_extend[i] - cos(θ))**2 + sin(θ)**2 + z[j]**2)
-			V += inverse_aspect_ratio/distance*pi/12
+		if inverse_aspect_ratio != 0:
+			for θ in np.linspace(0, 2*pi, 24, endpoint=False):
+				distance = np.sqrt((r_extend[i] - cos(θ))**2 + sin(θ)**2 + z[j]**2)
+				V += inverse_aspect_ratio/distance*pi/12
+			V[gai, 0] = inf
 		# finally, do the finite difference stuff
-		V[gai, 0] = inf
 		E = 2*np.diff(integrate.trapezoid(V, z, axis=1))/np.diff(r_extend)
 		r_field = np.concatenate([[0], bin_centers(r_extend)])
 		E = np.concatenate([[0], E])
 		# import matplotlib.pyplot as plt
 		# plt.figure()
-		# plt.contourf(z, r_extend, V, levels=np.linspace(-1.5, 1.5, 13))
+		# plt.contourf(z, r_extend, V, vmin=-0.3, vmax=0.1)
 		# plt.axis("equal")
+		# plt.axis([0, 1.2, 0, 1.2])
 		# plt.colorbar()
 		# plt.show()
 		return np.interp(r, r_field, E)
@@ -191,9 +193,7 @@ def generate_modified_point_spread(model: str, normalized_aperture_thickness: fl
 
 
 if __name__ == '__main__':
-	import matplotlib
 	import matplotlib.pyplot as plt
-	matplotlib.use("qtagg")
 
 	os.chdir("..")
 
@@ -203,9 +203,9 @@ if __name__ == '__main__':
 		plt.plot(x, y, label="Brightness")
 		plt.fill_between(x, 0, y, alpha=0.5, label="Brightness")
 	x = np.linspace(0, 1.5, 1000, endpoint=False)
-	plt.plot(x, electric_field(x/1.5)/6, label="Electric field")
+	plt.plot(x, electric_field(x/1.5, model="cylindrical", normalized_aperture_thickness=0), label="Electric field")
 	plt.xlim(0, 2.0)
-	plt.ylim(0, 1.2)
+	# plt.ylim(0, 1.2)
 	plt.xlabel("r/r0")
 	plt.ylabel("arbitrary")
 	# plt.legend()

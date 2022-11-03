@@ -185,19 +185,19 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			axes = fig.subplots(nrows=3, ncols=2)
 			fig.subplots_adjust(top=.95, bottom=.04, left=.09, right=.99, hspace=.00)
 			axes[0, 0].set_title("Source")
-			axes[0, 0].pcolormesh(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap=CMAP["greys"])
+			axes[0, 0].imshow(N*g/η, vmin=0, vmax=N*(g/η).max(), cmap=CMAP["greys"], origin="lower")
 			axes[0, 1].set_title("Floor")
-			axes[0, 1].pcolormesh(g, vmin=np.min(g), vmax=np.min(g, where=g > 0, initial=np.inf)*6, cmap=CMAP["greys"])
+			axes[0, 1].imshow(g, vmin=np.min(g), vmax=np.min(g, where=g > 0, initial=np.inf)*6, cmap=CMAP["greys"], origin="lower")
 			axes[1, 0].set_title("Data")
-			axes[1, 0].pcolormesh(np.where(data_region, F, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=CMAP["spiral"])
+			axes[1, 0].imshow(np.where(data_region, F, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=CMAP["spiral"], origin="lower")
 			axes[1, 1].set_title("Synthetic")
-			axes[1, 1].pcolormesh(np.where(data_region, N*s, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=CMAP["spiral"])
+			axes[1, 1].imshow(np.where(data_region, N*s, np.nan).T, vmin=0, vmax=np.quantile(F[data_region], .99), cmap=CMAP["spiral"], origin="lower")
 			axes[2, 0].set_title("Log-likelihood")
 			g_t = G[t]/np.sum(G[t])
 			dof_effective = np.sum(g_t/(g_t + 1/dof), where=source_region)
-			axes[2, 0].axhline(-dof_effective - sqrt(2*dof_effective), color="#bbb", linewidth=.6)
-			axes[2, 0].axhline(-dof_effective, color="#bbb", linewidth=.6)
-			axes[2, 0].axhline(-dof_effective + sqrt(2*dof_effective), color="#bbb", linewidth=.6)
+			axes[2, 0].axhline(-dof_effective/2 - sqrt(2*dof_effective), color="#bbb", linewidth=.6)
+			axes[2, 0].axhline(-dof_effective/2, color="#bbb", linewidth=.6)
+			axes[2, 0].axhline(-dof_effective/2 + sqrt(2*dof_effective), color="#bbb", linewidth=.6)
 			axes[2, 0].plot(log_L[:t + 1] - log_L[t])
 			axes[2, 0].set_xlim(0, t)
 			axes[2, 0].set_ylim(min(-dof, log_L[max(0, t - 10)] - log_L[t]), dof/10)
@@ -206,7 +206,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 				χ2 = 2*(N*s - F*np.log(s) - (F - F*np.log(np.maximum(1e-20, f))))
 			else:
 				χ2 = (N*s - F)**2/(D/2)
-			axes[2, 1].pcolormesh(np.where(data_region, χ2, 0).T, vmin=0, vmax=12, cmap='inferno')
+			axes[2, 1].imshow(np.where(data_region, χ2, 0).T, vmin=0, vmax=12, cmap='inferno', origin="lower")
 			for row in axes:
 				for axis in row:
 					if axis != axes[2, 0]:
@@ -402,7 +402,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 
 		if show_plots:
 			ax.clear()
-			ax.pcolormesh(G[t])
+			ax.imshow(G[t], origin="lower")
 			ax.axis("square")
 			plt.pause(.2)
 
@@ -492,7 +492,7 @@ def seguin(F: NDArray[float], r_psf: float, efficiency: float,
 	if show_plots:
 		fig, axes = plt.subplots(nrows=2, ncols=2)
 		for ax, image in zip(axes.flatten(), [F, F_polar, dFdr, dFdr_weited]):
-			ax.pcolormesh(image)
+			ax.imshow(image, origin="lower")
 		plt.show()
 
 	# finally, do the integral (memory management is kind of tricky here)
@@ -571,22 +571,22 @@ if __name__ == '__main__':
 	                            show_plots=True)
 
 	plt.figure()
-	plt.pcolormesh(source, vmin=0, vmax=np.max(source))
+	plt.imshow(source, vmin=0, vmax=np.max(source))
 	plt.colorbar()
 	plt.title('source')
 
 	plt.figure()
-	plt.pcolormesh(kernel)
+	plt.imshow(kernel)
 	plt.colorbar()
 	plt.title('krenel')
 
 	plt.figure()
-	plt.pcolormesh(image)
+	plt.imshow(image)
 	plt.colorbar()
 	plt.title('signal')
 
 	plt.figure()
-	plt.pcolormesh(reconstruction, vmin=0, vmax=np.max(source))
+	plt.imshow(reconstruction, vmin=0, vmax=np.max(source))
 	plt.colorbar()
 	plt.title('reconstruccion')
 

@@ -226,6 +226,7 @@ def plot_source(filename: str, show: bool,
 	# R = p0 + p2*np.cos(2*(T - θ2))
 	# plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
 	# plt.colorbar()
+	plt.gca().set_facecolor("#000")
 	plt.axis('square')
 	if "xray" in filename:
 		plt.title("X-ray image") # TODO: the x-ray energies

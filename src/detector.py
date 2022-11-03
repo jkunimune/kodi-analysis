@@ -170,12 +170,12 @@ if __name__ == '__main__':
 
 	energies = np.geomspace(1, 1000)
 	plt.figure()
-	for filters in [[(15, "Ta"), (400, "Al")], [(250, "Al")]]:#[[(50, "Al")], [(200, "Al")], [(15, "Ta")]]:
+	for filters in [[(250, "Al")], [(450, "Al")], [(15, "Ta"), (200, "Al")], [(15, "Ta"), (400, "Al")]]:
 		sensitivity = xray_sensitivity(energies, 30)
 		for filter_thickness, filter_material in filters:
 			sensitivity *= xray_transmission(energies, filter_thickness, filter_material)
 		plt.plot(energies, sensitivity,
-		         label=f"{filters[0][0]}μm {filters[0][1]}")
+		         label=" + ".join([f"{thickness}μm {material}" for thickness, material in filters]))
 	plt.xscale("log")
 	# plt.yscale("log")
 	plt.xlabel("Energy (keV)")

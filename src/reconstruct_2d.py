@@ -8,7 +8,7 @@ import re
 import sys
 import time
 import warnings
-from math import log, pi, nan, ceil, radians, inf, isfinite, sqrt
+from math import log, pi, nan, ceil, radians, inf, isfinite, sqrt, hypot
 from typing import Any
 
 import h5py
@@ -39,11 +39,15 @@ matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
+# DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron1", (9, 100))] # (MeV) (emitted, not detected)
 DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuteron1", (6, 9))] # (MeV) (emitted, not detected)
-SUPPORTED_FILETYPES = [".pkl", ".txt", ".h5"] # , ".cpsa"]
+# DEUTERON_ENERGY_CUTS = [("deuteron6", (11, 13)), ("deuteron5", (9.5, 11)), ("deuteron4", (8, 9.5)),
+#                         ("deuteron3", (6.5, 8)), ("deuteron2", (5, 6.5)), ("deuteron1", (3.5, 5)),
+#                         ("deuteron0", (2, 3.5))] # (MeV) (emitted, not detected)
+SUPPORTED_FILETYPES = [".pkl", ".h5"] # , ".txt"] # , ".cpsa"]
 
 ASK_FOR_HELP = False
-SHOW_DIAMETER_CUTS = False
+SHOW_DIAMETER_CUTS = True
 SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
@@ -86,7 +90,7 @@ def where_is_the_ocean(x, y, z, title, timeout=None) -> tuple[float, float]:
 		raise TimeoutError
 
 
-def user_defined_region(filename, title, timeout=None) -> list[Point]:
+def user_defined_region(filename, title, default=None, timeout=None) -> list[Point]:
 	""" solicit the user's help in circling a region """
 	if filename.endswith(".txt") or filename.endswith(".cpsa"):
 		x_tracks, y_tracks = load_cr39_scan_file(filename)
@@ -103,10 +107,15 @@ def user_defined_region(filename, title, timeout=None) -> list[Point]:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 	fig = plt.figure()
-	plt.pcolormesh(x, y, z.T, vmax=np.quantile(z, .999), cmap=CMAP["spiral"])
+	plt.pcolormesh(x, y, z.T, vmax=np.quantile(z, .99), cmap=CMAP["spiral"])
 	polygon, = plt.plot([], [], "k-")
 	cap, = plt.plot([], [], "k:")
 	cursor, = plt.plot([], [], "ko")
+	if default is not None:
+		default = np.concatenate([default[-1:], default[0:]])
+		default_polygon, = plt.plot(default[:, 0], default[:, 1], "k-", alpha=0.3)
+	else:
+		default_polygon, = plt.plot([], [])
 	plt.axis("equal")
 	plt.colorbar()
 	plt.title(title)
@@ -121,6 +130,7 @@ def user_defined_region(filename, title, timeout=None) -> list[Point]:
 		else:
 			vertices.pop()
 		last_click_time = time.time()
+		default_polygon.set_visible(False)
 		polygon.set_xdata([x for x, y in vertices])
 		polygon.set_ydata([y for x, y in vertices])
 		if len(vertices) > 0:
@@ -140,10 +150,7 @@ def user_defined_region(filename, title, timeout=None) -> list[Point]:
 		plt.pause(.01)
 	plt.close("all")
 
-	if len(vertices) >= 3:
-		return vertices
-	else:
-		raise TimeoutError
+	return vertices
 
 
 def point_spread_function(XK: np.ndarray, YK: np.ndarray,
@@ -175,7 +182,7 @@ def load_cr39_scan_file(filename: str,
 	"""
 	if filename.endswith(".txt"):
 		track_list = pd.read_csv(filename, sep=r'\s+', # TODO: read cpsa file directly so I can get these things off my disc
-		                         header=20, skiprows=[24],
+		                         header=19, skiprows=[24],
 		                         encoding='Latin-1',
 		                         dtype='float32') # load all track coordinates
 
@@ -193,10 +200,13 @@ def load_cr39_scan_file(filename: str,
 			plt.plot([x0, x0, x1, x1], [0, y1, y1, 0], "k--")
 			plt.show()
 
-		hi_contrast = (track_list['cn(%)'] < max_contrast) & (track_list['e(%)'] < max_eccentricity)
-		in_bounds = (track_list['d(µm)'] >= min_diameter) & (track_list['d(µm)'] <= max_diameter)
-		x_tracks = track_list[hi_contrast & in_bounds]['x(cm)']
-		y_tracks = track_list[hi_contrast & in_bounds]['y(cm)']
+		try:
+			hi_contrast = (track_list['cn(%)'] < max_contrast) & (track_list['e(%)'] < max_eccentricity)
+			in_bounds = (track_list['d(µm)'] >= min_diameter) & (track_list['d(µm)'] <= max_diameter)
+			x_tracks = track_list[hi_contrast & in_bounds]['x(cm)']
+			y_tracks = track_list[hi_contrast & in_bounds]['y(cm)']
+		except KeyError:
+			raise RuntimeError(f"fredrick's program messed up this file ({filename})")
 
 	elif filename.endswith(".cpsa"):
 		# file = cr39py.CR39(filename)
@@ -405,8 +415,8 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		x_contour = np.interp(contour[:, 0], np.arange(x_centers.size), x_centers)
 		y_contour = np.interp(contour[:, 1], np.arange(y_centers.size), y_centers)
 		x0, y0, r_apparent = fit_circle(x_contour, y_contour)
-		if np.hypot(x_contour.ptp(), y_contour.ptp()) > r_apparent:
-			if 0.8*r_nominal < r_apparent < 1.2*r_nominal:
+		if hypot(x_contour.ptp(), y_contour.ptp()) > r_apparent:
+			if 0.7*r_nominal < r_apparent < 1.3*r_nominal:
 				circles.append((x0, y0, r_apparent))  # check the radius to avoid picking up noise
 	if len(circles) == 0:
 		raise RuntimeError("I couldn't find any circles in this region")
@@ -489,8 +499,10 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
 	inside = A > 0
 	umbra, exterior = (r < 0.5*r0), (r > 1.8*r0)
-	if not np.any(inside & umbra) or not np.any(inside & exterior):
-		raise RuntimeError("too much of the image is clipped.")
+	if not np.any(inside & umbra):
+		raise RuntimeError("the whole inside of the image is clipd for some reason.")
+	if not np.any(inside & exterior):
+		raise RuntimeError("too much of the image is clipd; I need a background region.")
 	ρ_max = np.average(ρ[inside], weights=np.where(umbra, 1/dρ**2, 0)[inside])
 	ρ_min = np.average(ρ[inside], weights=np.where(exterior, 1/dρ**2, 0)[inside])
 	n_background = np.mean(n, where=r > 1.8*r0)
@@ -618,7 +630,7 @@ def analyze_scan(input_filename: str,
 		logging.info(f"re-loading the previous reconstructions")
 		xI0, yI0, r0 = None, None, None
 		data_polygon = None
-		M = M_gess # TODO: re-load the previus data_polygon and M
+		M = M_gess # TODO: re-load the previus M
 		xU, yU, image_stack = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source.h5",
 		                                ["x", "y", "image"])
 		image_stack = image_stack.transpose((0, 2, 1)) # assume it was saved as [y,x] and switch to [i,j]
@@ -634,12 +646,29 @@ def analyze_scan(input_filename: str,
 			logging.warning("Not enuff tracks to reconstruct")
 			return []
 
-		data_polygon = [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)] # TODO: load previus data region
+		# start by asking the user to highlight the data
+		try:
+			old_data_polygon, = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-region",
+			                             ["vertices"])
+		except FileNotFoundError:
+			old_data_polygon = None
 		if show_plots:
 			try:
-				data_polygon = user_defined_region(input_filename, "Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
+				data_polygon = user_defined_region(input_filename, default=old_data_polygon,
+				                                   title="Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
 			except TimeoutError:
-				pass
+				data_polygon = None
+		else:
+			data_polygon = None
+		if len(data_polygon) < 3:
+			data_polygon = None
+		if data_polygon is None:
+			if old_data_polygon is None:
+				data_polygon = [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)]
+			else:
+				data_polygon = old_data_polygon
+		else:
+			save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-region", vertices=data_polygon)
 
 		# find the centers and spacings of the penumbral images
 		centers, array_transform = find_circle_centers(
@@ -649,10 +678,10 @@ def analyze_scan(input_filename: str,
 		xI0, yI0 = (np.min(xs) + np.max(xs))/2, (np.min(ys) + np.max(ys)/2)
 		xI0, yI0 = centers[np.argmin(np.hypot(np.array(centers)[:, 0] - xI0, np.array(centers)[:, 1] - yI0))]
 		# update the magnification to be based on this check
-		M = M_gess*array_major_scale
-		logging.info(f"  inferred a magnification of {M:.2f} (nominal was {M_gess:.1f})")
+		M = M_gess*array_major_scale # TODO: for deuteron data, defer to x-ray data
+		logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f})")
 		if array_major_scale/array_minor_scale > 1.01:
-			logging.info(f"  detected an aperture array skewness of {array_major_scale/array_minor_scale - 1:.2f}")
+			logging.info(f"detected an aperture array skewness of {array_major_scale/array_minor_scale - 1:.3f}")
 		r0 = M*rA # TODO: instead of discarding the full transform matrix, I'll need to keep it for when I bild the PSF
 
 		xU, yU, image_stack = None, None, None
@@ -1043,19 +1072,23 @@ if __name__ == '__main__':
 		summary = summary[(summary.shot != shot) | (summary.tim != tim)]
 
 		# perform the 2d reconstruccion
-		results = analyze_scan(
-			input_filename     =filename,
-			skip_reconstruction=skip_reconstruction,
-			show_plots         =show_plots,
-			shot               =shot,
-			tim                =tim,
-			rA                 =shot_info["aperture radius"]*1e-4,
-			sA                 =shot_info["aperture spacing"]*1e-4,
-			L1                 =shot_info["standoff"]*1e-4,
-			M_gess             =shot_info["magnification"],
-			etch_time          =etch_time,
-			rotation           =radians(shot_info["rotation"]),
-		)
+		try:
+			results = analyze_scan(
+				input_filename     =filename,
+				skip_reconstruction=skip_reconstruction,
+				show_plots         =show_plots,
+				shot               =shot,
+				tim                =tim,
+				rA                 =shot_info["aperture radius"]*1e-4,
+				sA                 =shot_info["aperture spacing"]*1e-4,
+				L1                 =shot_info["standoff"]*1e-4,
+				M_gess             =shot_info["magnification"],
+				etch_time          =etch_time,
+				rotation           =radians(shot_info["rotation"]),
+			)
+		except RuntimeError as e:
+			logging.warning(f"  the reconstruction failed!  {e}")
+			continue
 
 		for result in results:
 			summary = summary.append( # and save the new ones to the dataframe
