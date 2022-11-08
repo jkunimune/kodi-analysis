@@ -9,7 +9,7 @@ from typing import Callable, Generator
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
-from numpy._typing import NDArray
+from numpy.typing import NDArray
 from scipy import optimize, integrate
 from skimage import measure
 
@@ -134,16 +134,24 @@ def downsample_2d(x_bins, y_bins, N):
 
 
 def resample_2d(N_old, x_old, y_old, x_new, y_new):
-	""" apply new bins to a 2d function, preserving quality and accuraccy as much as possible """
-	x_old, y_old = bin_centers(x_old), bin_centers(y_old)
-	x_new, y_new = bin_centers(x_new), bin_centers(y_new)
+	""" apply new bins to a 2d function, preserving quality and accuraccy as much as possible.
+	    the result will sum to the same number as the old one.
+	"""
+	# convert to bin-centers
+	(x_old, dx_old), (y_old, dy_old) = bin_centers_and_sizes(x_old), bin_centers_and_sizes(y_old)
+	(x_new, dx_new), (y_new, dy_new) = bin_centers_and_sizes(x_new), bin_centers_and_sizes(y_new)
+	# convert to densities
+	N_old = N_old/(dx_old[:, None]*dy_old[None, :])
 	λ = max(x_old[1] - x_old[0], x_new[1] - x_new[0])
-	kernel_x = np.maximum(0, (1 - abs(x_new[:, np.newaxis] - x_old[np.newaxis, :])/λ)) # do this bilinear-type-thing
+	# do this bilinear-type-thing
+	kernel_x = np.maximum(0, (1 - abs(x_new[:, np.newaxis] - x_old[np.newaxis, :])/λ))
 	kernel_x /= np.expand_dims(np.sum(kernel_x, axis=1), axis=1)
 	N_mid = np.matmul(kernel_x, N_old)
 	kernel_y = np.maximum(0, (1 - abs(y_new[:, np.newaxis] - y_old[np.newaxis, :])/λ))
 	kernel_y /= np.expand_dims(np.sum(kernel_y, axis=1), axis=1)
 	N_new = np.matmul(kernel_y, N_mid.transpose()).transpose()
+	# convert back to counts
+	N_new = N_new/(dx_new[:, None]*dy_new[None, :])
 	return N_new
 
 
@@ -175,7 +183,8 @@ def inside_polygon(x: np.ndarray, y: np.ndarray, polygon: list[Point]):
 	return num_crossings%2 == 1
 
 
-def get_relative_aperture_positions(spacing: NDArray[float], r_img: float, r_max: float) -> Generator[tuple[float, float], None, None]:
+def get_relative_aperture_positions(spacing: float, transform: NDArray[float],
+                                    r_img: float, r_max: float) -> Generator[tuple[float, float], None, None]:
 	""" yield the positions of the individual penumbral images in the array relative
 		to the center, in the detector plane
 	"""
@@ -186,7 +195,7 @@ def get_relative_aperture_positions(spacing: NDArray[float], r_img: float, r_max
 			dυ = i*sqrt(3)/2
 			for j in range(-6, 6):
 				dξ = (2*j + i%2)/2
-				dx, dy = spacing@[dξ, dυ]
+				dx, dy = spacing*transform@[dξ, dυ]
 				if np.hypot(dx, dy) + r_img <= r_max:
 					yield dx, dy
 

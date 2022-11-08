@@ -8,7 +8,7 @@ import re
 import sys
 import time
 import warnings
-from math import log, pi, nan, ceil, radians, inf, isfinite, sqrt, hypot
+from math import log, pi, nan, ceil, radians, inf, isfinite, sqrt, hypot, isinf
 from typing import Any
 
 import h5py
@@ -52,7 +52,7 @@ SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = True
 
-BELIEVE_IN_APERTURE_TILTING = True
+BELIEVE_IN_APERTURE_TILTING = False
 MAX_NUM_PIXELS = 1000
 DEUTERON_RESOLUTION = 5e-4
 X_RAY_RESOLUTION = 2e-4
@@ -329,7 +329,7 @@ def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float]
 		y_fit = np.full(n, nan)
 		errors = np.full(n, inf)
 		x_aps, y_aps = [], []
-		for i, (dx, dy) in enumerate(get_relative_aperture_positions(grid_matrix, 0, image_size)):
+		for i, (dx, dy) in enumerate(get_relative_aperture_positions(1, grid_matrix, 0, image_size)):
 			distances = np.hypot(grid_x0 + dx - x_points, grid_y0 + dy - y_points)
 			point_is_close_to_here = distances < errors
 			errors[point_is_close_to_here] = distances[point_is_close_to_here]
@@ -337,9 +337,9 @@ def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float]
 			y_fit[point_is_close_to_here] = grid_y0 + dy
 			x_aps.append(grid_x0 + dx)
 			y_aps.append(grid_y0 + dy)
-		results.append((np.sum(errors**2), x_fit, y_fit))
+		results.append((np.sum(errors**2), ξ_offset, x_fit, y_fit))
 
-	total_error, x_fit, y_fit = min(results)
+	total_error, _, x_fit, y_fit = min(results)
 
 	return x_fit, y_fit, total_error  # type: ignore
 
@@ -469,7 +469,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
                          energy_min: float, energy_max: float,
-                         x0: float, y0: float, r0: float, region: list[Point],
+                         x0: float, y0: float, r0: float, s0: float, region: list[Point],
                          show_plots: bool) -> Point:
 	""" perform an inverse Abel transformation while fitting for charging
 	    :param filename: the scanfile containing the data to be analyzed
@@ -479,18 +479,21 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	    :param energy_max: the maximum particle energy included (MeV)
 	    :param x0: the x coordinate of the center of the circle (cm)
 	    :param y0: the y coordinate of the center of the circle (cm)
-	    :param r0: the nominal radius of the 50% contour
+	    :param r0: the radius of the aperture in the imaging plane (cm)
+	    :param s0: the distance to the center of the next aperture in the imaging plane (cm)
 	    :param region: the polygon inside which we care about the data
 	    :param show_plots: if False, overrides SHOW_ELECTRIC_FIELD_CALCULATION
 	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
 	"""
+	r_max = min(2*r0, s0/2)
+
 	# either bin the tracks in radius
 	if filename.endswith(".txt") or filename.endswith(".cpsa"):  # if it's a cpsa-derived file
 		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max)  # load all track coordinates
 		valid = inside_polygon(x_tracks, y_tracks, region)
 		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
 		r_tracks = np.hypot(x_tracks - x0, y_tracks - y0)
-		r_bins = np.linspace(0, 2*r0, int(np.sum(r_tracks <= r0)/1000))
+		r_bins = np.linspace(0, r_max, int(np.sum(r_tracks <= r0)/1000))
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
 		histogram = True
 
@@ -512,7 +515,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		NC[~inside_polygon(XC, YC, region)] = 0
 		RC = np.hypot(XC - x0, YC - y0)
 		dr = (xC_bins[1] - xC_bins[0] + yC_bins[1] - yC_bins[0])/2
-		r_bins = np.linspace(0, 2*r0, int(r0/(dr*2)))
+		r_bins = np.linspace(0, r_max, int(r0/(dr*2)))
 		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
 		histogram = False
 
@@ -651,9 +654,8 @@ def analyze_scan(input_filename: str,
 	# load the full image set now if you can
 	if skip_reconstruction:
 		logging.info(f"re-loading the previous reconstructions")
-		xI0, yI0, r0 = None, None, None
 		data_polygon = None
-		array_transform = None
+		centers, array_transform, r0 = None, None, None
 		M = M_gess # TODO: re-load the previus M
 		xU, yU, image_stack = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source.h5",
 		                                ["x", "y", "image"])
@@ -673,7 +675,7 @@ def analyze_scan(input_filename: str,
 		# start by asking the user to highlight the data
 		try:
 			old_data_polygon, = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-region",
-			                             ["vertices"])
+			                              ["vertices"])
 		except FileNotFoundError:
 			old_data_polygon = None
 		if show_plots:
@@ -699,9 +701,6 @@ def analyze_scan(input_filename: str,
 			input_filename, M_gess*rA, M_gess*sA, data_polygon, show_plots)
 		array_major_scale, array_minor_scale = linalg.svdvals(array_transform)
 		array_mean_scale = sqrt(array_major_scale*array_minor_scale)
-		xs, ys = zip(*data_polygon) # TODO: keep all of the apertures instead of picking one
-		xI0, yI0 = (np.min(xs) + np.max(xs))/2, (np.min(ys) + np.max(ys))/2
-		xI0, yI0 = centers[np.argmin(np.hypot(np.array(centers)[:, 0] - xI0, np.array(centers)[:, 1] - yI0))]
 		# update the magnification to be based on this check
 		array_transform = array_transform/array_mean_scale
 		M = M_gess*array_mean_scale # TODO: for deuteron data, defer to x-ray data
@@ -741,12 +740,13 @@ def analyze_scan(input_filename: str,
 			else:
 				logging.info(f"nvm couldn't find it in summary.csv")
 				continue
-			r0_eff, r_max, r_object, num_bins_K = 0, 0, 0, 0
+			account_for_overlap = False
+			r_psf, r_max, r_object, num_bins_K = 0, 0, 0, 0
 			Q = previus_parameters.Q
 			xI_bins, yI_bins, NI_data = load_hdf5(
 				f"results/data/{shot}-tim{tim}-{energy_cut_name}-penumbra", ["x", "y", "z"])
-			xI0, yI0 = xI_bins.mean(), yI_bins.mean()
 			NI_data = NI_data.T
+			AI_data = np.ones(NI_data.shape, dtype=int)
 			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
 
 		else:
@@ -758,11 +758,13 @@ def analyze_scan(input_filename: str,
 				logging.warning("Not enuff tracks to reconstruct")
 				continue
 
-			# start with a 1D reconstruction
+			# start with a 1D reconstruction on one of the found images
+			x_center, y_center = min(
+				centers, key=lambda center: max([hypot(x - center[0], y - center[1]) for x, y in centers]))
 			Q, r_max = do_1d_reconstruction(
 				input_filename, diameter_min, diameter_max,
 				emission_energies[0], emission_energies[1],
-				xI0, yI0, M*rA, data_polygon, show_plots)
+				x_center, y_center, M*rA, M*sA, data_polygon, show_plots)
 
 			if r_max > r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution:
 				logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
@@ -773,25 +775,29 @@ def analyze_scan(input_filename: str,
 
 			if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
 				r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
+			account_for_overlap = isinf(r_max)
 
-			r_object = (r_max - r_psf)/(M - 1) # (cm)
-			if r_object <= 0:
-				raise RuntimeError("something is rong but I don't understand what it is rite now.  check on the coordinate definitions.")
-
-			# rebin the image
+			# rebin and stack the images
 			if particle == "deuteron":
 				resolution = DEUTERON_RESOLUTION
 			else:
 				resolution = X_RAY_RESOLUTION
-			num_bins_K = ceil(r_psf/(M - 1)/resolution)*2 + 3
-			num_bins_I = ceil(r_object/resolution)*2 + num_bins_K
-			xI_bins = np.linspace(xI0 - r_max, xI0 + r_max, num_bins_I + 1)
-			yI_bins = np.linspace(yI0 - r_max, yI0 + r_max, num_bins_I + 1)
-			dxI, dyI = xI_bins[1] - xI_bins[0], yI_bins[1] - yI_bins[0]
+			xI_bins = yI_bins = np.linspace(-r_max, r_max, ceil(2*r_max/((M - 1)*resolution))*2 + 1)
+			xI, yI = bin_centers(xI_bins), bin_centers(yI_bins) # TODO: have a cartesian grid class that handles this automaticly
+			dxI = dyI = xI_bins[1] - xI_bins[0]
+			XI, YI = np.meshgrid(bin_centers(xI_bins), bin_centers(yI_bins), indexing="ij")
 
+			AI_data = np.zeros((xI_bins.size - 1, yI_bins.size - 1), dtype=int)
+			NI_data = np.zeros((xI_bins.size - 1, yI_bins.size - 1), dtype=float)
 			if input_filename.endswith(".txt") or input_filename.endswith(".cpsa"): # if it's a cpsa-derived text file
 				x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
-				NI_data, xI_bins, yI_bins = np.histogram2d(x_tracks, y_tracks, bins=(xI_bins, yI_bins)) # TODO: do multiple apertures if there are multiple apertures (and allow for a periodic convolution kernel)
+				for x_center, y_center in centers:
+					image = np.histogram2d(x_tracks - x_center,
+					                       y_tracks - y_center,
+					                       bins=(xI_bins, yI_bins))[0]
+					area = np.where(inside_polygon(XI + x_center, YI + y_center, data_polygon), 1, 0)
+					NI_data += image*area
+					AI_data += area
 
 			else:
 				if input_filename.endswith(".pkl"): # if it's a pickle file
@@ -812,27 +818,22 @@ def analyze_scan(input_filename: str,
 				dx_scan = x_scan_bins[1] - x_scan_bins[0]
 				dy_scan = y_scan_bins[1] - y_scan_bins[0]
 				# if you're near the Nyquist frequency, consider *not* resampling
-				if abs(log(dx_scan/dxI)) < .5:
-					num_bins_K = int(ceil(num_bins_K/dx_scan*dxI/2))*2 - 1 # in which case you must recalculate all these numbers
-					dxI, dyI = dx_scan, dy_scan
-					left, right = np.round((xI_bins[[0, -1]] - x_scan_bins[0])/dx_scan).astype(int)
-					bottom = np.round((yI_bins[0] - y_scan_bins[0])/dy_scan).astype(int)
-					top = bottom + right - left
-					xI_bins = x_scan_bins[left:right + 1]
-					yI_bins = y_scan_bins[bottom:top + 1]
-					assert xI_bins.size == yI_bins.size, (left, right, bottom, top)
-				elif dx_scan > dxI:
+				if dx_scan > dxI:
 					logging.warning(f"The scan resolution of this image plate scan ({dx_scan/1e-4:.0f}/{M - 1:.1f} μm) is "
 					                f"insufficient to support the requested reconstruction resolution ({dxI/(M - 1)/1e-4:.0f}μm); "
 					                f"it will be zoomed and enhanced.")
 
-				NI_data = resample_2d(N_scan, x_scan_bins, y_scan_bins, xI_bins, yI_bins) # resample to the chosen bin size
-				NI_data *= dxI*dyI/(dx_scan*dy_scan) # since these are in signal/bin, this factor is needed
+				for x_center, y_center in centers:
+					image = resample_2d(N_scan, x_scan_bins, y_scan_bins,
+					                    xI_bins + x_center, yI_bins + y_center) # resample to the chosen bin size
+					area = np.where(inside_polygon(XI + x_center, YI + y_center, data_polygon), 1, 0)
+					NI_data[area > 0] += image[area > 0]
+					AI_data += area
 
 		save_and_plot_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
-		                       xI_bins, yI_bins, NI_data, xI0, yI0,
+		                       xI_bins, yI_bins, NI_data/AI_data,
 		                       energy_min=emission_energies[0], energy_max=emission_energies[1],
-		                       r0=rA*M, s0=sA*M)
+		                       r0=rA*M, s0=sA*M, array_transform=array_transform)
 
 		if skip_reconstruction:
 			briteness_U = image_stack[energy_cuts, :, :]
@@ -844,14 +845,18 @@ def analyze_scan(input_filename: str,
 		else:
 			XI, YI = np.meshgrid((xI_bins[:-1] + xI_bins[1:])/2,
 			                     (yI_bins[:-1] + yI_bins[1:])/2, indexing='ij')
-			RI = np.hypot(XI - xI0, YI - yI0)
+			RI = np.hypot(XI, YI)
 
-			xK_bins = yK_bins = np.linspace(-dxI*num_bins_K/2, dxI*num_bins_K/2, num_bins_K+1)
+			if account_for_overlap:
+				raise NotImplementedError("not implemented")
+			else:
+				num_bins_K = ceil(r_psf/dxI)*2 + 3
+				xK_bins = yK_bins = np.linspace(-dxI*num_bins_K/2, dxI*num_bins_K/2, num_bins_K+1)
+				xS_bins = yS_bins = xI_bins[num_bins_K//2:-(num_bins_K//2)]/(M - 1)  # this is the source coordinate system.
+
 			XK, YK = np.meshgrid((xK_bins[:-1] + xK_bins[1:])/2,
 			                     (yK_bins[:-1] + yK_bins[1:])/2, indexing='ij') # this is the kernel coordinate system, measured from the center of the umbra
 
-			xS_bins = xI_bins[num_bins_K//2:-(num_bins_K//2)]/(M - 1)
-			yS_bins = yI_bins[num_bins_K//2:-(num_bins_K//2)]/(M - 1) # this is the source coordinate system.
 			xS, yS = (xS_bins[:-1] + xS_bins[1:])/2, (yS_bins[:-1] + yS_bins[1:])/2 # change these to bin centers
 			XS, YS = np.meshgrid(xS, yS, indexing='ij')
 			dxS, dyS = xS_bins[1] - xS_bins[0], yS_bins[1] - yS_bins[0]
@@ -859,6 +864,8 @@ def analyze_scan(input_filename: str,
 			logging.info(f"  generating a {XK.shape} point spread function with Q={Q}")
 
 			penumbral_kernel = point_spread_function(XK, YK, Q, r0, array_transform, *emission_energies) # get the dimensionless shape of the penumbra
+			if account_for_overlap:
+				raise NotImplementedError("I also will need to add more things to the kernel")
 			penumbral_kernel *= dxS*dyS*dxI*dyI/(M*L1)**2 # scale by the solid angle subtended by each image pixel
 
 			logging.info(f"  generating a data mask to reduce noise")
@@ -868,7 +875,7 @@ def analyze_scan(input_filename: str,
 				within_penumbra = RI < 2*r0 - r_max
 				without_penumbra = RI > r_max
 			elif XS.size*penumbral_kernel.size <= MAX_CONVOLUTION:
-				max_source = np.hypot(XS - xI0/(M - 1), YS - yI0/(M - 1)) <= (xS_bins[-1] - xS_bins[0])/2
+				max_source = np.hypot(XS, YS) <= (xS_bins[-1] - xS_bins[0])/2
 				max_source = max_source/np.sum(max_source)
 				reach = signal.fftconvolve(max_source, penumbral_kernel, mode='full')
 				lower_cutoff = .005*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
@@ -882,41 +889,42 @@ def analyze_scan(input_filename: str,
 				within_penumbra, without_penumbra = False, False
 
 			# apply the user-defined mask and smooth the invalid regions
-			without_penumbra |= ~inside_polygon(XI, YI, data_polygon)
-			inner_value = np.mean(NI_data, where=dilate(within_penumbra) & ~(within_penumbra | without_penumbra))
-			outer_value = np.mean(NI_data, where=dilate(without_penumbra) & ~(within_penumbra | without_penumbra))
-			clipd_data = np.where(within_penumbra, inner_value,
+			without_penumbra |= (AI_data == 0)
+			on_penumbra = ~(within_penumbra | without_penumbra)
+			inner_value = np.mean(NI_data/AI_data, where=dilate(within_penumbra) & on_penumbra)
+			outer_value = np.mean(NI_data/AI_data, where=dilate(without_penumbra) & on_penumbra)
+			clipd_NI_data = np.where(within_penumbra, inner_value,
 			                      np.where(without_penumbra, outer_value,
 			                               NI_data))
-			data_region: np.ndarray = ~(within_penumbra | without_penumbra) # type: ignore
+			clipd_AI_data = np.where(on_penumbra, AI_data, 0)
 			source_region = np.hypot(XS - xS_bins.mean(), YS - yS_bins.mean()) <= (xS_bins[-1] - xS_bins[0])/2
 
 			if show_plots and SHOW_POINT_SPREAD_FUNCCION:
 				plt.figure()
 				plt.pcolormesh(xK_bins, yK_bins, penumbral_kernel)
-				plt.contour(XI - xI0, YI - yI0, data_region, levels=[0.5], colors="k")
+				plt.contour(XI, YI, clipd_AI_data, levels=[0.5], colors="k")
 				plt.axis('square')
 				plt.title("Point spread function")
 				plt.show()
 
 			# estimate the noise level, in case that's helpful
-			umbra = RI < max(r0/2, r0 - r_object*(M - 1))
-			umbra_height = np.mean(NI_data, where=umbra)
-			umbra_variance = np.mean((NI_data - umbra_height)**2, where=umbra)
-			estimated_data_variance = NI_data/umbra_height*umbra_variance
+			umbra = (AI_data > 0) & (RI < max(r0/2, r0 - (r_max - r_psf)))
+			umbra_density = np.mean(NI_data/AI_data, where=umbra)
+			umbra_variance_density = np.mean((NI_data - umbra_density*AI_data)**2/AI_data, where=umbra)
+			estimated_data_variance = NI_data/umbra_density*umbra_variance_density
 
 			# perform the reconstruction
-			if umbra_variance < umbra_height/1e3:
+			if sqrt(umbra_variance_density) < umbra_density/1e3:
 				logging.warning("  I think this image is saturated. I'm not going to try to reconstruct it. :(")
 				briteness_S = np.full(source_region.shape, nan)
 			else:
-				logging.info(f"  reconstructing a {data_region.shape} image into a {source_region.shape} source")
+				logging.info(f"  reconstructing a {NI_data.shape} image into a {source_region.shape} source")
 				method = "richardson-lucy" if particle == "deuteron" else "gelfgat"
 				briteness_S = deconvolution.deconvolve(method,
-				                                       clipd_data,
+				                                       clipd_NI_data,
 				                                       penumbral_kernel,
 				                                       r_psf=r0/dxI,
-				                                       data_region=data_region,
+				                                       pixel_area=clipd_AI_data,
 				                                       source_region=source_region,
 				                                       noise=estimated_data_variance,
 				                                       show_plots=show_plots)
@@ -926,10 +934,10 @@ def analyze_scan(input_filename: str,
 
 			if briteness_S.size*penumbral_kernel.size <= MAX_CONVOLUTION:
 				# back-calculate the reconstructed penumbral image
-				NI_reconstruct = signal.fftconvolve(briteness_S, penumbral_kernel)
+				NI_reconstruct = signal.fftconvolve(briteness_S, penumbral_kernel, mode="full")*AI_data
 				# and estimate background as whatever makes it fit best
-				NI_reconstruct += np.mean(NI_data - NI_reconstruct,
-				                          where=~(within_penumbra | without_penumbra))
+				NI_reconstruct += np.nanmean((NI_data - NI_reconstruct)/AI_data,
+				                             where=on_penumbra)*AI_data
 			else:
 				NI_reconstruct = np.full(NI_data.shape, nan)
 
@@ -945,12 +953,10 @@ def analyze_scan(input_filename: str,
 			briteness_U = interpolate.RegularGridInterpolator(
 				(xS, yS), briteness_S, bounds_error=False, fill_value=0)(
 				np.stack(np.meshgrid(xU, yU, indexing="ij"), axis=-1))
-			image_stack[cut_index, :, :] = briteness_U
+			image_stack[cut_index, :, :] = briteness_U # TODO: rename these to source and source_stack, and image and image_thickness and clipd_image etc.
 
 		dxU, dyU = xU[1] - xU[0], yU[1] - yU[0]
 		logging.info(f"  ∫B = {np.sum(briteness_U*dxU*dyU)*4*pi :.4g} deuterons")
-		χ2_red = np.sum((NI_reconstruct - NI_data)**2/NI_reconstruct)
-		logging.info(f"  χ^2/n = {χ2_red}")
 
 		# calculate and print the main shape parameters
 		p0, (_, _), (p2, θ2) = shape_parameters(
@@ -964,15 +970,13 @@ def analyze_scan(input_filename: str,
 		            *emission_energies,
 		            num_cuts=cut_indices.size if particle == "deuteron" else 3)
 		save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
-		                                xI_bins, yI_bins, NI_reconstruct, NI_data)
+		                                xI_bins, yI_bins, NI_reconstruct/AI_data, NI_data/AI_data)
 
 		results.append(dict(
 			shot=shot, tim=tim,
 			energy_cut=energy_cut_name,
 			energy_min=emission_energies[0],
 			energy_max=emission_energies[1],
-			x0=xI0, dx0=0,
-			y0=yI0, dy0=0,
 			Q=Q, dQ=0,
 			M=M, dM=0,
 			P0_magnitude=p0/1e-4, dP0_magnitude=0,

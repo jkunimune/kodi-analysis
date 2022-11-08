@@ -16,7 +16,7 @@ MAX_ARRAY_SIZE = 1.5e9/4 # an upper limit on the number of elements in a float32
 
 
 def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
-               data_region: NDArray[bool], source_region: NDArray[bool],
+               pixel_area: NDArray[int], source_region: NDArray[bool],
                r_psf: float = None,
                noise: str | NDArray[float] = None,
                show_plots: bool = False) -> NDArray[float]:
@@ -25,25 +25,25 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
 	    :param method: the algorithm to use (one of "gelfgat", "wiener", "richardson-lucy", or "seguin")
 		:param F: the full convolution (counts/bin)
 		:param q: the point-spread function
-		:param data_region: a mask for the data; only pixels marked as true will be considered
+		:param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
 	    :param r_psf: the radius of the point-spread function (pixels)
 		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
 		:param show_plots: whether to do the status report plot thing
-		:return: the reconstructed source G such that convolve2d(G, q) \\approx F
+		:return: the reconstructed source G such that convolve2d(G, q)*pixel_area \\approx F
 	"""
 	if method == "gelfgat":
-		return gelfgat(F, q, data_region, source_region, noise, show_plots)
+		return gelfgat(F, q, pixel_area, source_region, noise, show_plots)
 	elif method == "richardson-lucy":
-		return gelfgat(F, q, data_region, source_region, "poisson", show_plots)
+		return gelfgat(F, q, pixel_area, source_region, "poisson", show_plots)
 	elif method == "wiener":
 		return wiener(F, q, source_region, show_plots)
 	elif method == "seguin":
-		return seguin(F, r_psf, cast(float, np.sum(q)), data_region, source_region, show_plots=show_plots)
+		return seguin(F/np.maximum(1, pixel_area), r_psf, cast(float, np.sum(q)), pixel_area, source_region, show_plots=show_plots)
 
 
 def gelfgat(F: NDArray[float], q: NDArray[float],
-            data_region: NDArray[bool], source_region: NDArray[bool],
+            pixel_area: NDArray[int], source_region: NDArray[bool],
             noise: str | NDArray[float], show_plots=False) -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
 			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
@@ -52,7 +52,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		value will be automatically inferred.
 		:param F: the full convolution (counts/bin)
 		:param q: the point-spread function
-		:param data_region: a mask for the data; only pixels marked as true will be considered
+		:param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
 		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
 		:param show_plots: whether to do the status report plot thing
@@ -65,6 +65,8 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		raise ValueError("the source region must have the same shape as the reconstruction.")
 	if np.any(np.isnan(F)) or np.any(np.isnan(q)):
 		raise ValueError("no nan allowd")
+
+	data_region = pixel_area > 0
 
 	if noise == "poisson":
 		mode = "poisson"
@@ -79,10 +81,10 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	else:
 		raise ValueError(f"I don't understand the noise parameter you gave ({noise})")
 
-	# set the non-data-region sections of F to zero
-	F = np.where(data_region, F, 0)
+	# set the non-data-region sections of F to NaN
+	F = np.where(data_region, F, nan)
 	# count the counts
-	N = np.sum(F)
+	N = np.sum(F, where=data_region)
 	# normalize the counts
 	f = F/N
 	# count the pixels
@@ -92,8 +94,8 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	q_star = q[::-1, ::-1]
 
 	# save the detection efficiency of each point (it will be approximately uniform)
-	η0 = np.count_nonzero(data_region)
-	η = signal.fftconvolve(data_region, q_star, mode="valid")
+	η0 = np.sum(pixel_area)
+	η = signal.fftconvolve(pixel_area, q_star, mode="valid")
 
 	# start with a uniform initial gess and a S/B ratio of about 1
 	g0 = η0*dof*np.max(q)
@@ -102,7 +104,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	#       ansering the question, "given that I saw a deuteron, where did it most likely come from?"
 	#       g0 is, analagusly, "given that I saw a deuteron, what's the kakunin it's just background?"
 
-	s = g0/η0 + signal.fftconvolve(g/η, q, mode="full")
+	s = (g0/η0 + signal.fftconvolve(g/η, q, mode="full"))*pixel_area
 
 	np.seterr('ignore')
 
@@ -131,10 +133,10 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			dlds = f/s - 1
 		else:
 			dlds = (F - N*s)/D
-		dlds = np.where(data_region, dlds, 0)
-		δg0 = g0/η0*np.sum(dlds, where=data_region)
+		dlds = np.where(pixel_area > 0, pixel_area*dlds, 0)
+		δg0 = g0/η0*np.sum(dlds)
 		δg = g/η*signal.fftconvolve(dlds, q_star, mode="valid")
-		δs = δg0/η0 + signal.fftconvolve(δg/η, q, mode="full")
+		δs = (δg0/η0 + signal.fftconvolve(δg/η, q, mode="full"))*pixel_area
 
 		# complete the line search algebraicly
 		if mode == "poisson":
@@ -433,7 +435,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 
 
 def seguin(F: NDArray[float], r_psf: float, efficiency: float,
-           data_region: NDArray[bool], source_region: NDArray[bool],
+           pixel_area: NDArray[int], source_region: NDArray[bool],
            smoothing=1.5, show_plots=False) -> NDArray[float]:
 	""" perform the algorithm outlined in
 	        Séguin, F. H. et al.'s "D3He-proton emission imaging for inertial
@@ -443,7 +445,7 @@ def seguin(F: NDArray[float], r_psf: float, efficiency: float,
 	    :param F: the convolved image (signal/bin)
 	    :param r_psf: the radius of the point-spread function (pixels)
 	    :param efficiency: the sum of the point-spread function
-	    :param data_region: a mask for the data; only pixels marked as true will be considered
+	    :param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
 		:param smoothing: the σ at which to smooth the input image (pixels)
 	    :param show_plots: whether to do the status report plot thing
@@ -456,7 +458,7 @@ def seguin(F: NDArray[float], r_psf: float, efficiency: float,
 	if source_region.shape[0] >= 2*r_psf:
 		raise ValueError("Séguin's backprojection only works for rS < r0; specify a smaller source region")
 
-	F = np.where(data_region, F, nan)
+	F = np.where(pixel_area == 0, nan, F)
 
 	# now, interpolate it into polar coordinates
 	F_interpolator = interpolate.RegularGridInterpolator(

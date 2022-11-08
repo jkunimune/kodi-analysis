@@ -6,13 +6,14 @@ from typing import cast
 import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
+from numpy.typing import NDArray
 from scipy import optimize, interpolate
 from scipy import special
 
 from cmap import CMAP
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	bin_centers, Point, nearest_value, shape_parameters
+	bin_centers, Point, nearest_value, shape_parameters, get_relative_aperture_positions
 
 matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
@@ -90,9 +91,9 @@ def save_and_plot_radial_data(filename: str, show: bool,
 
 def save_and_plot_penumbra(filename: str, show: bool,
                            x_bins: np.ndarray | None, y_bins: np.ndarray | None,
-                           N: np.ndarray | None, x0: float, y0: float,
+                           N: np.ndarray | None,
                            energy_min: float, energy_max: float,
-                           s0: float = np.inf, r0: float = 1.5):
+                           s0: float = np.inf, r0: float = 1.5, array_transform: NDArray[float] = np.identity(2)):
 	""" plot the data along with the initial fit to it, and the reconstructed superaperture.
 	"""
 	save_as_hdf5(f'results/data/{filename}-penumbra', x=x_bins, y=y_bins, z=N.T)
@@ -101,14 +102,14 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	# 	x_bins, y_bins, N = resample_2d(x_bins, y_bins, N)
 
 	A_circle, A_square = np.pi*r0**2, x_bins.ptp()*y_bins.ptp()
-	vmax = max(np.quantile(N, (N.size-6)/N.size),
-	           np.quantile(N, 1 - A_circle/A_square/2)*1.25)
+	vmax = max(np.nanquantile(N, (N.size-6)/N.size),
+	           np.nanquantile(N, 1 - A_circle/A_square/2)*1.25)
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.pcolormesh(x_bins, y_bins, N.T, cmap=CMAP["coffee"], rasterized=True, vmax=vmax)
 	T = np.linspace(0, 2*np.pi)
 	if PLOT_THEORETICAL_PROJECTION:
-		# for dx, dy in get_relative_aperture_positions(s0, r0, np.ptp(x_bins)/2):
-			plt.plot(x0 + r0*np.cos(T), y0 + r0*np.sin(T), 'k--')
+		for dx, dy in get_relative_aperture_positions(s0, array_transform, r0, np.ptp(x_bins)/2):
+			plt.plot(dx + r0*np.cos(T), dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
 	if "xray" in filename:
 		plt.title(f"X-ray image") # TODO: plt.title(f"$h\\nu$ = {energy_min:.1f} – {energy_max:.1f} keV")
@@ -160,16 +161,14 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 		_, _, N_top = downsample_2d(x_bins, y_bins, N_top)
 		x_bins, y_bins, N_bottom = downsample_2d(x_bins, y_bins, N_bottom)
 
-	vmax = np.quantile(N_bottom, (N_bottom.size-6)/N_bottom.size)
-
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	plt.pcolormesh(x_bins, y_bins, (N_top - N_bottom).T,
-	               cmap='RdBu', vmin=-vmax/3, vmax=vmax/3)
+	plt.pcolormesh(x_bins, y_bins, ((N_top - N_bottom)/N_top).T,
+	               cmap='RdBu', vmin=-1/3, vmax=1/3)
 	plt.axis('square')
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
-	bar.ax.set_ylabel("Reconstruction - data")
+	bar.ax.set_ylabel("(reconst. - data)/reconst.")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-residual")
 
