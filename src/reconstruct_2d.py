@@ -39,18 +39,20 @@ matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
-# DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron1", (9, 100))] # (MeV) (emitted, not detected)
-DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuteron1", (6, 9))] # (MeV) (emitted, not detected)
+DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100))] # (MeV) (emitted, not detected)
+# DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuteron1", (6, 9))] # (MeV) (emitted, not detected)
 # DEUTERON_ENERGY_CUTS = [("deuteron6", (11, 13)), ("deuteron5", (9.5, 11)), ("deuteron4", (8, 9.5)),
 #                         ("deuteron3", (6.5, 8)), ("deuteron2", (5, 6.5)), ("deuteron1", (3.5, 5)),
 #                         ("deuteron0", (2, 3.5))] # (MeV) (emitted, not detected)
-SUPPORTED_FILETYPES = [".pkl", ".h5"] # , ".txt"] # , ".cpsa"]
+SUPPORTED_FILETYPES = [".txt"] # [".cpsa"]
+# SUPPORTED_FILETYPES = [".h5"]
+# SUPPORTED_FILETYPES = [".txt", ".h5", ".pkl"]
 
 ASK_FOR_HELP = False
-SHOW_DIAMETER_CUTS = True
+SHOW_DIAMETER_CUTS = False
 SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
-SHOW_POINT_SPREAD_FUNCCION = True
+SHOW_POINT_SPREAD_FUNCCION = False
 
 BELIEVE_IN_APERTURE_TILTING = False
 MAX_NUM_PIXELS = 1000

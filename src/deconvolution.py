@@ -62,7 +62,8 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		raise ValueError("this only works for square images right now.")
 	m = F.shape[0] - q.shape[0] + 1
 	if source_region.shape != (m, m):
-		raise ValueError("the source region must have the same shape as the reconstruction.")
+		raise ValueError(f"the source region must have the same shape as the reconstruction; "
+		                 f"{source_region.shape}*{q.shape}!={F.shape}")
 	if np.any(np.isnan(F)) or np.any(np.isnan(q)):
 		raise ValueError("no nan allowd")
 
@@ -94,7 +95,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	q_star = q[::-1, ::-1]
 
 	# save the detection efficiency of each point (it will be approximately uniform)
-	η0 = np.sum(pixel_area)
+	η0 = float(np.sum(pixel_area))
 	η = signal.fftconvolve(pixel_area, q_star, mode="valid")
 
 	# start with a uniform initial gess and a S/B ratio of about 1
@@ -152,7 +153,6 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			h = dldh/(N*(δδ - sδ*sδ/ss) - dldh*sδ/ss)
 
 		# limit the step length if necessary to prevent negative values
-		assert np.all(g >= 0) and g0 >= 0, g
 		if g0 + h*δg0 < 0:
 			h = -g0/δg0*5/6 # don't let the background pixel even reach zero
 		if np.min(g + h*δg) < 0:
@@ -164,6 +164,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		g += h*δg
 		g[abs(g) < 1e-15] = 0 # correct for roundoff
 		s += h*δs
+		assert np.all(g >= 0) and g0 >= 0, g
 
 		# then calculate the actual source
 		G[t] = N*g/η
@@ -395,7 +396,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 
 	G, signal_to_noise = [], []
 	for t in range(max_iterations):
-		noise_reduction = 1e-9 * np.sum(q)**2 * 1.5**t
+		noise_reduction = np.sum(q)**2 * 1e9**(t/max_iterations - 1)
 
 		# apply the Wiener filter
 		f_G = f_F/f_q * f_q**2/(f_q**2 + noise_reduction)
@@ -416,7 +417,7 @@ def wiener(F: NDArray[float], q: NDArray[float],
 		signal_to_noise.append(peak_height/rim_level)
 		logging.info(f"    {noise_reduction:.3g} -> {peak_height:.3g}/{rim_level:.3g} = {signal_to_noise[t]:.2f}")
 
-		# stop when you kno you've passd the max (or go hi enuff)
+		# stop when you know you've passd the max (or go hi enuff)
 		if signal_to_noise[t] < np.max(signal_to_noise)/6 or signal_to_noise[t] > 20:
 			break
 
