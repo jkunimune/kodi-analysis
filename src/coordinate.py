@@ -1,5 +1,6 @@
 # coordinate.py - I assume I will have more coordinate system garbage code to put here soon.
-from math import cos, sin
+from math import cos, sin, ceil
+from typing import Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -79,6 +80,107 @@ def rotation_matrix(angle: float) -> NDArray[float]:
 	    to the x and y axes. """
 	return np.array([[cos(angle), -sin(angle)],
 	                 [sin(angle),  cos(angle)]])
+
+
+class LinSpace:
+	def __init__(self, minimum: float, maximum: float, num_bins: int):
+		self.minimum = minimum
+		self.maximum = maximum
+		self.num_bins = num_bins
+
+	def shifted(self, shift: float) -> "LinSpace":
+		return LinSpace(self.minimum + shift, self.maximum + shift, self.num_bins)
+
+	@property
+	def num_edges(self) -> int:
+		return self.num_bins + 1
+
+	@property
+	def odd(self) -> bool:
+		return self.num_bins%2 == 1
+
+	@property
+	def bin_width(self) -> float:
+		return self.range/self.num_bins
+
+	@property
+	def center(self) -> float:
+		return (self.minimum + self.maximum)/2
+
+	@property
+	def half_range(self) -> float:
+		return self.range/2
+
+	@property
+	def range(self) -> float:
+		return self.maximum - self.minimum
+
+	def get_edges(self) -> NDArray[float]:
+		return np.linspace(self.minimum, self.maximum, self.num_edges)
+
+	def get_bins(self) -> NDArray[float]:
+		return np.linspace(self.minimum + self.bin_width/2, self.maximum - self.bin_width/2, self.num_bins)
+
+	def get_index(self, values: Sequence[float]) -> Sequence[float]:
+		return (np.array(values) - self.minimum)/self.bin_width
+
+
+class Grid:
+	def __init__(self, x: LinSpace, y: LinSpace = None):
+		self.x = x
+		self.y = y if y is not None else x
+
+	@classmethod
+	def from_arrays(cls, x_edges: NDArray[float], y_edges: NDArray[float]) -> "Grid":
+		return Grid(LinSpace(x_edges[0], x_edges[-1], x_edges.size - 1),
+		            LinSpace(y_edges[0], y_edges[-1], y_edges.size - 1))
+
+	@classmethod
+	def from_resolution(cls, min_radius: float, pixel_width: float, odd: bool) -> "Grid":
+		num_bins = ceil(min_radius/pixel_width + 1)*2 + (1 if odd else 0)
+		return Grid(LinSpace(-pixel_width*num_bins/2, pixel_width*num_bins/2, num_bins))
+
+	@classmethod
+	def from_size(cls, radius: float, max_bin_width: float, odd: bool) -> "Grid":
+		num_bins = ceil(radius/max_bin_width)*2 + (1 if odd else 0)
+		return Grid(LinSpace(-radius, radius, num_bins))
+
+	@classmethod
+	def from_pixels(cls, num_bins: int, pixel_width: float) -> "Grid":
+		return Grid(LinSpace(-pixel_width*num_bins/2, pixel_width*num_bins/2, num_bins))
+
+	def shifted(self, dx: float, dy: float) -> "Grid":
+		return Grid(self.x.shifted(dx), self.y.shifted(dy))
+
+	@property
+	def total_area(self) -> float:
+		return self.x.range*self.y.range
+
+	@property
+	def pixel_area(self) -> float:
+		return self.x.bin_width*self.y.bin_width
+
+	@property
+	def num_pixels(self) -> int:
+		return self.x.num_bins*self.y.num_bins
+
+	@property
+	def shape(self) -> tuple[int, int]:
+		return self.x.num_bins, self.y.num_bins
+
+	@property
+	def extent(self) -> tuple[float, float, float, float]:
+		return self.x.minimum, self.x.maximum, self.y.minimum, self.y.maximum
+
+	@property
+	def pixel_width(self) -> float:
+		if abs(self.x.bin_width - self.y.bin_width)/self.x.bin_width < 1e-5:
+			return (self.x.bin_width + self.y.bin_width)/2
+		else:
+			raise ValueError(f"this isn't a square coordinate system ({self.x.bin_width} != {self.y.bin_width})")
+
+	def get_pixels(self, sparse=False) -> tuple[NDArray[float], NDArray[float]]:
+		return np.meshgrid(self.x.get_bins(), self.y.get_bins(), sparse=sparse, indexing="ij")
 
 
 if __name__ == '__main__':

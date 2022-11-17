@@ -14,7 +14,8 @@ import numpy as np
 import pandas as pd
 from matplotlib import colors
 
-from cmap import SPIRAL
+from cmap import CMAP
+from coordinate import LinSpace, Grid
 from util import downsample_2d
 
 matplotlib.use("Qt5agg")
@@ -52,33 +53,33 @@ if __name__ == "__main__":
 
 			with h5py.File(os.path.join(SCAN_DIRECTORY, filename), "r") as f:
 				dataset = f["PSL_per_px"]
-				psl = dataset[:, :].transpose()
+				image = dataset[:, :].transpose()
 				scan_delay = dataset.attrs["scanDelaySeconds"]/60. # (min)
 				dx = dataset.attrs["pixelSizeX"]*1e-4 # (cm)
 				dy = dataset.attrs["pixelSizeY"]*1e-4 # (cm)
 				if dx != dy:
 					raise ValueError("I don't want to deal with rectangular pixels")
-			x_bins = dx*np.arange(psl.shape[0] + 1)
-			y_bins = dy*np.arange(psl.shape[1] + 1)
+			grid = Grid(LinSpace(0, dx*image.shape[0], dx),
+			            LinSpace(0, dy*image.shape[1], dx))
 
-			x_bins_reduc, y_bins_reduc, psl_reduc = x_bins, y_bins, psl
-			while psl_reduc.size > 100000:
-				x_bins_reduc, y_bins_reduc, psl_reduc = downsample_2d(x_bins_reduc, y_bins_reduc, psl_reduc)
+			grid_reduc, image_reduc = grid, image
+			while image_reduc.size > 100000:
+				grid_reduc, image_reduc = downsample_2d(grid_reduc, image_reduc)
 
 			# show the data on a plot
 			fig = plt.figure(figsize=(9, 5))
-			plt.imshow(psl_reduc.T, extent=(x_bins.min(), x_bins.max(), y_bins.min(), y_bins.max()),
+			plt.imshow(image_reduc.T, extent=grid.extent,
 			           norm=colors.LogNorm(
-				           vmin=np.quantile(psl_reduc[psl_reduc != 0], .01),
-				           vmax=np.quantile(psl_reduc, .99)),
-			           cmap=SPIRAL, origin="lower")
+				           vmin=np.quantile(image_reduc[image_reduc != 0], .01),
+				           vmax=np.quantile(image_reduc, .99)),
+			           cmap=CMAP["spiral"], origin="lower")
 			plt.xlabel("x (cm)")
 			plt.ylabel("y (cm)")
 			plt.axis('equal')
 			plt.title("click on the spaces between the image plates, then close the figure")
 
-			# and let the user draw the lines between the plates
-			cut_positions = [x_bins.min(), x_bins.max()]
+			# and let the user draw the vertical lines between the plates
+			cut_positions = [grid.x.minimum, grid.x.maximum]
 			def on_click(event):
 				cut_positions.append(event.xdata)
 				plt.axvline(event.xdata, color="w")
@@ -97,11 +98,10 @@ if __name__ == "__main__":
 				raise KeyError(f"please add shot {shot} to the data/shots.csv file.")
 
 			# then split it up
-			cut_positions = np.round(np.interp(sorted(cut_positions),
-			                                   x_bins, np.arange(x_bins.size))).astype(int)
+			cut_positions = np.round(grid.x.get_index(sorted(cut_positions))).astype(int)
 			cut_intervals = []
 			for cut_index in range(1, len(cut_positions)):
-				if cut_positions[cut_index] - cut_positions[cut_index - 1] >= psl.shape[1]/2:
+				if cut_positions[cut_index] - cut_positions[cut_index - 1] >= image.shape[1]/2:
 					cut_intervals.append((cut_positions[cut_index - 1], cut_positions[cut_index]))
 
 			# and save each section with the correct filename
@@ -121,9 +121,6 @@ if __name__ == "__main__":
 				new_filename = f"{shot}_tim{tim}_ip{ip_position}.h5"
 				with h5py.File(os.path.join(SCAN_DIRECTORY, new_filename), "w") as f:
 					f.attrs["scan_delay"] = scan_delay
-					x_dataset = f.create_dataset("x", (end - start + 1,), dtype="f")
-					x_dataset[:] = x_bins[start:end + 1]
-					y_dataset = f.create_dataset("y", (psl.shape[1] + 1,), dtype="f")
-					y_dataset[:] = y_bins
-					z_dataset = f.create_dataset("PSL_per_px", (end - start, psl.shape[1]), dtype="f")
-					z_dataset[:, :] = psl[start:end, :]
+					f["x"] = grid.x.get_edges()[start:end + 1]
+					f["y"] = grid.y.get_edges()
+					f["PSL_per_px"] = image[start:end, :]

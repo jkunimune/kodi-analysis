@@ -4,7 +4,7 @@ import os
 import shutil
 import subprocess
 from math import pi, cos, sin, nan, sqrt
-from typing import Callable, Generator
+from typing import Callable, Generator, Optional
 
 import numpy as np
 from colormath.color_conversions import convert_color
@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 from scipy import optimize, integrate
 from skimage import measure
 
+from coordinate import Grid, LinSpace
 
 SMOOTHING = 100 # entropy weight
 
@@ -43,11 +44,11 @@ def periodic_mean(values: np.ndarray, minimum: float, maximum: float):
 	return mean_angle/(2*pi)*(maximum - minimum) + minimum
 
 
-def center_of_mass(x, y, N):
+def center_of_mass(grid: Grid, image: NDArray[float]):
 	""" get the center of mass of a 2d function """
 	return np.array([
-		np.average(x, weights=N.sum(axis=1)),
-		np.average(y, weights=N.sum(axis=0))])
+		np.average(grid.x.get_bins(), weights=image.sum(axis=1)),
+		np.average(grid.y.get_bins(), weights=image.sum(axis=0))])
 
 
 def normalize(x):
@@ -115,44 +116,39 @@ def downsample_1d(x_bins, N):
 	return x_bins, Np
 
 
-def downsample_2d(x_bins, y_bins, N):
+def downsample_2d(grid: Grid, image: NDArray[float]) -> tuple[Grid, NDArray[float]]:
 	""" double the bin size of this 2d histogram """
-	if x_bins is None:
-		x_bins = np.arange(N.shape[0] + 1)
-	if y_bins is None:
-		y_bins = np.arange(N.shape[1] + 1)
-	assert N.shape == (x_bins.size - 1, y_bins.size - 1), (N.shape, x_bins.size - 1, y_bins.size - 1)
-	n = (x_bins.size - 1)//2
-	m = (y_bins.size - 1)//2
-	x_bins = x_bins[::2]
-	y_bins = y_bins[::2]
-	Np = np.zeros((n, m))
+	assert grid.shape == image.shape, (grid.shape, image.shape)
+	n = grid.x.num_bins//2
+	m = grid.y.num_bins//2
+	reduced = np.zeros((n, m))
 	for i in range(0, 2):
 		for j in range(0, 2):
-			Np += N[i:2*n:2, j:2*m:2]
-	return x_bins, y_bins, Np
+			reduced += image[i:2*n:2, j:2*m:2]
+	grid = Grid(LinSpace(grid.x.minimum, grid.x.minimum + 2*n*grid.x.bin_width, n),
+	            LinSpace(grid.y.minimum, grid.y.minimum + 2*m*grid.y.bin_width, m))
+	return grid, reduced
 
 
-def resample_2d(N_old, x_old, y_old, x_new, y_new):
+def resample_2d(image_old: NDArray[float], grid_old: Grid, grid_new: Grid):
 	""" apply new bins to a 2d function, preserving quality and accuraccy as much as possible.
 	    the result will sum to the same number as the old one.
 	"""
-	# convert to bin-centers
-	(x_old, dx_old), (y_old, dy_old) = bin_centers_and_sizes(x_old), bin_centers_and_sizes(y_old)
-	(x_new, dx_new), (y_new, dy_new) = bin_centers_and_sizes(x_new), bin_centers_and_sizes(y_new)
 	# convert to densities
-	N_old = N_old/(dx_old[:, None]*dy_old[None, :])
-	λ = max(x_old[1] - x_old[0], x_new[1] - x_new[0])
+	ρ_old = image_old/grid_old.pixel_area
+	λ = max(grid_old.pixel_width, grid_new.pixel_width)
 	# do this bilinear-type-thing
-	kernel_x = np.maximum(0, (1 - abs(x_new[:, np.newaxis] - x_old[np.newaxis, :])/λ))
+	kernel_x = np.maximum(0, (1 - abs(
+		grid_new.x.get_bins()[:, np.newaxis] - grid_old.x.get_bins()[np.newaxis, :])/λ))
 	kernel_x /= np.expand_dims(np.sum(kernel_x, axis=1), axis=1)
-	N_mid = np.matmul(kernel_x, N_old)
-	kernel_y = np.maximum(0, (1 - abs(y_new[:, np.newaxis] - y_old[np.newaxis, :])/λ))
+	ρ_mid = np.matmul(kernel_x, ρ_old)
+	kernel_y = np.maximum(0, (1 - abs(
+		grid_new.y.get_bins()[:, np.newaxis] - grid_old.y.get_bins()[np.newaxis, :])/λ))
 	kernel_y /= np.expand_dims(np.sum(kernel_y, axis=1), axis=1)
-	N_new = np.matmul(kernel_y, N_mid.transpose()).transpose()
+	ρ_new = np.matmul(kernel_y, ρ_mid.transpose()).transpose()
 	# convert back to counts
-	N_new = N_new/(dx_new[:, None]*dy_new[None, :])
-	return N_new
+	image_new = ρ_new*grid_new.pixel_area
+	return image_new
 
 
 def saturate(r, g, b, factor=2.0):
@@ -251,10 +247,9 @@ def harmonics_from_covariance(Σ, μ):
 	return p0, (p1, θ1), (p2, θ2)
 
 
-def fit_ellipse(x, y, f, contour):
+def fit_ellipse(grid: Grid, f: NDArray[float], contour: Optional[float]):
 	""" fit an ellipse to the given image, and represent that ellipse as a symmetric matrix """
-	assert len(x.shape) == len(y.shape) and len(x.shape) == 1
-	X, Y = np.meshgrid(x, y, indexing='ij') # f should be indexd in the ij convencion
+	X, Y = grid.get_pixels() # f should be indexd in the ij convencion
 
 	if contour is None:
 		μ0 = np.sum(f) # image sum
@@ -268,12 +263,12 @@ def fit_ellipse(x, y, f, contour):
 		return np.array([[μxx, μxy], [μxy, μyy]]), np.array([μx, μy])
 
 	else:
-		contour_paths = measure.find_contours(f, contour*f.max())
+		contour_paths = measure.find_contours(f, contour*np.max(f))
 		if len(contour_paths) == 0:
 			return np.full((2, 2), np.nan), np.full(2, np.nan)
 		contour_path = max(contour_paths, key=len)
-		x_contour = np.interp(contour_path[:, 0], np.arange(x.size), x)
-		y_contour = np.interp(contour_path[:, 1], np.arange(y.size), y)
+		x_contour = np.interp(contour_path[:, 0], np.arange(grid.x.num_bins), grid.x.get_bins())
+		y_contour = np.interp(contour_path[:, 1], np.arange(grid.y.num_bins), grid.y.get_bins())
 		x0 = np.average(X, weights=f)
 		y0 = np.average(Y, weights=f)
 		r = np.hypot(x_contour - x0, y_contour - y0)
@@ -296,9 +291,9 @@ def fit_ellipse(x, y, f, contour):
 		return covariance_from_harmonics(p0, p1, θ1, p2, θ2)
 
 
-def shape_parameters(x, y, f, contour=None):
+def shape_parameters(grid: Grid, f: NDArray[float], contour=None):
 	""" get some scalar parameters that describe the shape of this distribution. """
-	return harmonics_from_covariance(*fit_ellipse(x, y, f, contour))
+	return harmonics_from_covariance(*fit_ellipse(grid, f, contour))
 
 
 def line_search(func: Callable[[float], float], lower_bound: float, upper_bound: float,
