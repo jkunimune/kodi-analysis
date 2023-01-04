@@ -23,10 +23,6 @@ public class VoxelFit {
 	public static final double SMOOTHING = 1e+2;
 	public static final double TOLERANCE = 1e-3;
 
-	public static final Vector UNIT_I = new DenseVector(1, 0, 0);
-	// public static final Vector UNIT_J = new DenseVector(0, 1, 0);
-	public static final Vector UNIT_K = new DenseVector(0, 0, 1);
-
 	private static final float Da = 1.66e-27F; // (kg)
 	private static final float g = 1e-3F; // (kg)
 	private static final float cm = 1e-2F; // (m)
@@ -82,6 +78,7 @@ public class VoxelFit {
 
 	private static final Logger logger = Logger.getLogger("root");
 
+
 	/**
 	 * take a vector and reshape it into an nd array with the given shape
 	 * @param input an m×n×o array
@@ -107,6 +104,21 @@ public class VoxelFit {
 		return output;
 	}
 
+
+	/**
+	 * read thru an array in the intuitive order and put it into a 1d list in ijk order
+	 * @param input an m×n×o array
+	 */
+	private static double[] unravel(double[][] input) {
+		int m = input.length;
+		int n = input[0].length;
+		double[] output = new double[m*n];
+		for (int i = 0; i < m; i ++)
+			System.arraycopy(input[i], 0, output, i*n, n);
+		return output;
+	}
+
+
 	/**
 	 * read thru an array in the intuitive order and put it into a 1d list in ijk order
 	 * @param input an m×n×o array
@@ -122,6 +134,7 @@ public class VoxelFit {
 		return output;
 	}
 
+
 	/**
 	 * convert a 5D array to a 2D one such that
 	 * input[l][h][i][j][и] => output[l+H*(h+I*(i+J*j))][и] for a rectangular
@@ -129,7 +142,7 @@ public class VoxelFit {
 	 * oneth, twoth, or third indeces
 	 * @param input a 4D array of any size and shape (jagged is okey)
 	 */
-	private static double[] unravelRagged(double[][][][] input) {
+	private static double[] unravel_ragged(double[][][][] input) {
 		List<Double> list = new ArrayList<>();
 		for (double[][][] stack: input)
 			for (double[][] row: stack)
@@ -145,17 +158,33 @@ public class VoxelFit {
 
 	/**
 	 * convert a 5D array to a 2D one such that
-	 * input[l][h][i][j][и] => output[l+H*(h+I*(i+J*j))][и] for a rectangular
+	 * input[l][h][i][j][и] => output[((l*H+h)*I+i)*J+j][и] for a rectangular
 	 * array, but it also handles it correctly if the input is jagged on the
 	 * oneth, twoth, or third indeces
 	 * @param input a 4D array of any size and shape (jagged is okey)
 	 */
-	private static Vector[] unravelRagged(Vector[][][][] input) {
+	private static Vector[] unravel_ragged(Vector[][][][] input) {
 		List<Vector> list = new ArrayList<>();
 		for (Vector[][][] stack: input)
 			for (Vector[][] row: stack)
 				for (Vector[] colum: row)
 					list.addAll(Arrays.asList(colum));
+		return list.toArray(new Vector[0]);
+	}
+
+
+	/**
+	 * convert a 4D array to a 2D one such that
+	 * input[l][i][j][и] => output[(l*I+i)*J+j][и] for a rectangular
+	 * array, but it also handles it correctly if the input is jagged on the
+	 * oneth, twoth, or third indeces
+	 * @param input a 4D array of any size and shape (jagged is okey)
+	 */
+	private static Vector[] unravel_ragged(Vector[][][] input) {
+		List<Vector> list = new ArrayList<>();
+		for (Vector[][] row: input)
+			for (Vector[] colum: row)
+				list.addAll(Arrays.asList(colum));
 		return list.toArray(new Vector[0]);
 	}
 
@@ -184,6 +213,7 @@ public class VoxelFit {
 		}
 		return dЭdx_per_ρ/MeV*g/cm/cm;
 	}
+
 
 	/**
 	 * precompute the stopping power for ions in a medium of constant temperature
@@ -225,6 +255,173 @@ public class VoxelFit {
 
 	/**
 	 * calculate the transfer matrix that can convert a density array to images
+	 * @param basis the basis functions used to define the distributions
+	 * @param ξ the xi bin edges of the image (μm)
+	 * @param υ the ypsilon bin edges of the image (μm)
+	 * @param lines_of_sight the detector line of site direccions
+	 * @return the matrix A such that A x = y, where x is the unraveld emission
+	 * coefficients and y is the images
+	 */
+	private static Matrix generate_emission_primary_response_matrix(
+			Basis basis,
+			double object_size,
+			double integral_step,
+			Vector[] lines_of_sight,
+			double[][] ξ,
+			double[][] υ,
+			double smoothing
+	) {
+		return Matrix.verticly_stack(
+				new Matrix(unravel_ragged(simulate_primary_image_response(
+						null, basis,
+						object_size, integral_step, lines_of_sight, ξ, υ,
+						true))),
+				basis.roughness_vectors(smoothing));
+	}
+
+
+	/**
+	 * calculate the image pixel fluences with respect to the inputs
+	 * @param basis the basis functions used to convert those coefficients into distributions
+	 * @param ξ the xi bin edges of the image (μm)
+	 * @param υ the ypsilon bin edges of the image (μm)
+	 * @param lines_of_sight the detector line of site direccions
+	 * @param integral_step the resolution at which to integrate the morphology
+	 * @return the image in (#/srad/μm^2)
+	 */
+	private static double[][][] synthesize_primary_images(
+			Vector emission,
+			Basis basis,
+			double object_radius,
+			double integral_step,
+			Vector[] lines_of_sight,
+			double[][] ξ,
+			double[][] υ
+	) {
+		Vector[][][] wrapd = simulate_primary_image_response(
+				emission, basis,
+				object_radius, integral_step, lines_of_sight, ξ, υ,
+				false
+		);
+		double[][][] image = new double[wrapd.length][][];
+		for (int l = 0; l < wrapd.length; l ++) {
+			image[l] = new double[wrapd[l].length][];
+			for (int i = 0; i < wrapd[l].length; i ++) {
+				image[l][i] = new double[wrapd[l][i].length];
+				for (int j = 0; j < wrapd[l][i].length; j ++) {
+					image[l][i][j] = wrapd[l][i][j].get(0);
+				}
+			}
+		}
+		return image;
+	}
+
+
+	/**
+	 * calculate a photon or neutron image, breaking it up into the relative contributions of the
+	 * basis functions wherever fixed values aren't given.  if emission is null,
+	 * then an image set will be generated
+	 * for every basis function, representing the image you would get if the only
+	 * emission source was that basis function scaled by unity.  if emission is specified,
+	 * you will get a single actual image wrapped in an array.
+	 * @param emission the emission coefficient values in (counts/μm^3)
+	 * @param basis the basis functions used to define the distributions
+	 * @param lines_of_sight the detector line of site direccions
+	 * @param ξ the xi bin edges of the image (μm)
+	 * @param υ the ypsilon bin edges of the image (μm)
+	 * @param integral_step the resolution at which to integrate the morphology
+	 * @param respond_to_emission whether the emission should be taken
+	 *                            to depend on the basis functions
+	 * @return the image response to each basis function. so output[l][h][i][j][и]
+	 * is the response of pixel i,j in cut h on line of sight l to basis function и
+	 */
+	private static Vector[][][] simulate_primary_image_response(
+			Vector emission,
+			Basis basis,
+			double object_radius,
+			double integral_step,
+			Vector[] lines_of_sight,
+			double[][] ξ,
+			double[][] υ,
+			boolean respond_to_emission
+	) {
+		assert integral_step < object_radius : "there must be at least one pixel.";
+
+		// reduce the emission if necessary to avoid overflow
+		double emission_scaling = 0.;
+		if (emission != null && Math2.max(emission.getValues()) > 1e26) {
+			emission_scaling = 1e-26*Math.max(
+					Math2.max(emission.getValues()),
+					Math2.max(emission.neg().getValues()));
+			emission = emission.over(emission_scaling);
+		}
+
+		float z_max = (float) object_radius;
+
+		int num_components; // figure if we need to resolve the output by basis function
+		if (respond_to_emission)
+			num_components = basis.num_functions;
+		else
+			num_components = 1;
+
+		// build up the output array
+		Vector[][][] response = new Vector[lines_of_sight.length][][];
+		for (int l = 0; l < lines_of_sight.length; l ++) {
+			response[l] = new Vector[ξ[l].length][υ[l].length];
+			for (int i = 0; i < response[l].length; i ++)
+				for (int j = 0; j < response[l][i].length; j ++)
+					response[l][i][j] = new SparseVector(num_components);
+		}
+
+		// for each line of sight
+		for (int l = 0; l < lines_of_sight.length; l ++) {
+			// define the rotated coordinate system (ζ points toward the TIM; ξ and υ are orthogonal)
+			Matrix rotate = Math2.rotated_basis(lines_of_sight[l]);
+
+			// iterate thru the pixels
+			for (int i = 0; i < ξ[l].length; i ++) {
+				for (int j = 0; j < υ[l].length; j ++) {
+					// iterate from the detector along a chord thru the implosion
+					boolean youve_seen_anything_yet = false;
+					// TODO: merge this with simulate_knockon_image_response when I break the inner loop of simulate_knockon_image_response into a separate task
+					for (float ζD = z_max; ζD >= -z_max; ζD -= integral_step) {
+						Vector r = rotate.times(ξ[l][i], υ[l][j], ζD);
+
+						float[] local_emission; // get the emission
+						if (respond_to_emission) // either by basing it on the basis function
+							local_emission = basis.get(r);
+						else // or taking it at this point
+							local_emission = new float[]{basis.get(r, emission)};
+
+						if (Math2.all_zero(local_emission)) { // skip past the empty regions to focus on the implosion
+							if (!youve_seen_anything_yet)
+								continue;
+							else
+								break;
+						}
+						else {
+							youve_seen_anything_yet = true;
+						}
+
+						for (int и = 0; и < num_components; и ++) // finally, iterate over the basis functions
+							response[l][i][j].increment(и, local_emission[respond_to_emission ? и : 0]*integral_step);
+					}
+				}
+			}
+		}
+
+		if (emission_scaling != 0) {
+			for (int l = 0; l < lines_of_sight.length; l++)
+				for (int i = 0; i < ξ[l].length; i++)
+					for (int j = 0; j < υ[l].length; j++)
+						response[l][i][j] = response[l][i][j].times(emission_scaling);
+		}
+		return response;
+	}
+
+
+	/**
+	 * calculate the transfer matrix that can convert an emission array to knockon images
 	 * @param density the density coefficient values in (g/cm^3)
 	 * @param temperature the uniform temperature in (keV)
 	 * @param basis the basis functions used to define the distributions
@@ -235,10 +432,10 @@ public class VoxelFit {
 	 * @param object_size the maximum radial extent of the implosion; you can also
 	 * 	                  think of it as the distance from TCC to the detector
 	 * @param integral_step the spatial scale on which to integrate
-	 * @return the matrix A such that A x = y, where x is the unraveld production
+	 * @return the matrix A such that A x = y, where x is the unraveld emission
 	 * coefficients and y is the images
 	 */
-	private static Matrix generate_production_response_matrix(
+	private static Matrix generate_emission_knockon_response_matrix(
 			Vector density,
 			double temperature,
 			Basis basis,
@@ -251,16 +448,17 @@ public class VoxelFit {
 			double smoothing
 	) {
 		return Matrix.verticly_stack(
-				new Matrix(unravelRagged(synthesize_image_response(
+				new Matrix(unravel_ragged(simulate_knockon_image_response(
 						null, density, temperature, basis,
 						object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
 						true, false))),
 				basis.roughness_vectors(smoothing));
 	}
 
+
 	/**
 	 * calculate the transfer matrix that can convert a density array to images
-	 * @param production the production coefficient values in (n/μm^3)
+	 * @param emission the neutron emission coefficient values in (n/μm^3)
 	 * @param density the density coefficient values in (g/cm^3)
 	 * @param temperature the uniform temperature in (keV)
 	 * @param basis the basis functions used to define the distributions
@@ -268,11 +466,11 @@ public class VoxelFit {
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
 	 * @param lines_of_sight the detector line of site direccions
-	 * @return the matrix A such that A x = y, where x is the unraveld production
+	 * @return the matrix A such that A x = y, where x is the unraveld emission
 	 * coefficients and y is the images
 	 */
-	private static Matrix generate_density_response_matrix(
-			Vector production,
+	private static Matrix generate_density_knockon_response_matrix(
+			Vector emission,
 			Vector density,
 			double temperature,
 			Basis basis,
@@ -285,16 +483,17 @@ public class VoxelFit {
 			double smoothing
 	) {
 		return Matrix.verticly_stack(
-				new Matrix(unravelRagged(synthesize_image_response(
-						production, density, temperature, basis,
+				new Matrix(unravel_ragged(simulate_knockon_image_response(
+						emission, density, temperature, basis,
 						object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
 						false, true))),
 				basis.roughness_vectors(smoothing));
 	}
 
+
 	/**
 	 * calculate the image pixel fluences with respect to the inputs
-	 * @param production the reactivity coefficients (n/μm^3)
+	 * @param emission the reactivity coefficients (n/μm^3)
 	 * @param density the density coefficients (g/cm^3)
 	 * @param temperature the electron temperature, taken to be uniform (keV)
 	 * @param basis the basis functions used to convert those coefficients into distributions
@@ -305,8 +504,8 @@ public class VoxelFit {
 	 * @param integral_step the resolution at which to integrate the morphology
 	 * @return the image in (#/srad/μm^2)
 	 */
-	private static double[][][][] synthesize_images(
-			Vector production,
+	private static double[][][][] synthesize_knockon_images(
+			Vector emission,
 			Vector density,
 			double temperature,
 			Basis basis,
@@ -317,8 +516,8 @@ public class VoxelFit {
 			double[][] ξ,
 			double[][] υ
 	) {
-		Vector[][][][] wrapd = synthesize_image_response(
-				production, density, temperature, basis,
+		Vector[][][][] wrapd = simulate_knockon_image_response(
+				emission, density, temperature, basis,
 				object_radius, integral_step, lines_of_sight, Э_cuts, ξ, υ,
 				false, false
 		);
@@ -340,16 +539,16 @@ public class VoxelFit {
 
 
 	/**
-	 * calculate an image, breaking it up into the relative contributions of the
-	 * basis functions wherever fixed values aren't given.  so if production is
+	 * calculate a knock-on charged particle image, breaking it up into the relative contributions of the
+	 * basis functions wherever fixed values aren't given.  so if emission is
 	 * null but density is a matrix of values, then an image set will be generated
 	 * for every basis function, representing the image you would get if the only
 	 * source term was that basis function scaled by unity.  if density is null
-	 * but production is a matrix, its the same thing but with the deuteron
+	 * but emission is a matrix, its the same thing but with the deuteron
 	 * density, not the neutron source (and assuming that the effect of ranging
 	 * is fixed).  if neither is null, you will get a single actual image
 	 * wrapped in an array.
-	 * @param production the production coefficient values in (n/μm^3)
+	 * @param emission the emission coefficient values in (n/μm^3)
 	 * @param density the density coefficient values in (g/cm^3)
 	 * @param temperature the uniform temperature in (keV)
 	 * @param basis the basis functions used to define the distributions
@@ -358,7 +557,7 @@ public class VoxelFit {
 	 * @param ξ the xi bin edges of the image (μm)
 	 * @param υ the ypsilon bin edges of the image (μm)
 	 * @param integral_step the resolution at which to integrate the morphology
-	 * @param respond_to_production whether the neutron production should be taken
+	 * @param respond_to_emission whether the neutron emission should be taken
 	 *                              to depend on the basis functions
 	 * @param respond_to_density whether the density should be taken to depend on
 	 *                           the basis functions (the matrix input will still
@@ -366,8 +565,8 @@ public class VoxelFit {
 	 * @return the image response to each basis function. so output[l][h][i][j][и]
 	 * is the response of pixel i,j in cut h on line of sight l to basis function и
 	 */
-	private static Vector[][][][] synthesize_image_response(
-			Vector production,
+	private static Vector[][][][] simulate_knockon_image_response(
+			Vector emission,
 			Vector density,
 			double temperature,
 			Basis basis,
@@ -377,19 +576,19 @@ public class VoxelFit {
 			Interval[][] Э_cuts,
 			double[][] ξ,
 			double[][] υ,
-			boolean respond_to_production,
+			boolean respond_to_emission,
 			boolean respond_to_density
 	) {
-		assert !(respond_to_production && respond_to_density) : "I can only respond to one at a time.";
+		assert !(respond_to_emission && respond_to_density) : "I can only respond to one at a time.";
 		assert integral_step < object_radius : "there must be at least one pixel.";
 
-		// reduce the production if necessary to avoid overflow
-		double production_scaling = 0;
-		if (production != null && Math2.max(production.getValues()) > 1e26) {
-			production_scaling = 1e-26*Math.max(
-					Math2.max(production.getValues()),
-					Math2.max(production.neg().getValues()));
-			production = production.over(production_scaling);
+		// reduce the emission if necessary to avoid overflow
+		double emission_scaling = 0;
+		if (emission != null && Math2.max(emission.getValues()) > 1e26) {
+			emission_scaling = 1e-26*Math.max(
+					Math2.max(emission.getValues()),
+					Math2.max(emission.neg().getValues()));
+			emission = emission.over(emission_scaling);
 		}
 
 		DiscreteFunction[] ranging_curves = calculate_ranging_curves((float) temperature);
@@ -402,7 +601,7 @@ public class VoxelFit {
 		float[] ρ_coefs = Math2.reducePrecision(density.getValues());
 
 		int num_components; // figure if we need to resolve the output by basis function
-		if (respond_to_production || respond_to_density)
+		if (respond_to_emission || respond_to_density)
 			num_components = basis.num_functions;
 		else
 			num_components = 1;
@@ -422,18 +621,11 @@ public class VoxelFit {
 		int warningsPrinted = 0;
 		for (int l = 0; l < lines_of_sight.length; l ++) {
 			// define the rotated coordinate system (ζ points toward the TIM; ξ and υ are orthogonal)
-			Vector ζ_hat = lines_of_sight[l];
-			Vector ξ_hat = UNIT_K.cross(ζ_hat);
-			if (ξ_hat.sqr() == 0)
-				ξ_hat = UNIT_I;
-			else
-				ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
-			Vector υ_hat = ζ_hat.cross(ξ_hat);
-			Matrix rotate = new Matrix(new Vector[]{ξ_hat, υ_hat, ζ_hat}).trans();
+			Matrix rotate = Math2.rotated_basis(lines_of_sight[l]);
 
 			// iterate thru the pixels
 			for (int iV = 0; iV < ξ[l].length; iV++) {
-				for (int jV = 0; jV < υ[l].length; jV++) {
+				for (int jV = 0; jV < υ[l].length; jV++) { // TODO: move everything inside this to a parallelizable task
 					// iterate from the detector along a chord thru the implosion
 					float ρL = 0; // tally up ρL as you go
 					float ρ_previus = 0;
@@ -475,12 +667,12 @@ public class VoxelFit {
 								Vector Δr = rotate.times(Δξ, Δυ, Δζ);
 								Vector rP = rD.plus(Δr);
 
-								float[] local_production; // get the production
-								if (respond_to_production) // either by basing it on the basis function
-									local_production = basis.get(rP);
+								float[] local_emission; // get the emission
+								if (respond_to_emission) // either by basing it on the basis function
+									local_emission = basis.get(rP);
 								else // or taking it at this point
-									local_production = new float[]{basis.get(rP, production)};
-								if (!Math2.all_zero(local_production)) {
+									local_emission = new float[]{basis.get(rP, emission)};
+								if (!Math2.all_zero(local_emission)) {
 
 									float Δr2 = (float) Δr.sqr(); // (μm^2)
 									float cosθ2 = (Δζ*Δζ)/Δr2;
@@ -503,9 +695,9 @@ public class VoxelFit {
 
 											for (int и = 0; и < num_components; и ++) // finally, iterate over the basis functions
 												response[l][hV][iV][jV].increment(и,
-														local_production[respond_to_production ? и : 0]*
-														local_density[respond_to_density ? и : 0]*
-														contribution);
+												                                  local_emission[respond_to_emission ? и : 0]*
+												                                  local_density[respond_to_density ? и : 0]*
+												                                  contribution);
 											for (int x = 0; x < num_components; x ++)
 												if (!Double.isFinite(response[l][hV][iV][jV].get(x)))
 													throw new RuntimeException("bleh");
@@ -542,20 +734,25 @@ public class VoxelFit {
 			}
 		}
 
-		if (production_scaling != 0) {
+		if (emission_scaling != 0) {
 			for (int l = 0; l < lines_of_sight.length; l++)
 				for (int h = 0; h < Э_cuts[l].length; h++)
 					for (int i = 0; i < ξ[l].length; i++)
 						for (int j = 0; j < υ[l].length; j++)
-							response[l][h][i][j] = response[l][h][i][j].times(production_scaling);
+							response[l][h][i][j] = response[l][h][i][j].times(emission_scaling);
 		}
 		return response;
 	}
 
 
 	/**
-	 * reconstruct the implosion morphology that corresponds to the given images.
-	 * @param total_yield the total neutron total_yield (used to constrain production)
+	 * reconstruct the implosion morphology that corresponds to the given images.  the images can
+	 * be either primary x-ray/neutron images or knock-on deuteron images.  for primary images,
+	 * opacity will be assumed to be zero and only the emission will be returned.  for knock-on
+	 * images, the emission, mass density, and temperature distributions will all be inferred and
+	 * returned.
+	 * @param total_yield the total neutron total_yield (used to constrain emission in the knock-on
+	 *                    case, ignored in the primary case).
 	 * @param images an array of arrays of images.  images[l][h][i][j] is the ij
 	 *               pixel of the h energy bin of the l line of site
 	 * @param Э_cuts the edges of the energy bins of the images (MeV)
@@ -565,15 +762,16 @@ public class VoxelFit {
 	 * @param output_basis the basis to use to represent the resulting morphology
 	 * @param object_radius the maximum radial extent of the implosion
 	 * @param model_resolution the minimum size of features to be reconstructed
+	 * @param knockon whether these images are generated thru a knock-on process
 	 * @return an array of two 3d matrices:
-	 *     the neutron production (m^-3),
+	 *     the neutron emission (m^-3),
 	 *     the mass density (g/L), and
 	 *     the temperature (keV) (this one is actually a scalar)
 	 */
 	private static Vector[] reconstruct_images(
-			double total_yield, double[][][][] images,
+			boolean knockon, double total_yield, double[][][][] images,
 			Vector[] lines_of_sight, Interval[][] Э_cuts, double[][] ξ, double[][] υ,
-			double object_radius, double model_resolution, Basis output_basis) { // TODO: multithread?
+			double object_radius, double model_resolution, Basis output_basis) {
 
 		VoxelFit.logger.info(String.format("reconstructing %dx%d (%d total) images",
 		                                   images.length, images[0].length, images.length*images[0].length));
@@ -592,7 +790,10 @@ public class VoxelFit {
 
 		int num_smoothing_parameters = basis.roughness_vectors(0).n;
 
-		double[] image_vector = unravelRagged(images);
+		VoxelFit.logger.info(String.format("using %d 3d basis functions on %.1fum/%.1fum^3 morphology",
+		                                   basis.num_functions, r[r.length - 1], r[1]));
+
+		double[] image_vector = unravel_ragged(images);
 		int num_pixels = image_vector.length;
 
 		double[] data_vector = Math2.concatenate(
@@ -606,23 +807,36 @@ public class VoxelFit {
 		for (int i = num_pixels; i < data_vector.length; i ++)
 			inverse_variance_vector[i] = 1;
 
-		double production_gess = total_yield/
-		                         (4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3));
-
-		VoxelFit.logger.info(String.format("using %d 3d basis functions on %.1fum/%.1fum^3 morphology",
-		                                   basis.num_functions, r[r.length - 1], r[1]));
-
-		Vector production = DenseVector.zeros(basis.num_functions);
-		production.set(0, total_yield/basis.get_volume(0)); // set the production to satisfy the total yield constraint
-
-		Vector density = DenseVector.zeros(basis.num_functions);
-		int и = 0;
-		for (int s = 0; s < r.length; s ++) {
-			density.set(и, SHELL_DENSITY_GESS*
-			               Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2)))); // then set the density p0 terms to be this gaussian profile
-			и += Math.pow(Math.min(s + 1, MAX_MODE + 1), 2);
+		// for primary images, infer the yield from the images themselves
+		if (!knockon) {
+			total_yield = 0;
+			for (int l = 0; l < images.length; l ++)
+				total_yield += Math2.sum(images[l])/images.length*(ξ[l][1] - ξ[l][0])*(υ[l][1] - υ[l][0])*4*Math.PI;
 		}
-		double temperature = SHELL_TEMPERATURE_GESS;
+		double volume_gess = 4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3);
+		double emission_gess = total_yield/volume_gess;
+
+		// set the initial emission to satisfy the total yield constraint
+		Vector emission = DenseVector.zeros(basis.num_functions);
+		emission.set(0, total_yield/basis.get_volume(0));
+
+		// set the initial temperature and density if needed
+		Vector density;
+		double temperature;
+		if (knockon) {
+			density = DenseVector.zeros(basis.num_functions);
+			int и = 0;
+			for (int s = 0; s < r.length; s ++) {
+				density.set(и, SHELL_DENSITY_GESS*
+				               Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2)))); // then set the density p0 terms to be this gaussian profile
+				и += Math.pow(Math.min(s + 1, MAX_MODE + 1), 2);
+			}
+			temperature = SHELL_TEMPERATURE_GESS;
+		}
+		else {
+			density = null;
+			temperature = Double.NaN;
+		}
 
 		double last_error, next_error = Double.POSITIVE_INFINITY;
 		int iter = 0;
@@ -630,52 +844,74 @@ public class VoxelFit {
 			last_error = next_error;
 			logger.info(String.format("Pass %d", iter));
 
-			final double current_temperature = temperature;
-			final Vector current_density = density;
+			if (knockon) {
+				final double current_temperature = temperature;
 
-			// start by optimizing the cold fuel with no constraints
-			final Vector current_production = production;
-			Optimum density_optimum = Optimize.quasilinear_least_squares(
-					(coefs) -> generate_density_response_matrix(
-							current_production,
-							new DenseVector(coefs),
-							current_temperature,
-							basis, object_radius, model_resolution,
-							lines_of_sight, Э_cuts, ξ, υ,
-							SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length-1]))),
-					data_vector,
-					inverse_variance_vector,
-					density.getValues(),
-					1e-3,
-					logger);
-			density = new DenseVector(density_optimum.location);
+				// then optimize the hot spot subject to the yield constraint
+				final Vector current_density = density;
+				Optimum emission_optimum = Optimize.quasilinear_least_squares(
+						(coefs) -> generate_emission_knockon_response_matrix(
+								current_density,
+								current_temperature,
+								basis, object_radius, model_resolution,
+								lines_of_sight, Э_cuts, ξ, υ,
+								SMOOTHING/(emission_gess/Math.sqrt(r[r.length - 1]))),
+						data_vector,
+						inverse_variance_vector,
+						emission.getValues(),
+						Double.POSITIVE_INFINITY,
+						logger,
+						basis_volumes,
+						outer_ring);
+				emission = new DenseVector(emission_optimum.location);
 
-			// then optimize the hot spot subject to the yield constraint
-			Optimum production_optimum = Optimize.quasilinear_least_squares(
-					(coefs) -> generate_production_response_matrix(
-							current_density,
-							current_temperature,
-							basis, object_radius, model_resolution,
-							lines_of_sight, Э_cuts, ξ, υ,
-							SMOOTHING/(production_gess/Math.sqrt(r[r.length-1]))),
-					data_vector,
-					inverse_variance_vector,
-					production.getValues(),
-					Double.POSITIVE_INFINITY,
-					logger,
-					basis_volumes,
-					outer_ring);
-			production = new DenseVector(production_optimum.location);
+				// start by optimizing the cold fuel with no constraints
+				final Vector current_emission = emission;
+				Optimum density_optimum = Optimize.quasilinear_least_squares(
+						(coefs) -> generate_density_knockon_response_matrix(
+								current_emission,
+								new DenseVector(coefs),
+								current_temperature,
+								basis, object_radius, model_resolution,
+								lines_of_sight, Э_cuts, ξ, υ,
+								SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length - 1]))),
+						data_vector,
+						inverse_variance_vector,
+						density.getValues(),
+						1e-3,
+						logger);
+				density = new DenseVector(density_optimum.location);
 
-			// temperature = temperature; TODO: fit temperature
 
-			next_error = density_optimum.value;
+				// temperature = temperature; TODO: fit temperature
+				next_error = density_optimum.value;
+			}
+			else {
+				Optimum emission_optimum = Optimize.quasilinear_least_squares(
+						(coefs) -> generate_emission_primary_response_matrix(
+								basis, object_radius, model_resolution,
+								lines_of_sight, ξ, υ,
+								SMOOTHING/(emission_gess/Math.sqrt(r[r.length-1]))),
+						data_vector,
+						inverse_variance_vector,
+						emission.getValues(),
+						1e-3,
+						logger);
+				emission = new DenseVector(emission_optimum.location);
+				next_error = emission_optimum.value;
+			}
+
 			iter ++;
 		} while ((last_error - next_error)/next_error > TOLERANCE);
 
-		production = output_basis.rebase(basis, production);
-		density = output_basis.rebase(basis, density);
-		return new Vector[] { production, density, new DenseVector(temperature) };
+		emission = output_basis.rebase(basis, emission);
+		if (knockon) {
+			density = output_basis.rebase(basis, density);
+			return new Vector[] {emission, density, new DenseVector(temperature)};
+		}
+		else {
+			return new Vector[] {emission};
+		}
 	}
 
 
@@ -711,12 +947,13 @@ public class VoxelFit {
 			ξ[l] = CSV.readColumn(new File("tmp/xye-los"+l+".csv"));
 			υ[l] = CSV.readColumn(new File("tmp/ypsilon-los"+l+".csv"));
 		}
+		boolean knockon = Э_cuts[0].length > 0; // detect when it's xray images not deuteron images
 
 		double[][][][] images = new double[lines_of_site.length][][][];
 		double neutronYield;
 
 		if (containsTheWordTest(args)) {
-			String[] morphology_filenames = {"production", "density"};
+			String[] morphology_filenames = {"emission", "density"};
 			double[][] anser = new double[morphology_filenames.length][];
 			for (int q = 0; q < morphology_filenames.length; q++) {
 				anser[q] = CSV.readColumn(new File(
@@ -728,9 +965,21 @@ public class VoxelFit {
 
 			VoxelFit.logger.info("generating images from the example morphology...");
 
-			images = synthesize_images(
-					new DenseVector(anser[0]), new DenseVector(anser[1]), temperature,
-					model_grid, object_radius, model_resolution/2, lines_of_site, Э_cuts, ξ, υ); // synthesize the true images (d/μm^2/srad)
+			// synthesize the true images (counts/μm^2/srad)
+			if (knockon) {
+				images = synthesize_knockon_images(
+						new DenseVector(anser[0]), new DenseVector(anser[1]), temperature,
+						model_grid, object_radius, model_resolution/2,
+						lines_of_site, Э_cuts, ξ, υ);
+			}
+			else {
+				double[][][] only_images = synthesize_primary_images(
+						new DenseVector(anser[0]),
+						model_grid, object_radius, model_resolution/2,
+						lines_of_site, ξ, υ);
+				for (int l = 0; l < lines_of_site.length; l ++)
+					images[l] = new double[][][] {only_images[l]}; // if it's x-ray images you'll have to add the energy dimension to make it all fit
+			}
 			for (int l = 0; l < lines_of_site.length; l ++)
 				CSV.writeColumn(unravel(images[l]), new File("tmp/image-los"+l+".csv"));
 
@@ -753,20 +1002,31 @@ public class VoxelFit {
 		}
 
 		Vector[] anser = reconstruct_images(
-				neutronYield, images,
+				knockon, neutronYield, images,
 				lines_of_site, Э_cuts, ξ, υ,
 				object_radius, model_resolution, model_grid); // reconstruct the morphology
 
-		images = synthesize_images(
-				anser[0], anser[1], anser[2].get(0),
-				model_grid, object_radius, model_resolution/2,
-				lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphology's images
 
-		CSV.writeColumn(anser[0].getValues(), new File("tmp/production-recon.csv"));
-		CSV.writeColumn(anser[1].getValues(), new File("tmp/density-recon.csv"));
-		CSV.writeScalar(anser[2].get(0), new File("tmp/temperature-recon.csv"));
-		for (int l = 0; l < lines_of_site.length; l ++)
-			CSV.writeColumn(unravel(images[l]), new File("tmp/image-los"+l+"-recon.csv"));
+		CSV.writeColumn(anser[0].getValues(), new File("tmp/emission-recon.csv"));
+		if (knockon) {
+			assert anser.length == 3;
+			CSV.writeColumn(anser[1].getValues(), new File("tmp/density-recon.csv"));
+			CSV.writeScalar(anser[2].get(0), new File("tmp/temperature-recon.csv"));
+			double[][][][] recon_images = synthesize_knockon_images(
+					anser[0], anser[1], anser[2].get(0),
+					model_grid, object_radius, model_resolution/2,
+					lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphology's images
+			for (int l = 0; l < lines_of_site.length; l ++)
+				CSV.writeColumn(unravel(recon_images[l]), new File("tmp/image-los"+l+"-recon.csv"));
+		}
+		else {
+			double[][][] recon_images = synthesize_primary_images(
+					anser[0],
+					model_grid, object_radius, model_resolution/2,
+					lines_of_site, ξ, υ);
+			for (int l = 0; l < lines_of_site.length; l ++)
+				CSV.writeColumn(unravel(recon_images[l]), new File("tmp/image-los"+l+"-recon.csv"));
+		}
 	}
 
 

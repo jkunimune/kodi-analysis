@@ -27,7 +27,7 @@ from util import execute_java
 r_max = 100 # (μm)
 
 energy_resolution = 4 # (MeV)
-spatial_resolution = 4 # (μm)
+spatial_resolution = 10 # (μm)
 
 
 def get_shot_yield(shot: str) -> float:
@@ -59,11 +59,11 @@ if __name__ == '__main__':
 		z_model = np.loadtxt("tmp/z.csv") # (μm)
 		N = x_model.size - 1
 		try:
-			tru_production = cast(NDArray, np.loadtxt("tmp/production.csv").reshape((N+1, N+1, N+1))) # (μm^-3)
+			tru_emission = cast(NDArray, np.loadtxt("tmp/emission.csv").reshape((N+1, N+1, N+1))) # (μm^-3)
 			tru_density = cast(NDArray, np.loadtxt("tmp/density.csv").reshape((N+1, N+1, N+1))) # (g/cc)
 			tru_temperature = cast(NDArray, np.loadtxt("tmp/temperature.csv")) # (keV)
 		except OSError:
-			tru_production, tru_density, tru_temperature = None, None, None
+			tru_emission, tru_density, tru_temperature = None, None, None
 
 	# if not skipping, find the necessary inputs and run the algorithm
 	else:
@@ -92,12 +92,12 @@ if __name__ == '__main__':
 			n_space_bins = ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
 			x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
 			X, Y, Z = np.meshgrid(x_model, y_model, z_model, indexing='ij')
-			tru_production = 1e+8*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/40)**4/2) # (μm^-3)
+			tru_emission = 1e+8*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/40)**4/2) # (μm^-3)
 			tru_density = 10*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/60)**4/2) * \
-			              np.maximum(.1, 1 - 2*(tru_production/tru_production.max())**2) # (g/cc)
+			              np.maximum(.1, 1 - 2*(tru_emission/tru_emission.max())**2) # (g/cc)
 			tru_temperature = 1 # (keV)
 
-			np.savetxt("tmp/production.csv", tru_production.ravel())
+			np.savetxt("tmp/emission.csv", tru_emission.ravel())
 			np.savetxt("tmp/density.csv", tru_density.ravel())
 			np.savetxt("tmp/temperature.csv", [tru_temperature]) # type: ignore
 
@@ -111,7 +111,7 @@ if __name__ == '__main__':
 
 			total_yield = get_shot_yield(name)
 
-			tru_production, tru_density, tru_temperature = None, None, None
+			tru_emission, tru_density, tru_temperature = None, None, None
 
 			los_indices = {}
 			lines_of_sight = []
@@ -190,7 +190,7 @@ if __name__ == '__main__':
 		execute_java("VoxelFit", str(spatial_resolution*sqrt(2)), name)
 
 	# load the results
-	recon_production = np.loadtxt("tmp/production-recon.csv").reshape((x_model.size,)*3) # (μm^-3)
+	recon_emission = np.loadtxt("tmp/emission-recon.csv").reshape((x_model.size,)*3) # (μm^-3)
 	recon_density = np.loadtxt("tmp/density-recon.csv").reshape((x_model.size,)*3) # (g/cc)
 	recon_temperature = np.loadtxt("tmp/temperature-recon.csv") # (keV)
 	Э_cuts, ξ_centers, υ_centers = [], [], []
@@ -206,13 +206,13 @@ if __name__ == '__main__':
 
 	# show the results
 	filename = name.replace("--", "")
-	if tru_production is not None:
+	if tru_emission is not None:
 		save_and_plot_morphologies(filename, x_model, y_model, z_model,
-		                           (tru_production, tru_density),
-		                           (recon_production, recon_density))
+		                           (tru_emission, tru_density),
+		                           (recon_emission, recon_density))
 	else:
 		save_and_plot_morphologies(filename, x_model, y_model, z_model,
-		                           (recon_production, recon_density))
+		                           (recon_emission, recon_density))
 
 	save_and_plot_source_sets(filename, Э_cuts, ξ_centers, υ_centers, tru_images, recon_images)
 

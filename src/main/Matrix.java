@@ -185,9 +185,6 @@ public class Matrix {
 	 * @return x the vector that solves the equation
 	 */
 	public Vector pseudoinverse_times(Vector b, boolean nonnegative) {
-		if (this.n == this.m && this.n < 1_000)
-			throw new IllegalArgumentException(String.format("for a %dx%d, you would be better off just " +
-			                                                 "doing a direct inverse, I think.", n, m));
 		if (this.n != b.getLength())
 			throw new IllegalArgumentException("the array sizes do not match");
 		Vector x = DenseVector.zeros(m);

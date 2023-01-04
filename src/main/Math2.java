@@ -58,6 +58,15 @@ public class Math2 {
 		return s;
 	}
 
+	public static double sum(double[][][] arr) {
+		double s = 0;
+		for (double[][] lvl: arr)
+			for (double[] row: lvl)
+				for (double x: row)
+					s += x;
+		return s;
+	}
+
 	public static double sum(double[][][][] arr) {
 		double s = 0;
 		for (double[][][] mat: arr)
@@ -204,6 +213,17 @@ public class Math2 {
 								         Math.abs(ck0 - dk) *
 								         values.get(((i0 + di)*size + (j0 + dj))*size + (k0 + dk));
 		return value;
+	}
+
+	public static Matrix rotated_basis(Vector ζ_hat) {
+		Vector k = new DenseVector(0, 0, 1);
+		Vector ξ_hat = k.cross(ζ_hat);
+		if (ξ_hat.sqr() == 0)
+			ξ_hat = new DenseVector(1, 0, 0);
+		else
+			ξ_hat = ξ_hat.times(1/Math.sqrt(ξ_hat.sqr()));
+		Vector υ_hat = ζ_hat.cross(ξ_hat);
+		return new Matrix(new Vector[]{ξ_hat, υ_hat, ζ_hat}).trans();
 	}
 	
 	public static boolean all_zero(float[] values) {
