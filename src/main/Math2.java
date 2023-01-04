@@ -24,6 +24,7 @@
 package main;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -336,14 +337,15 @@ public class Math2 {
 			s += u[i] * v[i];
 		return s;
 	}
-	
+
 	/**
-	 * produce an array of n - m vectors of length n, all of which are orthogonal
+	 * produce an array of of n - m vectors of length n, all of which are orthogonal
 	 * to each other and to each input vector, given an array of m input vectors
-	 * of length n
+	 * of length n.  also an array of m vectors of length n which span the same subspace as the
+	 * input but are orthogonal to each other.
 	 * @param subspace the linearly independent row vectors to complement
 	 */
-	public static double[][] orthogonalComplement(double[][] subspace) {
+	public static double[][][] orthogonalComplement(double[][] subspace) {
 		final int n = subspace[0].length;
 		if (subspace.length > n)
 			throw new IllegalArgumentException("subspace must have more columns than rows");
@@ -354,19 +356,22 @@ public class Math2 {
 				throw new IllegalArgumentException("subspace must be nonsingular");
 		}
 
-		// start by filling out the full n-space
+		// start by allocating for the full n-space
 		double[][] space = new double[n][];
-		System.arraycopy(subspace, 0, space, 0, subspace.length);
 
 		int seedsUsed = 0;
 		// for each missing row
-		for (int i = subspace.length; i < n; i ++) {
+		for (int i = 0; i < n; i ++) {
 			do {
-				// pick a unit vector
-				space[i] = new double[n];
-				space[i][seedsUsed] = 1;
-				seedsUsed ++;
-				// and make it orthogonal to every previous vector
+				// seed it, either using one of the input vectors or using a unit vector
+				if (i < subspace.length)
+					space[i] = Arrays.copyOf(subspace[i], n);
+				else {
+					space[i] = new double[n];
+					space[i][seedsUsed] = 1;
+					seedsUsed ++;
+				}
+				// then make it orthogonal to every previous vector
 				for (int j = 0; j < i; j ++) {
 					double u_dot_v = Math2.dot(space[j], space[i]);
 					double u_dot_u = Math2.sqr(space[j]);
@@ -374,7 +379,10 @@ public class Math2 {
 						space[i][k] -= space[j][k]*u_dot_v/u_dot_u;
 					if (Math2.sqr(space[i]) < 1e-10) { // it's possible you chose a seed in the span of the space that's already coverd
 						space[i] = null; // give up and try agen if so
-						break;
+						if (i < subspace.length)
+							throw new RuntimeException("the inputs were not linearly independent");
+						else
+							break;
 					}
 				}
 			} while (space[i] == null);
@@ -385,12 +393,19 @@ public class Math2 {
 				space[i][k] /= v_magn;
 		}
 
+		if (seedsUsed < subspace.length)
+			throw new RuntimeException("the inputs were not linearly independent.");
+
 		// finally, transfer the new rows to their own matrix
+		double[][] input = new double[subspace.length][n];
+		System.arraycopy(space, 0,
+		                 input, 0,
+		                 input.length);
 		double[][] complement = new double[n - subspace.length][n];
 		System.arraycopy(space, subspace.length,
 		                 complement, 0,
 		                 complement.length);
-		return complement;
+		return new double[][][] {input, complement};
 	}
 
 	/**

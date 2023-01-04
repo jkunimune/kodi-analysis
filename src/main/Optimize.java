@@ -36,7 +36,7 @@ public class Optimize {
 	 * find a local minimum of the funccion f(state; points) = Σ dist(point[i], state)^2,
 	 * using the Levenberg-Marquardt formula as defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
-	 *     System". Journal of Research of the National Institute of Standards and Technology
+	 *     System". <i>Journal of Research of the National Institute of Standards and Technology</i>
 	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
 	 * and using finite differences to get the jacobian.
 	 * @param compute_residuals the error of a single point given the state, along with any intermediate
@@ -77,7 +77,7 @@ public class Optimize {
 	 * find a local minimum of the funccion f(state; points) = Σ dist(point[i], state)^2,
 	 * using the Levenberg-Marquardt formula as defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
-	 *     System". Journal of Research of the National Institute of Standards and Technology
+	 *     System". <i>Journal of Research of the National Institute of Standards and Technology</i>
 	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
 	 * and using finite differences to get the jacobian.
 	 * @param compute_residuals the error of a single point given the state, along with any intermediate
@@ -110,7 +110,7 @@ public class Optimize {
 	 * it satisfies the condition y = J x where J is _weakly_ dependent on x
 	 * using the Levenberg-Marquardt formula as defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
-	 *     System". Journal of Research of the National Institute of Standards and Technology
+	 *     System". <i>Journal of Research of the National Institute of Standards and Technology</i>
 	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
 	 * @param compute_residuals returns the error of each point given the state
 	 * @param compute_jacobian returns the Jacobian matrix where each row is the
@@ -198,7 +198,7 @@ public class Optimize {
 	 * it satisfies the condition y = J x where J is _weakly_ dependent on x
 	 * uses a modified form of the Levenberg-Marquardt formula defined in
 	 *     Shakarji, C. "Least-Square Fitting Algorithms of the NIST Algorithm Testing
-	 *     System". Journal of Research of the National Institute of Standards and Technology
+	 *     System". <i>Journal of Research of the National Institute of Standards and Technology</i>
 	 *     103, 633–641 (1988). https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=821955
 	 * @param compute_local_jacobian compute the matrix J that gives y for this x
 	 * @param data_values the correct y values to which we are minimizing the error
@@ -245,8 +245,9 @@ public class Optimize {
 		Matrix weights = new Matrix(data_weights);
 		Matrix realign, constrain; // set up some basis changes that let you enforce constraints
 		if (constraints.length > 0) {
-			Matrix free = new Matrix(Math2.orthogonalComplement(constraints));
-			Matrix constrained = new Matrix(constraints);
+			double[][][] orthogonalized = Math2.orthogonalComplement(constraints);
+			Matrix constrained = new Matrix(orthogonalized[0]);
+			Matrix free = new Matrix(orthogonalized[1]);
 			realign = Matrix.verticly_stack(free, constrained);
 			constrain = Matrix.verticly_stack(free, Matrix.zeros(constraints.length, free.m));
 		}
@@ -552,7 +553,7 @@ public class Optimize {
 	}
 
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws InterruptedException {
 		double[] x = {0, 1, 2, 3, 4, 5};
 		double[] y = {6, 4, 3, 2, 1.5, 1.25};
 
@@ -575,27 +576,28 @@ public class Optimize {
 
 		double[] c = least_squares(err, grad,
 								   new double[] {1, -1, 0},
-//								   new double[] {1, 1, 1},
 								   new double[] {0, 0, 0},
 								   new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
 								   1e-7,
 								   null).location;
-//		double[] c = differential_evolution(
-//			  (state) -> {
-//				double[] ds = err.apply(state);
-//				double sum = 0;
-//				for (double d: ds)
-//				  	sum += d*d;
-//				return sum;
-//			  },
-//			  new double[] {1, -1, 0},
-//			  new double[] {2, 2, 2},
-//			  new double[] {0, Double.NEGATIVE_INFINITY, 0},
-//			  new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
-//			  10,
-//			  null
-//		).location;
-		System.out.println("y = "+c[0]+" exp("+c[1]+"x) + "+c[2]);
+		System.out.println("least squares: y = "+c[0]+" exp("+c[1]+"x) + "+c[2]);
+
+		c = differential_evolution(
+				(state) -> {
+					double[] ds = err.apply(state);
+					double sum = 0;
+					for (double d: ds)
+						sum += d*d;
+					return sum;
+				},
+				new double[] {1, -1, 0},
+				new double[] {2, 2, 2},
+				new double[] {0, Double.NEGATIVE_INFINITY, 0},
+				new double[] {Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY},
+				10,
+				null
+		).location;
+		System.out.println("differential evolution: y = "+c[0]+" exp("+c[1]+"x) + "+c[2]);
 	}
 
 	public static class Optimum {
@@ -610,11 +612,6 @@ public class Optimize {
 
 		public Optimum(double[] location, double value) {
 			this(location, value, null, null);
-		}
-
-		public Optimum(double[] location, double value,
-					   double[] gradient) {
-			this(location, value, gradient, null);
 		}
 
 		public Optimum(double[] location, double value,
