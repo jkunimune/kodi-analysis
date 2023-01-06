@@ -5,8 +5,7 @@ import matplotlib.colors as colors
 plt.rcParams.update({'font.family': 'sans', 'font.size': 14})
 
 import detector
-import fake_srim
-from cmap import COFFEE
+from cmap import CMAP
 
 
 N = 10000
@@ -35,14 +34,14 @@ if __name__ == '__main__':
 
 	e0_d = np.random.choice(energy_d, p=spectrum_d/np.sum(spectrum_d), size=N)
 	e0_t = np.random.choice(energy_t, p=spectrum_t/np.sum(spectrum_t), size=int(N*np.sum(spectrum_t)/np.sum(spectrum_d)))
-	e1_d = fake_srim.get_E_out(1, 2, e0_d, ['Al'], 25)
-	e1_t = fake_srim.get_E_out(1, 3, e0_t, ['Al'], 25)
-	e2_d = fake_srim.get_E_out(1, 2, e1_d, ['C']*12+['H']*18+['O']*7, depth + 2.7*time2, 1320, 55)
-	e2_t = fake_srim.get_E_out(1, 3, e1_t, ['C']*12+['H']*18+['O']*7, depth + 2.7*time2, 1320, 55)
-	d1_d = detector.track_diameter(e1_d, time1, a=2)
-	d1_t = detector.track_diameter(e1_t, time1, a=3)
-	d2_d = detector.track_diameter(e2_d, time2, a=2)
-	d2_t = detector.track_diameter(e2_t, time2, a=3)
+	e1_d = detector.particle_E_out(1, 2, e0_d, [(25, 'Al')])
+	e1_t = detector.particle_E_out(1, 3, e0_t, [(25, 'Al')])
+	e2_d = detector.particle_E_out(1, 2, e1_d, [(depth + 2.7*time2, 'cr')])
+	e2_t = detector.particle_E_out(1, 3, e1_t, [(depth + 2.7*time2, 'cr')])
+	d1_d = detector.track_diameter(e1_d, 1, 2, time1)
+	d1_t = detector.track_diameter(e1_t, 1, 3, time1)
+	d2_d = detector.track_diameter(e2_d, 1, 2, time2)
+	d2_t = detector.track_diameter(e2_t, 1, 3, time2)
 	e0 = np.concatenate([e0_d, e0_t])
 	e1 = np.concatenate([e1_d, e1_t])
 	e2 = np.concatenate([e2_d, e2_t])
@@ -97,7 +96,7 @@ if __name__ == '__main__':
 	plt.tight_layout()
 
 	plt.figure()
-	plt.hist2d(jitter(d1[np.isfinite(d2)]), jitter(d2[np.isfinite(d2)]), bins=np.linspace(2, 20, 73), cmap=COFFEE, norm=colors.LogNorm())
+	plt.hist2d(jitter(d1[np.isfinite(d2)]), jitter(d2[np.isfinite(d2)]), bins=np.linspace(2, 20, 73), cmap=CMAP["coffee"], norm=colors.LogNorm())
 	plt.xlabel("Diameter before bulk-etch (μm)")
 	plt.ylabel("Diameter after bulk-etch (μm)")
 	plt.xticks(2*np.arange(1, 11))
@@ -107,13 +106,13 @@ if __name__ == '__main__':
 	plt.tight_layout()
 
 	plt.figure()
-	plt.hist2d(np.concatenate([np.sqrt(4*e0_d), np.sqrt(6*e0_t)]), jitter(d1), bins=(np.linspace(4, 8.5), dbins), cmap=COFFEE, norm=colors.LogNorm())
+	plt.hist2d(np.concatenate([np.sqrt(4*e0_d), np.sqrt(6*e0_t)]), jitter(d1), bins=(np.linspace(4, 8.5), dbins), cmap=CMAP["coffee"], norm=colors.LogNorm())
 	plt.xlabel("Rigidity (sqrt(Da*MeV)/e)")
 	plt.ylabel("Diameter before bulk-etch (μm)")
 	plt.tight_layout()
 
 	plt.figure()
-	plt.hist2d(np.concatenate([np.sqrt(4*e0_d), np.sqrt(6*e0_t)]), jitter(d2), bins=(np.linspace(4, 8.5), dbins), cmap=COFFEE, norm=colors.LogNorm())
+	plt.hist2d(np.concatenate([np.sqrt(4*e0_d), np.sqrt(6*e0_t)]), jitter(d2), bins=(np.linspace(4, 8.5), dbins), cmap=CMAP["coffee"], norm=colors.LogNorm())
 	plt.xlabel("Rigidity (sqrt(Da*MeV)/e)")
 	plt.ylabel("Diameter after bulk-etch (μm)")
 	plt.tight_layout()

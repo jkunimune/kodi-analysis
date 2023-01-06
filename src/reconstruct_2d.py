@@ -8,8 +8,8 @@ import re
 import sys
 import time
 import warnings
-from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf
-from typing import Any
+from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, isnan
+from typing import Any, Optional
 
 import h5py
 import matplotlib
@@ -26,7 +26,6 @@ from skimage import measure
 import deconvolution
 import detector
 import electric_field
-import fake_srim
 from cmap import CMAP
 from coordinate import project, tim_coordinates, rotation_matrix, Grid
 from hdf5_util import load_hdf5, save_as_hdf5
@@ -39,14 +38,14 @@ matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
-DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100))] # (MeV) (emitted, not detected)
-# DEUTERON_ENERGY_CUTS = [("deuteron0", (0, 6)), ("deuteron2", (9, 100)), ("deuteron1", (6, 9))] # (MeV) (emitted, not detected)
-# DEUTERON_ENERGY_CUTS = [("deuteron6", (11, 13)), ("deuteron5", (9.5, 11)), ("deuteron4", (8, 9.5)),
-#                         ("deuteron3", (6.5, 8)), ("deuteron2", (5, 6.5)), ("deuteron1", (3.5, 5)),
-#                         ("deuteron0", (2, 3.5))] # (MeV) (emitted, not detected)
-SUPPORTED_FILETYPES = [".txt"] # [".cpsa"]
+DEUTERON_ENERGY_CUTS = [(0, "deuteron0", (0, 6)), (2, "deuteron2", (9, 100))] # (MeV) (emitted, not detected)
+# DEUTERON_ENERGY_CUTS = [(0, "deuteron0", (0, 6)), (2, "deuteron2", (9, 100)), (1, "deuteron1", (6, 9))] # (MeV) (emitted, not detected)
+# DEUTERON_ENERGY_CUTS = [(6, "deuteron6", (11, 13)), (5, "deuteron5", (9.5, 11)), (4, "deuteron4", (8, 9.5)),
+#                         (3, "deuteron3", (6.5, 8)), (2, "deuteron2", (5, 6.5)), (1, "deuteron1", (3.5, 5)),
+#                         (0, "deuteron0", (2, 3.5))] # (MeV) (emitted, not detected)
+# SUPPORTED_FILETYPES = [".txt"] # [".cpsa"]
 # SUPPORTED_FILETYPES = [".h5"]
-# SUPPORTED_FILETYPES = [".txt", ".h5", ".pkl"]
+SUPPORTED_FILETYPES = [".h5", ".txt", ".pkl"]
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = False
@@ -251,6 +250,52 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 		return 1_000_000_000, x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
+
+
+def load_fade_time(filename: str) -> float:
+	""" open up a HDF5 file and read a single number from the inside: the fade time in minutes """
+	return load_hdf5(filename, ["scan_delay"])[0]/60
+
+
+def parse_filtering(filter_code: str, index: int, detector: str) -> list[list[(float, str)]]:
+	""" read a str that describes a filter/detector stack, and output what filters exactly are
+	    in front of the specified detector.  if it was a split filter, output both potential stacks
+	"""
+	filter_stacks = [[]]
+	num_detectors_seen = 0
+	# loop thru the filtering
+	while True:
+		# a colon indicates a piece of CR-39, a pipe indicates an image plate
+		if filter_code[0] == ":" or filter_code[0] == "|":
+			detector_found = {":": "cr39", "|": "ip"}[filter_code[0]]
+			if detector_found == detector.lower():
+				if num_detectors_seen == index:
+					return filter_stacks
+				else:
+					num_detectors_seen += 1
+			equivalent_filter = {":": "1400cr", "|": "112BaFBr"}[filter_code[0]]
+			filter_code = equivalent_filter + filter_code[1:]
+		# a slash indicates that there's an alternative to the previus filter
+		elif filter_code[0] == "/":
+			if len(filter_stacks) > 1:
+				raise ValueError("this detector stack had multiple split filters?  idk what to do about that.  how did you aline them??")
+			filter_stacks.append(filter_stacks[0][:-1])
+			filter_code = filter_code[1:]
+		# anything else is a filter
+		else:
+			top_filter = re.match(r"^([0-9./]+)([A-Za-z]+)", filter_code)
+			if top_filter is None:
+				raise ValueError(f"the index was >= the number of detectors specified in {filter_code}")
+			thickness, material = top_filter.group(1, 2)
+			thickness = float(thickness)
+			# etiher add it to the shorter one (if there was a slash recently)
+			if len(filter_stacks) == 2 and len(filter_stacks[1]) < len(filter_stacks[0]):
+				filter_stacks[1].append((thickness, material))
+			# or add it to all stacks that currently exist
+			else:
+				for filter_stack in filter_stacks:
+					filter_stack.append((thickness, material))
+			filter_code = filter_code[top_filter.end():]
 
 
 def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_points: NDArray[float]
@@ -610,7 +655,9 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 
 def analyze_scan(input_filename: str,
                  shot: str, tim: str, rA: float, sA: float, M_gess: float, L1: float,
-                 rotation: float, etch_time: float, skip_reconstruction: bool, show_plots: bool
+                 rotation: float, etch_time: Optional[float], filtering: str,
+                 skip_reconstruction: bool, show_plots: bool,
+                 section_index: Optional[int] = None,
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct a penumbral KOD image.
 		:param input_filename: the location of the scan file in data/scans/
@@ -625,32 +672,57 @@ def analyze_scan(input_filename: str,
 		:param rotation: the rotational error in the scan in degrees (if the detector was fielded correctly such that
 		                 the top of the scan is the top of the detector as it was oriented in the target chamber, then
 		                 this parameter should be 0)
-		:param etch_time: the length of time the CR39 was etched in hours, or the length of fade time before the image
-		                  plate was scanned in minutes.
+		:param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
+		:param filtering: a string that indicates what filtering was used on this tim on this shot
 		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 		                            than performing the full analysis procedure again.
 		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
 		                   user to close them, rather than only saving them to disc and silently proceeding.
+		:param section_index: if there are multiple filtering sections, this will recursively call itself on each one
 		:return: a list of dictionaries, each containing various measurables for the reconstruction in a particular
 		         energy bin. the reconstructed image will not be returned, but simply saved to disc after various nice
 		         pictures have been taken and also saved.
 	"""
 	assert abs(rotation) < 2*pi
 
+	# start by establishing some things that depend on what's being measured
 	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
 	if particle == "deuteron":
 		contour = DEUTERON_CONTOUR
+		detector_type = "cr39"
+		detector_index = 0
 	else:
 		contour = X_RAY_CONTOUR
+		detector_type = "ip"
+		detector_index = int(re.search(r"ip([0-9]+)", input_filename, re.IGNORECASE).group(1))
 
+	# check how many filtering regions we have, and if an index for them was passd
+	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
+	if section_index is not None:
+		filter_stack = filter_stacks[section_index]
+	else:
+		analysis_for_each_section = []
+		for section_index in range(len(filter_stacks)):  # do them one at a time if there are several
+			analysis_for_each_section += analyze_scan(input_filename,
+			                                          shot, tim, rA, sA, M_gess, L1,
+			                                          rotation, etch_time, filtering,
+			                                          skip_reconstruction, show_plots,
+			                                          section_index=section_index)
+		return analysis_for_each_section
+
+	# figure out the energy cuts given the filtering and type of radiation
+	filter_str = "".join(f"{thickness:.0f}{material}" for thickness, material in filter_stack)
 	if particle == "xray":
-		i = int(re.search(r"ip([0-9]+)", input_filename, re.IGNORECASE).group(1))
-		energy_cuts = [(f"xray{i}", (nan, nan))] # TODO: get these from the filename/filtering
+		fade_time = load_fade_time(input_filename)
+		energy_min, energy_max = detector.xray_energy_bounds(filter_stack, fade_time, .10)
+		energy_cuts = [(detector_index, f"xray{filter_str}", (energy_min, energy_max))]
 	elif shot.startswith("synth"):
-		energy_cuts = [("all", (0, inf))]
+		energy_cuts = [(0, "all", (0., inf))]
 	else:
 		energy_cuts = DEUTERON_ENERGY_CUTS
+	sorted_energy_cuts = sorted(energy_cuts)
 
+	# this tag is for the reconstruction file, so there should be a unique one for each scan file
 	particle_and_energy_specifier = particle if particle == "deuteron" else energy_cuts[0][0]
 
 	# load the full image set now if you can
@@ -677,14 +749,15 @@ def analyze_scan(input_filename: str,
 
 		# start by asking the user to highlight the data
 		try:
-			old_data_polygon, = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-region",
+			old_data_polygon, = load_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{detector_index}-{section_index}-region",
 			                              ["vertices"])
 		except FileNotFoundError:
 			old_data_polygon = None
 		if show_plots:
 			try:
+				region = "{:.0f}{:s}".format(*filter_stack[0]) if len(filter_stacks) > 1 else "data"
 				data_polygon = user_defined_region(input_filename, default=old_data_polygon,
-				                                   title="Select the data region, then close this window.") # TODO: allow multiple data regions for split filters
+				                                   title=f"Select the {region} region, then close this window.")
 				if len(data_polygon) < 3:
 					data_polygon = None
 			except TimeoutError:
@@ -697,7 +770,7 @@ def analyze_scan(input_filename: str,
 			else:
 				data_polygon = old_data_polygon
 		else:
-			save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-region", vertices=data_polygon)
+			save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{detector_index}-{section_index}-region", vertices=data_polygon)
 
 		# find the centers and spacings of the penumbral images
 		centers, array_transform = find_circle_centers(
@@ -714,19 +787,18 @@ def analyze_scan(input_filename: str,
 
 		stack_plane, source_stack = None, None
 
-	sorted_energy_cuts, cut_indices = np.unique(
-		[bounds for name, bounds in energy_cuts], axis=0, return_inverse=True)
-
 	results: list[dict[str, Any]] = []
-	for cut_index, (energy_cut_name, emission_energies) in zip(cut_indices, energy_cuts):
+	for energy_index, energy_cut_name, emission_energies in energy_cuts:
 
 		# switch out some values depending on whether these are xrays or deuterons
 		if particle == "deuteron":
 			resolution = DEUTERON_RESOLUTION
-			detection_energies = fake_srim.get_E_out(1, 2, emission_energies, ['Ta'], 16) # convert scattering energies to CR-39 energies TODO: parse filtering specification
+			detection_energies = detector.particle_E_out(emission_energies, 1, 2, filter_stack) # convert scattering energies to CR-39 energies
+			if detection_energies[0] < 1 or detection_energies[1] > 5:
+				break  # skip energy cuts that don't work with this filter
 			diameter_max, diameter_min = detector.track_diameter(detection_energies, etch_time=etch_time, a=2, z=1) # convert to diameters
-			emission_energies = fake_srim.get_E_in(1, 2, detection_energies, ['Ta'], 16) # convert back to exclude particles that are ranged out
-			if np.isnan(diameter_max):
+			emission_energies = detector.particle_E_in(1, 2, detection_energies, filter_stack) # convert back to exclude particles that are ranged out
+			if isnan(diameter_max):
 				diameter_max = inf # and if the bin goes down to zero energy, make sure all large diameters are counted
 		else:
 			resolution = X_RAY_RESOLUTION
@@ -949,6 +1021,7 @@ def analyze_scan(input_filename: str,
 				(source_plane.x.get_bins(), source_plane.x.get_bins()), source,
 				bounds_error=False, fill_value=0)(
 				np.stack(stack_plane.get_pixels(), axis=-1))
+			cut_index = energy_index if particle == "deuteron" else 0
 			source_stack[cut_index, :, :] = source
 
 		logging.info(f"  ∫B = {np.sum(source*stack_plane.pixel_area)*4*pi :.4g} deuterons")
@@ -963,7 +1036,7 @@ def analyze_scan(input_filename: str,
 		plot_source(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
 		            stack_plane, source, contour,
 		            *emission_energies,
-		            num_cuts=3)
+		            cut_index=energy_index, num_cuts=max(3, len(energy_cuts)))
 		save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
 		                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
 
@@ -982,10 +1055,11 @@ def analyze_scan(input_filename: str,
 
 	# finally, save the combined image set
 	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source",
-	             energy=sorted_energy_cuts,
+	             energy=[bounds for (index, name, bounds) in sorted(energy_cuts)],
 	             x=stack_plane.x.get_edges()/1e-4,
 	             y=stack_plane.y.get_edges()/1e-4,
-	             images=source_stack.transpose((0, 2, 1))*1e-4**2)
+	             images=source_stack.transpose((0, 2, 1))*1e-4**2,
+	             filtering=filtering)
 
 	if source_stack.shape[0] > 1:
 		# calculate the differentials between energy cuts
@@ -1074,7 +1148,7 @@ if __name__ == '__main__':
 			if (os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES
 			    and shot_match is not None and tim_match is not None):
 				matching_tim = tim_match.group(1) # these regexes would work much nicer if _ wasn't a word haracter
-				etch_time = float(etch_match.group(1)) if etch_match is not None else nan
+				etch_time = float(etch_match.group(1)) if etch_match is not None else None
 				matching_scans.append((shot, matching_tim, etch_time, f"data/scans/{filename}"))
 		if len(matching_scans) == 0:
 			logging.info("  Could not find any text file for TIM {} on shot {}".format(tim, shot))
@@ -1110,6 +1184,7 @@ if __name__ == '__main__':
 				sA                 =shot_info["aperture spacing"]*1e-4,
 				L1                 =shot_info["standoff"]*1e-4,
 				M_gess             =shot_info["magnification"],
+				filtering          =shot_info["filtering"],
 				etch_time          =etch_time,
 				rotation           =radians(shot_info["rotation"]),
 			)

@@ -1,5 +1,5 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from numpy.typing import NDArray
 from scipy import integrate
 
@@ -38,28 +38,27 @@ def particle_range(E_init: Numeric, z: float, a: float, material: str):
 	return np.interp(E_init, E, x)
 
 
-def particle_E_out(E_in: Numeric, z: float, a: float, thickness: float, material: str):
+def particle_E_out(E_in: Numeric, z: float, a: float, layers: list[(float, str)]):
 	""" calculate the energy of a particle after passing thru some material
 	    :param E_in: the initial energy of the particle (MeV)
 	    :param z: the charge number of the particle (e)
 	    :param a: the mass number of the particle (Da)
-	    :param thickness: the thickness of the material (μm)
-	    :param material: the name of the material (probably just the elemental symbol)
-
+	    :param layers: the thickness and material name of each section through which it passes (μm)
 	"""
-	return particle_E_in(E_in, z, a, -thickness, material)
+	return particle_E_in(E_in, z, a, [(-thickness, material) for (thickness, material) in reversed(layers)])
 
 
-def particle_E_in(E_out: Numeric, z: float, a: float, thickness: float, material: str):
+def particle_E_in(E_out: Numeric, z: float, a: float, layers: list[(float, str)]):
 	""" calculate the energy needed to exit some material with a given energy
 	    :param E_out: the final energy of the particle (MeV)
 	    :param z: the charge number of the particle (e)
 	    :param a: the mass number of the particle (Da)
-	    :param thickness: the thickness of the material (μm)
-	    :param material: the name of the material (probably just the elemental symbol)
+	    :param layers: the thickness and material name of each section through which it passed (μm)
 	"""
-	E, x = range_curve(z, a, material)
-	return np.interp(np.interp(E_out, E, x) + thickness, x, E)
+	for thickness, material in layers:
+		E_ref, x_ref = range_curve(z, a, material)
+		E_out = np.interp(np.interp(E_out, E_ref, x_ref) + thickness, x_ref, E_ref)
+	return E_out
 
 
 def track_energy(diameter, z, a, etch_time, vB=2.66, k=.8, n=1.2):
@@ -120,10 +119,11 @@ def xray_transmission(energy: Numeric, thickness: float, material: str) -> Numer
 	return np.exp(-attenuation*thickness)
 
 
-def xray_sensitivity(energy: Numeric, time: float, thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
+def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], time: float, thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
 	""" calculate the fraction of photons at some energy that are measured by an image
-	    plate of the given characteristics
+	    plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
+	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
 	    :param time: the delay between the experiment and the image plate scan (min)
 	    :param thickness: the thickness of the image plate (μm)
 	    :param psl_attenuation: the attenuation constant of the image plate's characteristic photostimulated luminescence
@@ -132,7 +132,27 @@ def xray_sensitivity(energy: Numeric, time: float, thickness=112., psl_attenuati
 	"""
 	attenuation = attenuation_curve(energy, material)
 	self_transparency = 1/(1 + psl_attenuation/attenuation)
-	return self_transparency * (1 - np.exp(-attenuation*thickness/self_transparency)) * psl_fade(time)
+	sensitivity = self_transparency * (1 - np.exp(-attenuation*thickness/self_transparency)) * psl_fade(time)
+	for thickness, material in filter_stack:
+		sensitivity *= xray_transmission(energy, thickness, material)
+	return sensitivity
+
+
+def xray_energy_bounds(filter_stack: list[(float, str)], time: float, level=.10,
+                       ip_thickness=112., ip_psl_attenuation=1/45., ip_material="BaFBr") -> (float, float):
+	""" calculate the minimum and maximum energies this filter and image plate configuration can detect
+	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
+	    :param time: the delay between the experiment and the image plate scan (min)
+	    :param level: the fraction of the max at which to define the min and the max
+	    :param ip_thickness: the thickness of the image plate (μm)
+	    :param ip_psl_attenuation: the attenuation constant of the image plate's characteristic photostimulated luminescence
+	    :param ip_material: the name of the image plate material (probably just the elemental symbol)
+	"""
+	energy = np.geomspace(3e-1, 3e+3, 401)
+	sensitivity = xray_sensitivity(energy, filter_stack, time, ip_thickness, ip_psl_attenuation, ip_material)
+	lower = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][0]]
+	upper = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][-1]]
+	return lower, upper
 
 
 if __name__ == '__main__':
@@ -146,7 +166,7 @@ if __name__ == '__main__':
 
 
 	def energy_to_diameter(energy):
-		return track_diameter(particle_E_out(energy, 1, 2, 15, "Ta"), 1, 2, 5)
+		return track_diameter(particle_E_out(energy, 1, 2, [(15, "Ta")]), 1, 2, 5)
 
 
 	plt.figure()  # figsize=(5.5, 4))
@@ -171,9 +191,7 @@ if __name__ == '__main__':
 	energies = np.geomspace(1, 1000)
 	plt.figure()
 	for filters in [[(250, "Al")], [(450, "Al")], [(15, "Ta"), (200, "Al")], [(15, "Ta"), (400, "Al")]]:
-		sensitivity = xray_sensitivity(energies, 30)
-		for filter_thickness, filter_material in filters:
-			sensitivity *= xray_transmission(energies, filter_thickness, filter_material)
+		sensitivity = xray_sensitivity(energies, filters, 30)
 		plt.plot(energies, sensitivity,
 		         label=" + ".join([f"{thickness}μm {material}" for thickness, material in filters]))
 	plt.xscale("log")

@@ -189,7 +189,7 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 
 def plot_source(filename: str, show: bool,
                 grid: Grid, source: NDArray[float], contour_level: float,
-                e_min: float, e_max: float, num_cuts=1) -> None:
+                e_min: float, e_max: float, cut_index: int, num_cuts: int) -> None:
 	"""
 	plot a single reconstructed deuteron/xray source
 	:param filename: the name with which to save the resulting files, minus the fluff
@@ -199,13 +199,14 @@ def plot_source(filename: str, show: bool,
 	:param contour_level: the value of the contour, relative to the peak, to draw around the source
 	:param e_min: the minimum energy being plotted (for the label)
 	:param e_max: the maximum energy being plotted (for the label)
+	:param cut_index: the index of this image in the set (for choosing the color)
 	:param num_cuts: the total number of images in this set (for choosing the color)
 	"""
 	# sometimes this is all nan, but we don't need to plot it
 	if np.all(np.isnan(source)):
 		return
 
-	particle, cut_index = re.search(r"-(xray|deuteron)([0-9]+)", filename, re.IGNORECASE).groups()
+	particle = re.search(r"-(xray|deuteron)", filename, re.IGNORECASE).group(1)
 
 	# choose the plot limits
 	object_size, (r0, θ), _ = shape_parameters(grid, source, contour=.25)

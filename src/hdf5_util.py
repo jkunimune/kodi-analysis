@@ -11,9 +11,12 @@ def save_as_hdf5(filename, **kwargs):
 		filename += '.h5'
 	with h5py.File(filename, 'w') as f:
 		for col_name, col_values in kwargs.items():
-			col_values = np.array(col_values)
-			dataset = f.create_dataset(col_name, col_values.shape)
-			dataset[...] = col_values
+			if type(col_values) is int or type(col_values) is float or type(col_values) is str:
+				f.attrs[col_name] = col_values
+			else:
+				col_values = np.array(col_values)
+				f[col_name] = col_values
+
 
 def load_hdf5(filename: str, keys: list[str]):
 	if not filename.endswith('.h5'):
@@ -21,8 +24,12 @@ def load_hdf5(filename: str, keys: list[str]):
 	objects = []
 	with h5py.File(filename, 'r') as f:
 		for key in keys:
-			objects.append(np.array(f[key]))
+			try:
+				objects.append(f.attrs[key])
+			except KeyError:
+				objects.append(np.array(f[key]))
 	return objects
+
 
 if __name__ == '__main__':
 	# FOLDER = r'C:\Users\Justin Kunimune\Documents\GitHub\MRSt\output'
