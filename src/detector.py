@@ -72,6 +72,7 @@ def track_energy(diameter, z, a, etch_time, vB=2.66, k=.8, n=1.2):
 	    :param k: one of the response parameters in the two-parameter model
 	    :param n: the other response parameter in the two-parameter model
 	"""
+	diameter = np.array(diameter)
 	return z**2*a*((2*etch_time*vB/diameter - 1)/k)**(1/n)
 
 
@@ -85,6 +86,7 @@ def track_diameter(energy, z, a, etch_time, vB=2.66, k=.8, n=1.2):
 	    :param k: one of the response parameters in the two-parameter model
 	    :param n: the other response parameter in the two-parameter model
 	"""
+	energy = np.array(energy)
 	return np.where(energy > 0,
 	                2*etch_time*vB/(1 + k*(energy/(z**2*a))**n),
 	                np.nan)

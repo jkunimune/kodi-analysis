@@ -1,6 +1,7 @@
 """ some signal utility functions, including the all-important Gelfgat reconstruction """
 import datetime
 import os
+import re
 import shutil
 import subprocess
 from math import pi, cos, sin, nan, sqrt
@@ -21,6 +22,61 @@ SMOOTHING = 100 # entropy weight
 Point = tuple[float, float]
 
 
+def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Optional[str] = None) -> list[list[(float, str)]]:
+	""" read a str that describes a filter/detector stack, and output what filters exactly are
+	    in front of the specified detector.  if it was a split filter, output both potential stacks.
+	"""
+	filter_code = re.sub(r"μm", "", filter_code)
+	filter_stacks = [[]]
+	num_detectors_seen = 0
+	# loop thru the filtering
+	while len(filter_code) > 0:  # TODO: use spaces to make this more readable
+		# a colon indicates a piece of CR-39, a pipe indicates an image plate
+		if filter_code[0] == ":" or filter_code[0] == "|":
+			detector_found = {":": "cr39", "|": "ip"}[filter_code[0]]
+			if detector_found == detector.lower():
+				if num_detectors_seen == index:
+					return filter_stacks
+				else:
+					num_detectors_seen += 1
+			equivalent_filter = {":": "1400cr39", "|": "112BaFBr"}[filter_code[0]]
+			filter_code = equivalent_filter + " " + filter_code[1:]
+		# a slash indicates that there's an alternative to the previus filter
+		elif filter_code[0] == "/":
+			if len(filter_stacks) > 1:
+				raise ValueError("this detector stack had multiple split filters?  idk what to do about that.  how did you aline them??")
+			filter_stacks.append(filter_stacks[0][:-1])
+			filter_code = filter_code[1:]
+		# whitespace is ignored
+		elif filter_code[0] == " ":
+			filter_code = filter_code[1:]
+		# anything else is a filter
+		else:
+			top_filter = re.match(r"^([0-9./]+)([A-Za-z0-9-]+)\b", filter_code)
+			if top_filter is None:
+				raise ValueError(f"I can't parse '{filter_code}'")
+			thickness, material = top_filter.group(1, 2)
+			thickness = float(thickness)
+			# etiher add it to the shorter one (if there was a slash recently)
+			if len(filter_stacks) == 2 and len(filter_stacks[1]) < len(filter_stacks[0]):
+				filter_stacks[1].append((thickness, material))
+			# or add it to all stacks that currently exist
+			else:
+				for filter_stack in filter_stacks:
+					filter_stack.append((thickness, material))
+			filter_code = filter_code[top_filter.end():]
+
+	if index is None and detector is None:
+		return filter_stacks
+	else:
+		raise ValueError("the specified detector index >= the number of detectors I found")
+
+
+def print_filtering(filter_stack: list[(float, str)]) -> str:
+	""" encode a filter stack in a str that can be read by parse_filtering """
+	return " ".join(f"{thickness:.0f}{material}" for thickness, material in filter_stack)
+
+
 def bin_centers(bin_edges: np.ndarray):
 	""" take an array of bin edges and convert it to the centers of the bins """
 	return (bin_edges[1:] + bin_edges[:-1])/2
@@ -29,11 +85,6 @@ def bin_centers(bin_edges: np.ndarray):
 def bin_centers_and_sizes(bin_edges: np.ndarray):
 	""" take an array of bin edges and convert it to the centers of the bins """
 	return (bin_edges[1:] + bin_edges[:-1])/2, bin_edges[1:] - bin_edges[:-1]
-
-
-def expand_bins(bin_centers: np.ndarray):
-	""" take an array """
-	return np.concatenate([[1.5*bin_centers[0] - 0.5*bin_centers[1]], bin_centers + 0.5*bin_centers[1] - 0.5*bin_centers[0]])
 
 
 def periodic_mean(values: np.ndarray, minimum: float, maximum: float):

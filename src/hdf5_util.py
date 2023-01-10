@@ -11,7 +11,7 @@ def save_as_hdf5(filename, **kwargs):
 		filename += '.h5'
 	with h5py.File(filename, 'w') as f:
 		for col_name, col_values in kwargs.items():
-			if type(col_values) is int or type(col_values) is float or type(col_values) is str:
+			if type(col_values) is str or np.size(col_values) == 1:
 				f.attrs[col_name] = col_values
 			else:
 				col_values = np.array(col_values)

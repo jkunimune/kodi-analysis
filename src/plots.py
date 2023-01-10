@@ -115,7 +115,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 			plt.plot(dx + r0*np.cos(T), dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
 	if "xray" in filename:
-		plt.title(f"X-ray image") # TODO: plt.title(f"$h\\nu$ = {energy_min:.1f} – {energy_max:.1f} keV")
+		plt.title(f"$h\\nu$ = {energy_min:.1f} – {energy_max:.1f} keV")
 	elif energy_min is not None:
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	plt.xlabel("x (cm)")
@@ -231,10 +231,10 @@ def plot_source(filename: str, show: bool,
 	# plt.colorbar()
 	plt.gca().set_facecolor("#000")
 	plt.axis('square')
-	if "xray" in filename:
-		plt.title("X-ray image") # TODO: the x-ray energies
-	elif e_max is not None:
+	if particle == "deuteron":
 		plt.title(f"$E_\\mathrm{{d}}$ = {e_min:.1f} – {min(12.5, e_max):.1f} MeV")
+	else:
+		plt.title(f"$h\\nu$ = {e_min:.1f} – {e_max:.1f} keV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.axis([-object_size, object_size, -object_size, object_size])

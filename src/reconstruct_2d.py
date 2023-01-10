@@ -8,7 +8,7 @@ import re
 import sys
 import time
 import warnings
-from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, isnan
+from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf
 from typing import Any, Optional
 
 import h5py
@@ -32,7 +32,8 @@ from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
-	line_search, quantile, bin_centers_and_sizes, get_relative_aperture_positions, periodic_mean
+	line_search, quantile, bin_centers_and_sizes, get_relative_aperture_positions, periodic_mean, parse_filtering, \
+	print_filtering
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -45,12 +46,12 @@ DEUTERON_ENERGY_CUTS = [(0, "deuteron0", (0, 6)), (2, "deuteron2", (9, 100))] # 
 #                         (0, "deuteron0", (2, 3.5))] # (MeV) (emitted, not detected)
 # SUPPORTED_FILETYPES = [".txt"] # [".cpsa"]
 # SUPPORTED_FILETYPES = [".h5"]
-SUPPORTED_FILETYPES = [".h5", ".txt", ".pkl"]
+SUPPORTED_FILETYPES = [".h5", ".pkl"]
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = False
-SHOW_CENTER_FINDING_CALCULATION = True
-SHOW_ELECTRIC_FIELD_CALCULATION = True
+SHOW_CENTER_FINDING_CALCULATION = False
+SHOW_ELECTRIC_FIELD_CALCULATION = False
 SHOW_POINT_SPREAD_FUNCCION = False
 
 BELIEVE_IN_APERTURE_TILTING = False
@@ -257,47 +258,6 @@ def load_fade_time(filename: str) -> float:
 	return load_hdf5(filename, ["scan_delay"])[0]/60
 
 
-def parse_filtering(filter_code: str, index: int, detector: str) -> list[list[(float, str)]]:
-	""" read a str that describes a filter/detector stack, and output what filters exactly are
-	    in front of the specified detector.  if it was a split filter, output both potential stacks
-	"""
-	filter_stacks = [[]]
-	num_detectors_seen = 0
-	# loop thru the filtering
-	while True:
-		# a colon indicates a piece of CR-39, a pipe indicates an image plate
-		if filter_code[0] == ":" or filter_code[0] == "|":
-			detector_found = {":": "cr39", "|": "ip"}[filter_code[0]]
-			if detector_found == detector.lower():
-				if num_detectors_seen == index:
-					return filter_stacks
-				else:
-					num_detectors_seen += 1
-			equivalent_filter = {":": "1400cr", "|": "112BaFBr"}[filter_code[0]]
-			filter_code = equivalent_filter + filter_code[1:]
-		# a slash indicates that there's an alternative to the previus filter
-		elif filter_code[0] == "/":
-			if len(filter_stacks) > 1:
-				raise ValueError("this detector stack had multiple split filters?  idk what to do about that.  how did you aline them??")
-			filter_stacks.append(filter_stacks[0][:-1])
-			filter_code = filter_code[1:]
-		# anything else is a filter
-		else:
-			top_filter = re.match(r"^([0-9./]+)([A-Za-z]+)", filter_code)
-			if top_filter is None:
-				raise ValueError(f"the index was >= the number of detectors specified in {filter_code}")
-			thickness, material = top_filter.group(1, 2)
-			thickness = float(thickness)
-			# etiher add it to the shorter one (if there was a slash recently)
-			if len(filter_stacks) == 2 and len(filter_stacks[1]) < len(filter_stacks[0]):
-				filter_stacks[1].append((thickness, material))
-			# or add it to all stacks that currently exist
-			else:
-				for filter_stack in filter_stacks:
-					filter_stack.append((thickness, material))
-			filter_code = filter_code[top_filter.end():]
-
-
 def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_points: NDArray[float]
                        ) -> NDArray[float]:
 	""" take some points approximately arranged in a hexagonal grid and find the size and angle of it
@@ -443,7 +403,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
-	x_centers, dx = bin_centers_and_sizes(x_bins)
+	x_centers, dx = bin_centers_and_sizes(x_bins)  # TODO: this should be reritten to use the Grid class
 	y_centers, dy = bin_centers_and_sizes(y_bins)
 	X_pixels, Y_pixels = np.meshgrid(x_centers, y_centers, indexing="ij")
 	N_clipd = np.where(inside_polygon(X_pixels, Y_pixels, region), N_full, nan)
@@ -522,8 +482,8 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param diameter_min: the minimum track diameter to consider (μm)
 	    :param diameter_max: the maximum track diameter to consider (μm)
-	    :param energy_min: the minimum particle energy included (MeV)
-	    :param energy_max: the maximum particle energy included (MeV)
+	    :param energy_min: the minimum particle energy considered, for charging purposes (MeV)
+	    :param energy_max: the maximum particle energy considered, for charging purposes (MeV)
 	    :param x0: the x coordinate of the center of the circle (cm)
 	    :param y0: the y coordinate of the center of the circle (cm)
 	    :param r0: the radius of the aperture in the imaging plane (cm)
@@ -586,7 +546,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 
 	# now compute the relation between spherical radius and image radius
 	r_sph_bins = r_bins[:r_bins.size//2:2]
-	r_sph = bin_centers(r_sph_bins)
+	r_sph = bin_centers(r_sph_bins)  # TODO: this should be reritten to use the Linspace class
 	sphere_to_plane = abel_matrix(r_sph_bins)
 	# do this nested 1d reconstruction
 	def reconstruct_1d_assuming_Q(Q: float, return_other_stuff=False) -> float | tuple:
@@ -711,19 +671,20 @@ def analyze_scan(input_filename: str,
 		return analysis_for_each_section
 
 	# figure out the energy cuts given the filtering and type of radiation
-	filter_str = "".join(f"{thickness:.0f}{material}" for thickness, material in filter_stack)
+	filter_str = print_filtering(filter_stack)
 	if particle == "xray":
 		fade_time = load_fade_time(input_filename)
-		energy_min, energy_max = detector.xray_energy_bounds(filter_stack, fade_time, .10)
-		energy_cuts = [(detector_index, f"xray{filter_str}", (energy_min, energy_max))]
+		energy_min, energy_max = detector.xray_energy_bounds(filter_stack, fade_time, .10)  # these energy bounds are in keV
+		energy_cuts = [(detector_index, f"xray{detector_index}{section_index}", (energy_min, energy_max))]
 	elif shot.startswith("synth"):
 		energy_cuts = [(0, "all", (0., inf))]
+		fade_time = None
 	else:
-		energy_cuts = DEUTERON_ENERGY_CUTS
-	sorted_energy_cuts = sorted(energy_cuts)
+		energy_cuts = DEUTERON_ENERGY_CUTS  # these energy bounds are in MeV
+		fade_time = None
 
 	# this tag is for the reconstruction file, so there should be a unique one for each scan file
-	particle_and_energy_specifier = particle if particle == "deuteron" else energy_cuts[0][0]
+	particle_and_energy_specifier = particle if particle == "deuteron" else energy_cuts[0][1]
 
 	# load the full image set now if you can
 	if skip_reconstruction:
@@ -770,7 +731,8 @@ def analyze_scan(input_filename: str,
 			else:
 				data_polygon = old_data_polygon
 		else:
-			save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{detector_index}-{section_index}-region", vertices=data_polygon)
+			save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{detector_index}-{section_index}-region",
+			             vertices=data_polygon)
 
 		# find the centers and spacings of the penumbral images
 		centers, array_transform = find_circle_centers(
@@ -788,18 +750,22 @@ def analyze_scan(input_filename: str,
 		stack_plane, source_stack = None, None
 
 	results: list[dict[str, Any]] = []
-	for energy_index, energy_cut_name, emission_energies in energy_cuts:
+	for energy_index, energy_cut_name, (energy_min, energy_max) in energy_cuts:
 
 		# switch out some values depending on whether these are xrays or deuterons
 		if particle == "deuteron":
 			resolution = DEUTERON_RESOLUTION
-			detection_energies = detector.particle_E_out(emission_energies, 1, 2, filter_stack) # convert scattering energies to CR-39 energies
-			if detection_energies[0] < 1 or detection_energies[1] > 5:
+
+			incident_energy_min, incident_energy_max = detector.particle_E_out(
+				[energy_min, energy_max], 1, 2, filter_stack) # convert scattering energies to CR-39 energies
+			diameter_max, diameter_min = detector.track_diameter(
+				[incident_energy_min, incident_energy_max], etch_time=etch_time, a=2, z=1) # convert to diameters
+			energy_min, energy_max = detector.particle_E_in(
+				[incident_energy_min, incident_energy_max], 1, 2, filter_stack) # convert back to exclude particles that are ranged out
+
+			if incident_energy_min < 1 or incident_energy_max > 5:
 				break  # skip energy cuts that don't work with this filter
-			diameter_max, diameter_min = detector.track_diameter(detection_energies, etch_time=etch_time, a=2, z=1) # convert to diameters
-			emission_energies = detector.particle_E_in(1, 2, detection_energies, filter_stack) # convert back to exclude particles that are ranged out
-			if isnan(diameter_max):
-				diameter_max = inf # and if the bin goes down to zero energy, make sure all large diameters are counted
+
 		else:
 			resolution = X_RAY_RESOLUTION
 			diameter_max, diameter_min = nan, nan
@@ -838,7 +804,7 @@ def analyze_scan(input_filename: str,
 				centers, key=lambda center: max([hypot(x - center[0], y - center[1]) for x, y in centers]))
 			Q, r_max = do_1d_reconstruction(
 				input_filename, diameter_min, diameter_max,
-				emission_energies[0], emission_energies[1],
+				energy_min, energy_max,
 				x_center, y_center, M*rA, M*sA, data_polygon, show_plots) # TODO: infer rA, as well
 
 			if r_max > r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution:
@@ -846,7 +812,7 @@ def analyze_scan(input_filename: str,
 				                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
 				r_max = r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution
 
-			r_psf = electric_field.get_expansion_factor(Q, r0, *emission_energies)
+			r_psf = electric_field.get_expansion_factor(Q, r0, energy_min, energy_max)
 
 			if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
 				r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
@@ -904,8 +870,7 @@ def analyze_scan(input_filename: str,
 					image_plicity += area
 
 		save_and_plot_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
-		                       image_plane, image, image_plicity,
-		                       energy_min=emission_energies[0], energy_max=emission_energies[1],
+		                       image_plane, image, image_plicity, energy_min, energy_max,
 		                       r0=rA*M, s0=sA*M, array_transform=array_transform)
 
 		if skip_reconstruction:
@@ -927,7 +892,7 @@ def analyze_scan(input_filename: str,
 			logging.info(f"  generating a {kernel_plane.shape} point spread function with Q={Q}")
 
 			penumbral_kernel = point_spread_function(kernel_plane, Q, r0, array_transform,
-			                                         *emission_energies) # get the dimensionless shape of the penumbra
+			                                         energy_min, energy_max) # get the dimensionless shape of the penumbra
 			if account_for_overlap:
 				raise NotImplementedError("I also will need to add more things to the kernel")
 			penumbral_kernel *= source_plane.pixel_area*image_plane.pixel_area/(M*L1)**2 # scale by the solid angle subtended by each image pixel
@@ -1034,8 +999,7 @@ def analyze_scan(input_filename: str,
 
 		# save and plot the results
 		plot_source(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
-		            stack_plane, source, contour,
-		            *emission_energies,
+		            stack_plane, source, contour, energy_min, energy_max,
 		            cut_index=energy_index, num_cuts=max(3, len(energy_cuts)))
 		save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
 		                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
@@ -1043,8 +1007,8 @@ def analyze_scan(input_filename: str,
 		results.append(dict(
 			shot=shot, tim=tim,
 			energy_cut=energy_cut_name,
-			energy_min=emission_energies[0],
-			energy_max=emission_energies[1],
+			energy_min=energy_min,
+			energy_max=energy_max,
 			Q=Q, dQ=0,
 			M=M, dM=0,
 			P0_magnitude=p0/1e-4, dP0_magnitude=0,
@@ -1056,10 +1020,12 @@ def analyze_scan(input_filename: str,
 	# finally, save the combined image set
 	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source",
 	             energy=[bounds for (index, name, bounds) in sorted(energy_cuts)],
-	             x=stack_plane.x.get_edges()/1e-4,
-	             y=stack_plane.y.get_edges()/1e-4,
+	             x=stack_plane.x.get_bins()/1e-4,
+	             y=stack_plane.y.get_bins()/1e-4,
 	             images=source_stack.transpose((0, 2, 1))*1e-4**2,
-	             filtering=filtering)
+	             fade_time=fade_time if particle == "xray" else nan,
+	             filter=filter_str
+	)  # TODO: images from different regions of the same detector should be stackd in the same HDF5
 
 	if source_stack.shape[0] > 1:
 		# calculate the differentials between energy cuts
