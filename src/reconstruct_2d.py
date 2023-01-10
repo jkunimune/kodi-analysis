@@ -51,7 +51,7 @@ SUPPORTED_FILETYPES = [".h5", ".pkl"]
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = False
 SHOW_CENTER_FINDING_CALCULATION = False
-SHOW_ELECTRIC_FIELD_CALCULATION = False
+SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
 BELIEVE_IN_APERTURE_TILTING = False
@@ -476,7 +476,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
                          energy_min: float, energy_max: float,
-                         x0: float, y0: float, r0: float, s0: float, region: list[Point],
+                         centers: list[(float, float)], r0: float, s0: float, region: list[Point],
                          show_plots: bool) -> Point:
 	""" perform an inverse Abel transformation while fitting for charging
 	    :param filename: the scanfile containing the data to be analyzed
@@ -484,8 +484,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	    :param diameter_max: the maximum track diameter to consider (μm)
 	    :param energy_min: the minimum particle energy considered, for charging purposes (MeV)
 	    :param energy_max: the maximum particle energy considered, for charging purposes (MeV)
-	    :param x0: the x coordinate of the center of the circle (cm)
-	    :param y0: the y coordinate of the center of the circle (cm)
+	    :param centers: the x and y coordinates of the centers of the circles (cm)
 	    :param r0: the radius of the aperture in the imaging plane (cm)
 	    :param s0: the distance to the center of the next aperture in the imaging plane (cm)
 	    :param region: the polygon inside which we care about the data
@@ -499,7 +498,9 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max)  # load all track coordinates
 		valid = inside_polygon(x_tracks, y_tracks, region)
 		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
-		r_tracks = np.hypot(x_tracks - x0, y_tracks - y0)
+		r_tracks = np.full(np.count_nonzero(valid), inf)
+		for x0, y0 in centers:
+			r_tracks = np.minimum(r_tracks, np.hypot(x_tracks - x0, y_tracks - y0))
 		r_bins = np.linspace(0, r_max, int(np.sum(r_tracks <= r0)/1000))
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
 		histogram = True
@@ -520,7 +521,9 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2
 		XC, YC = np.meshgrid(xC, yC, indexing='ij')
 		NC[~inside_polygon(XC, YC, region)] = 0
-		RC = np.hypot(XC - x0, YC - y0)
+		RC = np.full(XC.shape, inf)
+		for x0, y0 in centers:
+			RC = np.minimum(RC, np.hypot(XC - x0, YC - y0))
 		dr = (xC_bins[1] - xC_bins[0] + yC_bins[1] - yC_bins[0])/2
 		r_bins = np.linspace(0, r_max, int(r0/(dr*2)))
 		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
@@ -529,10 +532,15 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	r, dr = bin_centers_and_sizes(r_bins)
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 	A = pi*r*dr*np.mean(inside_polygon(x0 + r*np.cos(θ), y0 + r*np.sin(θ), region), axis=0)
+		A += pi*r*dr*np.mean(inside_polygon(x0 + r*np.cos(θ), y0 + r*np.sin(θ), region), axis=0)
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
 	inside = A > 0
 	umbra, exterior = (r < 0.5*r0), (r > 1.8*r0)
 	if not np.any(inside & umbra):
+		plt.figure()
+		plt.plot(r, A)
+		plt.axvline(0.5*r0)
+		plt.show()
 		raise RuntimeError("the whole inside of the image is clipd for some reason.")
 	if not np.any(inside & exterior):
 		raise RuntimeError("too much of the image is clipd; I need a background region.")
@@ -800,12 +808,10 @@ def analyze_scan(input_filename: str,
 				continue
 
 			# start with a 1D reconstruction on one of the found images
-			x_center, y_center = min(
-				centers, key=lambda center: max([hypot(x - center[0], y - center[1]) for x, y in centers]))
 			Q, r_max = do_1d_reconstruction(
 				input_filename, diameter_min, diameter_max,
 				energy_min, energy_max,
-				x_center, y_center, M*rA, M*sA, data_polygon, show_plots) # TODO: infer rA, as well
+				centers, M*rA, M*sA, data_polygon, show_plots) # TODO: infer rA, as well
 
 			if r_max > r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution:
 				logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
@@ -1095,7 +1101,7 @@ if __name__ == '__main__':
 		summary = pd.DataFrame(data={"shot": ['placeholder'], "tim": [0], "energy_cut": ['placeholder']}) # be explicit that shots can be str, but usually look like int
 
 	# iterate thru the shots we're supposed to analyze and make a list of scan files
-	all_scans_to_analyze: list[tuple[str, str, float, str]] = []
+	all_scans_to_analyze: list[(str, str, float, str)] = []
 	for specifier in shots_to_reconstruct:
 		match = re.fullmatch(r"([A-Z]?[0-9]+)(tim|t)([0-9]+)", specifier)
 		if match:
@@ -1103,7 +1109,7 @@ if __name__ == '__main__':
 		else:
 			shot, tim = specifier, None
 
-		matching_scans: list[tuple[str, str, float, str]] = []
+		matching_scans: list[(str, str, float, str)] = []
 		for filename in os.listdir("data/scans"): # search for filenames that match each row
 			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
 			etch_match = re.search(r"([0-9]+)hr?", filename, re.IGNORECASE)
