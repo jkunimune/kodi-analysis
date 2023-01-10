@@ -187,15 +187,17 @@ if __name__ == '__main__':
 	plt.xlabel("Energy (MeV)")
 	plt.ylabel("Diameter (μm)")
 	plt.tight_layout()
-	plt.savefig("../dve.png", dpi=300)
-	plt.savefig("../dve.eps")
+	# plt.savefig("../dve.png", dpi=300)
+	# plt.savefig("../dve.eps")
 
-	energies = np.geomspace(1, 1000)
+	energies = np.geomspace(1, 1e3, 301)
 	plt.figure()
-	for filters in [[(250, "Al")], [(450, "Al")], [(15, "Ta"), (200, "Al")], [(15, "Ta"), (400, "Al")]]:
+	front = [(2800, "cr39"), (200, "Al")]
+	back = [*front, (112, "BaFBr"), (200, "Al")]
+	for filters in [[(50, "Al"), *front], [(50, "Al"), *back], [(15, "Ta"), *front], [(15, "Ta"), *back]]:
 		sensitivity = xray_sensitivity(energies, filters, 30)
 		plt.plot(energies, sensitivity,
-		         label=" + ".join([f"{thickness}μm {material}" for thickness, material in filters]))
+		         label=f"{filters[0][0]}μm {filters[0][1]} + {len(filters) - 1}")
 	plt.xscale("log")
 	# plt.yscale("log")
 	plt.xlabel("Energy (keV)")
@@ -205,7 +207,20 @@ if __name__ == '__main__':
 	plt.xlim(1e+0, 1e+3)
 	plt.legend()
 	plt.tight_layout()
-	plt.savefig("../ip_sensitivities.png", dpi=300)
-	plt.savefig("../ip_sensitivities.eps")
+	# plt.savefig("../ip_sensitivities.png", dpi=300)
+	# plt.savefig("../ip_sensitivities.eps")
+
+	plt.figure()
+	for material, density in [("Ta", 16.6), ("Al", 2.7)]:
+		attenuation = attenuation_curve(energies, material)*1e4/density
+		plt.plot(energies/1e3, attenuation, label=material)
+	plt.legend()
+	plt.grid()
+	plt.xscale("log")
+	plt.yscale("log")
+	plt.xlabel("Energy (MeV)")
+	plt.ylabel("Attenuation (cm^2/g)")
+	plt.xlim(1e-3, 1e+0)
+	plt.tight_layout()
 
 	plt.show()
