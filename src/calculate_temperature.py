@@ -15,8 +15,18 @@ SHOT = "104780"
 TIM = "4"
 
 
-def compute_temperature(measured_values: NDArray[float], errors: NDArray[float],
-                        energies: NDArray[float], log_sensitivities: NDArray[float]) -> float:
+def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[float],
+                              energies: NDArray[float], log_sensitivities: NDArray[float]
+                              ) -> (float, float):
+	""" take a set of measured x-ray intensity values from a single chord thru the implosion and
+	    use their average and their ratios to infer the emission-averaged electron temperature,
+	    and the total line-integrated photic emission along that chord.
+	    :param measured_values: the detected emission (PSL/μm^2/sr)
+	    :param errors: the uncertainty on each of the measured values (PSL/μm^2/sr)
+	    :param energies: the photon energies at which the sensitivities have been calculated (keV)
+	    :param log_sensitivities: the log of the dimensionless sensitivity of each detector at each reference energy
+	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr)
+	"""
 	def compute_values(βe):
 		integrand = np.exp(-energies*βe + log_sensitivities)
 		unscaled_values = integrate.trapezoid(x=energies, y=integrand, axis=1)
@@ -40,16 +50,20 @@ def compute_temperature(measured_values: NDArray[float], errors: NDArray[float],
 		        )/errors
 
 	if np.any(measured_values == 0):
-		return 0
+		return 0, 0
 	else:
 		result = optimize.least_squares(fun=lambda x: compute_residuals(x[0]),
 		                                jac=lambda x: np.expand_dims(compute_derivatives(x[0]), 1),
 		                                x0=[1/5],  # start with a kind of high Te guess because it converges faster from that side
 		                                bounds=(0, inf))
 		if result.success:
-			return 1/result.x[0]
+			βe = result.x[0]
+			Te = 1/βe
+			_, numerator, denominator, _ = compute_values(βe)
+			εL = numerator/denominator*Te
+			return Te, εL
 		else:
-			return nan
+			return nan, nan
 
 
 def main():
@@ -90,18 +104,20 @@ def main():
 		integrand = np.exp(-reference_energies/test_temperature[i] + log_sensitivities)
 		emissions[:, i] = integrate.trapezoid(x=reference_energies, y=integrand, axis=1)
 		emissions[:, i] /= emissions[:, i].mean()
-		inference[i] = compute_temperature(emissions[:, i], np.full(emissions[:, i].shape, 1e-1),
-		                                   reference_energies, log_sensitivities)
+		inference[i] = compute_plasma_conditions(emissions[:, i], np.full(emissions[:, i].shape, 1e-1),
+		                                         reference_energies, log_sensitivities)[0]
 
 	# calculate the temperature
 	basis = Grid.from_size(50, 5, True)
-	temperature = np.empty(basis.shape)
+	temperature_map = np.empty(basis.shape)
+	emission_map = np.empty(basis.shape)
 	for i in range(basis.x.num_bins):
 		for j in range(basis.y.num_bins):
 			data = np.array([image((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
 			error = np.array([error((basis.x.get_bins()[i], basis.y.get_bins()[j])) for error in errors])
-			temperature[i, j] = compute_temperature(data, error,
-			                                        reference_energies, log_sensitivities)
+			Te, εL = compute_plasma_conditions(data, error, reference_energies, log_sensitivities)
+			temperature_map[i, j] = Te
+			emission_map[i, j] = εL
 
 	# plot a synthetic lineout
 	plt.figure()
@@ -142,7 +158,8 @@ def main():
 
 	# plot the temperature
 	plt.figure()
-	plt.imshow(temperature, extent=basis.extent, cmap="inferno", origin="lower", vmin=0, vmax=2)
+	plt.imshow(temperature_map, extent=basis.extent, cmap="inferno", origin="lower", vmin=0, vmax=2)
+	plt.contour(basis.x.get_bins(), basis.y.get_bins(), emission_map.T, colors="#000", levels=30)
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.tight_layout()
