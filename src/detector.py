@@ -110,20 +110,21 @@ def attenuation_curve(energy: Numeric, material: str) -> Numeric:
 	return np.interp(energy, table[:, 0], table[:, 1])
 
 
-def xray_transmission(energy: Numeric, thickness: float, material: str) -> Numeric:
-	""" calculate the fraction of photons at some energy that get thru some material
+def log_xray_transmission(energy: Numeric, thickness: float, material: str) -> Numeric:
+	""" calculate the log of the fraction of photons at some energy that get thru some material
 	    :param energy: the photon energies (keV)
 	    :param thickness: the thickness of the material (μm)
 	    :param material: the name of the material (probably just the elemental symbol)
 	    :return: the fraction of photons that make it through the filter
 	"""
 	attenuation = attenuation_curve(energy, material)
-	return np.exp(-attenuation*thickness)
+	return -attenuation*thickness
 
 
-def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], time: float, thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
-	""" calculate the fraction of photons at some energy that are measured by an image
-	    plate of the given characteristics, given some filtering in front of it
+def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], time: float,
+                         thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
+	""" calculate the log of the fraction of x-ray energy at some frequency that is measured by an
+	    image plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
 	    :param time: the delay between the experiment and the image plate scan (min)
@@ -134,10 +135,26 @@ def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], time: fl
 	"""
 	attenuation = attenuation_curve(energy, material)
 	self_transparency = 1/(1 + psl_attenuation/attenuation)
-	sensitivity = self_transparency * (1 - np.exp(-attenuation*thickness/self_transparency)) * psl_fade(time)
+	log_sensitivity = np.log(
+		self_transparency * (1 - np.exp(-attenuation*thickness/self_transparency)) * psl_fade(time))
 	for thickness, material in filter_stack:
-		sensitivity *= xray_transmission(energy, thickness, material)
-	return sensitivity
+		log_sensitivity += log_xray_transmission(energy, thickness, material)
+	return log_sensitivity
+
+
+def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], time: float,
+                     thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
+	""" calculate the fraction of x-ray energy at some frequency that is measured by an
+	    image plate of the given characteristics, given some filtering in front of it
+	    :param energy: the photon energies (keV)
+	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
+	    :param time: the delay between the experiment and the image plate scan (min)
+	    :param thickness: the thickness of the image plate (μm)
+	    :param psl_attenuation: the attenuation constant of the image plate's characteristic photostimulated luminescence
+	    :param material: the name of the image plate material (probably just the elemental symbol)
+	    :return: the fraction of photic energy that reaches the scanner
+	"""
+	return np.exp(log_xray_sensitivity(energy, filter_stack, time, thickness, psl_attenuation, material))
 
 
 def xray_energy_bounds(filter_stack: list[(float, str)], time: float, level=.10,
