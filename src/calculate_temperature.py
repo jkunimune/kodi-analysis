@@ -117,7 +117,8 @@ def main():
 			error = np.array([error((basis.x.get_bins()[i], basis.y.get_bins()[j])) for error in errors])
 			Te, εL = compute_plasma_conditions(data, error, reference_energies, log_sensitivities)
 			temperature_map[i, j] = Te
-			emission_map[i, j] = εL
+			# emission_map[i, j] = εL
+			emission_map[i, j] = np.mean(data)
 
 	# plot a synthetic lineout
 	plt.figure()
@@ -158,8 +159,12 @@ def main():
 
 	# plot the temperature
 	plt.figure()
-	plt.imshow(temperature_map, extent=basis.extent, cmap="inferno", origin="lower", vmin=0, vmax=2)
-	plt.contour(basis.x.get_bins(), basis.y.get_bins(), emission_map.T, colors="#000", levels=30)
+	plt.imshow(temperature_map, extent=basis.extent,
+	           cmap="inferno", origin="lower", vmin=0, vmax=2)
+	plt.colorbar().set_label("Te (keV)")
+	plt.contour(basis.x.get_bins(), basis.y.get_bins(), emission_map.T,
+	            colors="#000", linewidths=1,
+	            levels=np.linspace(0, emission_map[basis.x.num_bins//2, basis.y.num_bins//2]*2, 10))
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.tight_layout()
