@@ -20,9 +20,10 @@ SMOOTHING = 100 # entropy weight
 
 
 Point = tuple[float, float]
+Filter = tuple[float, str]
 
 
-def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Optional[str] = None) -> list[list[(float, str)]]:
+def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Optional[str] = None) -> list[list[Filter]]:
 	""" read a str that describes a filter/detector stack, and output what filters exactly are
 	    in front of the specified detector.  if it was a split filter, output both potential stacks.
 	"""
@@ -72,7 +73,18 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 		raise ValueError("the specified detector index >= the number of detectors I found")
 
 
-def print_filtering(filter_stack: list[(float, str)]) -> str:
+def count_detectors(filter_code: str, detector: str) -> int:
+	""" return the number of detectors of a certain type are specified in a filtering string """
+	match detector.lower():
+		case "cr39":
+			return filter_code.count(":")
+		case "ip":
+			return filter_code.count("|")
+		case other:
+			raise ValueError(f"don’t recognize detector type ’{other}’")
+
+
+def print_filtering(filter_stack: list[Filter]) -> str:
 	""" encode a filter stack in a str that can be read by parse_filtering """
 	return " ".join(f"{thickness:.0f}{material}" for thickness, material in filter_stack)
 
@@ -215,7 +227,7 @@ def saturate(r, g, b, factor=2.0):
 	        color.clamped_rgb_b)
 
 
-def inside_polygon(x: np.ndarray, y: np.ndarray, polygon: list[Point]):
+def inside_polygon(polygon: list[Point], x: np.ndarray, y: np.ndarray):
 	if x.shape != y.shape:
 		raise ValueError("nope")
 	num_crossings = np.zeros(x.shape, dtype=int)

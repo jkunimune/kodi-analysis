@@ -14,8 +14,10 @@ def save_as_hdf5(filename, **kwargs):
 			if type(col_values) is str or np.size(col_values) == 1:
 				f.attrs[col_name] = col_values
 			else:
-				col_values = np.array(col_values)
-				f[col_name] = col_values
+				try:
+					f[col_name] = col_values
+				except TypeError:
+					raise TypeError(f"cannot save ’{col_name}’ object of type {type(col_values)} to HDF5: {col_values}")
 
 
 def load_hdf5(filename: str, keys: list[str]):

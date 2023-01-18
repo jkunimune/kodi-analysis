@@ -127,13 +127,19 @@ class LinSpace:
 
 class Grid:
 	def __init__(self, x: LinSpace, y: LinSpace = None):
+		""" a 2D rectangular array of evenly spaced points """
 		self.x = x
 		self.y = y if y is not None else x
 
 	@classmethod
-	def from_arrays(cls, x_edges: NDArray[float], y_edges: NDArray[float]) -> "Grid":
+	def from_edge_array(cls, x_edges: NDArray[float], y_edges: NDArray[float]) -> "Grid":
 		return Grid(LinSpace(x_edges[0], x_edges[-1], x_edges.size - 1),
 		            LinSpace(y_edges[0], y_edges[-1], y_edges.size - 1))
+
+	@classmethod
+	def from_bin_array(cls, x_bins: NDArray[float], y_bins: NDArray[float]) -> "Grid":
+		return Grid(LinSpace(1.5*x_bins[0] - 0.5*x_bins[1], 1.5*x_bins[-1] - 0.5*x_bins[-2], x_bins.size),
+		            LinSpace(1.5*y_bins[0] - 0.5*y_bins[1], 1.5*y_bins[-1] - 0.5*y_bins[-2], y_bins.size))
 
 	@classmethod
 	def from_resolution(cls, min_radius: float, pixel_width: float, odd: bool) -> "Grid":

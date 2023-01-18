@@ -256,7 +256,7 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 
 			save_and_plot_penumbra(f"{name}-tim0-synth", True,
 			                       xI_bins, yI_bins, NI, 0, 0, 0, np.inf)
-			plot_source(f"{name}-tim0-synth", True, xS, yS, img, .25, 0, np.inf, num_cuts=1)
+			plot_source(f"{name}-tim0-synth", True, xS, yS, img, .25, 0, np.inf, num_colors=1)
 			
 		else:
 			raise KeyError(mode)

@@ -8,7 +8,7 @@ import re
 import sys
 import time
 import warnings
-from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf
+from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degrees, atan2
 from typing import Any, Optional
 
 import h5py
@@ -33,17 +33,16 @@ from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, s
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
 	line_search, quantile, bin_centers_and_sizes, get_relative_aperture_positions, periodic_mean, parse_filtering, \
-	print_filtering
+	print_filtering, Filter, count_detectors
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
-DEUTERON_ENERGY_CUTS = [(0, "deuteron0", (0, 6)), (2, "deuteron2", (9, 100))] # (MeV) (emitted, not detected)
-# DEUTERON_ENERGY_CUTS = [(0, "deuteron0", (0, 6)), (2, "deuteron2", (9, 100)), (1, "deuteron1", (6, 9))] # (MeV) (emitted, not detected)
-# DEUTERON_ENERGY_CUTS = [(6, "deuteron6", (11, 13)), (5, "deuteron5", (9.5, 11)), (4, "deuteron4", (8, 9.5)),
-#                         (3, "deuteron3", (6.5, 8)), (2, "deuteron2", (5, 6.5)), (1, "deuteron1", (3.5, 5)),
-#                         (0, "deuteron0", (2, 3.5))] # (MeV) (emitted, not detected)
+DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 100))] # (MeV) (emitted, not detected)
+# DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 100)), (1, (6, 9))] # (MeV) (emitted, not detected)
+# DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
+#                         (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
 # SUPPORTED_FILETYPES = [".txt"] # [".cpsa"]
 # SUPPORTED_FILETYPES = [".h5"]
 SUPPORTED_FILETYPES = [".h5", ".pkl"]
@@ -51,7 +50,7 @@ SUPPORTED_FILETYPES = [".h5", ".pkl"]
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = False
 SHOW_CENTER_FINDING_CALCULATION = False
-SHOW_ELECTRIC_FIELD_CALCULATION = True
+SHOW_ELECTRIC_FIELD_CALCULATION = False
 SHOW_POINT_SPREAD_FUNCCION = False
 
 BELIEVE_IN_APERTURE_TILTING = False
@@ -66,7 +65,849 @@ MAX_CONVOLUTION = 1e+12
 MAX_ECCENTRICITY = 15
 
 
-def where_is_the_ocean(x, y, z, title, timeout=None) -> tuple[float, float]:
+class DataError(ValueError):
+	pass
+
+
+class RecordNotFoundError(KeyError):
+	pass
+
+
+class FilterError(ValueError):
+	pass
+
+
+def analyze(shots_to_reconstruct: list[str],
+            skip_reconstruction: bool,
+            show_plots: bool):
+	""" iterate thru the scan files in the data/scans directory that match the provided shot
+	    numbers, preprocess them into some number of penumbral images, apply the 2D reconstruction
+	    algorithm to them (or load the results of the previus reconstruction if so desired),
+	    generate some plots of the data and results, and save all the important information to CSV
+	    and HDF5 files in the results directory.
+	    :param shots_to_reconstruct: a list of specifiers; each should be either a shot name/number
+	                                 present in the shots.csv file (for all TIMs on that shot), or a
+	                                 shot name/number followed by the word "tim" and a tim number
+	                                 (for just the data on one TIM)
+		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
+		                            than performing the full analysis procedure again.
+		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
+		                   user to close them, rather than only saving them to disc and silently proceeding.
+	"""
+	# set it to work from the base directory regardless of whence we call the file
+	if os.path.basename(os.getcwd()) == "src":
+		os.chdir(os.path.dirname(os.getcwd()))
+
+	if not os.path.isdir("results"):
+		os.mkdir("results")
+	if not os.path.isdir("results/data"):
+		os.mkdir("results/data")
+	if not os.path.isdir("results/plots"):
+		os.mkdir("results/plots")
+
+	# configure the logging
+	logging.basicConfig(
+		level=logging.INFO,
+		format="{asctime:s} |{levelname:4.4s}| {message:s}", style='{',
+		datefmt="%m-%d %H:%M",
+		handlers=[
+			logging.FileHandler("results/out-2d.log", encoding='utf-8'),
+			logging.StreamHandler(),
+		]
+	)
+	logging.getLogger('matplotlib.font_manager').disabled = True
+
+	# read in some of the existing information
+	try:
+		shot_table = pd.read_csv('data/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+	except IOError as e:
+		logging.error("my shot table!  I can't do analysis without my shot table!")
+		raise e
+	try:
+		summary = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
+	except IOError:
+		summary = pd.DataFrame(data={"shot": ['placeholder'], "tim": [0],
+		                             "energy_min": [nan], "energy_max": [nan]}) # be explicit that shots can be str, but usually look like int
+
+	# iterate thru the shots we're supposed to analyze and make a list of scan files
+	all_scans_to_analyze: list[(str, str, float, str)] = []
+	for specifier in shots_to_reconstruct:
+		match = re.fullmatch(r"([A-Z]?[0-9]+)(tim|t)([0-9]+)", specifier)
+		if match:
+			shot, tim = match.group(1, 3)
+		else:
+			shot, tim = specifier, None
+
+		matching_scans: list[(str, str, float, str)] = []
+		for filename in os.listdir("data/scans"): # search for filenames that match each row
+			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
+			etch_match = re.search(r"([0-9]+)hr?", filename, re.IGNORECASE)
+			if tim is None:
+				tim_match = re.search(r"tim([0-9]+)", filename, re.IGNORECASE)
+			else:
+				tim_match = re.search(rf"tim({tim})", filename, re.IGNORECASE)
+			if (os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES
+			    and shot_match is not None and tim_match is not None):
+				matching_tim = tim_match.group(1) # these regexes would work much nicer if _ wasn't a word haracter
+				etch_time = float(etch_match.group(1)) if etch_match is not None else None
+				matching_scans.append((shot, matching_tim, etch_time, f"data/scans/{filename}"))
+		if len(matching_scans) == 0:
+			logging.info("  Could not find any text file for TIM {} on shot {}".format(tim, shot))
+		else:
+			all_scans_to_analyze += matching_scans
+
+	if len(all_scans_to_analyze) > 0:
+		logging.info(f"Planning to reconstruct {', '.join(filename for _, _, _, filename in all_scans_to_analyze)}")
+	else:
+		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the data folder.")
+
+	# then iterate thru that list and do the analysis
+	for shot, tim, etch_time, filename in all_scans_to_analyze:
+		logging.info("Beginning reconstruction for TIM {} on shot {}".format(tim, shot))
+
+		try:
+			shot_info = shot_table.loc[shot]
+		except IndexError:
+			raise RecordNotFoundError(f"please add shot {shot!r} to the data/shots.csv file.")
+
+		# clear any previous versions of this reconstruccion
+		summary = summary[(summary.shot != shot) | (summary.tim != tim)]
+
+		# perform the 2d reconstruccion
+		results = analyze_scan(
+			input_filename     =filename,
+			skip_reconstruction=skip_reconstruction,
+			show_plots         =show_plots,
+			shot               =shot,
+			tim                =tim,
+			rA                 =shot_info["aperture radius"]*1e-4,
+			sA                 =shot_info["aperture spacing"]*1e-4,
+			L1                 =shot_info["standoff"]*1e-4,
+			M_gess             =shot_info["magnification"],
+			filtering          =shot_info["filtering"],
+			etch_time          =etch_time,
+			offset             =(shot_info["offset (r)"]*1e-4,
+			                     radians(shot_info["offset (θ)"]),
+			                     radians(shot_info["offset (ф)"])),
+			velocity           =(shot_info["flow (r)"],
+			                     radians(shot_info["flow (θ)"]),
+			                     radians(shot_info["flow (ф)"])),
+		)
+
+		for result in results:
+			summary = summary.append( # and save the new ones to the dataframe
+				result,
+				ignore_index=True)
+		summary = summary[summary.shot != 'placeholder']
+
+		logging.info("  Updating plots for TIM {} on shot {}".format(tim, shot))
+
+		summary = summary.sort_values(['shot', 'tim', 'energy_min', 'energy_max'],
+		                              ascending=[True, True, True, False])
+		summary.to_csv("results/summary.csv", index=False) # save the results to disk
+
+
+def analyze_scan(input_filename: str,
+                 shot: str, tim: str, rA: float, sA: float, M_gess: float, L1: float,
+                 etch_time: Optional[float], filtering: str,
+                 offset: (float, float, float), velocity: (float, float, float),
+                 skip_reconstruction: bool, show_plots: bool,
+                 ) -> list[dict[str, str or float]]:
+	""" reconstruct all of the penumbral images contained in a single scan file.
+		:param input_filename: the location of the scan file in data/scans/
+		:param shot: the shot number/name
+		:param tim: the TIM number
+		:param rA: the aperture radius (cm)
+		:param sA: the aperture spacing (cm), which also encodes the shape of the aperture array. a positive number
+		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
+		           center-to-center distance in a rectangular array. a 0 means that there is only one aperture.
+		:param L1: the distance between the aperture and the implosion (cm)
+		:param M_gess: the nominal radiography magnification (L1 + L2)/L1
+		:param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
+		:param filtering: a string that indicates what filtering was used on this tim on this shot
+		:param offset: the initial offset of the capsule from TCC in spherical coordinates (cm, rad, rad)
+		:param velocity: the measured hot-spot velocity of the capsule in spherical coordinates (km/s, rad, rad)
+		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
+		                            than performing the full analysis procedure again.
+		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
+		                   user to close them, rather than only saving them to disc and silently proceeding.
+		:return: a list of dictionaries, each containing various measurables for the reconstruction in a particular
+		         energy bin. the reconstructed image will not be returned, but simply saved to disc after various nice
+		         pictures have been taken and also saved.
+	"""
+	# start by parsing the filter stacks
+	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
+	if particle == "deuteron":
+		contour = DEUTERON_CONTOUR
+		detector_type = "cr39"
+		detector_index = 0
+		fade_time = None
+	else:
+		contour = X_RAY_CONTOUR
+		detector_type = "ip"
+		detector_index = int(re.search(r"ip([0-9]+)", input_filename, re.IGNORECASE).group(1))
+		fade_time = load_fade_time(input_filename)
+	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
+	num_detectors = count_detectors(filtering, detector_type)
+
+	# then iterate thru each filtering section
+	source_plane = None
+	source_stack: list[NDArray[float]] = []
+	statistics: list[dict[str, float]] = []
+	filter_strings: list[str] = []
+	energy_bounds: list[(float, float)] = []
+	indices: list[str] = []
+	for filter_section_index, filter_stack in enumerate(filter_stacks):
+		# perform the analysis on each section
+		try:
+			source_plane, filter_section_sources, filter_section_statistics = analyze_scan_section(
+				input_filename,
+				shot, tim, rA, sA,
+				M_gess, L1,
+				etch_time,
+				f"{detector_index}{filter_section_index}",
+				filter_stack,
+				source_plane,
+				skip_reconstruction, show_plots)
+		except DataError as e:
+			logging.warning(e)
+		else:
+			source_stack += filter_section_sources
+			statistics += filter_section_statistics
+			for energy_cut_index, statblock in enumerate(filter_section_statistics):
+				filter_strings.append(print_filtering(filter_stack))
+				energy_bounds.append((statblock["min_energy"], statblock["max_energy"]))
+				indices.append(f"{detector_index}{filter_section_index}{energy_cut_index}")
+
+	# finally, save the combined image set
+	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{detector_index}-source",
+	             filtering=filter_strings,
+	             energy=energy_bounds,
+	             x=source_plane.x.get_bins()/1e-4,
+	             y=source_plane.y.get_bins()/1e-4,
+	             images=np.transpose(source_stack, (0, 2, 1))*1e-4**2,  # save it with x,y indexing (not i,j)
+	             etch_time=etch_time if etch_time is not None else nan,
+	             fade_time=fade_time if fade_time is not None else nan)
+	# and replot each of the individual sources in the correct color
+	for cut_index in range(len(source_stack)):
+		cuts_per_detector = len(source_stack)
+		plot_source(f"{shot}-tim{tim}-{particle}-{indices[cut_index]}",
+		            False, source_plane, source_stack[cut_index],
+		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
+		            detector_index*cuts_per_detector + cut_index, num_detectors*cuts_per_detector)
+
+	# if can, plot some plots that overlay the sources in the stack
+	if len(source_stack) > 1:
+		dxL, dyL = center_of_mass(source_plane, source_stack[0])
+		dxH, dyH = center_of_mass(source_plane, source_stack[-1])
+		dx, dy = dxH - dxL, dyH - dyL
+		logging.info(f"Δ = {hypot(dx, dy)/1e-4:.1f} μm, θ = {degrees(atan2(dx, dy)):.1f}")
+		for statblock in statistics:
+			statblock["separation_magnitude"] = hypot(dx, dy)/1e-4
+			statblock["separation_angle"] = degrees(atan2(dy, dx))
+
+		tim_basis = tim_coordinates(tim)
+		projected_offset = project(
+			offset[0], offset[1], offset[2], tim_basis)
+		projected_flow = project(
+			velocity[0], velocity[1], velocity[2], tim_basis)
+
+		plot_overlaid_contores(
+			f"{shot}-tim{tim}-{particle}", source_plane, source_stack, contour,
+			projected_offset, projected_flow)
+
+	return statistics
+
+
+def analyze_scan_section(input_filename: str,
+                         shot: str, tim: str, rA: float, sA: float, M_gess: float, L1: float,
+                         etch_time: Optional[float],
+                         section_index: str, filter_stack: list[Filter],
+                         source_plane: Optional[Grid],
+                         skip_reconstruction: bool, show_plots: bool,
+                         ) -> (Grid, list[NDArray[float]], list[dict[str, float]]):
+	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
+		:param input_filename: the location of the scan file in data/scans/
+		:param shot: the shot number/name
+		:param tim: the TIM number
+		:param rA: the aperture radius (cm)
+		:param sA: the aperture spacing (cm), which also encodes the shape of the aperture array. a positive number
+		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
+		           center-to-center distance in a rectangular array. a 0 means that there is only one aperture.
+		:param L1: the distance between the aperture and the implosion (cm)
+		:param M_gess: the nominal radiography magnification (L1 + L2)/L1
+		:param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
+		:param section_index: a string that uniquely identifies this detector and filtering section, for a line-of-sight
+		                      that has multiple detectors of the same type
+		:param filter_stack: the list of filters between the implosion and the detector. each filter is specified by its
+		                     thickness in micrometers and its material. they should be ordered from TCC to detector.
+        :param source_plane: the coordinate system onto which to interpolate the result before returning.  if None is
+                             specified, an output Grid will be chosen; this is just for when you need multiple sections
+                             to be co-registered.
+		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
+		                            than performing the full analysis procedure again.
+		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
+		                   user to close them, rather than only saving them to disc and silently proceeding.
+		:return: the Grid that ended up being used for the output, the list of reconstructed sources, and a list of
+		         dictionaries containing various measurables for the reconstruction in each energy bin.
+	"""
+	# start by establishing some things that depend on what's being measured
+	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
+
+	# figure out the energy cuts given the filtering and type of radiation
+	if particle == "xray":
+		fade_time = load_fade_time(input_filename)
+		energy_min, energy_max = detector.xray_energy_bounds(filter_stack, fade_time, .10)  # these energy bounds are in keV
+		energy_cuts = [(int(section_index[0]), (energy_min, energy_max))]
+	elif shot.startswith("synth"):
+		energy_cuts = [(0, (0., inf))]
+	else:
+		energy_cuts = DEUTERON_ENERGY_CUTS  # these energy bounds are in MeV
+
+	# prepare the coordinate grids
+	if not skip_reconstruction:
+		num_tracks, xmin, xmax, ymin, ymax = count_tracks_in_scan(input_filename, 0, inf, False)
+		logging.info(f"found {num_tracks:.4g} tracks in the file")
+		if num_tracks < 1e+3:
+			logging.warning("Not enuff tracks to reconstruct")
+			return []
+
+		# start by asking the user to highlight the data
+		try:
+			old_data_polygon, = load_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{section_index}-region",
+			                              ["vertices"])
+		except FileNotFoundError:
+			old_data_polygon = None
+		if show_plots:
+			try:
+				region_name = "{:.0f}{:s}".format(*filter_stack[0])
+				data_polygon = user_defined_region(input_filename, default=old_data_polygon,
+				                                   title=f"Select the {region_name} region, then close this window.")
+				if len(data_polygon) < 3:
+					data_polygon = None
+			except TimeoutError:
+				data_polygon = None
+		else:
+			data_polygon = None
+		if data_polygon is None:
+			if old_data_polygon is None:
+				data_polygon = [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)]
+			else:
+				data_polygon = old_data_polygon
+		else:
+			save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{section_index}-region",
+			             vertices=data_polygon)
+
+		# find the centers and spacings of the penumbral images
+		centers, array_transform = find_circle_centers(
+			input_filename, M_gess*rA, M_gess*sA, data_polygon, show_plots)  # TODO: save the array transform and position from previus filter sections
+		array_major_scale, array_minor_scale = linalg.svdvals(array_transform)
+		array_mean_scale = sqrt(array_major_scale*array_minor_scale)
+		# update the magnification to be based on this check
+		array_transform = array_transform/array_mean_scale
+		M = M_gess*array_mean_scale # TODO: for deuteron data, defer to x-ray data
+		logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f})")
+		if array_major_scale/array_minor_scale > 1.01:
+			logging.info(f"detected an aperture array skewness of {array_major_scale/array_minor_scale - 1:.3f}")
+
+	# or if we’re skipping the reconstruction, just set up some default values
+	else:
+		logging.info(f"re-loading the previous reconstructions")
+		data_polygon = None
+		centers, array_transform = None, None
+		M = M_gess  # TODO: re-load the previus M
+
+	source_stack: list[NDArray[float]] = []
+	results: list[dict[str, Any]] = []
+	for energy_cut_index, (energy_min, energy_max) in energy_cuts:
+		try:
+			source_plane, source, statblock = analyze_scan_section_cut(
+				input_filename, shot, tim, rA, sA, M, L1,
+				etch_time, filter_stack, data_polygon,
+				array_transform, centers,
+				f"{section_index}{energy_cut_index}", max(3, len(energy_cuts)),
+				energy_min, energy_max,
+				source_plane, skip_reconstruction, show_plots)
+		except DataError as e:
+			logging.warning(e)
+		else:
+			statblock.update(**dict(
+				shot=shot,
+				tim=tim,
+				particle=particle,
+				filtering=print_filtering(filter_stack),
+				min_energy=energy_min,
+				max_energy=energy_max,
+			))
+			source_stack.append(source)
+			results.append(statblock)
+
+	return source_plane, source_stack, results
+
+
+def analyze_scan_section_cut(input_filename: str,
+                             shot: str, tim: str, rA: float, sA: float, M: float,
+                             L1: float, etch_time: Optional[float],
+                             filter_stack: list[Filter], data_polygon: list[Point],
+                             array_transform: NDArray[float], centers: list[Point],
+                             cut_index: str, num_colors: int,
+                             energy_min: float, energy_max: float,
+                             output_plane: Optional[Grid],
+                             skip_reconstruction: bool, show_plots: bool
+                             ) -> (Grid, NDArray[float], dict[str, float]):
+	""" reconstruct the penumbral image contained in a single energy cut in a single filtering
+	    region of a single scan file.
+		:param input_filename: the location of the scan file in data/scans/
+		:param shot: the shot number/name
+		:param tim: the TIM number
+		:param rA: the aperture radius in cm
+		:param sA: the aperture spacing in cm, which also encodes the shape of the aperture array. a positive number
+		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
+		           center-to-center distance in a rectangular array. a 0 means that there is only one aperture.
+	    :param M: the radiography magnification (L1 + L2)/L1
+		:param L1: the distance between the aperture and the implosion
+		:param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
+		:param filter_stack: the list of filters between the implosion and the detector. each filter is specified by its
+		                     thickness in micrometers and its material. they should be ordered from TCC to detector.
+		:param data_polygon: the polygon that separates this filtering section of the scan from regions that should be
+		                     ignored
+		:param array_transform: a 2×2 matrix that specifies the orientation and skewness of the hexagonal aperture array
+		                        pattern on the detector
+        :param centers: the list of center locations of penumbra that have been identified as good
+        :param cut_index: a string that uniquely identifies this detector, filtering section, and energy cut, for a
+                          line-of-sight that has multiple detectors of the same type
+        :param num_colors: the approximate total number of cuts of this particle, for the purposes of choosing a plot color
+        :param energy_min: the minimum energy at which to look (MeV for deuterons, keV for x-rays)
+        :param energy_max: the maximum energy at which to look (MeV for deuterons, keV for x-rays)
+        :param output_plane: the coordinate system onto which to interpolate the result before returning.  if None is
+                             specified, an output Grid will be chosen; this is just for when you need multiple sections
+                             to be co-registered.
+		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
+		                            than performing the full analysis procedure again.
+		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
+		                   user to close them, rather than only saving them to disc and silently proceeding.
+		:return: the coordinate basis we ended up using for the source map, the source map, and a dict that contains
+		         some miscellaneus statistics for the source
+	"""
+	# switch out some values depending on whether these are xrays or deuterons
+	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
+	if particle == "deuteron":
+		contour = DEUTERON_CONTOUR
+		resolution = DEUTERON_RESOLUTION
+
+		incident_energy_min, incident_energy_max = detector.particle_E_out(
+			[energy_min, energy_max], 1, 2, filter_stack) # convert scattering energies to CR-39 energies
+		diameter_max, diameter_min = detector.track_diameter(
+			[incident_energy_min, incident_energy_max], etch_time=etch_time, a=2, z=1) # convert to diameters
+		energy_min, energy_max = detector.particle_E_in(
+			[incident_energy_min, incident_energy_max], 1, 2, filter_stack) # convert back to exclude particles that are ranged out
+
+		if incident_energy_min < 1:
+			raise FilterError(f"{energy_min} MeV deuterons will be ranged down to {incident_energy_min} "
+			                  f"by a {print_filtering(filter_stack)} filter")
+		if incident_energy_max > 5:
+			raise FilterError(f"{energy_max} MeV deuterons will still be at {incident_energy_max} "
+			                  f"after a {print_filtering(filter_stack)} filter")
+	else:
+		contour = X_RAY_CONTOUR
+		resolution = X_RAY_RESOLUTION
+		diameter_max, diameter_min = nan, nan
+
+	r0 = M*rA
+	filter_str = print_filtering(filter_stack)
+
+	# start by loading the input file and stacking the images
+	if not skip_reconstruction:
+		logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
+		num_tracks, _, _, _, _ = count_tracks_in_scan(input_filename, diameter_min, diameter_max,
+		                                              show_plots and SHOW_DIAMETER_CUTS)
+		logging.info(f"found {num_tracks:.4g} tracks in the cut")
+		if num_tracks < 1e+3:
+			raise DataError("Not enuff tracks to reconstuct")
+
+		# start with a 1D reconstruction on one of the found images
+		Q, r_max = do_1d_reconstruction(
+			input_filename, diameter_min, diameter_max,
+			energy_min, energy_max,
+			centers, M*rA, M*sA, data_polygon, show_plots) # TODO: infer rA, as well
+
+		if r_max > r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution:
+			logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
+			                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
+			r_max = r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution
+
+		r_psf = electric_field.get_expansion_factor(Q, r0, energy_min, energy_max)
+
+		if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
+			r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
+		account_for_overlap = isinf(r_max)
+
+		# rebin and stack the images
+		if particle == "deuteron":
+			resolution = DEUTERON_RESOLUTION
+		else:
+			resolution = X_RAY_RESOLUTION
+		image_plane = Grid.from_size(radius=r_max, max_bin_width=(M - 1)*resolution, odd=True)
+
+		image_plicity = np.zeros(image_plane.shape, dtype=int)
+		image = np.zeros(image_plane.shape, dtype=float)
+		if input_filename.endswith(".txt") or input_filename.endswith(".cpsa"): # if it's a cpsa-derived text file
+			x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
+			for x_center, y_center in centers:
+				shifted_image_plane = image_plane.shifted(x_center, y_center)
+				local_image = np.histogram2d(x_tracks, y_tracks,
+				                             bins=(shifted_image_plane.x.get_edges(),
+				                                   shifted_image_plane.y.get_edges()))[0]
+				area = np.where(inside_polygon(
+					data_polygon, *shifted_image_plane.get_pixels()), 1, 0)
+				image += local_image*area
+				image_plicity += area
+
+		else:
+			if input_filename.endswith(".pkl"): # if it's a pickle file
+				with open(input_filename, "rb") as f:
+					x, y, scan = pickle.load(f)
+
+			elif input_filename.endswith(".h5"): # if it's an HDF5 file
+				with h5py.File(input_filename, "r") as f:
+					x = f["x"][:]
+					y = f["y"][:]
+					scan = f["PSL_per_px"][:, :]
+					fade_time = f.attrs["scan_delay"]
+				scan /= detector.psl_fade(fade_time) # J of psl per bin
+
+			else:
+				raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
+
+			scan_plane = Grid.from_edge_array(x, y)
+			# if you're near the Nyquist frequency, consider *not* resampling
+			if scan_plane.pixel_width > image_plane.pixel_width:
+				logging.warning(f"The scan resolution of this image plate scan ({scan_plane.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
+				                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
+				                f"be zoomed and enhanced.")
+
+			for x_center, y_center in centers:
+				shifted_image_plane = image_plane.shifted(x_center, y_center)
+				shifted_image = resample_2d(scan, scan_plane, shifted_image_plane) # resample to the chosen bin size
+				area = np.where(inside_polygon(data_polygon, *shifted_image_plane.get_pixels()), 1, 0)
+				image[area > 0] += shifted_image[area > 0]
+				image_plicity += area
+
+	# if we’re skipping the reconstruction, just load the previus reconstruction
+	else:
+		logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
+		old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'tim': str})
+		matching_record = (old_summary.shot == shot) & \
+		                  (old_summary.tim == tim) & \
+		                  (old_summary.energy_min == energy_min) & \
+		                  (old_summary.energy_max == energy_max) & \
+		                  (old_summary.filtering == filter_str)
+		if np.any(matching_record):
+			previus_parameters = old_summary[matching_record].iloc[-1]
+		else:
+			raise RecordNotFoundError(f"couldn’t find {shot} TIM{tim} {filter_str} {energy_min}–{energy_max} cut in summary.csv")
+		account_for_overlap = False
+		r_psf, r_max, r_object, num_bins_K = 0, 0, 0, 0
+		Q = previus_parameters.Q
+		x, y, image, image_plicity = load_hdf5(
+			f"results/data/{shot}-tim{tim}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
+		image_plane = Grid.from_edge_array(x, y)
+		image = image.T
+		image_plicity = image_plicity.T
+
+	save_and_plot_penumbra(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
+	                       image_plane, image, image_plicity, energy_min, energy_max,
+	                       r0=rA*M, s0=sA*M, array_transform=array_transform)
+
+	# now to apply the reconstruction algorithm!
+	if not skip_reconstruction:
+		# set up some coordinate systems
+		if account_for_overlap:
+			raise NotImplementedError("not implemented")
+		else:
+			kernel_plane = Grid.from_resolution(min_radius=r_psf,
+			                                    pixel_width=image_plane.pixel_width, odd=True)
+			source_plane = Grid.from_pixels(num_bins=image_plane.x.num_bins - kernel_plane.x.num_bins + 1,
+			                                pixel_width=kernel_plane.pixel_width/(M - 1))
+
+		logging.info(f"  generating a {kernel_plane.shape} point spread function with Q={Q}")
+
+		# calculate the point-spread function
+		penumbral_kernel = point_spread_function(kernel_plane, Q, r0, array_transform,
+		                                         energy_min, energy_max) # get the dimensionless shape of the penumbra
+		if account_for_overlap:
+			raise NotImplementedError("I also will need to add more things to the kernel")
+		penumbral_kernel *= source_plane.pixel_area*image_plane.pixel_area/(M*L1)**2 # scale by the solid angle subtended by each image pixel
+
+		logging.info(f"  generating a data mask to reduce noise")
+
+		# mark pixels that are tuchd by all or none of the source pixels (and are therefore useless)
+		image_plane_pixel_distances = np.hypot(*image_plane.get_pixels(sparse=True))
+		if Q == 0:
+			within_penumbra = image_plane_pixel_distances < 2*r0 - r_max
+			without_penumbra = image_plane_pixel_distances > r_max
+		elif source_plane.num_pixels*kernel_plane.num_pixels <= MAX_CONVOLUTION:
+			max_source = np.hypot(*source_plane.get_pixels(sparse=True)) <= source_plane.x.half_range
+			max_source = max_source/np.sum(max_source)
+			reach = signal.fftconvolve(max_source, penumbral_kernel, mode='full')
+			lower_cutoff = .005*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
+			upper_cutoff = .98*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+			within_penumbra = reach < lower_cutoff
+			without_penumbra = reach > upper_cutoff
+		else:
+			logging.warning(f"it would be computationally inefficient to compute the reach of these "
+			                f"{source_plane.shape*penumbral_kernel.size} data, so I'm setting the data region to"
+			                f"be everywhere")
+			within_penumbra, without_penumbra = False, False
+
+		# apply the user-defined mask and smooth the invalid regions
+		without_penumbra |= (image_plicity == 0)
+		on_penumbra = ~(within_penumbra | without_penumbra)
+		inner_value = np.mean(image/image_plicity, where=dilate(within_penumbra) & on_penumbra)
+		outer_value = np.mean(image/image_plicity, where=dilate(without_penumbra) & on_penumbra)
+		clipd_image = np.where(within_penumbra, inner_value,
+		                       np.where(without_penumbra, outer_value,
+		                                image))
+		clipd_plicity = np.where(on_penumbra, image_plicity, 0)
+		source_region = np.hypot(*source_plane.get_pixels()) <= source_plane.x.half_range
+
+		if show_plots and SHOW_POINT_SPREAD_FUNCCION:
+			plt.figure()
+			plt.pcolormesh(kernel_plane.x.get_edges(), kernel_plane.y.get_edges(), penumbral_kernel)
+			plt.contour(image_plane.x.get_bins(), image_plane.y.get_bins(), clipd_plicity,
+			            levels=[0.5], colors="k")
+			plt.axis('square')
+			plt.title("Point spread function")
+			plt.show()
+
+		# estimate the noise level, in case that's helpful
+		umbra = (image_plicity > 0) & (image_plane_pixel_distances < max(r0/2, r0 - (r_max - r_psf)))
+		umbra_value = np.mean(image/image_plicity, where=umbra)
+		umbra_variance = np.mean((image - umbra_value*image_plicity)**2/image_plicity, where=umbra)
+		estimated_data_variance = image/umbra_value*umbra_variance
+
+		# perform the reconstruction
+		if sqrt(umbra_variance) < umbra_value/1e3:
+			raise DataError("I think this image is saturated. I'm not going to try to reconstruct it. :(")
+		else:
+			logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source")
+			method = "richardson-lucy" if particle == "deuteron" else "gelfgat"
+			source = deconvolution.deconvolve(method,
+			                                  clipd_image,
+			                                  penumbral_kernel,
+			                                  r_psf=r0/image_plane.pixel_width,
+			                                  pixel_area=clipd_plicity,
+			                                  source_region=source_region,
+			                                  noise=estimated_data_variance,
+			                                  show_plots=show_plots)
+			logging.info("  done!")
+
+		source = np.maximum(0, source) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
+
+		if source.size*penumbral_kernel.size <= MAX_CONVOLUTION:
+			# back-calculate the reconstructed penumbral image
+			reconstructed_image = signal.fftconvolve(source, penumbral_kernel, mode="full")*image_plicity
+			# and estimate background as whatever makes it fit best
+			reconstructed_image += np.nanmean((image - reconstructed_image)/image_plicity,
+			                                  where=on_penumbra)*image_plicity
+		else:
+			logging.warning("the reconstruction would take too long to reproduce so I’m skipping the residual plot")
+			reconstructed_image = np.full(image.shape, nan)
+
+		# after reproducing the input, we must make some adjustments to the source
+		if output_plane is None:
+			output_plane = Grid.from_size(source_plane.x.half_range, source_plane.pixel_width/2, True)
+		# specificly, we must rebin it to a unified grid for the stack
+		output = interpolate.RegularGridInterpolator(
+			(source_plane.x.get_bins(), source_plane.x.get_bins()), source,
+			bounds_error=False, fill_value=0)(
+			np.stack(output_plane.get_pixels(), axis=-1))
+
+	# if we’re skipping the reconstruction, just load the previusly reconstructed source
+	else:
+		output_plane, output = load_source(shot, tim, f"{particle}-{cut_index[0]}",
+		                                   filter_stack, energy_min, energy_max)
+		residual, = load_hdf5(
+			f"results/data/{shot}-tim{tim}-{particle}-{cut_index}-penumbra-residual", ["z"])
+		residual = residual.T
+		reconstructed_image = image - residual
+
+	logging.info(f"  ∫B = {np.sum(output*output_plane.pixel_area)*4*pi :.4g} deuterons")
+
+	# calculate and print the main shape parameters
+	p0, (_, _), (p2, θ2) = shape_parameters(
+		output_plane, output, contour=contour)
+	logging.info(f"  P0 = {p0/1e-4:.2f} μm")
+	logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
+
+	# save and plot the results
+	if particle == "xray":
+		color_index = int(cut_index[0])  # we’ll redo the colors later, so just use a heuristic here
+	else:
+		color_index = int(cut_index[-1])
+	plot_source(f"{shot}-tim{tim}-{particle}-{cut_index}",
+	            show_plots,
+	            output_plane, output, contour, energy_min, energy_max,
+	            color_index=color_index, num_colors=num_colors)
+	save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
+	                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
+
+	return output_plane, output, dict(
+		Q=Q, dQ=0,
+		P0_magnitude=p0/1e-4, dP0_magnitude=0,
+		P2_magnitude=p2/1e-4, P2_angle=np.degrees(θ2),
+	)
+
+
+def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
+                         energy_min: float, energy_max: float,
+                         centers: list[Point], r0: float, s0: float, region: list[Point],
+                         show_plots: bool) -> Point:
+	""" perform an inverse Abel transformation while fitting for charging
+	    :param filename: the scanfile containing the data to be analyzed
+	    :param diameter_min: the minimum track diameter to consider (μm)
+	    :param diameter_max: the maximum track diameter to consider (μm)
+	    :param energy_min: the minimum particle energy considered, for charging purposes (MeV)
+	    :param energy_max: the maximum particle energy considered, for charging purposes (MeV)
+	    :param centers: the x and y coordinates of the centers of the circles (cm)
+	    :param r0: the radius of the aperture in the imaging plane (cm)
+	    :param s0: the distance to the center of the next aperture in the imaging plane (cm)
+	    :param region: the polygon inside which we care about the data
+	    :param show_plots: if False, overrides SHOW_ELECTRIC_FIELD_CALCULATION
+	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
+	"""
+	r_max = min(2*r0, s0/2)
+
+	# either bin the tracks in radius
+	if filename.endswith(".txt") or filename.endswith(".cpsa"):  # if it's a cpsa-derived file
+		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max)  # load all track coordinates
+		valid = inside_polygon(region, x_tracks, y_tracks)
+		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
+		r_tracks = np.full(np.count_nonzero(valid), inf)
+		for x0, y0 in centers:
+			r_tracks = np.minimum(r_tracks, np.hypot(x_tracks - x0, y_tracks - y0))
+		r_bins = np.linspace(0, r_max, int(np.sum(r_tracks <= r0)/1000))
+		n, r_bins = np.histogram(r_tracks, bins=r_bins)
+		histogram = True
+
+	# or rebin the cartesian bins in radius
+	else:
+		if filename.endswith(".pkl"):  # if it's a pickle file
+			with open(filename, 'rb') as f:
+				xC_bins, yC_bins, NC = pickle.load(f)
+		elif filename.endswith(".h5"): # if it's an HDF5 file
+			with h5py.File(filename, "r") as f:
+				xC_bins = f["x"][:]
+				yC_bins = f["y"][:]
+				NC = f["PSL_per_px"][:, :]
+		else:
+			raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
+
+		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2
+		XC, YC = np.meshgrid(xC, yC, indexing='ij')
+		NC[~inside_polygon(region, XC, YC)] = 0
+		RC = np.full(XC.shape, inf)
+		for x0, y0 in centers:
+			RC = np.minimum(RC, np.hypot(XC - x0, YC - y0))
+		dr = (xC_bins[1] - xC_bins[0] + yC_bins[1] - yC_bins[0])/2
+		r_bins = np.linspace(0, r_max, int(r0/(dr*2)))
+		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
+		histogram = False
+
+	r, dr = bin_centers_and_sizes(r_bins)
+	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
+	A = np.zeros(r.size)
+	for x0, y0 in centers:
+		A += pi*r*dr*np.mean(inside_polygon(region, x0 + r*np.cos(θ), y0 + r*np.sin(θ)), axis=0)
+	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
+	inside = A > 0
+	umbra, exterior = (r < 0.5*r0), (r > 1.8*r0)
+	if not np.any(inside & umbra):
+		plt.figure()
+		plt.plot(r, A)
+		plt.axvline(0.5*r0)
+		plt.show()
+		raise RuntimeError("the whole inside of the image is clipd for some reason.")
+	if not np.any(inside & exterior):
+		raise RuntimeError("too much of the image is clipd; I need a background region.")
+	ρ_max = np.average(ρ[inside], weights=np.where(umbra, 1/dρ**2, 0)[inside])
+	ρ_min = np.average(ρ[inside], weights=np.where(exterior, 1/dρ**2, 0)[inside])
+	n_background = np.mean(n, where=r > 1.8*r0)
+	dρ2_background = np.var(ρ, where=r > 1.8*r0)
+	domain = r > r0/2
+	ρ_01 = ρ_max*.001 + ρ_min*.999
+	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
+
+	# now compute the relation between spherical radius and image radius
+	r_sph_bins = r_bins[:r_bins.size//2:2]
+	r_sph = bin_centers(r_sph_bins)  # TODO: this should be reritten to use the Linspace class
+	sphere_to_plane = abel_matrix(r_sph_bins)
+	# do this nested 1d reconstruction
+	def reconstruct_1d_assuming_Q(Q: float, return_other_stuff=False) -> float | tuple:
+		r_psf, f_psf = electric_field.get_modified_point_spread(
+			r0, Q, energy_min, energy_max)
+		source_to_image = cumul_pointspread_function_matrix(
+			r_sph, r, r_psf, f_psf)
+		forward_matrix = A[:, np.newaxis] * np.hstack([
+			source_to_image @ sphere_to_plane,
+			np.ones((r.size, 1))])
+		profile = deconvolution.gelfgat1d(
+			n, forward_matrix,
+			noise="poisson" if histogram else n/n_background*dρ2_background/ρ_min**2)
+		# def reconstruct_1d_assuming_Q_and_σ(_, σ: float, background: float) -> float:
+		# 	profile = np.concatenate([np.exp(-r_sph**2/(2*σ**2))/σ**3, [background*forward_matrix[-2, :].sum()/forward_matrix[-1, :].sum()]])
+		# 	reconstruction = forward_matrix@profile
+		# 	return reconstruction/np.sum(reconstruction)*np.sum(n)/A
+		# try:
+		# 	(source_size, background), _ = cast(tuple[list, list], optimize.curve_fit(
+		# 		reconstruct_1d_assuming_Q_and_σ, r, ρ, sigma=dρ,
+		# 		p0=[r_sph[-1]/6, 0], bounds=(0, [r_sph[-1], inf])))
+		# except RuntimeError:
+		# 	source_size, background = r_sph[-1]/36, 0
+		# profile = np.concatenate([np.exp(-r_sph**2/(2*source_size**2)), [background]])
+		reconstruction = forward_matrix@profile
+		χ2 = -np.sum(n*np.log(reconstruction))
+		if return_other_stuff:
+			return χ2, profile[:-1], reconstruction
+		else:
+			return χ2
+
+	if isfinite(diameter_min):
+		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e-0, 1e-3, 0)
+		logging.info(f"  inferred an aperture charge of {Q:.3f} MeV*cm")
+	else:
+		Q = 0
+
+	if show_plots and SHOW_ELECTRIC_FIELD_CALCULATION:
+		χ2, n_sph, n_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
+		ρ_recon = n_recon/A
+		plt.figure()
+		plt.plot(r_sph, n_sph)
+		plt.xlim(0, quantile(r_sph, .99, n_sph*r_sph**2))
+		# plt.yscale("log")
+		# plt.ylim(n_sph.max()*2e-3, n_sph.max()*2e+0)
+		plt.xlabel("Magnified spherical radius (cm)")
+		plt.ylabel("Emission")
+		plt.tight_layout()
+		plt.figure()
+		plt.errorbar(x=r, y=ρ, yerr=dρ, fmt='C0-')
+		plt.plot(r, ρ_recon, 'C1-')
+		r_psf, ρ_psf = electric_field.get_modified_point_spread(
+			r0, Q, 5., 12., normalize=True)
+		plt.plot(r_psf, ρ_psf*(np.max(ρ_recon) - np.min(ρ_recon)) + np.min(ρ_recon), 'C1--')
+		plt.axhline(ρ_max, color="C2", linestyle="dashed")
+		plt.axhline(ρ_min, color="C2", linestyle="dashed")
+		plt.axhline(ρ_01, color="C4")
+		plt.axvline(r0, color="C3", linestyle="dashed")
+		plt.axvline(r_01, color="C4")
+		plt.xlim(0, r[-1])
+		plt.tight_layout()
+		plt.show()
+
+	return Q, r_01
+
+
+def where_is_the_ocean(x, y, z, title, timeout=None) -> Point:
 	""" solicit the user's help in locating something """
 	fig = plt.figure()
 	plt.pcolormesh(x, y, z, vmax=np.quantile(z, .999), cmap=CMAP["spiral"])
@@ -74,7 +915,7 @@ def where_is_the_ocean(x, y, z, title, timeout=None) -> tuple[float, float]:
 	plt.colorbar()
 	plt.title(title)
 
-	center_guess: tuple[float, float] | None = None
+	center_guess: Optional[Point] = None
 	def on_click(event):
 		nonlocal center_guess
 		center_guess = (event.xdata, event.ydata)
@@ -95,15 +936,15 @@ def user_defined_region(filename, title, default=None, timeout=None) -> list[Poi
 	if filename.endswith(".txt") or filename.endswith(".cpsa"):
 		x_tracks, y_tracks = load_cr39_scan_file(filename)
 		image, x, y = np.histogram2d(x_tracks, y_tracks, bins=100)
-		grid = Grid.from_arrays(x, y)
+		grid = Grid.from_edge_array(x, y)
 	elif filename.endswith(".pkl"):
 		with open(filename, "rb") as f:
 			x, y, image = pickle.load(f)
-		grid = Grid.from_arrays(x, y)
+		grid = Grid.from_edge_array(x, y)
 	elif filename.endswith(".h5"):
 		with h5py.File(filename, "r") as f:
 			x, y, image = f["x"][:], f["y"][:], f["PSL_per_px"][:, :]
-		grid = Grid.from_arrays(x, y)
+		grid = Grid.from_edge_array(x, y)
 		while grid.num_pixels > 1e6:
 			grid, image = downsample_2d(grid, image)
 	else:
@@ -181,7 +1022,7 @@ def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[fl
 def load_cr39_scan_file(filename: str,
                         min_diameter=0., max_diameter=inf,
                         max_contrast=50., max_eccentricity=15.,
-                        show_plots=False) -> tuple[np.ndarray, np.ndarray]:
+                        show_plots=False) -> (NDArray[float], NDArray[float]):
 	""" load the track coordinates from a CR-39 scan file
 	    :return: the x coordinates (cm) and the y coordinates (cm)
 	"""
@@ -256,6 +1097,22 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 def load_fade_time(filename: str) -> float:
 	""" open up a HDF5 file and read a single number from the inside: the fade time in minutes """
 	return load_hdf5(filename, ["scan_delay"])[0]/60
+
+
+def load_source(shot: str, tim: str, particle_index: str,
+                filter_stack: list[Filter], energy_min: float, energy_max: float,
+                ) -> (Grid, NDArray[float]):
+	""" open up a saved HDF5 file and find and read a single source from the stack """
+	x, y, source_stack, filterings, energy_bounds = load_hdf5(
+		f"results/data/{shot}-tim{tim}-{particle_index}-source",
+		["x", "y", "images", "filtering", "energies"])
+	source_plane = Grid.from_edge_array(x*1e-4, y*1e-4)
+	for i in range(source_stack.shape[0]):
+		if parse_filtering(filterings[i]) == filter_stack and \
+			np.array_equal(energy_bounds[i], [energy_min, energy_max]):
+			return source_plane, source_stack[i, :, :].transpose()/1e-4**2  # remember to convert units and switch to (i,j) indexing
+	raise RecordNotFoundError(f"couldn’t find a {print_filtering(filter_stack)}, [{energy_min}, "
+	                          f"{energy_max}] k/MeV source for {shot}, tim{tim}, {particle_index}")
 
 
 def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_points: NDArray[float]
@@ -353,7 +1210,7 @@ def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float]
 
 def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
                         region: list[Point], show_plots: bool
-                        ) -> tuple[list[tuple[float, float]], NDArray[float]]:
+                        ) -> (list[Point], NDArray[float]):
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param r_nominal: the expected radius of the circles
@@ -406,7 +1263,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	x_centers, dx = bin_centers_and_sizes(x_bins)  # TODO: this should be reritten to use the Grid class
 	y_centers, dy = bin_centers_and_sizes(y_bins)
 	X_pixels, Y_pixels = np.meshgrid(x_centers, y_centers, indexing="ij")
-	N_clipd = np.where(inside_polygon(X_pixels, Y_pixels, region), N_full, nan)
+	N_clipd = np.where(inside_polygon(region, X_pixels, Y_pixels), N_full, nan)
 	assert not np.all(np.isnan(N_clipd))
 
 	# if we don't have a good gess, do a scan
@@ -474,704 +1331,11 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	return [(x, y) for x, y in zip(x_circles, y_circles)], grid_transform
 
 
-def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
-                         energy_min: float, energy_max: float,
-                         centers: list[(float, float)], r0: float, s0: float, region: list[Point],
-                         show_plots: bool) -> Point:
-	""" perform an inverse Abel transformation while fitting for charging
-	    :param filename: the scanfile containing the data to be analyzed
-	    :param diameter_min: the minimum track diameter to consider (μm)
-	    :param diameter_max: the maximum track diameter to consider (μm)
-	    :param energy_min: the minimum particle energy considered, for charging purposes (MeV)
-	    :param energy_max: the maximum particle energy considered, for charging purposes (MeV)
-	    :param centers: the x and y coordinates of the centers of the circles (cm)
-	    :param r0: the radius of the aperture in the imaging plane (cm)
-	    :param s0: the distance to the center of the next aperture in the imaging plane (cm)
-	    :param region: the polygon inside which we care about the data
-	    :param show_plots: if False, overrides SHOW_ELECTRIC_FIELD_CALCULATION
-	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
-	"""
-	r_max = min(2*r0, s0/2)
-
-	# either bin the tracks in radius
-	if filename.endswith(".txt") or filename.endswith(".cpsa"):  # if it's a cpsa-derived file
-		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max)  # load all track coordinates
-		valid = inside_polygon(x_tracks, y_tracks, region)
-		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
-		r_tracks = np.full(np.count_nonzero(valid), inf)
-		for x0, y0 in centers:
-			r_tracks = np.minimum(r_tracks, np.hypot(x_tracks - x0, y_tracks - y0))
-		r_bins = np.linspace(0, r_max, int(np.sum(r_tracks <= r0)/1000))
-		n, r_bins = np.histogram(r_tracks, bins=r_bins)
-		histogram = True
-
-	# or rebin the cartesian bins in radius
-	else:
-		if filename.endswith(".pkl"):  # if it's a pickle file
-			with open(filename, 'rb') as f:
-				xC_bins, yC_bins, NC = pickle.load(f)
-		elif filename.endswith(".h5"): # if it's an HDF5 file
-			with h5py.File(filename, "r") as f:
-				xC_bins = f["x"][:]
-				yC_bins = f["y"][:]
-				NC = f["PSL_per_px"][:, :]
-		else:
-			raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
-
-		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2
-		XC, YC = np.meshgrid(xC, yC, indexing='ij')
-		NC[~inside_polygon(XC, YC, region)] = 0
-		RC = np.full(XC.shape, inf)
-		for x0, y0 in centers:
-			RC = np.minimum(RC, np.hypot(XC - x0, YC - y0))
-		dr = (xC_bins[1] - xC_bins[0] + yC_bins[1] - yC_bins[0])/2
-		r_bins = np.linspace(0, r_max, int(r0/(dr*2)))
-		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
-		histogram = False
-
-	r, dr = bin_centers_and_sizes(r_bins)
-	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
-	A = pi*r*dr*np.mean(inside_polygon(x0 + r*np.cos(θ), y0 + r*np.sin(θ), region), axis=0)
-		A += pi*r*dr*np.mean(inside_polygon(x0 + r*np.cos(θ), y0 + r*np.sin(θ), region), axis=0)
-	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
-	inside = A > 0
-	umbra, exterior = (r < 0.5*r0), (r > 1.8*r0)
-	if not np.any(inside & umbra):
-		plt.figure()
-		plt.plot(r, A)
-		plt.axvline(0.5*r0)
-		plt.show()
-		raise RuntimeError("the whole inside of the image is clipd for some reason.")
-	if not np.any(inside & exterior):
-		raise RuntimeError("too much of the image is clipd; I need a background region.")
-	ρ_max = np.average(ρ[inside], weights=np.where(umbra, 1/dρ**2, 0)[inside])
-	ρ_min = np.average(ρ[inside], weights=np.where(exterior, 1/dρ**2, 0)[inside])
-	n_background = np.mean(n, where=r > 1.8*r0)
-	dρ2_background = np.var(ρ, where=r > 1.8*r0)
-	domain = r > r0/2
-	ρ_01 = ρ_max*.001 + ρ_min*.999
-	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
-
-	# now compute the relation between spherical radius and image radius
-	r_sph_bins = r_bins[:r_bins.size//2:2]
-	r_sph = bin_centers(r_sph_bins)  # TODO: this should be reritten to use the Linspace class
-	sphere_to_plane = abel_matrix(r_sph_bins)
-	# do this nested 1d reconstruction
-	def reconstruct_1d_assuming_Q(Q: float, return_other_stuff=False) -> float | tuple:
-		r_psf, f_psf = electric_field.get_modified_point_spread(
-			r0, Q, energy_min, energy_max)
-		source_to_image = cumul_pointspread_function_matrix(
-			r_sph, r, r_psf, f_psf)
-		forward_matrix = A[:, np.newaxis] * np.hstack([
-			source_to_image @ sphere_to_plane,
-			np.ones((r.size, 1))])
-		profile = deconvolution.gelfgat1d(
-			n, forward_matrix,
-			noise="poisson" if histogram else n/n_background*dρ2_background/ρ_min**2)
-		# def reconstruct_1d_assuming_Q_and_σ(_, σ: float, background: float) -> float:
-		# 	profile = np.concatenate([np.exp(-r_sph**2/(2*σ**2))/σ**3, [background*forward_matrix[-2, :].sum()/forward_matrix[-1, :].sum()]])
-		# 	reconstruction = forward_matrix@profile
-		# 	return reconstruction/np.sum(reconstruction)*np.sum(n)/A
-		# try:
-		# 	(source_size, background), _ = cast(tuple[list, list], optimize.curve_fit(
-		# 		reconstruct_1d_assuming_Q_and_σ, r, ρ, sigma=dρ,
-		# 		p0=[r_sph[-1]/6, 0], bounds=(0, [r_sph[-1], inf])))
-		# except RuntimeError:
-		# 	source_size, background = r_sph[-1]/36, 0
-		# profile = np.concatenate([np.exp(-r_sph**2/(2*source_size**2)), [background]])
-		reconstruction = forward_matrix@profile
-		χ2 = -np.sum(n*np.log(reconstruction))
-		if return_other_stuff:
-			return χ2, profile[:-1], reconstruction
-		else:
-			return χ2
-
-	if isfinite(diameter_min):
-		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e-0, 1e-3, 0)
-		logging.info(f"  inferred an aperture charge of {Q:.3f} MeV*cm")
-	else:
-		Q = 0
-
-	if show_plots and SHOW_ELECTRIC_FIELD_CALCULATION:
-		χ2, n_sph, n_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
-		ρ_recon = n_recon/A
-		plt.figure()
-		plt.plot(r_sph, n_sph)
-		plt.xlim(0, quantile(r_sph, .99, n_sph*r_sph**2))
-		# plt.yscale("log")
-		# plt.ylim(n_sph.max()*2e-3, n_sph.max()*2e+0)
-		plt.xlabel("Magnified spherical radius (cm)")
-		plt.ylabel("Emission")
-		plt.tight_layout()
-		plt.figure()
-		plt.errorbar(x=r, y=ρ, yerr=dρ, fmt='C0-')
-		plt.plot(r, ρ_recon, 'C1-')
-		r_psf, ρ_psf = electric_field.get_modified_point_spread(
-			r0, Q, 5., 12., normalize=True)
-		plt.plot(r_psf, ρ_psf*(np.max(ρ_recon) - np.min(ρ_recon)) + np.min(ρ_recon), 'C1--')
-		plt.axhline(ρ_max, color="C2", linestyle="dashed")
-		plt.axhline(ρ_min, color="C2", linestyle="dashed")
-		plt.axhline(ρ_01, color="C4")
-		plt.axvline(r0, color="C3", linestyle="dashed")
-		plt.axvline(r_01, color="C4")
-		plt.xlim(0, r[-1])
-		plt.tight_layout()
-		plt.show()
-
-	return Q, r_01
-
-
-def analyze_scan(input_filename: str,
-                 shot: str, tim: str, rA: float, sA: float, M_gess: float, L1: float,
-                 rotation: float, etch_time: Optional[float], filtering: str,
-                 skip_reconstruction: bool, show_plots: bool,
-                 section_index: Optional[int] = None,
-                 ) -> list[dict[str, str or float]]:
-	""" reconstruct a penumbral KOD image.
-		:param input_filename: the location of the scan file in data/scans/
-		:param shot: the shot number/name
-		:param tim: the TIM number
-		:param rA: the aperture radius in cm
-		:param sA: the aperture spacing in cm, which also encodes the shape of the aperture array. a positive number
-		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
-		           center-to-center distance in a rectangular array. a 0 means that there is only one aperture.
-		:param L1: the distance between the aperture and the implosion
-		:param M_gess: the nominal radiography magnification (L1 + L2)/L1
-		:param rotation: the rotational error in the scan in degrees (if the detector was fielded correctly such that
-		                 the top of the scan is the top of the detector as it was oriented in the target chamber, then
-		                 this parameter should be 0)
-		:param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
-		:param filtering: a string that indicates what filtering was used on this tim on this shot
-		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
-		                            than performing the full analysis procedure again.
-		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
-		                   user to close them, rather than only saving them to disc and silently proceeding.
-		:param section_index: if there are multiple filtering sections, this will recursively call itself on each one
-		:return: a list of dictionaries, each containing various measurables for the reconstruction in a particular
-		         energy bin. the reconstructed image will not be returned, but simply saved to disc after various nice
-		         pictures have been taken and also saved.
-	"""
-	assert abs(rotation) < 2*pi
-
-	# start by establishing some things that depend on what's being measured
-	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
-	if particle == "deuteron":
-		contour = DEUTERON_CONTOUR
-		detector_type = "cr39"
-		detector_index = 0
-	else:
-		contour = X_RAY_CONTOUR
-		detector_type = "ip"
-		detector_index = int(re.search(r"ip([0-9]+)", input_filename, re.IGNORECASE).group(1))
-
-	# check how many filtering regions we have, and if an index for them was passd
-	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
-	if section_index is not None:
-		filter_stack = filter_stacks[section_index]
-	else:
-		analysis_for_each_section = []
-		for section_index in range(len(filter_stacks)):  # do them one at a time if there are several
-			analysis_for_each_section += analyze_scan(input_filename,
-			                                          shot, tim, rA, sA, M_gess, L1,
-			                                          rotation, etch_time, filtering,
-			                                          skip_reconstruction, show_plots,
-			                                          section_index=section_index)
-		return analysis_for_each_section
-
-	# figure out the energy cuts given the filtering and type of radiation
-	filter_str = print_filtering(filter_stack)
-	if particle == "xray":
-		fade_time = load_fade_time(input_filename)
-		energy_min, energy_max = detector.xray_energy_bounds(filter_stack, fade_time, .10)  # these energy bounds are in keV
-		energy_cuts = [(detector_index, f"xray{detector_index}{section_index}", (energy_min, energy_max))]
-	elif shot.startswith("synth"):
-		energy_cuts = [(0, "all", (0., inf))]
-		fade_time = None
-	else:
-		energy_cuts = DEUTERON_ENERGY_CUTS  # these energy bounds are in MeV
-		fade_time = None
-
-	# this tag is for the reconstruction file, so there should be a unique one for each scan file
-	particle_and_energy_specifier = particle if particle == "deuteron" else energy_cuts[0][1]
-
-	# load the full image set now if you can
-	if skip_reconstruction:
-		logging.info(f"re-loading the previous reconstructions")
-		data_polygon = None
-		centers, array_transform, r0 = None, None, None
-		M = M_gess # TODO: re-load the previus M
-		x, y, source_stack = load_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source.h5",
-		                               ["x", "y", "images"])
-		stack_plane = Grid.from_arrays(x, y)
-		source_stack = source_stack.transpose((0, 2, 1)) # assume it was saved as [y,x] and switch to [i,j]
-		if len(energy_cuts) != source_stack.shape[0]:
-			logging.error("nvm there's the rong number of images here")
-			return []
-
-	# or just prepare the coordinate grids
-	else:
-		num_tracks, xmin, xmax, ymin, ymax = count_tracks_in_scan(input_filename, 0, inf, False)
-		logging.info(f"found {num_tracks:.4g} tracks in the file")
-		if num_tracks < 1e+3:
-			logging.warning("Not enuff tracks to reconstruct")
-			return []
-
-		# start by asking the user to highlight the data
-		try:
-			old_data_polygon, = load_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{detector_index}-{section_index}-region",
-			                              ["vertices"])
-		except FileNotFoundError:
-			old_data_polygon = None
-		if show_plots:
-			try:
-				region = "{:.0f}{:s}".format(*filter_stack[0]) if len(filter_stacks) > 1 else "data"
-				data_polygon = user_defined_region(input_filename, default=old_data_polygon,
-				                                   title=f"Select the {region} region, then close this window.")
-				if len(data_polygon) < 3:
-					data_polygon = None
-			except TimeoutError:
-				data_polygon = None
-		else:
-			data_polygon = None
-		if data_polygon is None:
-			if old_data_polygon is None:
-				data_polygon = [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)]
-			else:
-				data_polygon = old_data_polygon
-		else:
-			save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{detector_index}-{section_index}-region",
-			             vertices=data_polygon)
-
-		# find the centers and spacings of the penumbral images
-		centers, array_transform = find_circle_centers(
-			input_filename, M_gess*rA, M_gess*sA, data_polygon, show_plots)
-		array_major_scale, array_minor_scale = linalg.svdvals(array_transform)
-		array_mean_scale = sqrt(array_major_scale*array_minor_scale)
-		# update the magnification to be based on this check
-		array_transform = array_transform/array_mean_scale
-		M = M_gess*array_mean_scale # TODO: for deuteron data, defer to x-ray data
-		logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f})")
-		if array_major_scale/array_minor_scale > 1.01:
-			logging.info(f"detected an aperture array skewness of {array_major_scale/array_minor_scale - 1:.3f}")
-		r0 = M*rA
-
-		stack_plane, source_stack = None, None
-
-	results: list[dict[str, Any]] = []
-	for energy_index, energy_cut_name, (energy_min, energy_max) in energy_cuts:
-
-		# switch out some values depending on whether these are xrays or deuterons
-		if particle == "deuteron":
-			resolution = DEUTERON_RESOLUTION
-
-			incident_energy_min, incident_energy_max = detector.particle_E_out(
-				[energy_min, energy_max], 1, 2, filter_stack) # convert scattering energies to CR-39 energies
-			diameter_max, diameter_min = detector.track_diameter(
-				[incident_energy_min, incident_energy_max], etch_time=etch_time, a=2, z=1) # convert to diameters
-			energy_min, energy_max = detector.particle_E_in(
-				[incident_energy_min, incident_energy_max], 1, 2, filter_stack) # convert back to exclude particles that are ranged out
-
-			if incident_energy_min < 1 or incident_energy_max > 5:
-				break  # skip energy cuts that don't work with this filter
-
-		else:
-			resolution = X_RAY_RESOLUTION
-			diameter_max, diameter_min = nan, nan
-
-		if skip_reconstruction:
-			logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
-			old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'tim': str})
-			matching_record = (old_summary.shot == shot) &\
-			                  (old_summary.tim == tim) &\
-			                  (old_summary.energy_cut == energy_cut_name)
-			if np.any(matching_record):
-				previus_parameters = old_summary[matching_record].iloc[-1]
-			else:
-				logging.info(f"nvm couldn't find it in summary.csv")
-				continue
-			account_for_overlap = False
-			r_psf, r_max, r_object, num_bins_K = 0, 0, 0, 0
-			Q = previus_parameters.Q
-			x, y, image, image_plicity = load_hdf5(
-				f"results/data/{shot}-tim{tim}-{energy_cut_name}-penumbra", ["x", "y", "N", "A"])
-			image_plane = Grid.from_arrays(x, y)
-			image = image.T
-			image_plicity = image_plicity.T
-
-		else:
-			logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
-			num_tracks, _, _, _, _ = count_tracks_in_scan(input_filename, diameter_min, diameter_max,
-			                                              show_plots and SHOW_DIAMETER_CUTS)
-			logging.info(f"found {num_tracks:.4g} tracks in the cut")
-			if num_tracks < 1e+3:
-				logging.warning("Not enuff tracks to reconstruct")
-				continue
-
-			# start with a 1D reconstruction on one of the found images
-			Q, r_max = do_1d_reconstruction(
-				input_filename, diameter_min, diameter_max,
-				energy_min, energy_max,
-				centers, M*rA, M*sA, data_polygon, show_plots) # TODO: infer rA, as well
-
-			if r_max > r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution:
-				logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
-				                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
-				r_max = r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution
-
-			r_psf = electric_field.get_expansion_factor(Q, r0, energy_min, energy_max)
-
-			if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
-				r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
-			account_for_overlap = isinf(r_max)
-
-			# rebin and stack the images
-			if particle == "deuteron":
-				resolution = DEUTERON_RESOLUTION
-			else:
-				resolution = X_RAY_RESOLUTION
-			image_plane = Grid.from_size(radius=r_max, max_bin_width=(M - 1)*resolution, odd=True)
-
-			image_plicity = np.zeros(image_plane.shape, dtype=int)
-			image = np.zeros(image_plane.shape, dtype=float)
-			if input_filename.endswith(".txt") or input_filename.endswith(".cpsa"): # if it's a cpsa-derived text file
-				x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
-				for x_center, y_center in centers:
-					shifted_image_plane = image_plane.shifted(x_center, y_center)
-					local_image = np.histogram2d(x_tracks, y_tracks,
-					                             bins=(shifted_image_plane.x.get_edges(),
-					                                   shifted_image_plane.y.get_edges()))[0]
-					area = np.where(inside_polygon(
-						*shifted_image_plane.get_pixels(), data_polygon), 1, 0)
-					image += local_image*area
-					image_plicity += area
-
-			else:
-				if input_filename.endswith(".pkl"): # if it's a pickle file
-					with open(input_filename, "rb") as f:
-						x, y, scan = pickle.load(f)
-
-				elif input_filename.endswith(".h5"): # if it's an HDF5 file
-					with h5py.File(input_filename, "r") as f:
-						x = f["x"][:]
-						y = f["y"][:]
-						scan = f["PSL_per_px"][:, :]
-						fade_time = f.attrs["scan_delay"]
-					scan /= detector.psl_fade(fade_time) # J of psl per bin
-
-				else:
-					raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
-
-				scan_plane = Grid.from_arrays(x, y)
-				# if you're near the Nyquist frequency, consider *not* resampling
-				if scan_plane.pixel_width > image_plane.pixel_width:
-					logging.warning(f"The scan resolution of this image plate scan ({scan_plane.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
-					                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
-					                f"be zoomed and enhanced.")
-
-				for x_center, y_center in centers:
-					shifted_image_plane = image_plane.shifted(x_center, y_center)
-					shifted_image = resample_2d(scan, scan_plane, shifted_image_plane) # resample to the chosen bin size
-					area = np.where(inside_polygon(*shifted_image_plane.get_pixels(), data_polygon), 1, 0)
-					image[area > 0] += shifted_image[area > 0]
-					image_plicity += area
-
-		save_and_plot_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
-		                       image_plane, image, image_plicity, energy_min, energy_max,
-		                       r0=rA*M, s0=sA*M, array_transform=array_transform)
-
-		if skip_reconstruction:
-			source = source_stack[energy_cuts, :, :]
-			residual, = load_hdf5(
-				f"results/data/{shot}-tim{tim}-{energy_cut_name}-penumbra-residual", ["z"])
-			residual = residual.T
-			reconstructed_image = image - residual
-
-		else:
-			if account_for_overlap:
-				raise NotImplementedError("not implemented")
-			else:
-				kernel_plane = Grid.from_resolution(min_radius=r_psf,
-				                                    pixel_width=image_plane.pixel_width, odd=True)
-				source_plane = Grid.from_pixels(num_bins=image_plane.x.num_bins - kernel_plane.x.num_bins + 1,
-				                                pixel_width=kernel_plane.pixel_width/(M - 1))
-
-			logging.info(f"  generating a {kernel_plane.shape} point spread function with Q={Q}")
-
-			penumbral_kernel = point_spread_function(kernel_plane, Q, r0, array_transform,
-			                                         energy_min, energy_max) # get the dimensionless shape of the penumbra
-			if account_for_overlap:
-				raise NotImplementedError("I also will need to add more things to the kernel")
-			penumbral_kernel *= source_plane.pixel_area*image_plane.pixel_area/(M*L1)**2 # scale by the solid angle subtended by each image pixel
-
-			logging.info(f"  generating a data mask to reduce noise")
-
-			# mark pixels that are tuchd by all or none of the source pixels (and are therefore useless)
-			image_plane_pixel_distances = np.hypot(*image_plane.get_pixels(sparse=True))
-			if Q == 0:
-				within_penumbra = image_plane_pixel_distances < 2*r0 - r_max
-				without_penumbra = image_plane_pixel_distances > r_max
-			elif source_plane.num_pixels*kernel_plane.num_pixels <= MAX_CONVOLUTION:
-				max_source = np.hypot(*source_plane.get_pixels(sparse=True)) <= source_plane.x.half_range
-				max_source = max_source/np.sum(max_source)
-				reach = signal.fftconvolve(max_source, penumbral_kernel, mode='full')
-				lower_cutoff = .005*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-				upper_cutoff = .98*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
-				within_penumbra = reach < lower_cutoff
-				without_penumbra = reach > upper_cutoff
-			else:
-				logging.warning(f"it would be computationally inefficient to compute the reach of these "
-				                f"{source_plane.shape*penumbral_kernel.size} data, so I'm setting the data region to"
-				                f"be everywhere")
-				within_penumbra, without_penumbra = False, False
-
-			# apply the user-defined mask and smooth the invalid regions
-			without_penumbra |= (image_plicity == 0)
-			on_penumbra = ~(within_penumbra | without_penumbra)
-			inner_value = np.mean(image/image_plicity, where=dilate(within_penumbra) & on_penumbra)
-			outer_value = np.mean(image/image_plicity, where=dilate(without_penumbra) & on_penumbra)
-			clipd_image = np.where(within_penumbra, inner_value,
-			                       np.where(without_penumbra, outer_value,
-			                                image))
-			clipd_plicity = np.where(on_penumbra, image_plicity, 0)
-			source_region = np.hypot(*source_plane.get_pixels()) <= source_plane.x.half_range
-
-			if show_plots and SHOW_POINT_SPREAD_FUNCCION:
-				plt.figure()
-				plt.pcolormesh(kernel_plane.x.get_edges(), kernel_plane.y.get_edges(), penumbral_kernel)
-				plt.contour(image_plane.x.get_bins(), image_plane.y.get_bins(), clipd_plicity,
-				            levels=[0.5], colors="k")
-				plt.axis('square')
-				plt.title("Point spread function")
-				plt.show()
-
-			# estimate the noise level, in case that's helpful
-			umbra = (image_plicity > 0) & (image_plane_pixel_distances < max(r0/2, r0 - (r_max - r_psf)))
-			umbra_value = np.mean(image/image_plicity, where=umbra)
-			umbra_variance = np.mean((image - umbra_value*image_plicity)**2/image_plicity, where=umbra)
-			estimated_data_variance = image/umbra_value*umbra_variance
-
-			# perform the reconstruction
-			if sqrt(umbra_variance) < umbra_value/1e3:
-				logging.warning("  I think this image is saturated. I'm not going to try to reconstruct it. :(")
-				source = np.full(source_plane.shape, nan)
-			else:
-				logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source")
-				method = "richardson-lucy" if particle == "deuteron" else "gelfgat"
-				source = deconvolution.deconvolve(method,
-				                                  clipd_image,
-				                                  penumbral_kernel,
-				                                  r_psf=r0/image_plane.pixel_width,
-				                                  pixel_area=clipd_plicity,
-				                                  source_region=source_region,
-				                                  noise=estimated_data_variance,
-				                                  show_plots=show_plots)
-				logging.info("  done!")
-
-			source = np.maximum(0, source) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
-
-			if source.size*penumbral_kernel.size <= MAX_CONVOLUTION:
-				# back-calculate the reconstructed penumbral image
-				reconstructed_image = signal.fftconvolve(source, penumbral_kernel, mode="full")*image_plicity
-				# and estimate background as whatever makes it fit best
-				reconstructed_image += np.nanmean((image - reconstructed_image)/image_plicity,
-				                                  where=on_penumbra)*image_plicity
-			else:
-				reconstructed_image = np.full(image.shape, nan)
-
-			# after reproducing the input, we must make some adjustments to the source
-			if stack_plane is None or source_stack is None:
-				if len(energy_cuts) == 1:
-					stack_plane = source_plane
-				else:
-					stack_plane = Grid.from_size(source_plane.x.half_range,
-					                             max_bin_width=source_plane.pixel_width/2,
-					                             odd=source_plane.x.odd)
-				source_stack = np.zeros((len(energy_cuts),) + stack_plane.shape)
-			# specificly, we must rebin it to a unified grid for the stack
-			source = interpolate.RegularGridInterpolator(
-				(source_plane.x.get_bins(), source_plane.x.get_bins()), source,
-				bounds_error=False, fill_value=0)(
-				np.stack(stack_plane.get_pixels(), axis=-1))
-			cut_index = energy_index if particle == "deuteron" else 0
-			source_stack[cut_index, :, :] = source
-
-		logging.info(f"  ∫B = {np.sum(source*stack_plane.pixel_area)*4*pi :.4g} deuterons")
-
-		# calculate and print the main shape parameters
-		p0, (_, _), (p2, θ2) = shape_parameters(
-			stack_plane, source, contour=contour)
-		logging.info(f"  P0 = {p0/1e-4:.2f} μm")
-		logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
-
-		# save and plot the results
-		plot_source(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
-		            stack_plane, source, contour, energy_min, energy_max,
-		            cut_index=energy_index, num_cuts=max(3, len(energy_cuts)))
-		save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{energy_cut_name}", show_plots,
-		                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
-
-		results.append(dict(
-			shot=shot, tim=tim,
-			energy_cut=energy_cut_name,
-			energy_min=energy_min,
-			energy_max=energy_max,
-			Q=Q, dQ=0,
-			M=M, dM=0,
-			P0_magnitude=p0/1e-4, dP0_magnitude=0,
-			P2_magnitude=p2/1e-4, P2_angle=np.degrees(θ2),
-			separation_magnitude=None,
-			separation_angle=None,
-		))
-
-	# finally, save the combined image set
-	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle_and_energy_specifier}-source",
-	             energy=[bounds for (index, name, bounds) in sorted(energy_cuts)],
-	             x=stack_plane.x.get_bins()/1e-4,
-	             y=stack_plane.y.get_bins()/1e-4,
-	             images=source_stack.transpose((0, 2, 1))*1e-4**2,
-	             fade_time=fade_time if particle == "xray" else nan,
-	             filter=filter_str
-	)  # TODO: images from different regions of the same detector should be stackd in the same HDF5
-
-	if source_stack.shape[0] > 1:
-		# calculate the differentials between energy cuts
-		dxL, dyL = center_of_mass(stack_plane, source_stack[0])
-		dxH, dyH = center_of_mass(stack_plane, source_stack[-1])
-		dx, dy = dxH - dxL, dyH - dyL
-		logging.info(f"Δ = {np.hypot(dx, dy)/1e-4:.1f} μm, θ = {np.degrees(np.arctan2(dx, dy)):.1f}")
-		for result in results:
-			result["separation_magnitude"] = np.hypot(dx, dy)/1e-4
-			result["separation_angle"] = np.degrees(np.arctan2(dy, dx))
-
-		tim_basis = tim_coordinates(tim)
-		projected_offset = project(
-			shot_info["offset (r)"], shot_info["offset (θ)"], shot_info["offset (ф)"],
-			tim_basis)
-		projected_flow = project(
-			shot_info["flow (r)"], shot_info["flow (θ)"], shot_info["flow (ф)"],
-			tim_basis)
-
-		plot_overlaid_contores(
-			f"{shot}-tim{tim}-{particle}", stack_plane, source_stack, contour,
-			projected_offset, projected_flow)
-
-	return results
-
-
 if __name__ == '__main__':
 	# read the command-line arguments
 	if len(sys.argv) <= 1:
-		raise ValueError("please specify the shot number(s) to reconstruct.")
-	show_plots = "--show" in sys.argv
-	skip_reconstruction = "--skip" in sys.argv
-	shots_to_reconstruct = sys.argv[1].split(",")
-
-	# set it to work from the base directory regardless of whence we call the file
-	if os.path.basename(os.getcwd()) == "src":
-		os.chdir(os.path.dirname(os.getcwd()))
-
-	if not os.path.isdir("results"):
-		os.mkdir("results")
-	if not os.path.isdir("results/data"):
-		os.mkdir("results/data")
-	if not os.path.isdir("results/plots"):
-		os.mkdir("results/plots")
-
-	# configure the logging
-	logging.basicConfig(
-		level=logging.INFO,
-		format="{asctime:s} |{levelname:4.4s}| {message:s}", style='{',
-		datefmt="%m-%d %H:%M",
-		handlers=[
-			logging.FileHandler("results/out-2d.log", encoding='utf-8'),
-			logging.StreamHandler(),
-		]
-	)
-	logging.getLogger('matplotlib.font_manager').disabled = True
-
-	# read in some of the existing information
-	try:
-		shot_table = pd.read_csv('data/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
-	except IOError as e:
-		logging.error("my shot table!  I can't do analysis without my shot table!")
-		raise e
-	try:
-		summary = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
-	except IOError:
-		summary = pd.DataFrame(data={"shot": ['placeholder'], "tim": [0], "energy_cut": ['placeholder']}) # be explicit that shots can be str, but usually look like int
-
-	# iterate thru the shots we're supposed to analyze and make a list of scan files
-	all_scans_to_analyze: list[(str, str, float, str)] = []
-	for specifier in shots_to_reconstruct:
-		match = re.fullmatch(r"([A-Z]?[0-9]+)(tim|t)([0-9]+)", specifier)
-		if match:
-			shot, tim = match.group(1, 3)
-		else:
-			shot, tim = specifier, None
-
-		matching_scans: list[(str, str, float, str)] = []
-		for filename in os.listdir("data/scans"): # search for filenames that match each row
-			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
-			etch_match = re.search(r"([0-9]+)hr?", filename, re.IGNORECASE)
-			if tim is None:
-				tim_match = re.search(r"tim([0-9]+)", filename, re.IGNORECASE)
-			else:
-				tim_match = re.search(rf"tim({tim})", filename, re.IGNORECASE)
-			if (os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES
-			    and shot_match is not None and tim_match is not None):
-				matching_tim = tim_match.group(1) # these regexes would work much nicer if _ wasn't a word haracter
-				etch_time = float(etch_match.group(1)) if etch_match is not None else None
-				matching_scans.append((shot, matching_tim, etch_time, f"data/scans/{filename}"))
-		if len(matching_scans) == 0:
-			logging.info("  Could not find any text file for TIM {} on shot {}".format(tim, shot))
-		else:
-			all_scans_to_analyze += matching_scans
-
-	if len(all_scans_to_analyze) > 0:
-		logging.info(f"Planning to reconstruct {', '.join(filename for _, _, _, filename in all_scans_to_analyze)}")
+		logging.error("please specify the shot number(s) to reconstruct.")
 	else:
-		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the data folder.")
-
-	# then iterate thru that list and do the analysis
-	for shot, tim, etch_time, filename in all_scans_to_analyze:
-		logging.info("Beginning reconstruction for TIM {} on shot {}".format(tim, shot))
-
-		try:
-			shot_info = shot_table.loc[shot]
-		except IndexError:
-			raise KeyError(f"please add shot {shot!r} to the data/shots.csv file.")
-
-		# clear any previous versions of this reconstruccion
-		summary = summary[(summary.shot != shot) | (summary.tim != tim)]
-
-		# perform the 2d reconstruccion
-		try:
-			results = analyze_scan(
-				input_filename     =filename,
-				skip_reconstruction=skip_reconstruction,
-				show_plots         =show_plots,
-				shot               =shot,
-				tim                =tim,
-				rA                 =shot_info["aperture radius"]*1e-4,
-				sA                 =shot_info["aperture spacing"]*1e-4,
-				L1                 =shot_info["standoff"]*1e-4,
-				M_gess             =shot_info["magnification"],
-				filtering          =shot_info["filtering"],
-				etch_time          =etch_time,
-				rotation           =radians(shot_info["rotation"]),
-			)
-		except RuntimeError as e:
-			logging.warning(f"  the reconstruction failed!  {e}")
-			continue
-
-		for result in results:
-			summary = summary.append( # and save the new ones to the dataframe
-				result,
-				ignore_index=True)
-		summary = summary[summary.shot != 'placeholder']
-
-		logging.info("  Updating plots for TIM {} on shot {}".format(tim, shot))
-
-		summary = summary.sort_values(['shot', 'tim', 'energy_min', 'energy_max'],
-		                              ascending=[True, True, True, False])
-		summary.to_csv("results/summary.csv", index=False) # save the results to disk
+		analyze(shots_to_reconstruct=sys.argv[1].split(","),
+		        skip_reconstruction="--skip" in sys.argv,
+		        show_plots="--show" in sys.argv)

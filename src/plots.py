@@ -1,7 +1,7 @@
 import logging
 import re
 from math import pi
-from typing import cast, Optional
+from typing import cast, Optional, Sequence
 
 import matplotlib
 import numpy as np
@@ -114,10 +114,10 @@ def save_and_plot_penumbra(filename: str, show: bool,
 		for dx, dy in get_relative_aperture_positions(s0, array_transform, r0, grid.x.half_range):
 			plt.plot(dx + r0*np.cos(T), dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
-	if "xray" in filename:
-		plt.title(f"$h\\nu$ = {energy_min:.1f} – {energy_max:.1f} keV")
-	elif energy_min is not None:
+	if "deuteron" in filename:
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+	elif "xray" in filename:
+		plt.title(f"$h\\nu$ = {energy_min:.0f} – {energy_max:.0f} keV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	bar = plt.colorbar()
@@ -189,7 +189,7 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 
 def plot_source(filename: str, show: bool,
                 grid: Grid, source: NDArray[float], contour_level: float,
-                e_min: float, e_max: float, cut_index: int, num_cuts: int) -> None:
+                e_min: float, e_max: float, color_index: int, num_colors: int) -> None:
 	"""
 	plot a single reconstructed deuteron/xray source
 	:param filename: the name with which to save the resulting files, minus the fluff
@@ -199,8 +199,8 @@ def plot_source(filename: str, show: bool,
 	:param contour_level: the value of the contour, relative to the peak, to draw around the source
 	:param e_min: the minimum energy being plotted (for the label)
 	:param e_max: the maximum energy being plotted (for the label)
-	:param cut_index: the index of this image in the set (for choosing the color)
-	:param num_cuts: the total number of images in this set (for choosing the color)
+	:param color_index: the index of this image in the set (for choosing the color)
+	:param num_colors: the total number of images in this set (for choosing the color)
 	"""
 	# sometimes this is all nan, but we don't need to plot it
 	if np.all(np.isnan(source)):
@@ -219,7 +219,7 @@ def plot_source(filename: str, show: bool,
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
 	plt.pcolormesh(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4, source.T,
-	               cmap=choose_colormaps(particle, num_cuts)[int(cut_index)],
+	               cmap=choose_colormaps(particle, num_colors)[int(color_index)],
 	               vmin=0,
 	               shading="gouraud")
 	if PLOT_SOURCE_CONTOUR:
@@ -233,13 +233,13 @@ def plot_source(filename: str, show: bool,
 	plt.axis('square')
 	if particle == "deuteron":
 		plt.title(f"$E_\\mathrm{{d}}$ = {e_min:.1f} – {min(12.5, e_max):.1f} MeV")
-	else:
-		plt.title(f"$h\\nu$ = {e_min:.1f} – {e_max:.1f} keV")
+	elif particle == "xray":
+		plt.title(f"$h\\nu$ = {e_min:.0f} – {e_max:.0f} keV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.axis([-object_size, object_size, -object_size, object_size])
 	plt.tight_layout()
-	save_current_figure(filename)
+	save_current_figure(f"{filename}-source")
 
 	# plot a lineout
 	j_lineout = np.argmax(np.sum(source, axis=0))
@@ -315,7 +315,7 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.
 				plt.ylabel("y (μm)")
 				plt.colorbar().set_label("Image (d/μm^2/srad)")
 				plt.tight_layout()
-				save_current_figure(f"{filename}-{i}-{l}-{h}")
+				save_current_figure(f"{filename}-{i}-{l}-{h}-source")
 			pairs_plotted += 1
 
 
@@ -372,7 +372,7 @@ def save_and_plot_morphologies(filename: str,
 
 def plot_overlaid_contores(filename: str,
                            grid: Grid,
-                           images: NDArray[float],
+                           images: Sequence[NDArray[float]],
                            contour_level: float,
                            projected_offset: tuple[float, float, float],
                            projected_flow: tuple[float, float, float]) -> None:
@@ -381,35 +381,36 @@ def plot_overlaid_contores(filename: str,
 	    :param grid: the coordinates of the pixels (cm)
 	    :param images: a 3d array, which is a stack of all the x centers we have
 	    :param contour_level: the contour level in (0, 1) to plot
-	    :param projected_offset: the capsule offset from TCC, given as (x, y, z)
-	    :param projected_flow: the measured hot spot velocity, given as (x, y, z)
+	    :param projected_offset: the capsule offset from TCC in cm, given as (x, y, z)
+	    :param projected_flow: the measured hot spot velocity in , given as (x, y, z)
 	"""
 	# calculate the centroid of the highest energy bin
-	x0, y0 = center_of_mass(grid, images[-1, :, :])
+	x0, y0 = center_of_mass(grid, images[-1])
 	grid = grid.shifted(-x0, -y0)
 
 	x_off, y_off, z_off = projected_offset
 	x_flo, y_flo, z_flo = projected_flow
 
 	particle = filename.split("-")[-1]
-	colormaps = choose_colormaps(particle, images.shape[0])
+	colormaps = choose_colormaps(particle, len(images))
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
-	for h in range(images.shape[0]):
-		color = saturate(*colormaps[h].colors[-1], factor=1.5)
-		if images.shape[0] > 3:
+	for image, colormap in zip(images, colormaps):
+		color = saturate(*colormap.colors[-1], factor=1.5)
+		if len(images) > 3:
 			plt.contour(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4,
-			            images[h]/np.max(images[h]),
+			            image/np.max(image),
 			            levels=[contour_level], colors=[color])
 		else:
 			plt.contour(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4,
-			            images[h]/np.max(images[h]),
+			            image/np.max(image),
 			            levels=[contour_level, 1], colors=[color])
 	if PLOT_OFFSET:
 		plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 		plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
-		plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k', head_width=5, head_length=5, length_includes_head=True)
+		plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k',
+		          head_width=5, head_length=5, length_includes_head=True)
 		plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(
 			z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
 		         verticalalignment='top', transform=plt.gca().transAxes)
