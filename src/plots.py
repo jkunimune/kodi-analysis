@@ -431,7 +431,7 @@ def plot_electron_temperature(filename: str, show: bool,
 	"""
 	plt.figure()
 	plt.imshow(temperature, extent=grid.extent,
-	           cmap="inferno", origin="lower", vmin=0, vmax=3)
+	           cmap="inferno", origin="lower", vmin=0, vmax=2)
 	plt.colorbar().set_label("Te (keV)")
 	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
 	            colors="#000", linewidths=1,
@@ -443,3 +443,4 @@ def plot_electron_temperature(filename: str, show: bool,
 	save_current_figure(f"{filename}-temperature")
 	if show:
 		plt.show()
+	plt.close("all")

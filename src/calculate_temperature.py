@@ -13,6 +13,7 @@ from hdf5_util import load_hdf5
 from plots import plot_electron_temperature
 from util import parse_filtering, print_filtering
 
+SHOW_PLOTS = False
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 TIMS = ["2", "4", "5"]
 
@@ -53,19 +54,27 @@ def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[f
 		        numerator*denominator_derivative/denominator**2*unscaled_values
 		        )/errors
 
-	if np.any(measured_values == 0):
+	if np.all(measured_values == 0):
 		return 0, 0
 	else:
+		# start with a scan
+		best_Te, best_χ2 = None, inf
+		for Te in np.geomspace(5e-2, 5e-0, 41):
+			χ2 = np.sum(compute_residuals(1/Te)**2)
+			if χ2 < best_χ2:
+				best_Te = Te
+				best_χ2 = χ2
+		# then do a newton’s method
 		result = optimize.least_squares(fun=lambda x: compute_residuals(x[0]),
 		                                jac=lambda x: np.expand_dims(compute_derivatives(x[0]), 1),
-		                                x0=[1/5],  # start with a kind of high Te guess because it converges faster from that side
+		                                x0=[1/best_Te],
 		                                bounds=(0, inf))
 		if result.success:
-			βe = result.x[0]
-			Te = 1/βe
-			_, numerator, denominator, _ = compute_values(βe)
-			εL = numerator/denominator*Te
-			return Te, εL
+			best_βe = result.x[0]
+			best_Te = 1/best_βe
+			_, numerator, denominator, _ = compute_values(best_βe)
+			best_εL = numerator/denominator*best_Te
+			return best_Te, best_εL
 		else:
 			return nan, nan
 
@@ -77,6 +86,12 @@ def analyze(shot: str, tim: str):
 
 	# load imaging data
 	images, errors, filter_stacks, fade_times = load_all_xray_images_for(shot, tim)
+	if len(images) == 0:
+		print(f"can’t find anything for shot {shot} TIM{tim}")
+		return
+	elif len(images) == 1:
+		print(f"can’t infer temperatures with only one image on shot {shot} TIM{tim}")
+		return
 
 	# calculate sensitivity curve for each filter image
 	reference_energies = np.geomspace(1, 1e3, 61)
@@ -97,7 +112,7 @@ def analyze(shot: str, tim: str):
 		                                         reference_energies, log_sensitivities)[0]
 
 	# calculate the temperature
-	basis = Grid.from_size(40, 2, True)
+	basis = Grid.from_size(45, 3, True)
 	temperature_map = np.empty(basis.shape)
 	emission_map = np.empty(basis.shape)
 	for i in range(basis.x.num_bins):
@@ -148,7 +163,7 @@ def analyze(shot: str, tim: str):
 	plt.tight_layout()
 
 	# plot the temperature
-	plot_electron_temperature(f"{shot}-tim{tim}", True, basis, temperature_map, emission_map)
+	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, basis, temperature_map, emission_map)
 
 
 def load_all_xray_images_for(shot: str, tim: str) -> (list[Image], list[Image], list[list[(float, str)]], list[float]):
@@ -170,7 +185,6 @@ def load_all_xray_images_for(shot: str, tim: str) -> (list[Image], list[Image], 
 				errors.append(lambda x: source.max()/6)  # TODO: real error bars
 				fade_times.append(fade_time)
 	return images, errors, filter_stacks, fade_times
-
 
 
 def main():
