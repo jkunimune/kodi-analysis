@@ -273,7 +273,7 @@ def analyze_scan(input_filename: str,
 			logging.warning(e)
 		else:
 			source_stack += filter_section_sources
-			statistics += filter_section_statistics
+			statistics += filter_section_statistics  # TODO: sort results by energy
 			for energy_cut_index, statblock in enumerate(filter_section_statistics):
 				filter_strings.append(print_filtering(filter_stack))
 				energy_bounds.append((statblock["min_energy"], statblock["max_energy"]))
@@ -289,8 +289,8 @@ def analyze_scan(input_filename: str,
 	             etch_time=etch_time if etch_time is not None else nan,
 	             fade_time=fade_time if fade_time is not None else nan)
 	# and replot each of the individual sources in the correct color
+	cuts_per_detector = len(source_stack)
 	for cut_index in range(len(source_stack)):
-		cuts_per_detector = len(source_stack)
 		plot_source(f"{shot}-tim{tim}-{particle}-{indices[cut_index]}",
 		            False, source_plane, source_stack[cut_index],
 		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
@@ -358,7 +358,7 @@ def analyze_scan_section(input_filename: str,
 	if particle == "xray":
 		fade_time = load_fade_time(input_filename)
 		energy_min, energy_max = detector.xray_energy_bounds(filter_stack, fade_time, .10)  # these energy bounds are in keV
-		energy_cuts = [(int(section_index[0]), (energy_min, energy_max))]
+		energy_cuts = [(0, (energy_min, energy_max))]
 	elif shot.startswith("synth"):
 		energy_cuts = [(0, (0., inf))]
 	else:
@@ -1108,7 +1108,7 @@ def load_source(shot: str, tim: str, particle_index: str,
 		["x", "y", "images", "filtering", "energies"])
 	source_plane = Grid.from_edge_array(x*1e-4, y*1e-4)
 	for i in range(source_stack.shape[0]):
-		if parse_filtering(filterings[i]) == filter_stack and \
+		if parse_filtering(filterings[i])[0] == filter_stack and \
 			np.array_equal(energy_bounds[i], [energy_min, energy_max]):
 			return source_plane, source_stack[i, :, :].transpose()/1e-4**2  # remember to convert units and switch to (i,j) indexing
 	raise RecordNotFoundError(f"couldn’t find a {print_filtering(filter_stack)}, [{energy_min}, "
