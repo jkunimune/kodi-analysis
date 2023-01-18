@@ -17,7 +17,15 @@ SHOW_PLOTS = False
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 TIMS = ["2", "4", "5"]
 
-Image = Callable[[(float, float)], float]
+
+class Distribution:
+	def __init__(self, total: float, interpolator: Callable[[tuple[float, float]], float]):
+		""" a number bundled with an interpolator
+		    :param total: can be either the arithmetic or quadratic total
+		    :param interpolator: takes a tuple of floats and returns a float scalar
+		"""
+		self.total = total
+		self.at = interpolator
 
 
 def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[float],
@@ -111,14 +119,21 @@ def analyze(shot: str, tim: str):
 		inference[i] = compute_plasma_conditions(emissions[:, i], np.full(emissions[:, i].shape, 1e-1),
 		                                         reference_energies, log_sensitivities)[0]
 
-	# calculate the temperature
+	# calculate the spacially integrated temperature
+	temperature_integrated, _ = compute_plasma_conditions(
+		np.array([image.total for image in images]),
+		np.array([error.total for error in errors]),
+		reference_energies, log_sensitivities)
+	print(f"Te = {temperature_integrated:.3f} keV")
+
+	# calculate the spacially resolved temperature
 	basis = Grid.from_size(45, 3, True)
 	temperature_map = np.empty(basis.shape)
 	emission_map = np.empty(basis.shape)
 	for i in range(basis.x.num_bins):
 		for j in range(basis.y.num_bins):
-			data = np.array([image((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
-			error = np.array([error((basis.x.get_bins()[i], basis.y.get_bins()[j])) for error in errors])
+			data = np.array([image.at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
+			error = np.array([error.at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for error in errors])
 			Te, εL = compute_plasma_conditions(data, error, reference_energies, log_sensitivities)
 			temperature_map[i, j] = Te
 			# emission_map[i, j] = εL
@@ -153,7 +168,8 @@ def analyze(shot: str, tim: str):
 	# plot lineouts of the images
 	plt.figure()
 	for filter_stack, image in zip(filter_stacks, images):
-		plt.plot(basis.x.get_bins(), image((basis.x.get_bins(), 0)), label=print_filtering(filter_stack))
+		plt.plot(basis.x.get_bins(), image.at((basis.x.get_bins(), 0)),
+		         label=print_filtering(filter_stack))
 	plt.legend()
 	plt.yscale("log")
 	plt.xlabel("x (μm)")
@@ -163,10 +179,11 @@ def analyze(shot: str, tim: str):
 	plt.tight_layout()
 
 	# plot the temperature
-	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, basis, temperature_map, emission_map)
+	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, temperature_integrated, basis, temperature_map, emission_map)
 
 
-def load_all_xray_images_for(shot: str, tim: str) -> (list[Image], list[Image], list[list[(float, str)]], list[float]):
+def load_all_xray_images_for(shot: str, tim: str) \
+		-> tuple[list[Distribution], list[Distribution], list[list[(float, str)]], list[float]]:
 	images, errors, filter_stacks, fade_times = [], [], [], []
 	for filename in os.listdir("results/data"):
 		if shot in filename and f"tim{tim}" in filename and "xray" in filename and "source" in filename:
@@ -179,10 +196,15 @@ def load_all_xray_images_for(shot: str, tim: str) -> (list[Image], list[Image], 
 				if type(filter_str) is bytes:
 					filter_str = filter_str.decode("ascii")
 				filter_stacks.append(parse_filtering(filter_str)[0])
-				images.append(interpolate.RegularGridInterpolator(
-					(x, y), source,
-					bounds_error=False, fill_value=0))
-				errors.append(lambda x: source.max()/6)  # TODO: real error bars
+				images.append(Distribution(
+					np.sum(source)*(x[1] - x[0])*(y[1] - y[0]),
+					interpolate.RegularGridInterpolator(
+						(x, y), source,
+						bounds_error=False, fill_value=0),
+					))
+				errors.append(Distribution(
+					np.sum(source)*(x[1] - x[0])*(y[1] - y[0])/6,
+					lambda x: source.max()/6))  # TODO: real error bars
 				fade_times.append(fade_time)
 	return images, errors, filter_stacks, fade_times
 
