@@ -1,5 +1,6 @@
 import os
 from math import inf, nan
+from typing import Callable
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -9,10 +10,13 @@ from scipy import interpolate, integrate, optimize
 import detector
 from coordinate import Grid
 from hdf5_util import load_hdf5
+from plots import plot_electron_temperature
 from util import parse_filtering, print_filtering
 
-SHOT = "104780"
-TIM = "4"
+SHOTS = ["104779", "104780", "104781", "104782", "104783"]
+TIMS = ["2", "4", "5"]
+
+Image = Callable[[(float, float)], float]
 
 
 def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[float],
@@ -66,28 +70,13 @@ def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[f
 			return nan, nan
 
 
-def main():
+def analyze(shot: str, tim: str):
 	# set it to work from the base directory regardless of whence we call the file
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir(os.path.dirname(os.getcwd()))
 
 	# load imaging data
-	bases, images, errors, filter_stacks, fade_times = [], [], [], [], []
-	for filename in os.listdir("results/data"):
-		if SHOT in filename and f"tim{TIM}" in filename and "xray" in filename and "source" in filename:
-			print(filename)
-			x, y, source_stack, filtering, fade_time = load_hdf5(f"results/data/{filename}", keys=["x", "y", "images", "filter", "fade_time"])
-			if source_stack.shape[0] > 1:
-				raise ValueError("I don't know what to do with stackd x-ray images.")
-			if np.any(np.isnan(source_stack)):
-				continue
-
-			filter_stacks.append(parse_filtering(filtering)[0])
-			images.append(interpolate.RegularGridInterpolator(
-				(x, y), source_stack[0, :, :],
-				bounds_error=False, fill_value=0))
-			errors.append(lambda x: source_stack.max()/6)  # TODO: real error bars
-			fade_times.append(fade_time)
+	images, errors, filter_stacks, fade_times = load_all_xray_images_for(shot, tim)
 
 	# calculate sensitivity curve for each filter image
 	reference_energies = np.geomspace(1, 1e3, 61)
@@ -108,7 +97,7 @@ def main():
 		                                         reference_energies, log_sensitivities)[0]
 
 	# calculate the temperature
-	basis = Grid.from_size(50, 5, True)
+	basis = Grid.from_size(40, 2, True)
 	temperature_map = np.empty(basis.shape)
 	emission_map = np.empty(basis.shape)
 	for i in range(basis.x.num_bins):
@@ -122,7 +111,7 @@ def main():
 
 	# plot a synthetic lineout
 	plt.figure()
-	ref = np.argsort(emissions[:, -1])[-1]
+	ref = np.argsort(emissions[:, 0])[-1]
 	for filter_stack, emission in zip(filter_stacks, emissions):
 		plt.plot(test_temperature[1:],
 		         emission[1:]/emissions[ref, 1:],
@@ -132,7 +121,7 @@ def main():
 	plt.xlabel("Temperature (keV)")
 	plt.ylabel("X-ray emission")
 	plt.xscale("log")
-	plt.ylim(1e-4, 1e+1)
+	plt.ylim(3e-4, 3e+0)
 	plt.grid()
 	plt.tight_layout()
 
@@ -154,22 +143,40 @@ def main():
 	plt.yscale("log")
 	plt.xlabel("x (μm)")
 	plt.ylabel("X-ray image")
+	plt.ylim(plt.gca().get_ylim()[1]*1e-4, plt.gca().get_ylim()[1])
 	plt.grid()
 	plt.tight_layout()
 
 	# plot the temperature
-	plt.figure()
-	plt.imshow(temperature_map, extent=basis.extent,
-	           cmap="inferno", origin="lower", vmin=0, vmax=2)
-	plt.colorbar().set_label("Te (keV)")
-	plt.contour(basis.x.get_bins(), basis.y.get_bins(), emission_map.T,
-	            colors="#000", linewidths=1,
-	            levels=np.linspace(0, emission_map[basis.x.num_bins//2, basis.y.num_bins//2]*2, 10))
-	plt.xlabel("x (μm)")
-	plt.ylabel("y (μm)")
-	plt.tight_layout()
+	plot_electron_temperature(f"{shot}-tim{tim}", True, basis, temperature_map, emission_map)
 
-	plt.show()
+
+def load_all_xray_images_for(shot: str, tim: str) -> (list[Image], list[Image], list[list[(float, str)]], list[float]):
+	images, errors, filter_stacks, fade_times = [], [], [], []
+	for filename in os.listdir("results/data"):
+		if shot in filename and f"tim{tim}" in filename and "xray" in filename and "source" in filename:
+			print(filename)
+			x, y, source_stack, filtering, fade_time = load_hdf5(
+				f"results/data/{filename}", keys=["x", "y", "images", "filtering", "fade_time"])
+			for source, filter_str in zip(source_stack, filtering):
+				if np.any(np.isnan(source)):
+					continue
+				if type(filter_str) is bytes:
+					filter_str = filter_str.decode("ascii")
+				filter_stacks.append(parse_filtering(filter_str)[0])
+				images.append(interpolate.RegularGridInterpolator(
+					(x, y), source,
+					bounds_error=False, fill_value=0))
+				errors.append(lambda x: source.max()/6)  # TODO: real error bars
+				fade_times.append(fade_time)
+	return images, errors, filter_stacks, fade_times
+
+
+
+def main():
+	for shot in SHOTS:
+		for tim in TIMS:
+			analyze(shot, tim)
 
 
 if __name__ == "__main__":
