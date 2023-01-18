@@ -130,7 +130,7 @@ def analyze(shots_to_reconstruct: list[str],
 		                             "energy_min": [nan], "energy_max": [nan]}) # be explicit that shots can be str, but usually look like int
 
 	# iterate thru the shots we're supposed to analyze and make a list of scan files
-	all_scans_to_analyze: list[(str, str, float, str)] = []
+	all_scans_to_analyze: list[tuple[str, str, float, str]] = []
 	for specifier in shots_to_reconstruct:
 		match = re.fullmatch(r"([A-Z]?[0-9]+)(tim|t)([0-9]+)", specifier)
 		if match:
@@ -138,7 +138,7 @@ def analyze(shots_to_reconstruct: list[str],
 		else:
 			shot, tim = specifier, None
 
-		matching_scans: list[(str, str, float, str)] = []
+		matching_scans: list[tuple[str, str, float, str]] = []
 		for filename in os.listdir("data/scans"): # search for filenames that match each row
 			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
 			etch_match = re.search(r"([0-9]+)hr?", filename, re.IGNORECASE)
@@ -255,7 +255,7 @@ def analyze_scan(input_filename: str,
 	source_stack: list[NDArray[float]] = []
 	statistics: list[dict[str, float]] = []
 	filter_strings: list[str] = []
-	energy_bounds: list[(float, float)] = []
+	energy_bounds: list[tuple[float, float]] = []
 	indices: list[str] = []
 	for filter_section_index, filter_stack in enumerate(filter_stacks):
 		# perform the analysis on each section
@@ -325,7 +325,7 @@ def analyze_scan_section(input_filename: str,
                          section_index: str, filter_stack: list[Filter],
                          source_plane: Optional[Grid],
                          skip_reconstruction: bool, show_plots: bool,
-                         ) -> (Grid, list[NDArray[float]], list[dict[str, float]]):
+                         ) -> tuple[Grid, list[NDArray[float]], list[dict[str, float]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
 		:param input_filename: the location of the scan file in data/scans/
 		:param shot: the shot number/name
@@ -454,7 +454,7 @@ def analyze_scan_section_cut(input_filename: str,
                              energy_min: float, energy_max: float,
                              output_plane: Optional[Grid],
                              skip_reconstruction: bool, show_plots: bool
-                             ) -> (Grid, NDArray[float], dict[str, float]):
+                             ) -> tuple[Grid, NDArray[float], dict[str, float]]:
 	""" reconstruct the penumbral image contained in a single energy cut in a single filtering
 	    region of a single scan file.
 		:param input_filename: the location of the scan file in data/scans/
@@ -1022,7 +1022,7 @@ def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[fl
 def load_cr39_scan_file(filename: str,
                         min_diameter=0., max_diameter=inf,
                         max_contrast=50., max_eccentricity=15.,
-                        show_plots=False) -> (NDArray[float], NDArray[float]):
+                        show_plots=False) -> tuple[NDArray[float], NDArray[float]]:
 	""" load the track coordinates from a CR-39 scan file
 	    :return: the x coordinates (cm) and the y coordinates (cm)
 	"""
@@ -1101,7 +1101,7 @@ def load_fade_time(filename: str) -> float:
 
 def load_source(shot: str, tim: str, particle_index: str,
                 filter_stack: list[Filter], energy_min: float, energy_max: float,
-                ) -> (Grid, NDArray[float]):
+                ) -> tuple[Grid, NDArray[float]]:
 	""" open up a saved HDF5 file and find and read a single source from the stack """
 	x, y, source_stack, filterings, energy_bounds = load_hdf5(
 		f"results/data/{shot}-tim{tim}-{particle_index}-source",
@@ -1210,7 +1210,7 @@ def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float]
 
 def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
                         region: list[Point], show_plots: bool
-                        ) -> (list[Point], NDArray[float]):
+                        ) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param r_nominal: the expected radius of the circles
