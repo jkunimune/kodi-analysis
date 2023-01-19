@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.signal as signal
+from cr39py import cr39
 from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.colors import SymLogNorm
 from numpy.typing import NDArray
@@ -39,18 +40,17 @@ matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
-DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 100))] # (MeV) (emitted, not detected)
-# DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 100)), (1, (6, 9))] # (MeV) (emitted, not detected)
+# DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5))] # (MeV) (emitted, not detected)
+DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitted, not detected)
 # DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
 #                         (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
-# SUPPORTED_FILETYPES = [".txt"] # [".cpsa"]
-# SUPPORTED_FILETYPES = [".h5"]
-SUPPORTED_FILETYPES = [".h5", ".pkl"]
+SUPPORTED_FILETYPES = [".cpsa"]
+# SUPPORTED_FILETYPES = [".h5", ".pkl"]
 
 ASK_FOR_HELP = False
-SHOW_DIAMETER_CUTS = False
+SHOW_DIAMETER_CUTS = True
 SHOW_CENTER_FINDING_CALCULATION = False
-SHOW_ELECTRIC_FIELD_CALCULATION = False
+SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
 BELIEVE_IN_APERTURE_TILTING = False
@@ -62,7 +62,10 @@ X_RAY_CONTOUR = .17
 MIN_OBJECT_SIZE = 100e-4
 MAX_OBJECT_PIXELS = 250
 MAX_CONVOLUTION = 1e+12
-MAX_ECCENTRICITY = 15
+MAX_ECCENTRICITY = 15.
+MAX_CONTRAST = 45.
+MAX_DETECTABLE_ENERGY = 11.
+MIN_DETECTABLE_ENERGY = 0.5
 
 
 class DataError(ValueError):
@@ -174,25 +177,29 @@ def analyze(shots_to_reconstruct: list[str],
 		summary = summary[(summary.shot != shot) | (summary.tim != tim)]
 
 		# perform the 2d reconstruccion
-		results = analyze_scan(
-			input_filename     =filename,
-			skip_reconstruction=skip_reconstruction,
-			show_plots         =show_plots,
-			shot               =shot,
-			tim                =tim,
-			rA                 =shot_info["aperture radius"]*1e-4,
-			sA                 =shot_info["aperture spacing"]*1e-4,
-			L1                 =shot_info["standoff"]*1e-4,
-			M_gess             =shot_info["magnification"],
-			filtering          =shot_info["filtering"],
-			etch_time          =etch_time,
-			offset             =(shot_info["offset (r)"]*1e-4,
-			                     radians(shot_info["offset (θ)"]),
-			                     radians(shot_info["offset (ф)"])),
-			velocity           =(shot_info["flow (r)"],
-			                     radians(shot_info["flow (θ)"]),
-			                     radians(shot_info["flow (ф)"])),
-		)
+		try:
+			results = analyze_scan(
+				input_filename     =filename,
+				skip_reconstruction=skip_reconstruction,
+				show_plots         =show_plots,
+				shot               =shot,
+				tim                =tim,
+				rA                 =shot_info["aperture radius"]*1e-4,
+				sA                 =shot_info["aperture spacing"]*1e-4,
+				L1                 =shot_info["standoff"]*1e-4,
+				M_gess             =shot_info["magnification"],
+				filtering          =shot_info["filtering"],
+				etch_time          =etch_time,
+				offset             =(shot_info["offset (r)"]*1e-4,
+				                     radians(shot_info["offset (θ)"]),
+				                     radians(shot_info["offset (ф)"])),
+				velocity           =(shot_info["flow (r)"],
+				                     radians(shot_info["flow (θ)"]),
+				                     radians(shot_info["flow (ф)"])),
+			)
+		except DataError as e:
+			logging.warning(e)
+			continue
 
 		for result in results:
 			summary = summary.append( # and save the new ones to the dataframe
@@ -279,6 +286,9 @@ def analyze_scan(input_filename: str,
 				energy_bounds.append((statblock["min_energy"], statblock["max_energy"]))
 				indices.append(f"{detector_index}{filter_section_index}{energy_cut_index}")
 
+	if len(source_stack) == 0:
+		raise DataError("well, that was pointless")
+
 	# finally, save the combined image set
 	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{detector_index}-source",
 	             filtering=filter_strings,
@@ -289,12 +299,19 @@ def analyze_scan(input_filename: str,
 	             etch_time=etch_time if etch_time is not None else nan,
 	             fade_time=fade_time if fade_time is not None else nan)
 	# and replot each of the individual sources in the correct color
-	cuts_per_detector = len(source_stack)
 	for cut_index in range(len(source_stack)):
+		if particle == "deuteron":
+			color_index = int(indices[cut_index][-1])
+			num_colors = max(DEUTERON_ENERGY_CUTS)[0] + 1
+		else:
+			num_sections = len(filter_stacks)
+			num_missing_sections = num_sections - len(source_stack)
+			color_index = detector_index*num_sections + cut_index + num_missing_sections
+			num_colors = num_detectors*num_sections
 		plot_source(f"{shot}-tim{tim}-{particle}-{indices[cut_index]}",
 		            False, source_plane, source_stack[cut_index],
 		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
-		            detector_index*cuts_per_detector + cut_index, num_detectors*cuts_per_detector)
+		            color_index=color_index, num_colors=num_colors)
 
 	# if can, plot some plots that overlay the sources in the stack
 	if len(source_stack) > 1:
@@ -370,7 +387,7 @@ def analyze_scan_section(input_filename: str,
 		logging.info(f"found {num_tracks:.4g} tracks in the file")
 		if num_tracks < 1e+3:
 			logging.warning("Not enuff tracks to reconstruct")
-			return []
+			return source_plane, [], []
 
 		# start by asking the user to highlight the data
 		try:
@@ -417,6 +434,7 @@ def analyze_scan_section(input_filename: str,
 		centers, array_transform = None, None
 		M = M_gess  # TODO: re-load the previus M
 
+	# now go thru each energy cut and compile the results
 	source_stack: list[NDArray[float]] = []
 	results: list[dict[str, Any]] = []
 	for energy_cut_index, (energy_min, energy_max) in energy_cuts:
@@ -428,7 +446,7 @@ def analyze_scan_section(input_filename: str,
 				f"{section_index}{energy_cut_index}", max(3, len(energy_cuts)),
 				energy_min, energy_max,
 				source_plane, skip_reconstruction, show_plots)
-		except DataError as e:
+		except (DataError, FilterError) as e:
 			logging.warning(e)
 		else:
 			statblock.update(**dict(
@@ -495,19 +513,29 @@ def analyze_scan_section_cut(input_filename: str,
 		contour = DEUTERON_CONTOUR
 		resolution = DEUTERON_RESOLUTION
 
+		# convert scattering energies to CR-39 energies
 		incident_energy_min, incident_energy_max = detector.particle_E_out(
-			[energy_min, energy_max], 1, 2, filter_stack) # convert scattering energies to CR-39 energies
+			[energy_min, energy_max], 1, 2, filter_stack)
+		# exclude particles to which the CR-39 won’t be sensitive
+		incident_energy_min = max(MIN_DETECTABLE_ENERGY, incident_energy_min)
+		incident_energy_max = min(MAX_DETECTABLE_ENERGY, incident_energy_max)
+		# convert CR-39 energies to track diameters
 		diameter_max, diameter_min = detector.track_diameter(
-			[incident_energy_min, incident_energy_max], etch_time=etch_time, a=2, z=1) # convert to diameters
+			[incident_energy_min, incident_energy_max], etch_time=etch_time, a=2, z=1)
+		# expand make sure we capture max D if we don’t expect anything bigger than this
+		if incident_energy_min <= MIN_DETECTABLE_ENERGY:
+			diameter_max = inf
+		# convert back to exclude particles that are ranged out
 		energy_min, energy_max = detector.particle_E_in(
-			[incident_energy_min, incident_energy_max], 1, 2, filter_stack) # convert back to exclude particles that are ranged out
+			[incident_energy_min, incident_energy_max], 1, 2, filter_stack)
 
-		if incident_energy_min < 1:
-			raise FilterError(f"{energy_min} MeV deuterons will be ranged down to {incident_energy_min} "
+		if incident_energy_max <= MIN_DETECTABLE_ENERGY:
+			raise FilterError(f"{energy_max:.1f} MeV deuterons will be ranged down to just {incident_energy_max:.1f} "
 			                  f"by a {print_filtering(filter_stack)} filter")
-		if incident_energy_max > 5:
-			raise FilterError(f"{energy_max} MeV deuterons will still be at {incident_energy_max} "
+		if incident_energy_min >= MAX_DETECTABLE_ENERGY:
+			raise FilterError(f"{energy_min:.1f} MeV deuterons will still be at {incident_energy_min:.1f} "
 			                  f"after a {print_filtering(filter_stack)} filter")
+
 	else:
 		contour = X_RAY_CONTOUR
 		resolution = X_RAY_RESOLUTION
@@ -551,7 +579,7 @@ def analyze_scan_section_cut(input_filename: str,
 
 		image_plicity = np.zeros(image_plane.shape, dtype=int)
 		image = np.zeros(image_plane.shape, dtype=float)
-		if input_filename.endswith(".txt") or input_filename.endswith(".cpsa"): # if it's a cpsa-derived text file
+		if input_filename.endswith(".cpsa"): # if it's a cpsa file
 			x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
 			for x_center, y_center in centers:
 				shifted_image_plane = image_plane.shifted(x_center, y_center)
@@ -779,14 +807,14 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	r_max = min(2*r0, s0/2)
 
 	# either bin the tracks in radius
-	if filename.endswith(".txt") or filename.endswith(".cpsa"):  # if it's a cpsa-derived file
+	if filename.endswith(".cpsa"):  # if it's a cpsa file
 		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max)  # load all track coordinates
 		valid = inside_polygon(region, x_tracks, y_tracks)
 		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
 		r_tracks = np.full(np.count_nonzero(valid), inf)
 		for x0, y0 in centers:
 			r_tracks = np.minimum(r_tracks, np.hypot(x_tracks - x0, y_tracks - y0))
-		r_bins = np.linspace(0, r_max, int(np.sum(r_tracks <= r0)/1000))
+		r_bins = np.linspace(0, r_max, min(200, int(np.sum(r_tracks <= r0)/1000)))
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
 		histogram = True
 
@@ -827,9 +855,9 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		plt.plot(r, A)
 		plt.axvline(0.5*r0)
 		plt.show()
-		raise RuntimeError("the whole inside of the image is clipd for some reason.")
+		raise DataError("the whole inside of the image is clipd for some reason.")
 	if not np.any(inside & exterior):
-		raise RuntimeError("too much of the image is clipd; I need a background region.")
+		raise DataError("too much of the image is clipd; I need a background region.")
 	ρ_max = np.average(ρ[inside], weights=np.where(umbra, 1/dρ**2, 0)[inside])
 	ρ_min = np.average(ρ[inside], weights=np.where(exterior, 1/dρ**2, 0)[inside])
 	n_background = np.mean(n, where=r > 1.8*r0)
@@ -933,7 +961,7 @@ def where_is_the_ocean(x, y, z, title, timeout=None) -> Point:
 
 def user_defined_region(filename, title, default=None, timeout=None) -> list[Point]:
 	""" solicit the user's help in circling a region """
-	if filename.endswith(".txt") or filename.endswith(".cpsa"):
+	if filename.endswith(".cpsa"):
 		x_tracks, y_tracks = load_cr39_scan_file(filename)
 		image, x, y = np.histogram2d(x_tracks, y_tracks, bins=100)
 		grid = Grid.from_edge_array(x, y)
@@ -1007,64 +1035,48 @@ def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[fl
 
 	transform = np.linalg.inv(transform)
 
-	func = np.zeros(grid.shape) # build the point spread function
+	func = np.zeros(grid.shape)  # build the point spread function
 	offsets = np.linspace(-grid.pixel_width/2, grid.pixel_width/2, 15)[1:-1:2]
-	for x_offset in offsets: # sampling over a few pixels
+	for x_offset in offsets:  # sampling over a few pixels
 		for y_offset in offsets:
 			X, Y = grid.shifted(x_offset, y_offset).get_pixels()
 			X_prime, Y_prime = np.transpose(transform @ np.transpose([X, Y], (1, 0, 2)), (1, 0, 2))
 			func += np.interp(np.hypot(X_prime, Y_prime),
 			                  r_interp, n_interp, right=0)
-	func /= offsets.size**2 # divide by the number of samples
+	func /= offsets.size**2  # divide by the number of samples
 	return func
 
 
 def load_cr39_scan_file(filename: str,
                         min_diameter=0., max_diameter=inf,
-                        max_contrast=50., max_eccentricity=15.,
+                        max_contrast=MAX_CONTRAST, max_eccentricity=MAX_ECCENTRICITY,
                         show_plots=False) -> tuple[NDArray[float], NDArray[float]]:
 	""" load the track coordinates from a CR-39 scan file
 	    :return: the x coordinates (cm) and the y coordinates (cm)
 	"""
-	if filename.endswith(".txt"):
-		track_list = pd.read_csv(filename, sep=r'\s+', # TODO: read cpsa file directly so I can get these things off my disc
-		                         header=19, skiprows=[24],
-		                         encoding='Latin-1',
-		                         dtype='float32') # load all track coordinates
-
-		if show_plots:
-			max_diameter_to_plot = track_list['d(µm)'].quantile(.99)
-			max_contrast_to_plot = track_list['cn(%)'].max()
-			plt.hist2d(track_list['d(µm)'], track_list['cn(%)'],
-			           bins=(np.linspace(0, max_diameter_to_plot + 5, 100),
-			                 np.arange(0.5, max_contrast_to_plot + 1)),
-			           norm=SymLogNorm(10, 1/np.log(10)),
-			           cmap=CMAP["coffee"])
-			x0 = max(min_diameter, 0)
-			x1 = min(max_diameter, max_diameter_to_plot)
-			y1 = min(max_contrast, max_contrast_to_plot)
-			plt.plot([x0, x0, x1, x1], [0, y1, y1, 0], "k--")
-			plt.show()
-
-		try:
-			hi_contrast = (track_list['cn(%)'] < max_contrast) & (track_list['e(%)'] < max_eccentricity)
-			in_bounds = (track_list['d(µm)'] >= min_diameter) & (track_list['d(µm)'] <= max_diameter)
-			x_tracks = track_list[hi_contrast & in_bounds]['x(cm)']
-			y_tracks = track_list[hi_contrast & in_bounds]['y(cm)']
-		except KeyError:
-			raise RuntimeError(f"fredrick's program messed up this file ({filename})")
-
-	elif filename.endswith(".cpsa"):
-		# file = cr39py.CR39(filename)
-		# file.add_cut(cr39py.Cut(cmax=max_contrast, emax=max_eccentricity,
-		#                         dmin=min_diameter, dmax=max_diameter))
-		# x_tracks, y_tracks = file.get_x(), file.get_y()
-		# plt.pcolormesh(x_tracks, y_tracks, bins=216)
-		# plt.show()
-		raise NotImplementedError("I can't read these files yet")
-
-	else:
-		raise ValueError(f"the {os.path.splitext(filename)[-1]} filetype cannot be read as a CR-39 scan file.")
+	file = cr39.CR39(filename)
+	d_tracks = file.trackdata_subset[:, 2]
+	c_tracks = file.trackdata_subset[:, 3]
+	file.add_cut(cr39.Cut(cmin=max_contrast))
+	file.add_cut(cr39.Cut(emin=max_eccentricity))
+	file.add_cut(cr39.Cut(dmax=min_diameter))
+	file.add_cut(cr39.Cut(dmin=max_diameter))
+	file.apply_cuts()
+	x_tracks = file.trackdata_subset[:, 0]
+	y_tracks = file.trackdata_subset[:, 1]
+	if show_plots:
+		max_diameter_to_plot = np.quantile(d_tracks, .999)
+		max_contrast_to_plot = c_tracks.max()
+		plt.hist2d(d_tracks, c_tracks,
+		           bins=(np.linspace(0, max_diameter_to_plot + 5, 100),
+		                 np.arange(0.5, max_contrast_to_plot + 1)),
+		           norm=SymLogNorm(10, 1/np.log(10)),
+		           cmap=CMAP["coffee"])
+		x0 = max(min_diameter, 0)
+		x1 = min(max_diameter, max_diameter_to_plot)
+		y1 = min(max_contrast, max_contrast_to_plot)
+		plt.plot([x0, x0, x1, x1], [0, y1, y1, 0], "k--")
+		plt.show()
 
 	return x_tracks, y_tracks
 
@@ -1079,7 +1091,7 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 	    :param show_plots: whether to demand that we see the diameter cuts
 	    :return: the number of tracks if it's a CR-39 scan, inf if it's an image plate scan. also the bounding box.
 	"""
-	if filename.endswith(".txt") or filename.endswith(".cpsa"):
+	if filename.endswith(".cpsa"):
 		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max,
 		                                         show_plots=show_plots)
 		return x_tracks.size, np.min(x_tracks), np.max(x_tracks), np.min(y_tracks), np.max(y_tracks)
@@ -1089,7 +1101,7 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 		return int(np.sum(N)), x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]
 	elif filename.endswith(".h5"):
 		x_bins, y_bins = load_hdf5(filename, ["x", "y"])
-		return 1_000_000_000, x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]
+		return inf, x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
@@ -1226,7 +1238,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	if s_nominal < 0:
 		raise NotImplementedError("I haven't accounted for this.")
 
-	if filename.endswith(".txt") or filename.endswith(".cpsa"):  # if it's a cpsa-derived text file
+	if filename.endswith(".cpsa"):  # if it's a cpsa file
 		x_tracks, y_tracks = load_cr39_scan_file(filename)  # load all track coordinates
 		n_bins = max(6, int(min(sqrt(x_tracks.size)/10, MAX_NUM_PIXELS)))  # get the image resolution needed to resolve the circle
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
@@ -1264,7 +1276,10 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	y_centers, dy = bin_centers_and_sizes(y_bins)
 	X_pixels, Y_pixels = np.meshgrid(x_centers, y_centers, indexing="ij")
 	N_clipd = np.where(inside_polygon(region, X_pixels, Y_pixels), N_full, nan)
-	assert not np.all(np.isnan(N_clipd))
+	if np.all(np.isnan(N_clipd)):
+		raise DataError("this polygon had no area inside it.")
+	elif np.sum(N_clipd, where=np.isfinite(N_clipd)) == 0:
+		raise DataError("there are no tracks in this region.")
 
 	# if we don't have a good gess, do a scan
 	if x0 is None or y0 is None:
@@ -1290,7 +1305,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	haff_density = (max_density + min_density)*.5
 	contours = measure.find_contours(N_clipd, haff_density)
 	if len(contours) == 0:
-		raise RuntimeError("there were no tracks.  we should have caut that by now.")
+		raise DataError("there were no tracks.  we should have caut that by now.")
 	circles = []
 	for contour in contours:
 		x_contour = np.interp(contour[:, 0], np.arange(x_centers.size), x_centers)
@@ -1305,7 +1320,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 				else:  # …and big enuff to trust its center
 					circles.append((x0, y0, r_apparent, True))
 	if len(circles) == 0:
-		raise RuntimeError("I couldn't find any circles in this region")
+		raise DataError("I couldn't find any circles in this region")
 
 	# use a simplex algorithm to fit for scale and angle
 	x_circles = np.array([x for x, y, r, full in circles])

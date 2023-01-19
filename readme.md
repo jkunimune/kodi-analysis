@@ -3,6 +3,8 @@ KODI analysis
 
 Code for analyzing penumbral imaging, and in particular knock-on deuteron & x-ray imaging.
 
+# File structure
+
 The file structure goes like this:
 - `src` – various Python scripts
     - `main` – Java files for some of the more time-consuming operations
@@ -13,6 +15,8 @@ The file structure goes like this:
   - `plots` – pretty pictures of the reconstructions
   - `data` – HDF files of the reconstructions
 - `tmp` – dump for temporary files used to communicate between Java and Python
+
+# How to use
 
 The typical workflow for doing 2D reconstructions looks like this:
 1. Get `.cpsa` files from the LLE or MIT etch/scan lab.
@@ -37,8 +41,8 @@ The shot number is an integer prepended by `synth` if based on synthetic data.
 The quantity is one of:
 - `morphology` for combined mass density and neutron source
 - `deuteron` for combined deuteron sources
-- `deuteron[i]` for deuteron sources in the i-th energy bin
-- `xray[i]` for x-ray sources on the i-th detector
+- `deuteron-[i]` for deuteron sources on the i-th detector
+- `xray-[i]` for x-ray sources on the i-th detector
 
 the coordinates are one of:
 - `distribution` for 3D reconstructed (or synthetic) quantities
@@ -50,3 +54,12 @@ and the operation is up to one of:
 - `lineout` for 1D cartesian lineouts of multidimensional quantities
 - `profile` for 1D polar lineouts of multidimensional quantities
 - `residual` for comparisons of measured and reconstructed images
+
+# Dependencies
+
+This codebase has some PyPI dependencies you can figure out on your own.
+It also requires Peter Heuer’s cr39py library, which is not on PyPI as of writing,
+so for that just install it like
+~~~~
+ pip install git+https://github.com/pheuer/CR39py.git
+~~~~
