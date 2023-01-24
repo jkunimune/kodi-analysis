@@ -144,7 +144,10 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 		if mode == "poisson":
 			dldh = δg0**2/g0 + np.sum(δg**2/g, where=g != 0)
 			d2ldh2 = -np.sum(f*δs**2/s**2, where=data_region)
-			assert dldh > 0 and d2ldh2 < 0, f"{dldh} > 0; {d2ldh2} < 0"
+			if not (dldh > 0 and d2ldh2 < 0):
+				print(F)
+				print(q)
+				raise RuntimeError(f"{dldh} > 0; {d2ldh2} < 0")
 			h = -dldh/d2ldh2 # compute step length
 		else:
 			δδ = np.sum(δs**2/D, where=data_region)
@@ -316,7 +319,10 @@ def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: str | NDArray[float] 
 		if mode == "poisson":
 			dldh = np.sum(δg**2/g, where=g != 0)
 			d2ldh2 = -np.sum(f*δs**2/s**2)
-			assert dldh > 0 and d2ldh2 < 0, f"{dldh} > 0; {d2ldh2} < 0"
+			if not (dldh > 0 and d2ldh2 < 0):
+				print(F)
+				print(P)
+				raise RuntimeError(f"{dldh} > 0; {d2ldh2} < 0")
 			h = -dldh/d2ldh2 # compute step length
 		else:
 			δδ = np.sum(δs**2/D)

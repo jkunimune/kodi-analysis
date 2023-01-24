@@ -120,14 +120,15 @@ def analyze(shot: str, tim: str):
 		                                         reference_energies, log_sensitivities)[0]
 
 	# calculate the spacially integrated temperature
-	temperature_integrated, _ = compute_plasma_conditions(
-		np.array([image.total for image in images]),
-		np.array([error.total for error in errors]),
-		reference_energies, log_sensitivities)
-	print(f"Te = {temperature_integrated:.3f} keV")
+	# print(f"integrated temperatures: {np.array([image.total for image in images])/images[0].total}")
+	# temperature_integrated, _ = compute_plasma_conditions(
+	# 	np.array([image.total for image in images]),
+	# 	np.array([error.total for error in errors]),
+	# 	reference_energies, log_sensitivities)
+	# print(f"Te = {temperature_integrated:.3f} keV")
 
 	# calculate the spacially resolved temperature
-	basis = Grid.from_size(45, 3, True)
+	basis = Grid.from_size(50, 3, True)
 	temperature_map = np.empty(basis.shape)
 	emission_map = np.empty(basis.shape)
 	for i in range(basis.x.num_bins):
@@ -179,7 +180,7 @@ def analyze(shot: str, tim: str):
 	plt.tight_layout()
 
 	# plot the temperature
-	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, temperature_integrated, basis, temperature_map, emission_map)
+	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, basis, temperature_map, emission_map)
 
 
 def load_all_xray_images_for(shot: str, tim: str) \

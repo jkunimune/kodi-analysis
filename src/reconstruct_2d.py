@@ -8,7 +8,7 @@ import re
 import sys
 import time
 import warnings
-from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degrees, atan2
+from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degrees, atan2, isnan
 from typing import Any, Optional
 
 import h5py
@@ -44,12 +44,11 @@ warnings.filterwarnings("ignore")
 DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitted, not detected)
 # DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
 #                         (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
-SUPPORTED_FILETYPES = [".cpsa"]
-# SUPPORTED_FILETYPES = [".h5", ".pkl"]
+SUPPORTED_FILETYPES = [".h5", ".pkl"]
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = True
-SHOW_CENTER_FINDING_CALCULATION = False
+SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
@@ -66,6 +65,9 @@ MAX_ECCENTRICITY = 15.
 MAX_CONTRAST = 45.
 MAX_DETECTABLE_ENERGY = 11.
 MIN_DETECTABLE_ENERGY = 0.5
+
+
+HexGridParameters = tuple[NDArray[float], float, float]
 
 
 class DataError(ValueError):
@@ -258,7 +260,7 @@ def analyze_scan(input_filename: str,
 	num_detectors = count_detectors(filtering, detector_type)
 
 	# then iterate thru each filtering section
-	source_plane = None
+	grid_parameters, source_plane = None, None
 	source_stack: list[NDArray[float]] = []
 	statistics: list[dict[str, float]] = []
 	filter_strings: list[str] = []
@@ -267,15 +269,17 @@ def analyze_scan(input_filename: str,
 	for filter_section_index, filter_stack in enumerate(filter_stacks):
 		# perform the analysis on each section
 		try:
-			source_plane, filter_section_sources, filter_section_statistics = analyze_scan_section(
-				input_filename,
-				shot, tim, rA, sA,
-				M_gess, L1,
-				etch_time,
-				f"{detector_index}{filter_section_index}",
-				filter_stack,
-				source_plane,
-				skip_reconstruction, show_plots)
+			grid_parameters, source_plane, filter_section_sources, filter_section_statistics =\
+				analyze_scan_section(
+					input_filename,
+					shot, tim, rA, sA,
+					M_gess, L1,
+					etch_time,
+					f"{detector_index}{filter_section_index}",
+					filter_stack,
+					grid_parameters,
+					source_plane,
+					skip_reconstruction, show_plots)
 		except DataError as e:
 			logging.warning(e)
 		else:
@@ -340,9 +344,10 @@ def analyze_scan_section(input_filename: str,
                          shot: str, tim: str, rA: float, sA: float, M_gess: float, L1: float,
                          etch_time: Optional[float],
                          section_index: str, filter_stack: list[Filter],
+                         grid_parameters: Optional[HexGridParameters],
                          source_plane: Optional[Grid],
                          skip_reconstruction: bool, show_plots: bool,
-                         ) -> tuple[Grid, list[NDArray[float]], list[dict[str, float]]]:
+                         ) -> tuple[HexGridParameters, Grid, list[NDArray[float]], list[dict[str, float]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
 		:param input_filename: the location of the scan file in data/scans/
 		:param shot: the shot number/name
@@ -358,6 +363,8 @@ def analyze_scan_section(input_filename: str,
 		                      that has multiple detectors of the same type
 		:param filter_stack: the list of filters between the implosion and the detector. each filter is specified by its
 		                     thickness in micrometers and its material. they should be ordered from TCC to detector.
+		:param grid_parameters: the transformation array and x and y offsets that define the hexagonal grid on which
+		                         the images all fall
         :param source_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
@@ -365,8 +372,10 @@ def analyze_scan_section(input_filename: str,
 		                            than performing the full analysis procedure again.
 		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
 		                   user to close them, rather than only saving them to disc and silently proceeding.
-		:return: the Grid that ended up being used for the output, the list of reconstructed sources, and a list of
-		         dictionaries containing various measurables for the reconstruction in each energy bin.
+		:return: 0. the image array parameters that we fit to the centers,
+		         1. the Grid that ended up being used for the output,
+		         2. the list of reconstructed sources, and
+		         3. a list of dictionaries containing various measurables for the reconstruction in each energy bin.
 	"""
 	# start by establishing some things that depend on what's being measured
 	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
@@ -387,7 +396,7 @@ def analyze_scan_section(input_filename: str,
 		logging.info(f"found {num_tracks:.4g} tracks in the file")
 		if num_tracks < 1e+3:
 			logging.warning("Not enuff tracks to reconstruct")
-			return source_plane, [], []
+			return grid_parameters, source_plane, [], []
 
 		# start by asking the user to highlight the data
 		try:
@@ -416,23 +425,24 @@ def analyze_scan_section(input_filename: str,
 			             vertices=data_polygon)
 
 		# find the centers and spacings of the penumbral images
-		centers, array_transform = find_circle_centers(
-			input_filename, M_gess*rA, M_gess*sA, data_polygon, show_plots)  # TODO: save the array transform and position from previus filter sections
-		array_major_scale, array_minor_scale = linalg.svdvals(array_transform)
-		array_mean_scale = sqrt(array_major_scale*array_minor_scale)
+		centers, grid_transform = find_circle_centers(
+			input_filename, M_gess*rA, M_gess*sA, grid_parameters, data_polygon, show_plots)
+		grid_parameters = (grid_transform, centers[0][0], centers[0][1])
+		grid_major_scale, grid_minor_scale = linalg.svdvals(grid_transform)
+		grid_mean_scale = sqrt(grid_major_scale*grid_minor_scale)
 		# update the magnification to be based on this check
-		array_transform = array_transform/array_mean_scale
-		M = M_gess*array_mean_scale # TODO: for deuteron data, defer to x-ray data
+		grid_transform = grid_transform/grid_mean_scale
+		M = M_gess*grid_mean_scale
 		logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f})")
-		if array_major_scale/array_minor_scale > 1.01:
-			logging.info(f"detected an aperture array skewness of {array_major_scale/array_minor_scale - 1:.3f}")
+		if grid_major_scale/grid_minor_scale > 1.01:
+			logging.info(f"detected an aperture array skewness of {grid_major_scale/grid_minor_scale - 1:.3f}")
 
 	# or if we’re skipping the reconstruction, just set up some default values
 	else:
 		logging.info(f"re-loading the previous reconstructions")
 		data_polygon = None
-		centers, array_transform = None, None
-		M = M_gess  # TODO: re-load the previus M
+		centers, grid_transform = None, None
+		M = M_gess  # TODO: re-load the previus M and transform
 
 	# now go thru each energy cut and compile the results
 	source_stack: list[NDArray[float]] = []
@@ -442,7 +452,7 @@ def analyze_scan_section(input_filename: str,
 			source_plane, source, statblock = analyze_scan_section_cut(
 				input_filename, shot, tim, rA, sA, M, L1,
 				etch_time, filter_stack, data_polygon,
-				array_transform, centers,
+				grid_transform, centers,
 				f"{section_index}{energy_cut_index}", max(3, len(energy_cuts)),
 				energy_min, energy_max,
 				source_plane, skip_reconstruction, show_plots)
@@ -460,7 +470,7 @@ def analyze_scan_section(input_filename: str,
 			source_stack.append(source)
 			results.append(statblock)
 
-	return source_plane, source_stack, results
+	return grid_parameters, source_plane, source_stack, results
 
 
 def analyze_scan_section_cut(input_filename: str,
@@ -1128,11 +1138,16 @@ def load_source(shot: str, tim: str, particle_index: str,
 
 
 def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_points: NDArray[float]
-                       ) -> NDArray[float]:
-	""" take some points approximately arranged in a hexagonal grid and find the size and angle of it
+                       ) -> HexGridParameters:
+	""" take some points approximately arranged in a hexagonal grid and find its spacing,
+	    orientation, and translational alignment
+	    :return: the 2×2 grid matrix that converts dimensionless [ξ, υ] to [x, y], and the x and y
+	             coordinates of one of the grid nodes
 	"""
-	if x_points.size <= 1:
-		return np.identity(2)
+	if x_points.size < 1:
+		raise DataError("you can’t fit a grid to zero apertures.")
+	if x_points.size == 1:
+		return np.identity(2), x_points[0], y_points[0]
 
 	def cost_function(args):
 		if len(args) == 2:
@@ -1141,7 +1156,9 @@ def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_point
 			transform = np.reshape(args, (2, 2))
 		else:
 			raise ValueError
-		_, _, cost = snap_to_grid(x_points, y_points, nominal_spacing*transform)
+		matrix = nominal_spacing*transform
+		x0, y0 = fit_grid_alignment(x_points, y_points, matrix)
+		_, _, cost = snap_to_grid(x_points, y_points, matrix, x0, y0)
 		s0, s1 = linalg.svdvals(transform)
 		return cost + 1e-2*nominal_spacing**2*log(s0/s1)**2
 
@@ -1155,23 +1172,63 @@ def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_point
 
 	# then use Powell's method
 	if BELIEVE_IN_APERTURE_TILTING and x_points.size >= 3:
+		# either fit the whole 2×2 at once
 		solution = optimize.minimize(method="Powell",
 		                             fun=cost_function,
 		                             x0=np.ravel(scale*rotation_matrix(angle)),
 		                             bounds=[(0.8, 1.2), (-0.6, 0.6), (-0.6, 0.6), (0.8, 1.2)])
-		return np.reshape(solution.x, (2, 2))
+		transform = np.reshape(solution.x, (2, 2))
 	else:
+		# or just fit the scale and rotation
 		solution = optimize.minimize(method="Powell",
 		                             fun=cost_function,
 		                             x0=np.array([scale, angle]),
 		                             bounds=[(0.8, 1.2), (angle - pi/6, angle + pi/6)])
-		return solution.x[0]*rotation_matrix(solution.x[1])
+		transform = solution.x[0]*rotation_matrix(solution.x[1])
+
+	# either way, return the transform matrix with the best grid alinement
+	x0, y0 = fit_grid_alignment(x_points, y_points, nominal_spacing*transform)
+	return transform, x0, y0
 
 
-def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float]
-                 ) -> tuple[NDArray[float], NDArray[float], float]:
+def fit_grid_alignment(x_points, y_points, grid_matrix: NDArray[float]
+                       ) -> tuple[float, float]:
 	""" take a bunch of points that are supposed to be in a grid structure with some known spacing
-	    and orientation but unknown alignment, and return where you think they really are; the
+	    and orientation but unknown translational alignment, and return the alignment vector
+	    :param x_points: the x coordinate of each point
+	    :param y_points: the y coordinate of each point
+	    :param grid_matrix: the matrix that defines the grid scale and orientation.  for a horizontally-
+	                 oriented orthogonal hex grid, this should be [[s, 0], [0, s]] where s is the
+	                 distance from each aperture to its nearest neibor, but it can also encode
+	                 rotation and skew.  variations on the plain scaling work as 2d affine
+	                 transformations usually do.
+	    :return: the x and y coordinates of one of the grid nodes
+	"""
+	if np.linalg.det(grid_matrix) == 0:
+		return nan, nan
+
+	# start by applying the projection and fitting the phase in x and y separately and algebraicly
+	ξ_points, υ_points = np.linalg.inv(grid_matrix)@[x_points, y_points]
+	ξ0, υ0 = np.mean(ξ_points), np.mean(υ_points)
+	ξ0 = periodic_mean(ξ_points, ξ0 - 1/4, ξ0 + 1/4)
+	υ0 = periodic_mean(υ_points, υ0 - sqrt(3)/4, υ0 + sqrt(3)/4)
+	naive_x0, naive_y0 = grid_matrix@[ξ0, υ0]
+
+	# there's a degeneracy here, so I haff to compare these two cases...
+	results = []
+	for ξ_offset in [0, 1/2]:
+		x0, y0 = [naive_x0, naive_y0] + grid_matrix@[ξ_offset, 0]
+		_, _, total_error = snap_to_grid(x_points, y_points, grid_matrix, x0, y0)
+		results.append((total_error, x0, y0))
+	total_error, x0, y0 = min(results)
+
+	return x0, y0
+
+
+def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float], grid_x0: float, grid_y0: float,
+                 ) -> tuple[NDArray[float], NDArray[float], float]:
+	""" take a bunch of points that are supposed to be in a grid structure with some known spacing,
+	    orientation, and translational alignment, and return where you think they really are; the
 	    output points will all be exactly on that grid.
 	    :param x_points: the x coordinate of each point
 	    :param y_points: the y coordinate of each point
@@ -1180,48 +1237,50 @@ def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float]
 	                 distance from each aperture to its nearest neibor, but it can also encode
 	                 rotation and skew.  variations on the plain scaling work as 2d affine
 	                 transformations usually do.
+	    :param grid_x0: the x coordinate of one grid node
+	    :param grid_y0: the y coordinate of one grid node
 	    :return: the new x coordinates, the new y coordinates, and the total squared distances from
 	             the old points to the new ones
 	"""
+	if x_points.size != y_points.size:
+		raise ValueError("invalid point arrays")
 	n = x_points.size
-	assert y_points.size == n
 
-	if np.linalg.det(grid_matrix) == 0:
-		return np.full(x_points.shape, nan), np.full(y_points.shape, nan), inf
+	if isnan(grid_x0) or isnan(grid_y0):
+		return np.full(n, nan), np.full(n, nan), inf
 
-	# start by applying the projection and fitting the phase in x and y separately and algebraicly
-	ξ_points, υ_points = np.linalg.inv(grid_matrix)@[x_points, y_points]
-	ξ0, υ0 = np.mean(ξ_points), np.mean(υ_points)
-	ξ0 = periodic_mean(ξ_points, ξ0 - 1/4, ξ0 + 1/4)
-	υ0 = periodic_mean(υ_points, υ0 - sqrt(3)/4, υ0 + sqrt(3)/4)
-	x0, y0 = grid_matrix@[ξ0, υ0]
-	image_size = np.max(np.hypot(x_points - x0, y_points - y0)) + 2*np.max(grid_matrix)
+	# determine the size so you can iterate thru the grid nodes correctly
+	spacing = np.linalg.norm(grid_matrix, ord=2)
+	image_size = np.max(np.hypot(x_points - grid_x0, y_points - grid_y0)) + spacing
 
-	# there's a degeneracy here, so I haff to compare these two cases...
-	results = []
-	for ξ_offset in [0, 1/2]:
-		grid_x0, grid_y0 = [x0, y0] + grid_matrix@[ξ_offset, 0]
-		x_fit = np.full(n, nan)
-		y_fit = np.full(n, nan)
-		errors = np.full(n, inf)
-		x_aps, y_aps = [], []
-		for i, (dx, dy) in enumerate(get_relative_aperture_positions(1, grid_matrix, 0, image_size)):
-			distances = np.hypot(grid_x0 + dx - x_points, grid_y0 + dy - y_points)
-			point_is_close_to_here = distances < errors
-			errors[point_is_close_to_here] = distances[point_is_close_to_here]
-			x_fit[point_is_close_to_here] = grid_x0 + dx
-			y_fit[point_is_close_to_here] = grid_y0 + dy
-			x_aps.append(grid_x0 + dx)
-			y_aps.append(grid_y0 + dy)
-		results.append((np.sum(errors**2), ξ_offset, x_fit, y_fit))
-
-	total_error, _, x_fit, y_fit = min(results)
+	# check each possible grid point and find the best fit
+	x_fit = np.full(n, nan)
+	y_fit = np.full(n, nan)
+	errors = np.full(n, inf)
+	x_aps, y_aps = [], []
+	for i, (dx, dy) in enumerate(get_relative_aperture_positions(1, grid_matrix, 0, image_size)):
+		distances = np.hypot(grid_x0 + dx - x_points, grid_y0 + dy - y_points)
+		point_is_close_to_here = distances < errors
+		errors[point_is_close_to_here] = distances[point_is_close_to_here]
+		x_fit[point_is_close_to_here] = grid_x0 + dx
+		y_fit[point_is_close_to_here] = grid_y0 + dy
+		x_aps.append(grid_x0 + dx)
+		y_aps.append(grid_y0 + dy)
+	# plt.scatter(x_aps, y_aps, s=20, marker="x")
+	# plt.scatter(x_points, y_points, s=9, marker="o")
+	# plt.scatter(x_fit, y_fit, s=8, marker="o")
+	# plt.xlim(0, 7)
+	# plt.ylim(0, 3)
+	# plt.axis("equal")
+	# plt.show()
+	total_error = np.sum(errors**2)
 
 	return x_fit, y_fit, total_error  # type: ignore
 
 
 def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
-                        region: list[Point], show_plots: bool
+                        grid_parameters: Optional[HexGridParameters],
+                        region: list[Point], show_plots: bool,
                         ) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: the scanfile containing the data to be analyzed
@@ -1232,7 +1291,8 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	                      means that there is only one aperture.
 		:param region: the region in which to care about tracks
 	    :param show_plots: if False, overrides SHOW_CENTER_FINDING_CALCULATION
-	    :return: the x and y of the centers of the circles, and the transformation matrix that
+	    :param grid_parameters: the previusly fit image array parameters, if any (the spacing, rotation, etc.)
+	    :return: the x and y of the centers of the circles, the transformation matrix that
 	             converts apertures locations from their nominal ones
 	"""
 	if s_nominal < 0:
@@ -1322,13 +1382,23 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	if len(circles) == 0:
 		raise DataError("I couldn't find any circles in this region")
 
-	# use a simplex algorithm to fit for scale and angle
+	# convert the found circles into numpy arrays
 	x_circles = np.array([x for x, y, r, full in circles])
 	y_circles = np.array([y for x, y, r, full in circles])
 	circle_fullness = np.array([full for x, y, r, full in circles])
-	grid_transform = fit_grid_to_points(s_nominal, x_circles[circle_fullness], y_circles[circle_fullness])
 
-	x_circles, y_circles, _ = snap_to_grid(x_circles, y_circles, s_nominal*grid_transform)
+	# use a simplex algorithm to fit for scale and angle
+	if grid_parameters is not None:
+		not_grid_transform, not_grid_x0, not_grid_y0 = fit_grid_to_points(
+			s_nominal, x_circles[circle_fullness], y_circles[circle_fullness])
+		grid_transform, grid_x0, grid_y0 = grid_parameters
+	else:
+		grid_transform, grid_x0, grid_y0 = fit_grid_to_points(
+			s_nominal, x_circles[circle_fullness], y_circles[circle_fullness])
+
+	# aline the circles to whatever grid you found
+	x_circles, y_circles, _ = snap_to_grid(x_circles, y_circles,
+	                                       s_nominal*grid_transform, grid_x0, grid_y0)
 	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:

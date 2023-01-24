@@ -4,7 +4,7 @@ import os
 import re
 import shutil
 import subprocess
-from math import pi, cos, sin, nan, sqrt
+from math import pi, cos, sin, nan, sqrt, ceil
 from typing import Callable, Generator, Optional
 
 import numpy as np
@@ -247,12 +247,14 @@ def get_relative_aperture_positions(spacing: float, transform: NDArray[float],
 	""" yield the positions of the individual penumbral images in the array relative
 		to the center, in the detector plane
 	"""
-	if np.all(spacing == 0):
+	true_spacing = spacing*np.linalg.norm(transform, ord=2)
+	if true_spacing == 0:
 		yield 0, 0
 	else:
-		for i in range(-6, 6):
+		n = ceil(r_max/true_spacing)
+		for i in range(-n, n + 1):
 			dυ = i*sqrt(3)/2
-			for j in range(-6, 6):
+			for j in range(-n, n + 1):
 				dξ = (2*j + i%2)/2
 				dx, dy = spacing*transform@[dξ, dυ]
 				if np.hypot(dx, dy) + r_img <= r_max:

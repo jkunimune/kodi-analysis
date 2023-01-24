@@ -425,8 +425,7 @@ def plot_overlaid_contores(filename: str,
 
 
 def plot_electron_temperature(filename: str, show: bool,
-                              temperature_integrated: float, grid: Grid,
-                              temperature: NDArray[float], emission: NDArray[float]) -> None:
+                              grid: Grid, temperature: NDArray[float], emission: NDArray[float]) -> None:
 	""" plot the electron temperature as a heatmap, along with some contours to show where the
 	    implosion actually is.
 	"""
@@ -437,9 +436,9 @@ def plot_electron_temperature(filename: str, show: bool,
 	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
 	            colors="#000", linewidths=1,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
-	# plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
-	#          color="w",
-	#          ha='left', va='top', transform=plt.gca().transAxes)
+	temperature_integrated = temperature[grid.x.num_bins//2, grid.y.num_bins//2]
+	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
+	         ha='left', va='top', transform=plt.gca().transAxes)
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.title(filename.replace("-", " ").capitalize())
