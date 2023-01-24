@@ -91,6 +91,9 @@ class LinSpace:
 	def shifted(self, shift: float) -> "LinSpace":
 		return LinSpace(self.minimum + shift, self.maximum + shift, self.num_bins)
 
+	def inverted(self) -> "LinSpace":
+		return LinSpace(-self.maximum, -self.minimum, self.num_bins)
+
 	@property
 	def num_edges(self) -> int:
 		return self.num_bins + 1
@@ -157,6 +160,15 @@ class Grid:
 
 	def shifted(self, dx: float, dy: float) -> "Grid":
 		return Grid(self.x.shifted(dx), self.y.shifted(dy))
+
+	def flipped_horizontally(self) -> "Grid":
+		return Grid(self.x.inverted(), self.y)
+
+	def flipped_vertically(self) -> "Grid":
+		return Grid(self.x, self.y.inverted())
+
+	def rotated_180(self) -> "Grid":
+		return Grid(self.x.inverted(), self.y.inverted())
 
 	@property
 	def total_area(self) -> float:

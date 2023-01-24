@@ -133,7 +133,7 @@ if __name__ == '__main__':
 						los_indices[los] = len(lines_of_sight)
 
 					Э_cuts, ξ_centers, υ_centers, images = load_hdf5(filepath, ["energy", "x", "y", "image"])
-					images = images.transpose((0, 2, 1)) # assume they were loaded in with [y,x] indices and change to [x,y]
+					images = images.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 					assert images.shape == (Э_cuts.shape[0], ξ_centers.size, υ_centers.size), (images.shape, ξ_centers.shape, υ_centers.shape)
 
 					# automatically detect and convert the spatial units to (μm)

@@ -99,7 +99,9 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	""" plot the data along with the initial fit to it, and the reconstructed superaperture.
 	"""
 	save_as_hdf5(f'results/data/{filename}-penumbra',
-	             x=grid.x.get_edges(), y=grid.y.get_edges(), N=counts.T, A=area.T)
+	             x=grid.x.get_edges(),
+	             y=grid.y.get_edges(),
+	             N=counts.T, A=area.T)  # save it with (y,x) indexing, not (i,j)
 
 	# while x_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
 	# 	x_bins, y_bins, N = resample_2d(x_bins, y_bins, N)
@@ -152,7 +154,9 @@ def save_and_plot_penumbra(filename: str, show: bool,
 def save_and_plot_overlaid_penumbra(filename: str, show: bool,
                                     grid: Grid, reconstruction: NDArray[float], measurement: NDArray[float]) -> None:
 	save_as_hdf5(f'results/data/{filename}-penumbra-residual',
-	             x=grid.x.get_edges(), y=grid.y.get_edges(), z=(reconstruction - measurement).T)
+	             x=grid.x.get_edges(),
+	             y=grid.y.get_edges(),
+	             z=(reconstruction - measurement).T)  # save it with (y,x) indexing, not (i,j)
 
 	# sometimes this is all nan, but we don't need to plot it
 	if np.all(np.isnan(reconstruction - measurement)):

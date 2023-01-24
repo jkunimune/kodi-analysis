@@ -191,6 +191,7 @@ def load_all_xray_images_for(shot: str, tim: str) \
 			print(filename)
 			x, y, source_stack, filtering, fade_time = load_hdf5(
 				f"results/data/{filename}", keys=["x", "y", "images", "filtering", "fade_time"])
+			source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 			for source, filter_str in zip(source_stack, filtering):
 				if np.any(np.isnan(source)):
 					continue

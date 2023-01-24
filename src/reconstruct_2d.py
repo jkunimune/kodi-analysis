@@ -299,7 +299,7 @@ def analyze_scan(input_filename: str,
 	             energy=energy_bounds,
 	             x=source_plane.x.get_bins()/1e-4,
 	             y=source_plane.y.get_bins()/1e-4,
-	             images=np.transpose(source_stack, (0, 2, 1))*1e-4**2,  # save it with x,y indexing (not i,j)
+	             images=np.transpose(source_stack, (0, 2, 1))*1e-4**2,  # save it with (y,x) indexing, not (i,j)
 	             etch_time=etch_time if etch_time is not None else nan,
 	             fade_time=fade_time if fade_time is not None else nan)
 	# and replot each of the individual sources in the correct color
@@ -601,6 +601,11 @@ def analyze_scan_section_cut(input_filename: str,
 				image += local_image*area
 				image_plicity += area
 
+			# since CR-39 is flipped horizontally before scanning and flipped verticly after scanning, rotate 180°
+			image_plane = image_plane.rotated_180()
+			image = image[::-1, ::-1]
+			image_plicity = image_plicity[::-1, ::-1]
+
 		else:
 			if input_filename.endswith(".pkl"): # if it's a pickle file
 				with open(input_filename, "rb") as f:
@@ -631,7 +636,12 @@ def analyze_scan_section_cut(input_filename: str,
 				image[area > 0] += shifted_image[area > 0]
 				image_plicity += area
 
-	# if we’re skipping the reconstruction, just load the previus reconstruction
+			# since image plates are flipped horizontally before scanning, flip horizontally
+			image_plane = image_plane.flipped_horizontally()
+			image = image[::-1, :]
+			image_plicity = image_plicity[::-1, :]
+
+	# if we’re skipping the reconstruction, just load the previus stacked penumbra
 	else:
 		logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
 		old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'tim': str})
@@ -650,7 +660,7 @@ def analyze_scan_section_cut(input_filename: str,
 		x, y, image, image_plicity = load_hdf5(
 			f"results/data/{shot}-tim{tim}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
 		image_plane = Grid.from_edge_array(x, y)
-		image = image.T
+		image = image.T  # don’t forget to convert from (y,x) to (i,j) indexing
 		image_plicity = image_plicity.T
 
 	save_and_plot_penumbra(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
@@ -725,7 +735,7 @@ def analyze_scan_section_cut(input_filename: str,
 		estimated_data_variance = image/umbra_value*umbra_variance
 
 		# perform the reconstruction
-		if sqrt(umbra_variance) < umbra_value/1e3:
+		if sqrt(umbra_variance) < umbra_value/500:
 			raise DataError("I think this image is saturated. I'm not going to try to reconstruct it. :(")
 		else:
 			logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source")
@@ -740,11 +750,14 @@ def analyze_scan_section_cut(input_filename: str,
 			                                  show_plots=show_plots)
 			logging.info("  done!")
 
-		source = np.maximum(0, source) # we know this must be nonnegative (counts/cm^2/srad) TODO: this needs to be inverted 180 degrees somewhere
+		# since the true problem is not one of deconvolution, but inverted deconvolution, rotate 180°
+		source_plane = source_plane.rotated_180()
+		source = source[::-1, ::-1]
+		source = np.maximum(0, source) # we know this must be nonnegative (counts/cm^2/srad)
 
 		if source.size*penumbral_kernel.size <= MAX_CONVOLUTION:
 			# back-calculate the reconstructed penumbral image
-			reconstructed_image = signal.fftconvolve(source, penumbral_kernel, mode="full")*image_plicity
+			reconstructed_image = signal.fftconvolve(source[::-1, ::-1], penumbral_kernel, mode="full")*image_plicity
 			# and estimate background as whatever makes it fit best
 			reconstructed_image += np.nanmean((image - reconstructed_image)/image_plicity,
 			                                  where=on_penumbra)*image_plicity
@@ -767,7 +780,7 @@ def analyze_scan_section_cut(input_filename: str,
 		                                   filter_stack, energy_min, energy_max)
 		residual, = load_hdf5(
 			f"results/data/{shot}-tim{tim}-{particle}-{cut_index}-penumbra-residual", ["z"])
-		residual = residual.T
+		residual = residual.T  # remember to convert from (y,x) indexing to (i,j)
 		reconstructed_image = image - residual
 
 	logging.info(f"  ∫B = {np.sum(output*output_plane.pixel_area)*4*pi :.4g} deuterons")
@@ -1129,6 +1142,7 @@ def load_source(shot: str, tim: str, particle_index: str,
 		f"results/data/{shot}-tim{tim}-{particle_index}-source",
 		["x", "y", "images", "filtering", "energies"])
 	source_plane = Grid.from_edge_array(x*1e-4, y*1e-4)
+	source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 	for i in range(source_stack.shape[0]):
 		if parse_filtering(filterings[i])[0] == filter_stack and \
 			np.array_equal(energy_bounds[i], [energy_min, energy_max]):
@@ -1389,8 +1403,6 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 	# use a simplex algorithm to fit for scale and angle
 	if grid_parameters is not None:
-		not_grid_transform, not_grid_x0, not_grid_y0 = fit_grid_to_points(
-			s_nominal, x_circles[circle_fullness], y_circles[circle_fullness])
 		grid_transform, grid_x0, grid_y0 = grid_parameters
 	else:
 		grid_transform, grid_x0, grid_y0 = fit_grid_to_points(
