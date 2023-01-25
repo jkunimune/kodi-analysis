@@ -111,7 +111,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	vmax = max(np.nanquantile(counts/area, (counts.size - 6)/counts.size),
 	           np.nanquantile(counts/area, 1 - A_circle/A_square/2)*1.25)
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	plt.pcolormesh(grid.x.get_edges(), grid.y.get_edges(), (counts/area).T, cmap=CMAP["coffee"], rasterized=True, vmax=vmax)
+	plt.imshow((counts/area).T, extent=grid.extent, origin="lower", cmap=CMAP["coffee"], vmax=vmax)
 	T = np.linspace(0, 2*np.pi)
 	if PLOT_THEORETICAL_50c_CONTOUR:
 		for dx, dy in get_relative_aperture_positions(s0, array_transform, r0, grid.x.half_range):
@@ -169,9 +169,9 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 		grid, measurement = downsample_2d(grid, measurement)
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	plt.pcolormesh(grid.x.get_edges(), grid.y.get_edges(),
-	               ((reconstruction - measurement)/reconstruction).T,
-	               cmap='RdBu', vmin=-1/3, vmax=1/3)
+	plt.imshow(((reconstruction - measurement)/reconstruction).T,
+	           extent=grid.extent, origin="lower",
+	           cmap='RdBu', vmin=-1/3, vmax=1/3)
 	plt.axis('square')
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
@@ -216,29 +216,30 @@ def plot_source(filename: str, show: bool,
 	particle = re.search(r"-(xray|deuteron)", filename, re.IGNORECASE).group(1)
 
 	# choose the plot limits
+	grid = grid.scaled(1e+4)  # convert coordinates to μm
 	object_size, (r0, θ), _ = shape_parameters(grid, source, contour=.25)
-	object_size = nearest_value(2*object_size/1e-4,
+	object_size = nearest_value(2*object_size,
 	                            np.array([100, 250, 800, 2000]))
 	x0, y0 = r0*np.cos(θ), r0*np.sin(θ)
-	grid = grid.shifted(-x0, -y0)
 
 	# plot the reconstructed source image
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
-	plt.pcolormesh(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4, source.T,
-	               cmap=choose_colormaps(particle, num_colors)[int(color_index)],
-	               vmin=0,
-	               shading="gouraud")
+	plt.imshow(source.T, extent=grid.extent, origin="lower",
+	           cmap=choose_colormaps(particle, num_colors)[int(color_index)],
+	           vmin=0, interpolation="bilinear")
 
 	if PLOT_SOURCE_CONTOUR:
-		plt.contour(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4, source.T,
+		plt.contour(grid.x.get_bins(), grid.y.get_bins(), source.T,
 		            levels=[contour_level*np.max(source)], colors='#ddd', linestyles='solid', linewidths=1)
 	if PLOT_STALK:
 		x_stalk, y_stalk, _ = projected_stalk_direction
 		if num_stalks == 1:
-			plt.plot([0, x_stalk*60], [0, y_stalk*60], '-w', linewidth=2)
+			plt.plot([x0, x0 + x_stalk*60],
+			         [y0, y0 + y_stalk*60], '-w', linewidth=2)
 		elif num_stalks == 2:
-			plt.plot([-x_stalk*60, x_stalk*60], [-y_stalk*60, y_stalk*60], '-w', linewidth=2)
+			plt.plot([x0 - x_stalk*60, x0 + x_stalk*60],
+			         [y0 - y_stalk*60, y0 + y_stalk*60], '-w', linewidth=2)
 		elif num_stalks > 2:
 			raise ValueError(f"what do you mean, \"{num_stalks} stalks\"?")
 
@@ -250,7 +251,8 @@ def plot_source(filename: str, show: bool,
 		plt.title(f"$h\\nu$ = {energy_min:.0f} – {energy_max:.0f} keV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
-	plt.axis([-object_size, object_size, -object_size, object_size])
+	plt.axis([x0 - object_size, x0 + object_size,
+	          y0 - object_size, y0 + object_size])
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source")
 
@@ -258,23 +260,23 @@ def plot_source(filename: str, show: bool,
 	j_lineout = np.argmax(np.sum(source, axis=0))
 	scale = 1/np.max(source[:, j_lineout])
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.plot(grid.x.get_bins()/1e-4, source[:, j_lineout]*scale)
+	plt.plot(grid.x.get_bins(), source[:, j_lineout]*scale)
 
 	# and fit a curve to it if it's a "disc"
 	if "disc" in filename:
 		def blurred_boxcar(x, A, d):
-			return A*special.erfc((x - 100e-4)/d/np.sqrt(2))*special.erfc(-(x + 100e-4)/d/np.sqrt(2))/4
+			return A*special.erfc((x - 100)/d/np.sqrt(2))*special.erfc(-(x + 100)/d/np.sqrt(2))/4
 		r_centers = np.hypot(*grid.get_pixels())
 		popt, pcov = cast(tuple[list, list], optimize.curve_fit(
 			blurred_boxcar,
 			r_centers.ravel(), source.ravel(),
-			[np.max(source), 10e-4]))
-		logging.info(f"  1σ resolution = {popt[1]/1e-4} μm")
-		plt.plot(grid.x.get_bins()/1e-4, blurred_boxcar(grid.x.get_bins(), *popt)*scale, '--')
+			[np.max(source), 10]))
+		logging.info(f"  1σ resolution = {popt[1]} μm")
+		plt.plot(grid.x.get_bins(), blurred_boxcar(grid.x.get_bins(), *popt)*scale, '--')
 
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
-	plt.xlim(-object_size, object_size)
+	plt.xlim(x0 - object_size, y0 + object_size)
 	plt.ylim(0, 2)
 	plt.yscale("symlog", linthresh=1e-2, linscale=1/np.log(10))
 	plt.tight_layout()
@@ -363,7 +365,7 @@ def save_and_plot_morphologies(filename: str,
 		make_colorbar(vmin=0, vmax=peak_source, label="Neutron emission (μm^-3)")# , facecolor="#fdce45")
 		if np.any(density_slice > 0):
 			plt.contourf(y, z,
-			             np.maximum(0, density_slice.T),
+			             np.maximum(0, density_slice).T,
 			             vmin=0, vmax=peak_density,
 			             levels=np.linspace(0, peak_density, 9),
 			             cmap='Reds',
@@ -403,7 +405,7 @@ def plot_overlaid_contores(filename: str,
 	"""
 	# calculate the centroid of the highest energy bin
 	x0, y0 = center_of_mass(grid, images[-1])
-	grid = grid.shifted(-x0, -y0)
+	grid = grid.shifted(-x0, -y0).scaled(1e+4)
 
 	x_off, y_off, z_off = projected_offset
 	x_flo, y_flo, z_flo = projected_flow
@@ -415,9 +417,9 @@ def plot_overlaid_contores(filename: str,
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
 	for image, colormap in zip(images, colormaps):
-		color = saturate(*colormap.colors[-1], factor=1.5)
-		plt.contour(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4,
-		            image/np.max(image),
+		color = saturate(*colormap.colors[-1], factor=2.0)
+		plt.contour(grid.x.get_bins(), grid.y.get_bins(),
+		            image.T/np.max(image),
 		            levels=[contour_level], colors=[color], linewidths=[2])
 
 	if PLOT_OFFSET:

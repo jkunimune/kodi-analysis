@@ -49,7 +49,7 @@ SUPPORTED_FILETYPES = [".h5", ".pkl"]
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = False
-SHOW_CENTER_FINDING_CALCULATION = True
+SHOW_CENTER_FINDING_CALCULATION = False
 SHOW_ELECTRIC_FIELD_CALCULATION = False
 SHOW_POINT_SPREAD_FUNCCION = False
 
@@ -226,11 +226,13 @@ def analyze(shots_to_reconstruct: list[str],
 				result,
 				ignore_index=True)
 
-		logging.info("  Updating plots for TIM {} on shot {}".format(tim, shot))
-
 		summary = summary.sort_values(['shot', 'tim', 'energy min', 'energy max'],
 		                              ascending=[True, True, True, False])
-		summary.to_csv("results/summary.csv", index=False) # save the results to disk
+		try:
+			summary.to_csv("results/summary.csv", index=False) # save the results to disk
+		except PermissionError:
+			logging.error("Close Microsoft Excel!")
+			raise
 
 
 def analyze_scan(input_filename: str,
@@ -307,7 +309,7 @@ def analyze_scan(input_filename: str,
 			statistics += filter_section_statistics  # TODO: sort results by energy
 			for energy_cut_index, statblock in enumerate(filter_section_statistics):
 				filter_strings.append(print_filtering(filter_stack))
-				energy_bounds.append((statblock["energy_min"], statblock["energy_max"]))
+				energy_bounds.append((statblock["energy min"], statblock["energy max"]))
 				indices.append(f"{detector_index}{filter_section_index}{energy_cut_index}")
 
 	if len(source_stack) == 0:
@@ -347,8 +349,8 @@ def analyze_scan(input_filename: str,
 		dx, dy = dxH - dxL, dyH - dyL
 		logging.info(f"Δ = {hypot(dx, dy)/1e-4:.1f} μm, θ = {degrees(atan2(dx, dy)):.1f}")
 		for statblock in statistics:
-			statblock["separation_magnitude"] = hypot(dx, dy)/1e-4
-			statblock["separation_angle"] = degrees(atan2(dy, dx))
+			statblock["separation magnitude"] = hypot(dx, dy)/1e-4
+			statblock["separation angle"] = degrees(atan2(dy, dx))
 
 		tim_basis = tim_coordinates(tim)
 		projected_offset = project(
@@ -435,7 +437,7 @@ def analyze_scan_section(input_filename: str,
 		num_tracks, x_min, x_max, y_min, y_max = count_tracks_in_scan(input_filename, 0, inf, False)
 		logging.info(f"found {num_tracks:.4g} tracks in the file")
 		if num_tracks < 1e+3:
-			logging.warning("Not enuff tracks to reconstruct")
+			logging.warning("  Not enuff tracks to reconstruct")
 			return grid_parameters, source_plane, [], []
 
 		# start by asking the user to highlight the data
@@ -501,11 +503,11 @@ def analyze_scan_section(input_filename: str,
 				energy_min, energy_max,
 				source_plane, skip_reconstruction, show_plots)
 		except (DataError, FilterError) as e:
-			logging.warning(e)
+			logging.warning(f"  {e}")
 		else:
 			statblock["filtering"] = print_filtering(filter_stack)
-			statblock["energy_min"] = energy_min
-			statblock["energy_max"] = energy_max
+			statblock["energy min"] = energy_min
+			statblock["energy max"] = energy_max
 			source_stack.append(source)
 			results.append(statblock)
 
@@ -764,21 +766,21 @@ def analyze_scan_section_cut(input_filename: str,
 		umbra_variance = np.mean((image - umbra_value*image_plicity)**2/image_plicity, where=umbra)
 		estimated_data_variance = image/umbra_value*umbra_variance
 
-		# perform the reconstruction
 		if sqrt(umbra_variance) < umbra_value/500:
 			raise DataError("I think this image is saturated. I'm not going to try to reconstruct it. :(")
-		else:
-			logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source")
-			method = "richardson-lucy" if particle == "deuteron" else "gelfgat"
-			source = deconvolution.deconvolve(method,
-			                                  clipd_image,
-			                                  penumbral_kernel,
-			                                  r_psf=r0/image_plane.pixel_width,
-			                                  pixel_area=clipd_plicity,
-			                                  source_region=source_region,
-			                                  noise=estimated_data_variance,
-			                                  show_plots=show_plots)
-			logging.info("  done!")
+
+		# perform the reconstruction
+		logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source")
+		method = "richardson-lucy" if particle == "deuteron" else "gelfgat"
+		source = deconvolution.deconvolve(method,
+		                                  clipd_image,
+		                                  penumbral_kernel,
+		                                  r_psf=r0/image_plane.pixel_width,
+		                                  pixel_area=clipd_plicity,
+		                                  source_region=source_region,
+		                                  noise=estimated_data_variance,
+		                                  show_plots=show_plots)
+		logging.info("  done!")
 
 		# since the true problem is not one of deconvolution, but inverted deconvolution, rotate 180°
 		source_plane = source_plane.rotated_180()
@@ -991,10 +993,11 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	return Q, r_01
 
 
-def where_is_the_ocean(x, y, z, title, timeout=None) -> Point:
+def where_is_the_ocean(plane: Grid, image: NDArray[float], title, timeout=None) -> Point:
 	""" solicit the user's help in locating something """
 	fig = plt.figure()
-	plt.pcolormesh(x, y, z, vmax=np.quantile(z, .999), cmap=CMAP["spiral"])
+	plt.imshow(image.T, vmax=np.quantile(image, .999), cmap=CMAP["spiral"],
+	           extent=plane.extent, origin="lower")
 	plt.axis("equal")
 	plt.colorbar()
 	plt.title(title)
@@ -1369,39 +1372,39 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		x_tracks, y_tracks = load_cr39_scan_file(filename)  # load all track coordinates
 		n_bins = max(6, int(min(sqrt(x_tracks.size)/10, MAX_NUM_PIXELS)))  # get the image resolution needed to resolve the circle
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
-		relative_bins = np.linspace(-r_data, r_data, n_bins + 1)
-		x_bins = (np.min(x_tracks) + np.max(x_tracks))/2 + relative_bins
-		y_bins = (np.min(y_tracks) + np.max(y_tracks))/2 + relative_bins
+		x0_data = (np.min(x_tracks) + np.max(x_tracks))/2
+		y0_data = (np.min(y_tracks) + np.max(y_tracks))/2
+		scan_plane = Grid.from_num_bins(r_data, n_bins).shifted(x0_data, y0_data)
 
-		N_full, x_bins, y_bins = np.histogram2d( # make a histogram
-			x_tracks, y_tracks, bins=(x_bins, y_bins))
-
-		if ASK_FOR_HELP:
-			try:  # ask the user for help finding the center
-				x0, y0 = where_is_the_ocean(x_bins, y_bins, N_full, "Please click on the center of a penumbrum.", timeout=8.64)
-			except TimeoutError:
-				x0, y0 = None, None
-		else:
-			x0, y0 = None, None
+		# make a histogram
+		N_full, _, _ = np.histogram2d(
+			x_tracks, y_tracks, bins=(scan_plane.x.get_bins(), scan_plane.y.get_bins()))
 
 	elif filename.endswith(".pkl"):  # if it's a pickle file
 		with open(filename, "rb") as f:
-			x_bins, y_bins, N_full = pickle.load(f)
-		x0, y0 = (0, 0)
+			x_edges, y_edges, N_full = pickle.load(f)
+		scan_plane = Grid.from_edge_array(x_edges, y_edges)
 
 	elif filename.endswith(".h5"):  # if it's an h5 file
 		with h5py.File(filename, "r") as f:
-			x_bins = f["x"][:]
-			y_bins = f["y"][:]
+			x_edges = f["x"][:]
+			y_edges = f["y"][:]
 			N_full = f["PSL_per_px"][:, :]
-		x0, y0 = None, None
+		scan_plane = Grid.from_edge_array(x_edges, y_edges)
 
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
-	x_centers, dx = bin_centers_and_sizes(x_bins)  # TODO: this should be reritten to use the Grid class
-	y_centers, dy = bin_centers_and_sizes(y_bins)
-	X_pixels, Y_pixels = np.meshgrid(x_centers, y_centers, indexing="ij")
+	# ask the user for help finding the center
+	if ASK_FOR_HELP:
+		try:
+			x0, y0 = where_is_the_ocean(scan_plane, N_full, "Please click on the center of a penumbrum.", timeout=8.64)
+		except TimeoutError:
+			x0, y0 = None, None
+	else:
+		x0, y0 = None, None
+
+	X_pixels, Y_pixels = scan_plane.get_pixels()
 	N_clipd = np.where(inside_polygon(region, X_pixels, Y_pixels), N_full, nan)
 	if np.all(np.isnan(N_clipd)):
 		raise DataError("this polygon had no area inside it.")
@@ -1410,8 +1413,8 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 	# if we don't have a good gess, do a scan
 	if x0 is None or y0 is None:
-		x0, y0 = x_bins.mean(), y_bins.mean()
-		scale = max(x_bins.ptp(), y_bins.ptp())/2
+		x0, y0 = x_edges.mean(), y_edges.mean()
+		scale = max(x_edges.ptp(), y_edges.ptp())/2
 		while scale > .5*r_nominal:
 			best_umbra = -inf
 			x_scan = np.linspace(x0 - scale, x0 + scale, 7)
@@ -1435,8 +1438,8 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		raise DataError("there were no tracks.  we should have caut that by now.")
 	circles = []
 	for contour in contours:
-		x_contour = np.interp(contour[:, 0], np.arange(x_centers.size), x_centers)
-		y_contour = np.interp(contour[:, 1], np.arange(y_centers.size), y_centers)
+		x_contour = np.interp(contour[:, 0], np.arange(scan_plane.x.num_bins), scan_plane.x.get_bins())
+		y_contour = np.interp(contour[:, 1], np.arange(scan_plane.y.num_bins), scan_plane.y.get_bins())
 		x0, y0, r_apparent = fit_circle(x_contour, y_contour)
 		if 0.7*r_nominal < r_apparent < 1.3*r_nominal:  # check the radius to avoid picking up noise
 			linear_gap = hypot(x_contour[-1] - x_contour[0], y_contour[-1] - y_contour[0])
@@ -1468,18 +1471,21 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
-		plt.pcolormesh(x_bins, y_bins, N_full.T,
+		plt.pcolormesh(x_edges, y_edges, N_full.T,
 		               vmin=0, vmax=np.quantile(N_full, .99),
 		               cmap=CMAP["coffee"])
 		θ = np.linspace(0, 2*pi, 145)
-		for x0, y0, full in zip(x_circles, y_circles, circle_fullness):
+		for x0, y0 in get_relative_aperture_positions(s_nominal, grid_transform, r_true, 10,
+		                                              x_circles[0], y_circles[0]):
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-			         "C0-" if full else "C0--", linewidth=1.2)
-		plt.contour(x_centers, y_centers, N_clipd.T, levels=[haff_density],
-		            colors="C6", linewidths=.6)
+			         "C0--", linewidth=1.2)
+		plt.scatter(x_circles, y_circles, np.where(circle_fullness, 30, 5),
+		            c="C0", marker="x")
+		plt.contour(scan_plane.x.get_bins(), scan_plane.y.get_bins(), N_clipd.T,
+		            levels=[haff_density], colors="C6", linewidths=.6)
 		plt.axis("equal")
-		plt.ylim(np.min(y_bins), np.max(y_bins))
-		plt.xlim(np.min(x_bins), np.max(x_bins))
+		plt.ylim(np.min(y_edges), np.max(y_edges))
+		plt.xlim(np.min(x_edges), np.max(x_edges))
 		plt.show()
 
 	return [(x, y) for x, y in zip(x_circles, y_circles)], grid_transform

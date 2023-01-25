@@ -92,11 +92,17 @@ class LinSpace:
 		self.maximum = maximum
 		self.num_bins = num_bins
 
-	def shifted(self, shift: float) -> "LinSpace":
+	def __add__(self, shift: float) -> "LinSpace":
 		return LinSpace(self.minimum + shift, self.maximum + shift, self.num_bins)
 
-	def inverted(self) -> "LinSpace":
-		return LinSpace(-self.maximum, -self.minimum, self.num_bins)
+	def __mul__(self, factor: float) -> "LinSpace":
+		if factor < 0:
+			return LinSpace(factor*self.maximum, factor*self.minimum, self.num_bins)
+		else:
+			return LinSpace(factor*self.minimum, factor*self.maximum, self.num_bins)
+
+	def __neg__(self) -> "LinSpace":
+		return self*(-1)
 
 	@property
 	def num_edges(self) -> int:
@@ -159,20 +165,27 @@ class Grid:
 		return Grid(LinSpace(-radius, radius, num_bins))
 
 	@classmethod
+	def from_num_bins(cls, radius: float, num_bins: int) -> "Grid":
+		return Grid(LinSpace(-radius, radius, num_bins))
+
+	@classmethod
 	def from_pixels(cls, num_bins: int, pixel_width: float) -> "Grid":
 		return Grid(LinSpace(-pixel_width*num_bins/2, pixel_width*num_bins/2, num_bins))
 
 	def shifted(self, dx: float, dy: float) -> "Grid":
-		return Grid(self.x.shifted(dx), self.y.shifted(dy))
+		return Grid(self.x + dx, self.y + dy)
+
+	def scaled(self, factor: float) -> "Grid":
+		return Grid(self.x*factor, self.y*factor)
 
 	def flipped_horizontally(self) -> "Grid":
-		return Grid(self.x.inverted(), self.y)
+		return Grid(-self.x, self.y)
 
 	def flipped_vertically(self) -> "Grid":
-		return Grid(self.x, self.y.inverted())
+		return Grid(self.x, -self.y)
 
 	def rotated_180(self) -> "Grid":
-		return Grid(self.x.inverted(), self.y.inverted())
+		return Grid(-self.x, -self.y)
 
 	@property
 	def total_area(self) -> float:
