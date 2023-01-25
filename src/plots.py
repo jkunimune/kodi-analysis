@@ -21,9 +21,10 @@ plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'sans', 'font.size': 18})
 
 
-PLOT_THEORETICAL_PROJECTION = True
+PLOT_THEORETICAL_50c_CONTOUR = True
 PLOT_SOURCE_CONTOUR = True
 PLOT_OFFSET = False
+PLOT_STALK = True
 
 MAX_NUM_PIXELS = 40000
 SQUARE_FIGURE_SIZE = (6.4, 5.4)
@@ -112,7 +113,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.pcolormesh(grid.x.get_edges(), grid.y.get_edges(), (counts/area).T, cmap=CMAP["coffee"], rasterized=True, vmax=vmax)
 	T = np.linspace(0, 2*np.pi)
-	if PLOT_THEORETICAL_PROJECTION:
+	if PLOT_THEORETICAL_50c_CONTOUR:
 		for dx, dy in get_relative_aperture_positions(s0, array_transform, r0, grid.x.half_range):
 			plt.plot(dx + r0*np.cos(T), dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
@@ -193,18 +194,20 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 
 def plot_source(filename: str, show: bool,
                 grid: Grid, source: NDArray[float], contour_level: float,
-                e_min: float, e_max: float, color_index: int, num_colors: int) -> None:
-	"""
-	plot a single reconstructed deuteron/xray source
-	:param filename: the name with which to save the resulting files, minus the fluff
-	:param show: whether to make the user look at it
-	:param grid: the coordinates that go with the brightness array (cm)
-	:param source: the brightness of each pixel (d/cm^2/srad)
-	:param contour_level: the value of the contour, relative to the peak, to draw around the source
-	:param e_min: the minimum energy being plotted (for the label)
-	:param e_max: the maximum energy being plotted (for the label)
-	:param color_index: the index of this image in the set (for choosing the color)
-	:param num_colors: the total number of images in this set (for choosing the color)
+                energy_min: float, energy_max: float, color_index: int, num_colors: int,
+                projected_stalk_direction: tuple[float, float, float], num_stalks: int) -> None:
+	""" plot a single reconstructed deuteron/xray source
+	    :param filename: the name with which to save the resulting files, minus the fluff
+	    :param show: whether to make the user look at it
+	    :param grid: the coordinates that go with the brightness array (cm)
+	    :param source: the brightness of each pixel (d/cm^2/srad)
+	    :param contour_level: the value of the contour, relative to the peak, to draw around the source
+	    :param energy_min: the minimum energy being plotted (for the label)
+	    :param energy_max: the maximum energy being plotted (for the label)
+	    :param color_index: the index of this image in the set (for choosing the color)
+	    :param num_colors: the total number of images in this set (for choosing the color)
+	    :param projected_stalk_direction: the stalk direction unit vector, given as (x, y, z)
+	    :param num_stalks: the number of stalks to draw: 0, 1, or 2
 	"""
 	# sometimes this is all nan, but we don't need to plot it
 	if np.all(np.isnan(source)):
@@ -226,19 +229,25 @@ def plot_source(filename: str, show: bool,
 	               cmap=choose_colormaps(particle, num_colors)[int(color_index)],
 	               vmin=0,
 	               shading="gouraud")
+
 	if PLOT_SOURCE_CONTOUR:
 		plt.contour(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4, source.T,
 		            levels=[contour_level*np.max(source)], colors='#ddd', linestyles='solid', linewidths=1)
-	# T = np.linspace(0, 2*np.pi, 144)
-	# R = p0 + p2*np.cos(2*(T - θ2))
-	# plt.plot(R*np.cos(T)/1e-4, R*np.sin(T)/1e-4, 'w--')
-	# plt.colorbar()
+	if PLOT_STALK:
+		x_stalk, y_stalk, _ = projected_stalk_direction
+		if num_stalks == 1:
+			plt.plot([0, x_stalk*60], [0, y_stalk*60], '-w', linewidth=2)
+		elif num_stalks == 2:
+			plt.plot([-x_stalk*60, x_stalk*60], [-y_stalk*60, y_stalk*60], '-w', linewidth=2)
+		elif num_stalks > 2:
+			raise ValueError(f"what do you mean, \"{num_stalks} stalks\"?")
+
 	plt.gca().set_facecolor("#000")
 	plt.axis('square')
 	if particle == "deuteron":
-		plt.title(f"$E_\\mathrm{{d}}$ = {e_min:.1f} – {min(12.5, e_max):.1f} MeV")
+		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	elif particle == "xray":
-		plt.title(f"$h\\nu$ = {e_min:.0f} – {e_max:.0f} keV")
+		plt.title(f"$h\\nu$ = {energy_min:.0f} – {energy_max:.0f} keV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.axis([-object_size, object_size, -object_size, object_size])
@@ -379,14 +388,18 @@ def plot_overlaid_contores(filename: str,
                            images: Sequence[NDArray[float]],
                            contour_level: float,
                            projected_offset: tuple[float, float, float],
-                           projected_flow: tuple[float, float, float]) -> None:
+                           projected_flow: tuple[float, float, float],
+                           projected_stalk: tuple[float, float, float],
+                           num_stalks: int) -> None:
 	""" plot the plot with the multiple energy cuts overlaid
 	    :param filename: the extensionless filename with which to save the figure
 	    :param grid: the coordinates of the pixels (cm)
 	    :param images: a 3d array, which is a stack of all the x centers we have
 	    :param contour_level: the contour level in (0, 1) to plot
 	    :param projected_offset: the capsule offset from TCC in cm, given as (x, y, z)
-	    :param projected_flow: the measured hot spot velocity in , given as (x, y, z)
+	    :param projected_flow: the measured hot spot velocity in ?, given as (x, y, z)
+	    :param projected_stalk: the stalk direction unit vector, given as (x, y, z)
+	    :param num_stalks: the number of stalks to draw: 0, 1, or 2
 	"""
 	# calculate the centroid of the highest energy bin
 	x0, y0 = center_of_mass(grid, images[-1])
@@ -394,22 +407,19 @@ def plot_overlaid_contores(filename: str,
 
 	x_off, y_off, z_off = projected_offset
 	x_flo, y_flo, z_flo = projected_flow
+	x_stalk, y_stalk, z_stalk = projected_stalk
 
-	particle = filename.split("-")[-1]
+	particle = filename.split("-")[-2]
 	colormaps = choose_colormaps(particle, len(images))
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
 	for image, colormap in zip(images, colormaps):
 		color = saturate(*colormap.colors[-1], factor=1.5)
-		if len(images) > 3:
-			plt.contour(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4,
-			            image/np.max(image),
-			            levels=[contour_level], colors=[color])
-		else:
-			plt.contour(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4,
-			            image/np.max(image),
-			            levels=[contour_level, 1], colors=[color])
+		plt.contour(grid.x.get_bins()/1e-4, grid.y.get_bins()/1e-4,
+		            image/np.max(image),
+		            levels=[contour_level], colors=[color], linewidths=[2])
+
 	if PLOT_OFFSET:
 		plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
 		plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
@@ -418,8 +428,16 @@ def plot_overlaid_contores(filename: str,
 		plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(
 			z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
 		         verticalalignment='top', transform=plt.gca().transAxes)
+	elif PLOT_STALK:
+		if num_stalks == 1:
+			plt.plot([0, x_stalk*60], [0, y_stalk*60], '-k', linewidth=2)
+		elif num_stalks == 2:
+			plt.plot([-x_stalk*60, x_stalk*60], [-y_stalk*60, y_stalk*60], '-k', linewidth=2)
+		elif num_stalks > 2:
+			raise ValueError(f"what do you mean, \"{num_stalks} stalks\"?")
+
 	plt.axis('square')
-	# plt.axis([-80, 80, -80, 80])
+	plt.axis([-70, 70, -70, 70])
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.tight_layout()

@@ -28,7 +28,7 @@ import deconvolution
 import detector
 import electric_field
 from cmap import CMAP
-from coordinate import project, tim_coordinates, rotation_matrix, Grid
+from coordinate import project, tim_coordinates, rotation_matrix, Grid, TPS_LOCATIONS
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
@@ -186,12 +186,14 @@ def analyze(shots_to_reconstruct: list[str],
 				show_plots         =show_plots,
 				shot               =shot,
 				tim                =tim,
+				etch_time          =etch_time,
 				rA                 =shot_info["aperture radius"]*1e-4,
 				sA                 =shot_info["aperture spacing"]*1e-4,
 				L1                 =shot_info["standoff"]*1e-4,
 				M_gess             =shot_info["magnification"],
 				filtering          =shot_info["filtering"],
-				etch_time          =etch_time,
+				stalk_position     =shot_info["TPS"],
+				num_stalks         =shot_info["stalks"],
 				offset             =(shot_info["offset (r)"]*1e-4,
 				                     radians(shot_info["offset (θ)"]),
 				                     radians(shot_info["offset (ф)"])),
@@ -219,7 +221,8 @@ def analyze(shots_to_reconstruct: list[str],
 def analyze_scan(input_filename: str,
                  shot: str, tim: str, rA: float, sA: float, M_gess: float, L1: float,
                  etch_time: Optional[float], filtering: str,
-                 offset: (float, float, float), velocity: (float, float, float),
+                 offset: tuple[float, float, float], velocity: tuple[float, float, float],
+                 stalk_position: str, num_stalks: int,
                  skip_reconstruction: bool, show_plots: bool,
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct all of the penumbral images contained in a single scan file.
@@ -236,6 +239,8 @@ def analyze_scan(input_filename: str,
 		:param filtering: a string that indicates what filtering was used on this tim on this shot
 		:param offset: the initial offset of the capsule from TCC in spherical coordinates (cm, rad, rad)
 		:param velocity: the measured hot-spot velocity of the capsule in spherical coordinates (km/s, rad, rad)
+		:param stalk_position: the name of the port from which the target is held (should be "TPS2")
+		:param num_stalks: the number of stalks on this target (usually 1)
 		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 		                            than performing the full analysis procedure again.
 		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -312,10 +317,13 @@ def analyze_scan(input_filename: str,
 			num_missing_sections = num_sections - len(source_stack)
 			color_index = detector_index*num_sections + cut_index + num_missing_sections
 			num_colors = num_detectors*num_sections
+		tim_basis = tim_coordinates(tim)
 		plot_source(f"{shot}-tim{tim}-{particle}-{indices[cut_index]}",
 		            False, source_plane, source_stack[cut_index],
 		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
-		            color_index=color_index, num_colors=num_colors)
+		            color_index=color_index, num_colors=num_colors,
+		            projected_stalk_direction=project(1., *TPS_LOCATIONS[2], tim_basis),
+		            num_stalks=num_stalks)
 
 	# if can, plot some plots that overlay the sources in the stack
 	if len(source_stack) > 1:
@@ -332,10 +340,13 @@ def analyze_scan(input_filename: str,
 			offset[0], offset[1], offset[2], tim_basis)
 		projected_flow = project(
 			velocity[0], velocity[1], velocity[2], tim_basis)
+		assert stalk_position == "TPS2"
+		projected_stalk = project(
+			1, TPS_LOCATIONS[2][0], TPS_LOCATIONS[2][1], tim_basis)
 
 		plot_overlaid_contores(
-			f"{shot}-tim{tim}-{particle}", source_plane, source_stack, contour,
-			projected_offset, projected_flow)
+			f"{shot}-tim{tim}-{particle}-{detector_index}", source_plane, source_stack, contour,
+			projected_offset, projected_flow, projected_stalk, num_stalks)
 
 	return statistics
 
@@ -799,7 +810,8 @@ def analyze_scan_section_cut(input_filename: str,
 	plot_source(f"{shot}-tim{tim}-{particle}-{cut_index}",
 	            show_plots,
 	            output_plane, output, contour, energy_min, energy_max,
-	            color_index=color_index, num_colors=num_colors)
+	            color_index=color_index, num_colors=num_colors,
+	            projected_stalk_direction=(nan, nan, nan), num_stalks=0)
 	save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
 	                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
 

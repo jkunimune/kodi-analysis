@@ -27,6 +27,10 @@ TIM_LOCATIONS = {
 for tim in list(TIM_LOCATIONS.keys()):
 	TIM_LOCATIONS[str(tim)] = TIM_LOCATIONS[tim]
 
+TPS_LOCATIONS = {
+	2: [37.38, 90.00],
+}
+
 
 def tim_coordinates(tim: int | str) -> NDArray[float]:
 	return orthogonal_basis(*TIM_LOCATIONS[tim])
