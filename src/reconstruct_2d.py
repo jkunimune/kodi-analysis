@@ -34,7 +34,8 @@ from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, s
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
 	line_search, quantile, bin_centers_and_sizes, get_relative_aperture_positions, periodic_mean, parse_filtering, \
-	print_filtering, Filter, count_detectors
+	print_filtering, Filter, count_detectors, compose_2x2_from_intuitive_parameters, \
+	decompose_2x2_into_intuitive_parameters
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -47,9 +48,9 @@ DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitt
 SUPPORTED_FILETYPES = [".h5", ".pkl"]
 
 ASK_FOR_HELP = False
-SHOW_DIAMETER_CUTS = True
+SHOW_DIAMETER_CUTS = False
 SHOW_CENTER_FINDING_CALCULATION = True
-SHOW_ELECTRIC_FIELD_CALCULATION = True
+SHOW_ELECTRIC_FIELD_CALCULATION = False
 SHOW_POINT_SPREAD_FUNCCION = False
 
 BELIEVE_IN_APERTURE_TILTING = False
@@ -131,8 +132,12 @@ def analyze(shots_to_reconstruct: list[str],
 	try:
 		summary = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
 	except IOError:
-		summary = pd.DataFrame(data={"shot": ['placeholder'], "tim": [0],
-		                             "energy_min": [nan], "energy_max": [nan]}) # be explicit that shots can be str, but usually look like int
+		summary = pd.DataFrame(data={"shot":           pd.Series(dtype=str),
+		                             "tim":            pd.Series(dtype=str),
+		                             "particle":       pd.Series(dtype=str),
+		                             "detector index": pd.Series(dtype=int),
+		                             "energy min":     pd.Series(dtype=float),
+		                             "energy max":     pd.Series(dtype=float)})
 
 	# iterate thru the shots we're supposed to analyze and make a list of scan files
 	all_scans_to_analyze: list[tuple[str, str, float, str]] = []
@@ -143,40 +148,43 @@ def analyze(shots_to_reconstruct: list[str],
 		else:
 			shot, tim = specifier, None
 
-		matching_scans: list[tuple[str, str, float, str]] = []
-		for filename in os.listdir("data/scans"): # search for filenames that match each row
+		# search for filenames that match each row
+		matching_scans: list[tuple[str, str, str, int, float, str]] = []
+		for filename in os.listdir("data/scans"):
 			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
+			detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
 			etch_match = re.search(r"([0-9]+)hr?", filename, re.IGNORECASE)
 			if tim is None:
 				tim_match = re.search(r"tim([0-9]+)", filename, re.IGNORECASE)
 			else:
 				tim_match = re.search(rf"tim({tim})", filename, re.IGNORECASE)
+
 			if (os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES
 			    and shot_match is not None and tim_match is not None):
 				matching_tim = tim_match.group(1) # these regexes would work much nicer if _ wasn't a word haracter
+				detector_index = int(detector_match.group(1)) if detector_match is not None else 0
 				etch_time = float(etch_match.group(1)) if etch_match is not None else None
-				matching_scans.append((shot, matching_tim, etch_time, f"data/scans/{filename}"))
+				particle = "xray" if filename.endswith(".h5") else "deuteron"
+				matching_scans.append((shot, matching_tim, particle, detector_index, etch_time,
+				                       f"data/scans/{filename}"))
 		if len(matching_scans) == 0:
 			logging.info("  Could not find any text file for TIM {} on shot {}".format(tim, shot))
 		else:
 			all_scans_to_analyze += matching_scans
 
 	if len(all_scans_to_analyze) > 0:
-		logging.info(f"Planning to reconstruct {', '.join(filename for _, _, _, filename in all_scans_to_analyze)}")
+		logging.info(f"Planning to reconstruct {', '.join(scan[-1] for scan in all_scans_to_analyze)}")
 	else:
 		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the data folder.")
 
 	# then iterate thru that list and do the analysis
-	for shot, tim, etch_time, filename in all_scans_to_analyze:
+	for shot, tim, particle, detector_index, etch_time, filename in all_scans_to_analyze:
 		logging.info("Beginning reconstruction for TIM {} on shot {}".format(tim, shot))
 
 		try:
 			shot_info = shot_table.loc[shot]
 		except IndexError:
 			raise RecordNotFoundError(f"please add shot {shot!r} to the data/shots.csv file.")
-
-		# clear any previous versions of this reconstruccion
-		summary = summary[(summary.shot != shot) | (summary.tim != tim)]
 
 		# perform the 2d reconstruccion
 		try:
@@ -186,12 +194,14 @@ def analyze(shots_to_reconstruct: list[str],
 				show_plots         =show_plots,
 				shot               =shot,
 				tim                =tim,
+				particle           =particle,
+				detector_index     =detector_index,
 				etch_time          =etch_time,
+				filtering          =shot_info["filtering"],  # TODO: use different filter thickness for each TIM
 				rA                 =shot_info["aperture radius"]*1e-4,
 				sA                 =shot_info["aperture spacing"]*1e-4,
 				L1                 =shot_info["standoff"]*1e-4,
 				M_gess             =shot_info["magnification"],
-				filtering          =shot_info["filtering"],
 				stalk_position     =shot_info["TPS"],
 				num_stalks         =shot_info["stalks"],
 				offset             =(shot_info["offset (r)"]*1e-4,
@@ -205,21 +215,27 @@ def analyze(shots_to_reconstruct: list[str],
 			logging.warning(e)
 			continue
 
+		# clear any previous versions of this reconstruccion
+		matching = (summary["shot"] == shot) & (summary["tim"] == tim) & \
+		           (summary["particle"] == particle) & (summary["detector index"] == detector_index)
+		summary = summary[~matching]
+
+		# and save the new ones to the dataframe
 		for result in results:
-			summary = summary.append( # and save the new ones to the dataframe
+			summary = summary.append(
 				result,
 				ignore_index=True)
-		summary = summary[summary.shot != 'placeholder']
 
 		logging.info("  Updating plots for TIM {} on shot {}".format(tim, shot))
 
-		summary = summary.sort_values(['shot', 'tim', 'energy_min', 'energy_max'],
+		summary = summary.sort_values(['shot', 'tim', 'energy min', 'energy max'],
 		                              ascending=[True, True, True, False])
 		summary.to_csv("results/summary.csv", index=False) # save the results to disk
 
 
 def analyze_scan(input_filename: str,
-                 shot: str, tim: str, rA: float, sA: float, M_gess: float, L1: float,
+                 shot: str, tim: str, particle: str, detector_index: int,
+                 rA: float, sA: float, M_gess: float, L1: float,
                  etch_time: Optional[float], filtering: str,
                  offset: tuple[float, float, float], velocity: tuple[float, float, float],
                  stalk_position: str, num_stalks: int,
@@ -229,6 +245,8 @@ def analyze_scan(input_filename: str,
 		:param input_filename: the location of the scan file in data/scans/
 		:param shot: the shot number/name
 		:param tim: the TIM number
+		:param particle: the type of radiation being detected ("deuteron" for CR39 or "xray" for an image plate)
+		:param detector_index: the index of the detector, to identify it out of multiple detectors of the same type
 		:param rA: the aperture radius (cm)
 		:param sA: the aperture spacing (cm), which also encodes the shape of the aperture array. a positive number
 		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
@@ -250,16 +268,13 @@ def analyze_scan(input_filename: str,
 		         pictures have been taken and also saved.
 	"""
 	# start by parsing the filter stacks
-	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
 	if particle == "deuteron":
 		contour = DEUTERON_CONTOUR
 		detector_type = "cr39"
-		detector_index = 0
 		fade_time = None
 	else:
 		contour = X_RAY_CONTOUR
 		detector_type = "ip"
-		detector_index = int(re.search(r"ip([0-9]+)", input_filename, re.IGNORECASE).group(1))
 		fade_time = load_fade_time(input_filename)
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
 	num_detectors = count_detectors(filtering, detector_type)
@@ -267,7 +282,7 @@ def analyze_scan(input_filename: str,
 	# then iterate thru each filtering section
 	grid_parameters, source_plane = None, None
 	source_stack: list[NDArray[float]] = []
-	statistics: list[dict[str, float]] = []
+	statistics: list[dict[str, Any]] = []
 	filter_strings: list[str] = []
 	energy_bounds: list[tuple[float, float]] = []
 	indices: list[str] = []
@@ -292,7 +307,7 @@ def analyze_scan(input_filename: str,
 			statistics += filter_section_statistics  # TODO: sort results by energy
 			for energy_cut_index, statblock in enumerate(filter_section_statistics):
 				filter_strings.append(print_filtering(filter_stack))
-				energy_bounds.append((statblock["min_energy"], statblock["max_energy"]))
+				energy_bounds.append((statblock["energy_min"], statblock["energy_max"]))
 				indices.append(f"{detector_index}{filter_section_index}{energy_cut_index}")
 
 	if len(source_stack) == 0:
@@ -348,6 +363,20 @@ def analyze_scan(input_filename: str,
 			f"{shot}-tim{tim}-{particle}-{detector_index}", source_plane, source_stack, contour,
 			projected_offset, projected_flow, projected_stalk, num_stalks)
 
+	grid_matrix, grid_x0, grid_y0 = grid_parameters
+	for statblock in statistics:
+		statblock["shot"] = shot
+		statblock["tim"] = tim
+		statblock["particle"] = particle
+		statblock["detector index"] = detector_index
+		statblock["x0"] = grid_x0
+		statblock["y0"] = grid_y0
+		scale, rotation, skew, skew_rotation = decompose_2x2_into_intuitive_parameters(grid_matrix)
+		statblock["M"] = scale/sA
+		statblock["grid angle"] = degrees(rotation)
+		statblock["grid skew"] = skew
+		statblock["grid skew angle"] = degrees(skew_rotation)
+
 	return statistics
 
 
@@ -358,7 +387,7 @@ def analyze_scan_section(input_filename: str,
                          grid_parameters: Optional[HexGridParameters],
                          source_plane: Optional[Grid],
                          skip_reconstruction: bool, show_plots: bool,
-                         ) -> tuple[HexGridParameters, Grid, list[NDArray[float]], list[dict[str, float]]]:
+                         ) -> tuple[HexGridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
 		:param input_filename: the location of the scan file in data/scans/
 		:param shot: the shot number/name
@@ -403,7 +432,7 @@ def analyze_scan_section(input_filename: str,
 
 	# prepare the coordinate grids
 	if not skip_reconstruction:
-		num_tracks, xmin, xmax, ymin, ymax = count_tracks_in_scan(input_filename, 0, inf, False)
+		num_tracks, x_min, x_max, y_min, y_max = count_tracks_in_scan(input_filename, 0, inf, False)
 		logging.info(f"found {num_tracks:.4g} tracks in the file")
 		if num_tracks < 1e+3:
 			logging.warning("Not enuff tracks to reconstruct")
@@ -428,7 +457,7 @@ def analyze_scan_section(input_filename: str,
 			data_polygon = None
 		if data_polygon is None:
 			if old_data_polygon is None:
-				data_polygon = [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)]
+				data_polygon = [(x_min, y_min), (x_min, y_max), (x_max, y_max), (x_max, y_min)]
 			else:
 				data_polygon = old_data_polygon
 		else:
@@ -452,8 +481,12 @@ def analyze_scan_section(input_filename: str,
 	else:
 		logging.info(f"re-loading the previous reconstructions")
 		data_polygon = None
-		centers, grid_transform = None, None
-		M = M_gess  # TODO: re-load the previus M and transform
+		centers = None
+		previus_parameters = load_shot_info(shot, tim)
+		M = previus_parameters["M"]
+		grid_transform = compose_2x2_from_intuitive_parameters(
+			sA*previus_parameters["M"], previus_parameters["grid angle"],
+			previus_parameters["grid skew"], previus_parameters["grid skew angle"])
 
 	# now go thru each energy cut and compile the results
 	source_stack: list[NDArray[float]] = []
@@ -470,14 +503,9 @@ def analyze_scan_section(input_filename: str,
 		except (DataError, FilterError) as e:
 			logging.warning(e)
 		else:
-			statblock.update(**dict(
-				shot=shot,
-				tim=tim,
-				particle=particle,
-				filtering=print_filtering(filter_stack),
-				min_energy=energy_min,
-				max_energy=energy_max,
-			))
+			statblock["filtering"] = print_filtering(filter_stack)
+			statblock["energy_min"] = energy_min
+			statblock["energy_max"] = energy_max
 			source_stack.append(source)
 			results.append(statblock)
 
@@ -493,7 +521,7 @@ def analyze_scan_section_cut(input_filename: str,
                              energy_min: float, energy_max: float,
                              output_plane: Optional[Grid],
                              skip_reconstruction: bool, show_plots: bool
-                             ) -> tuple[Grid, NDArray[float], dict[str, float]]:
+                             ) -> tuple[Grid, NDArray[float], dict[str, Any]]:
 	""" reconstruct the penumbral image contained in a single energy cut in a single filtering
 	    region of a single scan file.
 		:param input_filename: the location of the scan file in data/scans/
@@ -578,7 +606,7 @@ def analyze_scan_section_cut(input_filename: str,
 		Q, r_max = do_1d_reconstruction(
 			input_filename, diameter_min, diameter_max,
 			energy_min, energy_max,
-			centers, M*rA, M*sA, data_polygon, show_plots) # TODO: infer rA, as well
+			centers, M*rA, M*sA, data_polygon, show_plots) # TODO: infer rA, as well?
 
 		if r_max > r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution:
 			logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
@@ -603,7 +631,7 @@ def analyze_scan_section_cut(input_filename: str,
 		if input_filename.endswith(".cpsa"): # if it's a cpsa file
 			x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
 			for x_center, y_center in centers:
-				shifted_image_plane = image_plane.shifted(x_center, y_center)
+				shifted_image_plane = image_plane.shifted(x_center, y_center)  # TODO: rotate along with the grid?
 				local_image = np.histogram2d(x_tracks, y_tracks,
 				                             bins=(shifted_image_plane.x.get_edges(),
 				                                   shifted_image_plane.y.get_edges()))[0]
@@ -655,16 +683,7 @@ def analyze_scan_section_cut(input_filename: str,
 	# if we’re skipping the reconstruction, just load the previus stacked penumbra
 	else:
 		logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
-		old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'tim': str})
-		matching_record = (old_summary.shot == shot) & \
-		                  (old_summary.tim == tim) & \
-		                  (old_summary.energy_min == energy_min) & \
-		                  (old_summary.energy_max == energy_max) & \
-		                  (old_summary.filtering == filter_str)
-		if np.any(matching_record):
-			previus_parameters = old_summary[matching_record].iloc[-1]
-		else:
-			raise RecordNotFoundError(f"couldn’t find {shot} TIM{tim} {filter_str} {energy_min}–{energy_max} cut in summary.csv")
+		previus_parameters = load_shot_info(shot, tim, energy_min, energy_max, filter_str)
 		account_for_overlap = False
 		r_psf, r_max, r_object, num_bins_K = 0, 0, 0, 0
 		Q = previus_parameters.Q
@@ -794,13 +813,13 @@ def analyze_scan_section_cut(input_filename: str,
 		residual = residual.T  # remember to convert from (y,x) indexing to (i,j)
 		reconstructed_image = image - residual
 
-	logging.info(f"  ∫B = {np.sum(output*output_plane.pixel_area)*4*pi :.4g} deuterons")
-
 	# calculate and print the main shape parameters
+	yeeld = np.sum(output*output_plane.pixel_area)*4*pi
 	p0, (_, _), (p2, θ2) = shape_parameters(
 		output_plane, output, contour=contour)
-	logging.info(f"  P0 = {p0/1e-4:.2f} μm")
-	logging.info(f"  P2 = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
+	logging.info(f"  ∫B dA dσ = {yeeld :.4g} deuterons")
+	logging.info(f"  P0       = {p0/1e-4:.2f} μm")
+	logging.info(f"  P2       = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 	# save and plot the results
 	if particle == "xray":
@@ -815,11 +834,13 @@ def analyze_scan_section_cut(input_filename: str,
 	save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
 	                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
 
-	return output_plane, output, dict(
-		Q=Q, dQ=0,
-		P0_magnitude=p0/1e-4, dP0_magnitude=0,
-		P2_magnitude=p2/1e-4, P2_angle=np.degrees(θ2),
-	)
+	statblock = {"Q": Q, "dQ": 0.,
+	             "yield": yeeld, "dyield": 0.,
+	             "P0 magnitude": p0/1e-4, "dP0 magnitude": 0.,
+	             "P2 magnitude": p2/1e-4, "dP2 magnitude": 0.,
+	             "P2 angle": degrees(θ2)}
+
+	return output_plane, output, statblock
 
 
 def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
@@ -1163,6 +1184,25 @@ def load_source(shot: str, tim: str, particle_index: str,
 	                          f"{energy_max}] k/MeV source for {shot}, tim{tim}, {particle_index}")
 
 
+def load_shot_info(shot: str, tim: str,
+                   energy_min: Optional[float] = None,
+                   energy_max: Optional[float] = None,
+                   filter_str: Optional[str] = None) -> pd.Series:
+	""" load the summary.csv file and look for a row that matches the given criteria """
+	old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'tim': str})
+	matching_record = (old_summary.shot == shot) & (old_summary.tim == tim)
+	if energy_min is not None:
+		matching_record &= (old_summary.energy_min == energy_min)
+	if energy_max is not None:
+		matching_record &= (old_summary.energy_max == energy_max)
+	if filter_str is not None:
+		matching_record &= (old_summary.filtering == filter_str)
+	if np.any(matching_record):
+		return old_summary[matching_record].iloc[-1]
+	else:
+		raise RecordNotFoundError(f"couldn’t find {shot} TIM{tim} \"{filter_str}\" {energy_min}–{energy_max} cut in summary.csv")
+
+
 def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_points: NDArray[float]
                        ) -> HexGridParameters:
 	""" take some points approximately arranged in a hexagonal grid and find its spacing,
@@ -1284,14 +1324,15 @@ def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float], grid_x0: float
 	y_fit = np.full(n, nan)
 	errors = np.full(n, inf)
 	x_aps, y_aps = [], []
-	for i, (dx, dy) in enumerate(get_relative_aperture_positions(1, grid_matrix, 0, image_size)):
-		distances = np.hypot(grid_x0 + dx - x_points, grid_y0 + dy - y_points)
+	for i, (x, y) in enumerate(get_relative_aperture_positions(
+			1, grid_matrix, 0, image_size, grid_x0, grid_y0)):
+		distances = np.hypot(x - x_points, y - y_points)
 		point_is_close_to_here = distances < errors
 		errors[point_is_close_to_here] = distances[point_is_close_to_here]
-		x_fit[point_is_close_to_here] = grid_x0 + dx
-		y_fit[point_is_close_to_here] = grid_y0 + dy
-		x_aps.append(grid_x0 + dx)
-		y_aps.append(grid_y0 + dy)
+		x_fit[point_is_close_to_here] = x
+		y_fit[point_is_close_to_here] = y
+		x_aps.append(x)
+		y_aps.append(y)
 	# plt.scatter(x_aps, y_aps, s=20, marker="x")
 	# plt.scatter(x_points, y_points, s=9, marker="o")
 	# plt.scatter(x_fit, y_fit, s=8, marker="o")
@@ -1427,11 +1468,15 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
-		plt.pcolormesh(x_bins, y_bins, N_full.T, cmap=CMAP["coffee"])
+		plt.pcolormesh(x_bins, y_bins, N_full.T,
+		               vmin=0, vmax=np.quantile(N_full, .99),
+		               cmap=CMAP["coffee"])
 		θ = np.linspace(0, 2*pi, 145)
 		for x0, y0, full in zip(x_circles, y_circles, circle_fullness):
-			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ), "C0-" if full else "C0--", linewidth=1.2)
-		plt.contour(x_centers, y_centers, N_clipd.T, levels=[haff_density], colors="C6", linewidths=.6)
+			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
+			         "C0-" if full else "C0--", linewidth=1.2)
+		plt.contour(x_centers, y_centers, N_clipd.T, levels=[haff_density],
+		            colors="C6", linewidths=.6)
 		plt.axis("equal")
 		plt.ylim(np.min(y_bins), np.max(y_bins))
 		plt.xlim(np.min(x_bins), np.max(x_bins))

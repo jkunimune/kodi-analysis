@@ -243,13 +243,15 @@ def inside_polygon(polygon: list[Point], x: np.ndarray, y: np.ndarray):
 
 
 def get_relative_aperture_positions(spacing: float, transform: NDArray[float],
-                                    r_img: float, r_max: float) -> Generator[tuple[float, float], None, None]:
+                                    r_img: float, r_max: float,
+                                    x0: float = 0., y0: float = 0.
+                                    ) -> Generator[tuple[float, float], None, None]:
 	""" yield the positions of the individual penumbral images in the array relative
 		to the center, in the detector plane
 	"""
 	true_spacing = spacing*np.linalg.norm(transform, ord=2)
 	if true_spacing == 0:
-		yield 0, 0
+		yield x0, y0
 	else:
 		n = ceil(r_max/true_spacing)
 		for i in range(-n, n + 1):
@@ -258,7 +260,7 @@ def get_relative_aperture_positions(spacing: float, transform: NDArray[float],
 				dξ = (2*j + i%2)/2
 				dx, dy = spacing*transform@[dξ, dυ]
 				if np.hypot(dx, dy) + r_img <= r_max:
-					yield dx, dy
+					yield x0 + dx, y0 + dy
 
 
 def abel_matrix(r_bins):
@@ -284,6 +286,36 @@ def cumul_pointspread_function_matrix(r_source, r_image, r_pointspread_ref, f_po
 	f_pointspread = np.interp(r_pointspread, r_pointspread_ref, f_pointspread_ref)
 	res = integrate.trapezoid(f_pointspread, θ, axis=2)
 	return res
+
+
+def decompose_2x2_into_intuitive_parameters(matrix: NDArray[float]
+                                            ) -> tuple[float, float, float, float]:
+	""" take an array and decompose it into four scalars that uniquely define it """
+	if matrix.shape != (2, 2):
+		raise ValueError("the word 2x2 is in the name of the function, my dude.")
+	U, (σ1, σ2), VT = np.linalg.svd(matrix)
+	scale = sqrt(σ1*σ2)
+	skew = 1 - σ2/σ1
+	left_angle = np.arcsin(U[1, 0])
+	rite_angle = np.arcsin(VT[0, 1])
+	angle = left_angle + rite_angle
+	skew_angle = left_angle - rite_angle
+	return scale, angle, skew, skew_angle
+
+
+def compose_2x2_from_intuitive_parameters(scale: float, angle: float, skew: float, skew_angle: float
+                                          ) -> NDArray[float]:
+	""" take four scalars that together uniquely define an array, and put together that array """
+	σ1 = scale/sqrt(1 - skew)
+	σ2 = scale/sqrt(1 + skew)
+	Σ = np.array([[σ1, 0], [0, σ2]])
+	left_angle = (angle + skew_angle)/2
+	rite_angle = (angle - skew_angle)/2
+	U = np.array([[cos(left_angle), -sin(left_angle)],
+	              [sin(left_angle),  cos(left_angle)]])
+	V = np.array([[cos(rite_angle), -sin(rite_angle)],
+	              [sin(rite_angle),  cos(rite_angle)]])
+	return U @ Σ @ V.T
 
 
 def covariance_from_harmonics(p0, p1, θ1, p2, θ2):
