@@ -3,17 +3,19 @@ from math import inf, nan
 from typing import Callable
 
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 from scipy import interpolate, integrate, optimize
 
+import coordinate
 import detector
 from coordinate import Grid
 from hdf5_util import load_hdf5
 from plots import plot_electron_temperature
 from util import parse_filtering, print_filtering
 
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 TIMS = ["2", "4", "5"]
 
@@ -87,7 +89,7 @@ def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[f
 			return nan, nan
 
 
-def analyze(shot: str, tim: str):
+def analyze(shot: str, tim: str, num_stalks: int) -> float:
 	# set it to work from the base directory regardless of whence we call the file
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir(os.path.dirname(os.getcwd()))
@@ -96,10 +98,10 @@ def analyze(shot: str, tim: str):
 	images, errors, filter_stacks, fade_times = load_all_xray_images_for(shot, tim)
 	if len(images) == 0:
 		print(f"can’t find anything for shot {shot} TIM{tim}")
-		return
+		return nan
 	elif len(images) == 1:
 		print(f"can’t infer temperatures with only one image on shot {shot} TIM{tim}")
-		return
+		return nan
 
 	# calculate sensitivity curve for each filter image
 	reference_energies = np.geomspace(1, 1e3, 61)
@@ -180,7 +182,13 @@ def analyze(shot: str, tim: str):
 	plt.tight_layout()
 
 	# plot the temperature
-	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, basis, temperature_map, emission_map)
+	tim_coordinates = coordinate.tim_coordinates(tim)
+	stalk_direction = coordinate.project(1., *coordinate.TPS_LOCATIONS[2], tim_coordinates)
+	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, basis,
+	                          temperature_map, emission_map,
+	                          stalk_direction, num_stalks)
+
+	return np.average(temperature_map, weights=emission_map)
 
 
 def load_all_xray_images_for(shot: str, tim: str) \
@@ -212,9 +220,31 @@ def load_all_xray_images_for(shot: str, tim: str) \
 
 
 def main():
+	if os.path.basename(os.getcwd()) == "src":
+		os.chdir("..")
+
+	shot_table = pd.read_csv('data/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+	reconstruction_table = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
+	emissions = []
+	temperatures = []
 	for shot in SHOTS:
 		for tim in TIMS:
-			analyze(shot, tim)
+			emissions.append([])
+			for _, record in reconstruction_table[(reconstruction_table.shot == shot) &
+			                                      (reconstruction_table.tim == tim)].iterrows():
+				if record["particle"] == "xray":
+					emissions[-1].append(record["yield"])
+			num_stalks = shot_table.loc[shot]["stalks"]
+			temperatures.append(analyze(shot, tim, num_stalks))
+	emissions = np.array(emissions)
+	temperatures = np.array(temperatures)
+
+	fig, (top_ax, bottom_ax) = plt.subplots(2, 1)
+	top_ax.scatter(emissions)
+	top_ax.set_ylabel("Detected x-ray yield (idk)")
+	bottom_ax.scatter(temperatures)
+	bottom_ax.set_ylabel("Electron temperature (keV)")
+	plt.show()
 
 
 if __name__ == "__main__":

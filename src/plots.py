@@ -449,17 +449,23 @@ def plot_overlaid_contores(filename: str,
 
 
 def plot_electron_temperature(filename: str, show: bool,
-                              grid: Grid, temperature: NDArray[float], emission: NDArray[float]) -> None:
+                              grid: Grid, temperature: NDArray[float], emission: NDArray[float],
+                              projected_stalk_direction: tuple[float, float, float], num_stalks: int) -> None:
 	""" plot the electron temperature as a heatmap, along with some contours to show where the
 	    implosion actually is.
 	"""
 	plt.figure()
-	plt.imshow(temperature, extent=grid.extent,
+	plt.imshow(temperature.T, extent=grid.extent,
 	           cmap="inferno", origin="lower", vmin=0, vmax=2)
 	plt.colorbar().set_label("Te (keV)")
 	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
 	            colors="#000", linewidths=1,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
+	x_stalk, y_stalk, _ = projected_stalk_direction
+	if num_stalks == 1:
+		plt.plot([0, x_stalk*50], [0, y_stalk*50], color="#000", linewidth=2)
+	elif num_stalks == 2:
+		plt.plot([-x_stalk*50, x_stalk*50], [-y_stalk*50, y_stalk*50], color="#000", linewidth=2)
 	temperature_integrated = temperature[grid.x.num_bins//2, grid.y.num_bins//2]
 	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
 	         ha='left', va='top', transform=plt.gca().transAxes)
