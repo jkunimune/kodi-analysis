@@ -49,7 +49,7 @@ SUPPORTED_FILETYPES = [".h5", ".pkl"]
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = False
-SHOW_CENTER_FINDING_CALCULATION = False
+SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = False
 SHOW_POINT_SPREAD_FUNCCION = False
 
@@ -279,6 +279,7 @@ def analyze_scan(input_filename: str,
 		detector_type = "ip"
 		fade_time = load_fade_time(input_filename)
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
+	filter_stacks = sorted(filter_stacks, key=lambda stack: detector.xray_energy_bounds(stack, 0)[0])
 	num_detectors = count_detectors(filtering, detector_type)
 
 	# then iterate thru each filtering section
