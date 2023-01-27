@@ -49,7 +49,7 @@ SUPPORTED_FILETYPES = [".h5", ".pkl"]
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = False
-SHOW_CENTER_FINDING_CALCULATION = True
+SHOW_CENTER_FINDING_CALCULATION = False
 SHOW_ELECTRIC_FIELD_CALCULATION = False
 SHOW_POINT_SPREAD_FUNCCION = False
 
@@ -503,7 +503,7 @@ def analyze_scan_section(input_filename: str,
 				f"{section_index}{energy_cut_index}", max(3, len(energy_cuts)),
 				energy_min, energy_max,
 				source_plane, skip_reconstruction, show_plots)
-		except (DataError, FilterError) as e:
+		except (DataError, FilterError, RecordNotFoundError) as e:
 			logging.warning(f"  {e}")
 		else:
 			statblock["filtering"] = print_filtering(filter_stack)
@@ -1194,13 +1194,13 @@ def load_shot_info(shot: str, tim: str,
                    filter_str: Optional[str] = None) -> pd.Series:
 	""" load the summary.csv file and look for a row that matches the given criteria """
 	old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'tim': str})
-	matching_record = (old_summary.shot == shot) & (old_summary.tim == tim)
+	matching_record = (old_summary["shot"] == shot) & (old_summary["tim"] == tim)
 	if energy_min is not None:
-		matching_record &= (old_summary.energy_min == energy_min)
+		matching_record &= np.isclose(old_summary["energy min"], energy_min)
 	if energy_max is not None:
-		matching_record &= (old_summary.energy_max == energy_max)
+		matching_record &= np.isclose(old_summary["energy max"], energy_max)
 	if filter_str is not None:
-		matching_record &= (old_summary.filtering == filter_str)
+		matching_record &= (old_summary["filtering"] == filter_str)
 	if np.any(matching_record):
 		return old_summary[matching_record].iloc[-1]
 	else:
