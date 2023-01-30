@@ -18,7 +18,7 @@ from util import downsample_2d, saturate, center_of_mass, \
 
 matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
-plt.rcParams.update({'font.family': 'sans', 'font.size': 18})
+plt.rcParams.update({'font.family': 'sans', 'font.size': 14})
 
 
 PLOT_THEORETICAL_50c_CONTOUR = True
@@ -47,6 +47,7 @@ def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
 			plt.savefig(filepath, transparent=filetype != 'png') # TODO: why aren't these transparent?
 		except ValueError:
 			print("there's some edge case that makes this fail for no good reason")
+			raise
 		logging.debug(f"  saving {filepath}")
 
 
@@ -56,11 +57,7 @@ def choose_colormaps(particle: str, num_cuts: int) -> list[colors.ListedColormap
 
 def make_colorbar(vmin: float, vmax: float, label: str, facecolor=None) -> None:
 	ticks = ticker.MaxNLocator(nbins=8, steps=[1, 2, 5, 10]).tick_values(vmin, vmax)
-	try:
-		colorbar = plt.colorbar(ticks=ticks, spacing='proportional')
-	except IndexError:
-		print("I'm not sure what causes this, but creating a colorbar failed.")
-		return
+	colorbar = plt.colorbar(ticks=ticks, spacing='proportional')
 	colorbar.set_label(label)
 	colorbar.ax.set_ylim(vmin, vmax)
 	# colorbar.ax.set_yticks(ticks=ticks, labels=[f"{tick:.3g}" for tick in ticks])
@@ -123,8 +120,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 		plt.title(f"$h\\nu$ = {energy_min:.0f} – {energy_max:.0f} keV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	bar = plt.colorbar()
-	bar.ax.set_ylabel("Counts")
+	make_colorbar(0, vmax, "Counts")
 	plt.tight_layout()
 
 	save_current_figure(f"{filename}-penumbra")
@@ -175,8 +171,7 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	plt.axis('square')
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	bar = plt.colorbar()
-	bar.ax.set_ylabel("(reconst. - data)/reconst.")
+	make_colorbar(-1/3, 1/3, "(reconst. – data)/reconst.")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-residual")
 
@@ -412,7 +407,7 @@ def plot_overlaid_contores(filename: str,
 	x_stalk, y_stalk, z_stalk = projected_stalk
 
 	particle = filename.split("-")[-2]
-	colormaps = choose_colormaps(particle, len(images))
+	colormaps = choose_colormaps(particle, len(images))  # TODO: choose colors, not colormaps
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
@@ -457,7 +452,7 @@ def plot_electron_temperature(filename: str, show: bool,
 	plt.figure()
 	plt.imshow(temperature.T, extent=grid.extent,
 	           cmap="inferno", origin="lower", vmin=0, vmax=2)
-	plt.colorbar().set_label("Te (keV)")
+	make_colorbar(0, 2, "Te (keV)")
 	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
 	            colors="#000", linewidths=1,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
