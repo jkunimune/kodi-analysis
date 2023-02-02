@@ -121,13 +121,13 @@ def log_xray_transmission(energy: Numeric, thickness: float, material: str) -> N
 	return -attenuation*thickness
 
 
-def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], time: float,
+def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_time: float,
                          thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
 	""" calculate the log of the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
-	    :param time: the delay between the experiment and the image plate scan (min)
+	    :param fade_time: the delay between the experiment and the image plate scan (min)
 	    :param thickness: the thickness of the image plate (μm)
 	    :param psl_attenuation: the attenuation constant of the image plate's characteristic photostimulated luminescence
 	    :param material: the name of the image plate material (probably just the elemental symbol)
@@ -136,28 +136,28 @@ def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], time
 	attenuation = attenuation_curve(energy, material)
 	self_transparency = 1/(1 + psl_attenuation/attenuation)
 	log_sensitivity = np.log(
-		self_transparency * (1 - np.exp(-attenuation*thickness/self_transparency)) * psl_fade(time))
+		self_transparency * (1 - np.exp(-attenuation*thickness/self_transparency)) * psl_fade(fade_time))
 	for thickness, material in filter_stack:
 		log_sensitivity += log_xray_transmission(energy, thickness, material)
 	return log_sensitivity
 
 
-def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], time: float,
+def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_time: float,
                      thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
 	""" calculate the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
-	    :param time: the delay between the experiment and the image plate scan (min)
+	    :param fade_time: the delay between the experiment and the image plate scan (min)
 	    :param thickness: the thickness of the image plate (μm)
 	    :param psl_attenuation: the attenuation constant of the image plate's characteristic photostimulated luminescence
 	    :param material: the name of the image plate material (probably just the elemental symbol)
 	    :return: the fraction of photic energy that reaches the scanner
 	"""
-	return np.exp(log_xray_sensitivity(energy, filter_stack, time, thickness, psl_attenuation, material))
+	return np.exp(log_xray_sensitivity(energy, filter_stack, fade_time, thickness, psl_attenuation, material))
 
 
-def xray_energy_bounds(filter_stack: list[(float, str)], time: float, level=.10,
+def xray_energy_bounds(filter_stack: list[(float, str)], level=.10,
                        ip_thickness=112., ip_psl_attenuation=1/45., ip_material="BaFBr") -> (float, float):
 	""" calculate the minimum and maximum energies this filter and image plate configuration can detect
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
@@ -168,7 +168,7 @@ def xray_energy_bounds(filter_stack: list[(float, str)], time: float, level=.10,
 	    :param ip_material: the name of the image plate material (probably just the elemental symbol)
 	"""
 	energy = np.geomspace(3e-1, 3e+3, 401)
-	sensitivity = xray_sensitivity(energy, filter_stack, time, ip_thickness, ip_psl_attenuation, ip_material)
+	sensitivity = xray_sensitivity(energy, filter_stack, 0, ip_thickness, ip_psl_attenuation, ip_material)
 	lower = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][0]]
 	upper = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][-1]]
 	return lower, upper

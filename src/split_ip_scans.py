@@ -59,8 +59,8 @@ if __name__ == "__main__":
 				dy = dataset.attrs["pixelSizeY"]*1e-4 # (cm)
 				if dx != dy:
 					raise ValueError("I don't want to deal with rectangular pixels")
-			grid = Grid(LinSpace(0, dx*image.shape[0], dx),
-			            LinSpace(0, dy*image.shape[1], dx))
+			grid = Grid(LinSpace(0, dx*image.shape[0], image.shape[0]),
+			            LinSpace(0, dy*image.shape[1], image.shape[1]))
 
 			grid_reduc, image_reduc = grid, image
 			while image_reduc.size > 100000:

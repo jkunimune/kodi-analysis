@@ -273,11 +273,9 @@ def analyze_scan(input_filename: str,
 	if particle == "deuteron":
 		contour = DEUTERON_CONTOUR
 		detector_type = "cr39"
-		fade_time = None
 	else:
 		contour = X_RAY_CONTOUR
 		detector_type = "ip"
-		fade_time = load_fade_time(input_filename)
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
 	filter_stacks = sorted(filter_stacks, key=lambda stack: detector.xray_energy_bounds(stack, 0)[0])
 	num_detectors = count_detectors(filtering, detector_type)
@@ -323,8 +321,7 @@ def analyze_scan(input_filename: str,
 	             x=source_plane.x.get_bins()/1e-4,
 	             y=source_plane.y.get_bins()/1e-4,
 	             images=np.transpose(source_stack, (0, 2, 1))*1e-4**2,  # save it with (y,x) indexing, not (i,j)
-	             etch_time=etch_time if etch_time is not None else nan,
-	             fade_time=fade_time if fade_time is not None else nan)
+	             etch_time=etch_time if etch_time is not None else nan)
 	# and replot each of the individual sources in the correct color
 	for cut_index in range(len(source_stack)):
 		if particle == "deuteron":
@@ -425,8 +422,7 @@ def analyze_scan_section(input_filename: str,
 
 	# figure out the energy cuts given the filtering and type of radiation
 	if particle == "xray":
-		fade_time = load_fade_time(input_filename)
-		energy_min, energy_max = detector.xray_energy_bounds(filter_stack, fade_time, .10)  # these energy bounds are in keV
+		energy_min, energy_max = detector.xray_energy_bounds(filter_stack, .10)  # these energy bounds are in keV
 		energy_cuts = [(0, (energy_min, energy_max))]
 	elif shot.startswith("synth"):
 		energy_cuts = [(0, (0., inf))]
@@ -1166,11 +1162,6 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 
-def load_fade_time(filename: str) -> float:
-	""" open up a HDF5 file and read a single number from the inside: the fade time in minutes """
-	return load_hdf5(filename, ["scan_delay"])[0]/60
-
-
 def load_source(shot: str, tim: str, particle_index: str,
                 filter_stack: list[Filter], energy_min: float, energy_max: float,
                 ) -> tuple[Grid, NDArray[float]]:
@@ -1379,7 +1370,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 		# make a histogram
 		N_full, _, _ = np.histogram2d(
-			x_tracks, y_tracks, bins=(scan_plane.x.get_bins(), scan_plane.y.get_bins()))
+			x_tracks, y_tracks, bins=(scan_plane.x.get_edges(), scan_plane.y.get_edges()))
 
 	elif filename.endswith(".pkl"):  # if it's a pickle file
 		with open(filename, "rb") as f:

@@ -100,7 +100,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 		os.chdir(os.path.dirname(os.getcwd()))
 
 	# load imaging data
-	images, errors, filter_stacks, fade_times = load_all_xray_images_for(shot, tim)
+	images, errors, filter_stacks = load_all_xray_images_for(shot, tim)
 	if len(images) == 0:
 		print(f"can’t find anything for shot {shot} TIM{tim}")
 		return nan, nan
@@ -111,8 +111,8 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	# calculate sensitivity curve for each filter image
 	reference_energies = np.geomspace(1, 1e3, 61)
 	log_sensitivities = []
-	for filter_stack, fade_time in zip(filter_stacks, fade_times):
-		log_sensitivities.append(detector.log_xray_sensitivity(reference_energies, filter_stack, fade_time))
+	for filter_stack in filter_stacks:
+		log_sensitivities.append(detector.log_xray_sensitivity(reference_energies, filter_stack, 0))
 	log_sensitivities = np.array(log_sensitivities)
 
 	# calculate some synthetic lineouts
@@ -204,13 +204,13 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 
 
 def load_all_xray_images_for(shot: str, tim: str) \
-		-> tuple[list[Distribution], list[Distribution], list[list[tuple[float, str]]], list[float]]:
+		-> tuple[list[Distribution], list[Distribution], list[list[tuple[float, str]]]]:
 	last_centroid = (0, 0)
-	images, errors, filter_stacks, fade_times = [], [], [], []
+	images, errors, filter_stacks = [], [], []
 	for filename in os.listdir("results/data"):
 		if shot in filename and f"tim{tim}" in filename and "xray" in filename and "source" in filename:
-			x, y, source_stack, filtering, fade_time = load_hdf5(
-				f"results/data/{filename}", keys=["x", "y", "images", "filtering", "fade_time"])
+			x, y, source_stack, filtering = load_hdf5(
+				f"results/data/{filename}", keys=["x", "y", "images", "filtering"])
 			source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 
 			# try to aline it to the previus stack
@@ -237,8 +237,7 @@ def load_all_xray_images_for(shot: str, tim: str) \
 				errors.append(Distribution(
 					np.sum(source)*(x[1] - x[0])*(y[1] - y[0])/6,
 					lambda x: source.max()/6))  # TODO: real error bars
-				fade_times.append(fade_time)
-	return images, errors, filter_stacks, fade_times
+	return images, errors, filter_stacks
 
 
 def main():
