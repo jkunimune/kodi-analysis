@@ -15,7 +15,7 @@ from hdf5_util import load_hdf5
 from plots import plot_electron_temperature
 from util import parse_filtering, print_filtering
 
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 TIMS = ["2", "4", "5"]
 
@@ -270,7 +270,7 @@ def main():
 	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(6, 5))
 	x = np.ravel(
 		np.arange(len(SHOTS))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(TIMS))[np.newaxis, :])
-	top_ax.grid(axis="y", which="all")
+	top_ax.grid(axis="y", which="both")
 	for k, (marker, label) in enumerate(zip("*ovd", labels)):
 		top_ax.scatter(x, emissions[:, k], marker=marker, color=f"C{k}", label=label, zorder=10)
 	top_ax.legend()
