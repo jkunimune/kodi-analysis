@@ -32,10 +32,10 @@ RECTANGULAR_FIGURE_SIZE = (6.4, 4.8)
 LONG_FIGURE_SIZE = (8, 5)
 
 COLORMAPS: dict[str, list[tuple[int, str]]] = {
-	"deuteron": [(4, "pinks"), (1, "reds"), (2, "oranges"), (0, "yellows"), (3, "olives"),
-	             (5, "greens"), (6, "aquas"), (7, "blues"), (8, "violets")],
-	"xray":     [(8, "pinks"), (7, "reds"), (6, "oranges"), (5, "yellows"), (4, "olives"),
-	             (3, "greens"), (2, "aquas"), (0, "blues"), (1, "violets")],
+	"deuteron": [(4, "pinks"), (1, "reds"), (2, "oranges"), (0, "yellows"), (3, "greens"),
+	             (5, "aquas"), (6, "cyans"), (7, "blues"), (8, "violets")],
+	"xray":     [(8, "pinks"), (7, "reds"), (6, "oranges"), (5, "yellows"), (4, "greens"),
+	             (3, "aquas"), (2, "cyans"), (0, "blues"), (1, "violets")],
 }
 
 
