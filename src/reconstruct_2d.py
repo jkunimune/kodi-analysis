@@ -226,8 +226,7 @@ def analyze(shots_to_reconstruct: list[str],
 				result,
 				ignore_index=True)
 
-		summary = summary.sort_values(['shot', 'tim', 'energy min', 'energy max'],
-		                              ascending=[True, True, True, False])
+		summary = summary.sort_values(['shot', 'tim', 'particle', 'energy max'])
 		try:
 			summary.to_csv("results/summary.csv", index=False) # save the results to disk
 		except PermissionError:
@@ -277,7 +276,7 @@ def analyze_scan(input_filename: str,
 		contour = X_RAY_CONTOUR
 		detector_type = "ip"
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
-	filter_stacks = sorted(filter_stacks, key=lambda stack: detector.xray_energy_bounds(stack, 0)[0])
+	filter_stacks = sorted(filter_stacks, key=lambda stack: detector.xray_energy_bounds(stack, 0)[1])
 	num_detectors = count_detectors(filtering, detector_type)
 
 	# then iterate thru each filtering section
