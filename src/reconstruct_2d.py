@@ -465,7 +465,7 @@ def analyze_scan_section(input_filename: str,
 		# find the centers and spacings of the penumbral images
 		centers, grid_transform = find_circle_centers(
 			input_filename, M_gess*rA, M_gess*sA, grid_parameters, data_polygon, show_plots)
-		grid_parameters = (grid_transform, centers[0][0], centers[0][1])
+		new_grid_parameters = (grid_transform, centers[0][0], centers[0][1])
 		grid_major_scale, grid_minor_scale = linalg.svdvals(grid_transform)
 		grid_mean_scale = sqrt(grid_major_scale*grid_minor_scale)
 		# update the magnification to be based on this check
@@ -485,6 +485,7 @@ def analyze_scan_section(input_filename: str,
 		grid_transform = compose_2x2_from_intuitive_parameters(
 			sA*previus_parameters["M"], previus_parameters["grid angle"],
 			previus_parameters["grid skew"], previus_parameters["grid skew angle"])
+		new_grid_parameters = (grid_transform, 0, 0)
 
 	# now go thru each energy cut and compile the results
 	source_stack: list[NDArray[float]] = []
@@ -506,6 +507,9 @@ def analyze_scan_section(input_filename: str,
 			statblock["energy max"] = energy_max
 			source_stack.append(source)
 			results.append(statblock)
+
+	if len(results) > 0:  # update the grid iff any of these analyses worked
+		grid_parameters = new_grid_parameters
 
 	return grid_parameters, source_plane, source_stack, results
 
