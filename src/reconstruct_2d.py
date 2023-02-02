@@ -642,10 +642,7 @@ def analyze_scan_section_cut(input_filename: str,
 				image += local_image*area
 				image_plicity += area
 
-			# since CR-39 is flipped horizontally before scanning and flipped verticly after scanning, rotate 180°
-			image_plane = image_plane.rotated_180()
-			image = image[::-1, ::-1]
-			image_plicity = image_plicity[::-1, ::-1]
+			# since PCIS CR-39 scans are saved like you’re looking toward TCC, do not rotate it
 
 		else:
 			if input_filename.endswith(".pkl"): # if it's a pickle file
@@ -664,7 +661,6 @@ def analyze_scan_section_cut(input_filename: str,
 				raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
 
 			scan_plane = Grid.from_edge_array(x, y)
-			# if you're near the Nyquist frequency, consider *not* resampling
 			if scan_plane.pixel_width > image_plane.pixel_width:
 				logging.warning(f"The scan resolution of this image plate scan ({scan_plane.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
 				                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
@@ -677,10 +673,11 @@ def analyze_scan_section_cut(input_filename: str,
 				image[area > 0] += shifted_image[area > 0]
 				image_plicity += area
 
-			# since image plates are flipped horizontally before scanning, flip horizontally
-			image_plane = image_plane.flipped_horizontally()
-			image = image[::-1, :]
-			image_plicity = image_plicity[::-1, :]
+			if input_filename.endswith(".h5"):
+				# since image plates are flipped vertically before scanning, flip vertically
+				image_plane = image_plane.flipped_vertically()
+				image = image[:, ::-1]
+				image_plicity = image_plicity[:, ::-1]
 
 	# if we’re skipping the reconstruction, just load the previus stacked penumbra
 	else:
@@ -1438,9 +1435,9 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		x0, y0, r_apparent = fit_circle(x_contour, y_contour)
 		if 0.7*r_nominal < r_apparent < 1.3*r_nominal:  # check the radius to avoid picking up noise
 			linear_gap = hypot(x_contour[-1] - x_contour[0], y_contour[-1] - y_contour[0])
-			diameter = np.max(np.hypot(x_contour - x_contour[0], y_contour - y_contour[0]))
-			if diameter > r_apparent:  # circle is big enuff to use its data…
-				if diameter < 1.5*r_apparent or linear_gap > r_apparent:  # …but not complete enuff to trust its center
+			extent = np.max(np.hypot(x_contour - x_contour[0], y_contour - y_contour[0]))
+			if extent > r_apparent:  # circle is big enuff to use its data…
+				if extent < 1.7*r_apparent or linear_gap > 1.3*r_apparent:  # …but not complete enuff to trust its center
 					circles.append((x0, y0, r_apparent, False))
 				else:  # …and big enuff to trust its center
 					circles.append((x0, y0, r_apparent, True))
