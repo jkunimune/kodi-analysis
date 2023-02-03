@@ -17,6 +17,9 @@ from util import fit_ellipse
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 TIMS = ["2", "4", "5"]
 
+SHOW_ALIGNED_LINEOUTS = False
+SHOW_ELLIPSOIDS = False
+
 
 def main():
 	if os.path.basename(os.getcwd()) == "src":
@@ -27,8 +30,9 @@ def main():
 
 	for i, shot in enumerate(SHOTS):
 		print(shot)
-		# for j in range(len(TIMS)):
-		# 	show_aligned_lineouts(shot, TIMS[j], TIMS[(j + 1)%3])
+		if SHOW_ALIGNED_LINEOUTS:
+			for j in range(len(TIMS)):
+				show_aligned_lineouts(shot, TIMS[j], TIMS[(j + 1)%3])
 		asymmetries[i, :] = fit_ellipsoid(shot, TIMS)
 		num_stalks[i] = get_num_stalks(shot)
 
@@ -133,42 +137,52 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 	# absolute_separation = np.linalg.lstsq(separation_directions, separation_magnitudes, rcond=None)[0]
 	# print(f"separated by ⟨{absolute_separation[0]: .2f}, {absolute_separation[1]: .2f}, {absolute_separation[2]: .2f}⟩ μm")
 
-	fig = plt.figure(figsize=(5, 5))  # Square figure
-	ax = fig.add_subplot(111, projection='3d')
-	ax.set_box_aspect([1, 1, 1])
-	plot_ellipsoid(principal_radii, principal_axes, ax)
-
-	for r, v in zip(principal_radii, principal_axes.T):
-		ax.plot(*np.transpose([-r*v, r*v]), color='k')
-	# ax.plot(*[[0, absolute_separation[i]] for i in range(3)], color='C0')
-	# ax.plot(*[[0, offset[i]] for i in range(3)], 'C1')
-
-	# Adjustment of the axen, so that they all have the same span:
-	max_radius = 1.4*max(principal_radii)
-	ax.set_xlim(-1.0*max_radius, 1.0*max_radius)
-	ax.set_ylim(-1.0*max_radius, 1.0*max_radius)
-	ax.set_zlim(-1.0*max_radius, 1.0*max_radius)
-
-	for tim in [2, 4, 5]:
-		tim_direction = coordinate.tim_coordinates(tim)[:, 2]
-		plt.plot(*np.transpose([[0, 0, 0], max_radius*tim_direction]), f'C{tim}--', label=f"To TIM{tim}")
-
-	plt.title(shot)
-	plt.show()
-
 	stalk_direction = coordinate.tps_direction()
+
+	if SHOW_ELLIPSOIDS:
+		fig = plt.figure(figsize=(5, 5))  # Square figure
+		ax = fig.add_subplot(111, projection='3d')
+		ax.set_box_aspect([1, 1, 1])
+		plot_ellipsoid(principal_radii, principal_axes, ax)
+
+		for r, v in zip(principal_radii, principal_axes.T):
+			ax.plot(*np.transpose([-r*v, r*v]), color='#44AADD')
+		# ax.plot(*[[0, absolute_separation[i]] for i in range(3)], color='C0')
+		# ax.plot(*[[0, offset[i]] for i in range(3)], 'C1')
+
+		# Adjustment of the axen, so that they all have the same span:
+		max_radius = 1.4*max(principal_radii)
+		ax.set_xlim(-1.0*max_radius, 1.0*max_radius)
+		ax.set_ylim(-1.0*max_radius, 1.0*max_radius)
+		ax.set_zlim(-1.0*max_radius, 1.0*max_radius)
+
+		for tim in [2, 4, 5]:
+			tim_direction = coordinate.tim_coordinates(tim)[:, 2]
+			plt.plot(*np.transpose([[0, 0, 0], max_radius*tim_direction]), f'C{tim}--o', label=f"To TIM{tim}")
+		plt.plot(*np.transpose([[0, 0, 0], max_radius*stalk_direction]), "k", label="Stalk")
+
+		plt.title(shot)
+		plt.legend()
+		plt.show()
+
 	magnitude = (max(principal_radii) - min(principal_radii))/np.mean(principal_radii)
-	angle = acos(abs(np.dot(principal_axes[0, :], stalk_direction)))
+	angle = acos(abs(np.dot(principal_axes[:, 0], stalk_direction)))
+	print(f"the angle between {principal_axes[:, 0]} and {stalk_direction} is {degrees(angle)}")
 	return magnitude, angle
 
 
 def polar_plot_asymmetries(shots: list[str], asymmetries: NDArray[float], num_stalks: NDArray[int]) -> None:
 	fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-	ax.scatter(asymmetries[:, 1], asymmetries[:, 0], c=num_stalks)
+	ax.scatter(asymmetries[num_stalks == 1, 1], asymmetries[num_stalks == 1, 0], c="C0", marker="^", label="One stalk")
+	ax.scatter(asymmetries[num_stalks == 2, 1], asymmetries[num_stalks == 2, 0], c="C1", marker="d", label="Two stalks")
+	ax.legend()
 	for shot, (magnitude, angle) in zip(shots, asymmetries):
-		plt.text(angle, magnitude, shot)
+		plt.text(angle, magnitude, f" {shot}")
 	ax.grid(True)
 	ax.set_thetalim(0, pi/2)
+	# ax.set_thetalabel("Angle between stalk and prolate axis")
+	ax.set_xlabel("\nProlateness (P2/P0)")
+	plt.tight_layout()
 	plt.show()
 
 
@@ -205,7 +219,7 @@ def plot_ellipsoid(semiaxes: Sequence[float], basis: NDArray[float], axes: Axes)
 		basis @ np.transpose(
 			[x, y, z], axes=(1, 0, 2)),
 		axes=(1, 0, 2))
-	axes.plot_surface(x, y, z,  rstride=4, cstride=4, color='C0', zorder=-1)
+	axes.plot_surface(x, y, z,  rstride=4, cstride=4, color='#44AADD77', zorder=-1)
 
 
 if __name__ == "__main__":
