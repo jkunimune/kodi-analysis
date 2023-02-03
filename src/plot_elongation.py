@@ -12,6 +12,7 @@ from scipy import interpolate
 import coordinate
 from coordinate import Grid
 from hdf5_util import load_hdf5
+from plots import save_current_figure
 from util import fit_ellipse
 
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
@@ -175,14 +176,16 @@ def polar_plot_asymmetries(shots: list[str], asymmetries: NDArray[float], num_st
 	fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
 	ax.scatter(asymmetries[num_stalks == 1, 1], asymmetries[num_stalks == 1, 0], c="C0", marker="^", label="One stalk")
 	ax.scatter(asymmetries[num_stalks == 2, 1], asymmetries[num_stalks == 2, 0], c="C1", marker="d", label="Two stalks")
-	ax.legend()
+	ax.legend(loc=(.60, .90))
 	for shot, (magnitude, angle) in zip(shots, asymmetries):
 		plt.text(angle, magnitude, f" {shot}")
 	ax.grid(True)
 	ax.set_thetalim(0, pi/2)
 	# ax.set_thetalabel("Angle between stalk and prolate axis")
-	ax.set_xlabel("\nProlateness (P2/P0)")
-	plt.tight_layout()
+	ax.set_xlabel("Prolateness (P2/P0)", labelpad=20.)
+	fig.tight_layout()
+	fig.savefig("results/plots/prolateness.eps", transparent=False)
+	save_current_figure("prolateness")
 	plt.show()
 
 

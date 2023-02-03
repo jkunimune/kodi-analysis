@@ -12,7 +12,7 @@ import coordinate
 import detector
 from coordinate import Grid
 from hdf5_util import load_hdf5
-from plots import plot_electron_temperature
+from plots import make_colorbar, save_current_figure
 from util import parse_filtering, print_filtering
 
 SHOW_PLOTS = True
@@ -238,6 +238,37 @@ def load_all_xray_images_for(shot: str, tim: str) \
 					np.sum(source)*(x[1] - x[0])*(y[1] - y[0])/6,
 					lambda x: source.max()/6))  # TODO: real error bars
 	return images, errors, filter_stacks
+
+
+def plot_electron_temperature(filename: str, show: bool,
+                              grid: Grid, temperature: NDArray[float], emission: NDArray[float],
+                              projected_stalk_direction: tuple[float, float, float], num_stalks: int) -> None:
+	""" plot the electron temperature as a heatmap, along with some contours to show where the
+	    implosion actually is.
+	"""
+	plt.figure()
+	plt.imshow(temperature.T, extent=grid.extent,
+	           cmap="inferno", origin="lower", vmin=0, vmax=2)
+	make_colorbar(0, 2, "Te (keV)")
+	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
+	            colors="#000", linewidths=1,
+	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
+	x_stalk, y_stalk, _ = projected_stalk_direction
+	if num_stalks == 1:
+		plt.plot([0, x_stalk*50], [0, y_stalk*50], color="#000", linewidth=2)
+	elif num_stalks == 2:
+		plt.plot([-x_stalk*50, x_stalk*50], [-y_stalk*50, y_stalk*50], color="#000", linewidth=2)
+	temperature_integrated = temperature[grid.x.num_bins//2, grid.y.num_bins//2]
+	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
+	         ha='left', va='top', transform=plt.gca().transAxes)
+	plt.xlabel("x (μm)")
+	plt.ylabel("y (μm)")
+	plt.title(filename.replace("-", " ").capitalize())
+	plt.tight_layout()
+	save_current_figure(f"{filename}-temperature")
+	if show:
+		plt.show()
+	plt.close("all")
 
 
 def main():
