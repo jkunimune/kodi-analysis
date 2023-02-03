@@ -344,7 +344,7 @@ def harmonics_from_covariance(Σ, μ):
 	return p0, (p1, θ1), (p2, θ2)
 
 
-def fit_ellipse(grid: Grid, f: NDArray[float], contour: Optional[float]):
+def fit_ellipse(grid: Grid, f: NDArray[float], contour: Optional[float] = None):
 	""" fit an ellipse to the given image, and represent that ellipse as a symmetric matrix """
 	X, Y = grid.get_pixels() # f should be indexd in the ij convencion
 

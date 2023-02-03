@@ -40,6 +40,10 @@ def tim_direction(tim: int | str) -> NDArray[float]:
 	return tim_coordinates(tim)[:, -1]
 
 
+def tps_direction(tps: int | str = 2) -> NDArray[float]:
+	return orthogonal_basis(*TPS_LOCATIONS[tps])[:, -1]
+
+
 def orthogonal_basis(polar_angle: float, azimuthal_angle: float) -> NDArray[float]:
 	""" return a 3×3 array whose collums are the i, j, and k unit vectors in the TIM coordinate
 		system specified by the given spherical angles in degrees.

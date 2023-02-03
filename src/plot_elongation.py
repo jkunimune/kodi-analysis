@@ -1,15 +1,18 @@
 import os
-from math import atan2, cos, sin
+from math import atan2, cos, sin, pi, acos, degrees
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
 from numpy.typing import NDArray
 from scipy import interpolate
 
 import coordinate
 from coordinate import Grid
 from hdf5_util import load_hdf5
+from util import fit_ellipse
 
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 TIMS = ["2", "4", "5"]
@@ -24,8 +27,8 @@ def main():
 
 	for i, shot in enumerate(SHOTS):
 		print(shot)
-		for j in range(len(TIMS)):
-			show_aligned_lineouts(shot, TIMS[j], TIMS[(j + 1)%3])
+		# for j in range(len(TIMS)):
+		# 	show_aligned_lineouts(shot, TIMS[j], TIMS[(j + 1)%3])
 		asymmetries[i, :] = fit_ellipsoid(shot, TIMS)
 		num_stalks[i] = get_num_stalks(shot)
 
@@ -89,11 +92,84 @@ def project_image_to_axis(grid: Grid, values: NDArray[float],
 
 
 def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
-	pass
+	""" fit a 3D ellipsoid to the images and then return the relative magnitude of the P2 and the
+	    angle between the P2 axis and the stalk
+	"""
+	covariance_directions = []
+	covariance_values = []
+	# separation_directions = []
+	# separation_magnitudes = []
+
+	# on each los we have
+	for tim in tims:
+		# grab the 2d covariance matrix and our axes’ coordinates in 3d
+		grid, image = load_images(shot, tim)[0]
+		basis = coordinate.tim_coordinates(tim)
+		cov, μ = fit_ellipse(grid, image)
+
+		# enumerate the four measurable covariances and the 3×3 that defines each one’s weighting
+		for j in range(2):
+			for k in range(2):
+				covariance_values.append(cov[j, k])
+				covariance_directions.append(np.ravel(np.outer(basis[:, j], basis[:, k])))
+
+		# # also enumerate the two measurable linear asymmetries and the vector that defines each’s direction
+		# for j in range(2):
+		# 	separation_magnitudes.append(dr[j])
+		# 	separation_directions.append(basis[:,j])
+
+	ellipsoid_covariances = np.linalg.lstsq(covariance_directions, covariance_values, rcond=None)[0]
+	ellipsoid_covariances = ellipsoid_covariances.reshape((3, 3))
+
+	principal_variances, principal_axes = np.linalg.eig(ellipsoid_covariances)
+	order = np.argsort(principal_variances)[::-1]
+	principal_variances = principal_variances[order]
+	principal_axes = principal_axes[:, order]
+	principal_radii = np.sqrt(principal_variances)
+
+	for r, v in zip(principal_radii, principal_axes.T):
+		print(f"extends {r:.2f} μm in the direccion ⟨{v[0]: .4f}, {v[1]: .4f}, {v[2]: .4f} ⟩")
+
+	# absolute_separation = np.linalg.lstsq(separation_directions, separation_magnitudes, rcond=None)[0]
+	# print(f"separated by ⟨{absolute_separation[0]: .2f}, {absolute_separation[1]: .2f}, {absolute_separation[2]: .2f}⟩ μm")
+
+	fig = plt.figure(figsize=(5, 5))  # Square figure
+	ax = fig.add_subplot(111, projection='3d')
+	ax.set_box_aspect([1, 1, 1])
+	plot_ellipsoid(principal_radii, principal_axes, ax)
+
+	for r, v in zip(principal_radii, principal_axes.T):
+		ax.plot(*np.transpose([-r*v, r*v]), color='k')
+	# ax.plot(*[[0, absolute_separation[i]] for i in range(3)], color='C0')
+	# ax.plot(*[[0, offset[i]] for i in range(3)], 'C1')
+
+	# Adjustment of the axen, so that they all have the same span:
+	max_radius = 1.4*max(principal_radii)
+	ax.set_xlim(-1.0*max_radius, 1.0*max_radius)
+	ax.set_ylim(-1.0*max_radius, 1.0*max_radius)
+	ax.set_zlim(-1.0*max_radius, 1.0*max_radius)
+
+	for tim in [2, 4, 5]:
+		tim_direction = coordinate.tim_coordinates(tim)[:, 2]
+		plt.plot(*np.transpose([[0, 0, 0], max_radius*tim_direction]), f'C{tim}--', label=f"To TIM{tim}")
+
+	plt.title(shot)
+	plt.show()
+
+	stalk_direction = coordinate.tps_direction()
+	magnitude = (max(principal_radii) - min(principal_radii))/np.mean(principal_radii)
+	angle = acos(abs(np.dot(principal_axes[0, :], stalk_direction)))
+	return magnitude, angle
 
 
 def polar_plot_asymmetries(shots: list[str], asymmetries: NDArray[float], num_stalks: NDArray[int]) -> None:
-	pass
+	fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+	ax.scatter(asymmetries[:, 1], asymmetries[:, 0], c=num_stalks)
+	for shot, (magnitude, angle) in zip(shots, asymmetries):
+		plt.text(angle, magnitude, shot)
+	ax.grid(True)
+	ax.set_thetalim(0, pi/2)
+	plt.show()
 
 
 def get_num_stalks(shot: str) -> int:
@@ -113,6 +189,23 @@ def load_images(shot: str, tim: str) -> list[tuple[Grid, NDArray[float]]]:
 			for source in source_stack:
 				results.append((grid, source))
 	return results
+
+
+def plot_ellipsoid(semiaxes: Sequence[float], basis: NDArray[float], axes: Axes) -> None:
+	# Set of all planical angles:
+	u = np.linspace(0, 2*pi, 100)
+	v = np.linspace(0, pi, 100)
+
+	# Cartesian coordinates that correspond to the planical angles:
+	# (this is the equasion of an ellipsoid):
+	x = semiaxes[0] * np.outer(np.cos(u), np.sin(v))
+	y = semiaxes[1] * np.outer(np.sin(u), np.sin(v))
+	z = semiaxes[2] * np.outer(np.ones_like(u), np.cos(v))
+	x, y, z = np.transpose(
+		basis @ np.transpose(
+			[x, y, z], axes=(1, 0, 2)),
+		axes=(1, 0, 2))
+	axes.plot_surface(x, y, z,  rstride=4, cstride=4, color='C0', zorder=-1)
 
 
 if __name__ == "__main__":
