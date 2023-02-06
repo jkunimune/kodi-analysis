@@ -79,177 +79,288 @@ public class VoxelFit {
 	private static final Logger logger = Logger.getLogger("root");
 
 
-	/**
-	 * take a vector and reshape it into an nd array with the given shape
-	 * @param input an m×n×o array
-	 */
-	private static double[][][] reravel(double[] input, int[] shape) {
-		if (shape.length != 3)
-			throw new UnsupportedOperationException("ndim must be 3");
-		int size = 1;
-		for (int dim: shape)
-			size *= dim;
-		if (size != input.length)
-			throw new IllegalArgumentException("the shape is rong.");
-		double[][][] output = new double[shape[0]][shape[1]][shape[2]];
-		int[] index = new int[shape.length];
-		for (double v: input) {
-			output[index[0]][index[1]][index[2]] = v;
-			for (int k = shape.length - 1; k >= 0; k--) {
-				index[k]++;
-				if (index[k] >= shape[k]) index[k] = 0;
-				else                      break;
+	public static void main(String[] args) throws IOException {
+		Logging.configureLogger(
+				logger,
+				(args.length == 6) ?
+				String.format("3d-%3$s-%4$s-%5$s-%6$s", (Object[]) args) :
+				"3d");
+
+		double model_resolution = Double.parseDouble(args[0]);
+
+		double[][] line_of_site_data = CSV.read(new File("tmp/lines_of_site.csv"), ',');
+		Vector[] lines_of_site = new Vector[line_of_site_data.length];
+		for (int i = 0; i < lines_of_site.length; i ++)
+			lines_of_site[i] = new DenseVector(line_of_site_data[i]);
+
+		float[] x = Math2.reducePrecision(CSV.readColumn(new File("tmp/x.csv"))); // load the coordinate system for 3d input and output (μm)
+		float[] y = Math2.reducePrecision(CSV.readColumn(new File("tmp/y.csv"))); // (μm)
+		float[] z = Math2.reducePrecision(CSV.readColumn(new File("tmp/z.csv"))); // (μm)
+		int n = x.length - 1;
+		Basis model_grid = new CartesianGrid(x[0], x[n], y[0], y[n], z[0], z[n], n);
+		double object_radius = Math.abs(x[0]);
+
+		Interval[][] Э_cuts = new Interval[lines_of_site.length][];
+		double[][] ξ = new double[lines_of_site.length][];
+		double[][] υ = new double[lines_of_site.length][];
+		for (int l = 0; l < lines_of_site.length; l ++) {
+			float[][] Э_array = Math2.reducePrecision(CSV.read(new File("tmp/energy-los"+l+".csv"), ',')); // (MeV)
+			Э_cuts[l] = new Interval[Э_array.length];
+			for (int h = 0; h < Э_cuts[l].length; h ++)
+				Э_cuts[l][h] = new Interval(Э_array[h][0], Э_array[h][1]);
+			ξ[l] = CSV.readColumn(new File("tmp/xye-los"+l+".csv"));
+			υ[l] = CSV.readColumn(new File("tmp/ypsilon-los"+l+".csv"));
+		}
+		boolean knockon = Э_cuts[0].length > 0; // detect when it's xray images not deuteron images
+
+		double[][][][] images = new double[lines_of_site.length][][][];
+		double neutronYield;
+
+		if (containsTheWordTest(args)) {
+			String[] morphology_filenames = {"emission", "density"};
+			double[][] anser = new double[morphology_filenames.length][];
+			for (int q = 0; q < morphology_filenames.length; q++) {
+				anser[q] = CSV.readColumn(new File(
+						String.format("tmp/%s.csv", morphology_filenames[q]))); // load the input morphology (μm^-3, g/cm^3)
+				if (anser[q].length != model_grid.num_functions)
+					throw new IOException("this file had the rong number of things");
 			}
+			double temperature = CSV.readScalar(new File("tmp/temperature.csv")); // (keV)
+
+			VoxelFit.logger.info("generating images from the example morphology...");
+
+			// synthesize the true images (counts/μm^2/srad)
+			if (knockon) {
+				images = synthesize_knockon_images(
+						new DenseVector(anser[0]), new DenseVector(anser[1]), temperature,
+						model_grid, object_radius, model_resolution/2,
+						lines_of_site, Э_cuts, ξ, υ);
+			}
+			else {
+				double[][][] only_images = synthesize_primary_images(
+						new DenseVector(anser[0]),
+						model_grid, object_radius, model_resolution/2,
+						lines_of_site, ξ, υ);
+				for (int l = 0; l < lines_of_site.length; l ++)
+					images[l] = new double[][][] {only_images[l]}; // if it's x-ray images you'll have to add the energy dimension to make it all fit
+			}
+			for (int l = 0; l < lines_of_site.length; l ++)
+				CSV.writeColumn(unravel(images[l]), new File("tmp/image-los"+l+".csv"));
+
+			neutronYield = Math2.sum(anser[0])*(x[1] - x[0])*(y[1] - y[0])*(z[1] - z[0]);
+			CSV.writeScalar(neutronYield, new File("tmp/total-yield.csv"));
 		}
-		return output;
-	}
+		else {
+			for (int l = 0; l < lines_of_site.length; l ++) {
+				images[l] = reravel(CSV.readColumn(new File("tmp/image-los"+l+".csv")),
+				                    new int[] {Э_cuts[l].length, ξ[l].length, υ[l].length});
+				for (int h = 0; h < Э_cuts[l].length; h ++) {
+					if (images[l][h].length != ξ[l].length || images[l][h][0].length != υ[l].length)
+						throw new IllegalArgumentException(
+								"image size "+images[l][h].length+"x"+images[l][h][0].length+" does not match array " +
+								"lengths ("+ξ[l].length+" for xi and "+υ[l].length+" for ypsilon)");
+				}
+			}
 
-
-	/**
-	 * read thru an array in the intuitive order and put it into a 1d list in ijk order
-	 * @param input an m×n×o array
-	 */
-	private static double[] unravel(double[][] input) {
-		int m = input.length;
-		int n = input[0].length;
-		double[] output = new double[m*n];
-		for (int i = 0; i < m; i ++)
-			System.arraycopy(input[i], 0, output, i*n, n);
-		return output;
-	}
-
-
-	/**
-	 * read thru an array in the intuitive order and put it into a 1d list in ijk order
-	 * @param input an m×n×o array
-	 */
-	private static double[] unravel(double[][][] input) {
-		int m = input.length;
-		int n = input[0].length;
-		int o = input[0][0].length;
-		double[] output = new double[m*n*o];
-		for (int i = 0; i < m; i ++)
-			for (int j = 0; j < n; j ++)
-				System.arraycopy(input[i][j], 0, output, (i*n + j)*o, o);
-		return output;
-	}
-
-
-	/**
-	 * convert a 5D array to a 2D one such that
-	 * input[l][h][i][j][и] => output[l+H*(h+I*(i+J*j))][и] for a rectangular
-	 * array, but it also handles it correctly if the input is jagged on the
-	 * oneth, twoth, or third indeces
-	 * @param input a 4D array of any size and shape (jagged is okey)
-	 */
-	private static double[] unravel_ragged(double[][][][] input) {
-		List<Double> list = new ArrayList<>();
-		for (double[][][] stack: input)
-			for (double[][] row: stack)
-				for (double[] colum: row)
-					for (double v: colum)
-						list.add(v);
-		double[] array = new double[list.size()];
-		for (int i = 0; i < array.length; i ++)
-			array[i] = list.get(i);
-		return array;
-	}
-
-
-	/**
-	 * convert a 5D array to a 2D one such that
-	 * input[l][h][i][j][и] => output[((l*H+h)*I+i)*J+j][и] for a rectangular
-	 * array, but it also handles it correctly if the input is jagged on the
-	 * oneth, twoth, or third indeces
-	 * @param input a 4D array of any size and shape (jagged is okey)
-	 */
-	private static Vector[] unravel_ragged(Vector[][][][] input) {
-		List<Vector> list = new ArrayList<>();
-		for (Vector[][][] stack: input)
-			for (Vector[][] row: stack)
-				for (Vector[] colum: row)
-					list.addAll(Arrays.asList(colum));
-		return list.toArray(new Vector[0]);
-	}
-
-
-	/**
-	 * convert a 4D array to a 2D one such that
-	 * input[l][i][j][и] => output[(l*I+i)*J+j][и] for a rectangular
-	 * array, but it also handles it correctly if the input is jagged on the
-	 * oneth, twoth, or third indeces
-	 * @param input a 4D array of any size and shape (jagged is okey)
-	 */
-	private static Vector[] unravel_ragged(Vector[][][] input) {
-		List<Vector> list = new ArrayList<>();
-		for (Vector[][] row: input)
-			for (Vector[] colum: row)
-				list.addAll(Arrays.asList(colum));
-		return list.toArray(new Vector[0]);
-	}
-
-
-	/**
-	 * Li-Petrasso stopping power (deuteron, weakly coupled)
-	 * @param Э the energy of the test particle (MeV)
-	 * @param T the local ion and electron temperature of the field (keV)
-	 * @return the stopping power on a deuteron (MeV/(g/cm^2))
-	 */
-	private static float dЭdρL(float Э, float T) {
-		float dЭdx_per_ρ = 0;
-		for (float[] properties: medium) {
-			float qf = properties[0], mf = properties[1], number = properties[2];
-			float vf2 = Math.abs(T*keV*2/mf);
-			float vt2 = Math.abs(Э*MeV*2/m_D);
-			float x = vt2/vf2;
-			float μ = maxwellIntegral.evaluate(x);
-			float dμdx = maxwellFunction.evaluate(x);
-			float ωpf2_per_ρ = number*qf*qf/(ɛ0*mf);
-			float lnΛ = (float) Math.log(1000); // TODO calculate this for real
-			float Gx = μ - mf/m_D*(dμdx - 1/lnΛ*(μ + dμdx));
-			if (Gx < 0) // if Gx is negative
-				Gx = 0; // that means the field thermal speed is hier than the particle speed, so no slowing
-			dЭdx_per_ρ += -lnΛ*q_D*q_D/(4*πF*ɛ0)*Gx*ωpf2_per_ρ/vt2;
+			neutronYield = CSV.readScalar(new File("tmp/total-yield.csv"));
 		}
-		return dЭdx_per_ρ/MeV*g/cm/cm;
-	}
+
+		Vector[] anser = reconstruct_images(
+				knockon, neutronYield, images,
+				lines_of_site, Э_cuts, ξ, υ,
+				object_radius, model_resolution, model_grid); // reconstruct the morphology
 
 
-	/**
-	 * precompute the stopping power for ions in a medium of constant temperature
-	 * @param temperature the temperature to use everywhere (keV)
-	 * @return two DiscreteFunction - the range of a particle as a function of
-	 * energy, and the minimum birth energy of a particle as a function of ρL
-	 */
-	private static DiscreteFunction[] calculate_ranging_curves(
-			float temperature) {
-		float[] energy = new float[STOPPING_POWER_RESOLUTION];
-		for (int i = 0; i < energy.length; i ++)
-			energy[i] = Э_KOD*i/(energy.length - 1); // (MeV)
-		float[] range = new float[energy.length];
-		range[0] = 0;
-		for (int i = 1; i < energy.length; i ++) {
-			float dЭ = energy[i] - energy[i-1];
-			float Э_mean = (energy[i-1] + energy[i])/2;
-			range[i] = range[i - 1] - 1/dЭdρL(Э_mean, temperature)*dЭ; // (g/cm^2)
+		CSV.writeColumn(anser[0].getValues(), new File("tmp/emission-recon.csv"));
+		if (knockon) {
+			assert anser.length == 3;
+			CSV.writeColumn(anser[1].getValues(), new File("tmp/density-recon.csv"));
+			CSV.writeScalar(anser[2].get(0), new File("tmp/temperature-recon.csv"));
+			double[][][][] recon_images = synthesize_knockon_images(
+					anser[0], anser[1], anser[2].get(0),
+					model_grid, object_radius, model_resolution/2,
+					lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphology's images
+			for (int l = 0; l < lines_of_site.length; l ++)
+				CSV.writeColumn(unravel(recon_images[l]), new File("tmp/image-los"+l+"-recon.csv"));
 		}
-		DiscreteFunction range_of_energy = new DiscreteFunction(energy, range, true);
-		DiscreteFunction energy_of_range = new DiscreteFunction(range, energy).indexed(STOPPING_POWER_RESOLUTION);
-		return new DiscreteFunction[] {range_of_energy, energy_of_range};
+		else {
+			double[][][] recon_images = synthesize_primary_images(
+					anser[0],
+					model_grid, object_radius, model_resolution/2,
+					lines_of_site, ξ, υ);
+			for (int l = 0; l < lines_of_site.length; l ++)
+				CSV.writeColumn(unravel(recon_images[l]), new File("tmp/image-los"+l+"-recon.csv"));
+		}
 	}
 
 
 	/**
-	 * calculate the first few spherical harmonicks
-	 * @param z the cosine of the polar angle
-	 * @param ф the azimuthal angle
-	 * @return the value of the specified harmonic P_l^m (z, ф)
+	 * reconstruct the implosion morphology that corresponds to the given images.  the images can
+	 * be either primary x-ray/neutron images or knock-on deuteron images.  for primary images,
+	 * opacity will be assumed to be zero and only the emission will be returned.  for knock-on
+	 * images, the emission, mass density, and temperature distributions will all be inferred and
+	 * returned.
+	 * @param total_yield the total neutron total_yield (used to constrain emission in the knock-on
+	 *                    case, ignored in the primary case).
+	 * @param images an array of arrays of images.  images[l][h][i][j] is the ij
+	 *               pixel of the h energy bin of the l line of site
+	 * @param Э_cuts the edges of the energy bins of the images (MeV)
+	 * @param ξ the edges of the x bins of the images (μm)
+	 * @param υ the edges of the y bins of the images (μm)
+	 * @param lines_of_sight the normalized z vector of each line of site
+	 * @param output_basis the basis to use to represent the resulting morphology
+	 * @param object_radius the maximum radial extent of the implosion
+	 * @param model_resolution the minimum size of features to be reconstructed
+	 * @param knockon whether these images are generated thru a knock-on process
+	 * @return an array of two 3d matrices:
+	 *     the neutron emission (m^-3),
+	 *     the mass density (g/L), and
+	 *     the temperature (keV) (this one is actually a scalar)
 	 */
-	private static double spherical_harmonics(int l, int m, double z, double ф) {
-		if (m >= 0)
-			return Math2.legendre(l, m, z)*Math.cos(m*ф);
-		else
-			return Math2.legendre(l, -m, z)*Math.sin(m*ф);
+	private static Vector[] reconstruct_images(
+			boolean knockon, double total_yield, double[][][][] images,
+			Vector[] lines_of_sight, Interval[][] Э_cuts, double[][] ξ, double[][] υ,
+			double object_radius, double model_resolution, Basis output_basis) {
+
+		VoxelFit.logger.info(String.format("reconstructing %dx%d (%d total) images",
+		                                   images.length, images[0].length, images.length*images[0].length));
+
+		// start by defining the spherical-harmonick basis functions
+		double[] r = new double[(int)Math.round(object_radius/model_resolution)];
+		for (int n = 0; n < r.length; n ++)
+			r[n] = model_resolution*n; // (μm)
+		Basis basis = new SphericalHarmonicBasis(MAX_MODE, r);
+		double[] basis_volumes = new double[basis.num_functions];
+		for (int и = 0; и < basis.num_functions; и ++)
+			basis_volumes[и] = basis.get_volume(и); // μm^3
+		double[] outer_ring = new double[basis.num_functions];
+		int и_n00 = basis.num_functions - (int) Math.pow(Math.min(r.length, MAX_MODE + 1), 2);
+		outer_ring[и_n00] = 1;
+
+		int num_smoothing_parameters = basis.roughness_vectors(0).n;
+
+		VoxelFit.logger.info(String.format("using %d 3d basis functions on %.1fum/%.1fum^3 morphology",
+		                                   basis.num_functions, r[r.length - 1], r[1]));
+
+		double[] image_vector = unravel_ragged(images);
+		int num_pixels = image_vector.length;
+
+		double[] data_vector = Math2.concatenate(
+				image_vector, new double[num_smoothing_parameters]); // unroll the data
+		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
+		double data_scale = Math2.max(data_vector)/6F;
+		for (int i = 0; i < num_pixels; i ++)
+//			inverse_variance_vector[i] = 1/(data_scale*data_scale); // uniform
+			inverse_variance_vector[i] = 1/(data_scale*(data_vector[i] + data_scale/36)); // unitless Poisson
+//			inverse_variance_vector[i] = 1/(data_vector[i] + 1); // corrected Poisson
+		for (int i = num_pixels; i < data_vector.length; i ++)
+			inverse_variance_vector[i] = 1;
+
+		// for primary images, infer the yield from the images themselves
+		if (!knockon) {
+			total_yield = 0;
+			for (int l = 0; l < images.length; l ++)
+				total_yield += Math2.sum(images[l])/images.length*(ξ[l][1] - ξ[l][0])*(υ[l][1] - υ[l][0])*4*Math.PI;
+		}
+		double volume_gess = 4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3);
+		double emission_gess = total_yield/volume_gess;
+
+		// set the initial emission to satisfy the total yield constraint
+		Vector emission = DenseVector.zeros(basis.num_functions);
+		emission.set(0, total_yield/basis.get_volume(0));
+
+		// set the initial temperature and density if needed
+		Vector density;
+		double temperature;
+		if (knockon) {
+			density = DenseVector.zeros(basis.num_functions);
+			int и = 0;
+			for (int s = 0; s < r.length; s ++) {
+				density.set(и, SHELL_DENSITY_GESS*
+				               Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2)))); // then set the density p0 terms to be this gaussian profile
+				и += Math.pow(Math.min(s + 1, MAX_MODE + 1), 2);
+			}
+			temperature = SHELL_TEMPERATURE_GESS;
+		}
+		else {
+			density = null;
+			temperature = Double.NaN;
+		}
+
+		double last_error, next_error = Double.POSITIVE_INFINITY;
+		int iter = 0;
+		do {
+			last_error = next_error;
+			logger.info(String.format("Pass %d", iter));
+
+			if (knockon) {
+				final double current_temperature = temperature;
+
+				// then optimize the hot spot subject to the yield constraint
+				final Vector current_density = density;
+				Optimum emission_optimum = Optimize.quasilinear_least_squares(
+						(coefs) -> generate_emission_knockon_response_matrix(
+								current_density,
+								current_temperature,
+								basis, object_radius, model_resolution,
+								lines_of_sight, Э_cuts, ξ, υ,
+								SMOOTHING/(emission_gess/Math.sqrt(r[r.length - 1]))),
+						data_vector,
+						inverse_variance_vector,
+						emission.getValues(),
+						Double.POSITIVE_INFINITY,
+						logger,
+						basis_volumes,
+						outer_ring);
+				emission = new DenseVector(emission_optimum.location);
+
+				// start by optimizing the cold fuel with no constraints
+				final Vector current_emission = emission;
+				Optimum density_optimum = Optimize.quasilinear_least_squares(
+						(coefs) -> generate_density_knockon_response_matrix(
+								current_emission,
+								new DenseVector(coefs),
+								current_temperature,
+								basis, object_radius, model_resolution,
+								lines_of_sight, Э_cuts, ξ, υ,
+								SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length - 1]))),
+						data_vector,
+						inverse_variance_vector,
+						density.getValues(),
+						1e-3,
+						logger);
+				density = new DenseVector(density_optimum.location);
+
+
+				// temperature = temperature; TODO: fit temperature
+				next_error = density_optimum.value;
+			}
+			else {
+				Optimum emission_optimum = Optimize.quasilinear_least_squares(
+						(coefs) -> generate_emission_primary_response_matrix(
+								basis, object_radius, model_resolution,
+								lines_of_sight, ξ, υ,
+								SMOOTHING/(emission_gess/Math.sqrt(r[r.length-1]))),
+						data_vector,
+						inverse_variance_vector,
+						emission.getValues(),
+						1e-3,
+						logger);
+				emission = new DenseVector(emission_optimum.location);
+				next_error = emission_optimum.value;
+			}
+
+			iter ++;
+		} while ((last_error - next_error)/next_error > TOLERANCE);
+
+		emission = output_basis.rebase(basis, emission);
+		if (knockon) {
+			density = output_basis.rebase(basis, density);
+			return new Vector[] {emission, density, new DenseVector(temperature)};
+		}
+		else {
+			return new Vector[] {emission};
+		}
 	}
 
 
@@ -746,287 +857,176 @@ public class VoxelFit {
 
 
 	/**
-	 * reconstruct the implosion morphology that corresponds to the given images.  the images can
-	 * be either primary x-ray/neutron images or knock-on deuteron images.  for primary images,
-	 * opacity will be assumed to be zero and only the emission will be returned.  for knock-on
-	 * images, the emission, mass density, and temperature distributions will all be inferred and
-	 * returned.
-	 * @param total_yield the total neutron total_yield (used to constrain emission in the knock-on
-	 *                    case, ignored in the primary case).
-	 * @param images an array of arrays of images.  images[l][h][i][j] is the ij
-	 *               pixel of the h energy bin of the l line of site
-	 * @param Э_cuts the edges of the energy bins of the images (MeV)
-	 * @param ξ the edges of the x bins of the images (μm)
-	 * @param υ the edges of the y bins of the images (μm)
-	 * @param lines_of_sight the normalized z vector of each line of site
-	 * @param output_basis the basis to use to represent the resulting morphology
-	 * @param object_radius the maximum radial extent of the implosion
-	 * @param model_resolution the minimum size of features to be reconstructed
-	 * @param knockon whether these images are generated thru a knock-on process
-	 * @return an array of two 3d matrices:
-	 *     the neutron emission (m^-3),
-	 *     the mass density (g/L), and
-	 *     the temperature (keV) (this one is actually a scalar)
+	 * precompute the stopping power for ions in a medium of constant temperature
+	 * @param temperature the temperature to use everywhere (keV)
+	 * @return two DiscreteFunction - the range of a particle as a function of
+	 * energy, and the minimum birth energy of a particle as a function of ρL
 	 */
-	private static Vector[] reconstruct_images(
-			boolean knockon, double total_yield, double[][][][] images,
-			Vector[] lines_of_sight, Interval[][] Э_cuts, double[][] ξ, double[][] υ,
-			double object_radius, double model_resolution, Basis output_basis) {
-
-		VoxelFit.logger.info(String.format("reconstructing %dx%d (%d total) images",
-		                                   images.length, images[0].length, images.length*images[0].length));
-
-		// start by defining the spherical-harmonick basis functions
-		double[] r = new double[(int)Math.round(object_radius/model_resolution)];
-		for (int n = 0; n < r.length; n ++)
-			r[n] = model_resolution*n; // (μm)
-		Basis basis = new SphericalHarmonicBasis(MAX_MODE, r);
-		double[] basis_volumes = new double[basis.num_functions];
-		for (int и = 0; и < basis.num_functions; и ++)
-			basis_volumes[и] = basis.get_volume(и); // μm^3
-		double[] outer_ring = new double[basis.num_functions];
-		int и_n00 = basis.num_functions - (int) Math.pow(Math.min(r.length, MAX_MODE + 1), 2);
-		outer_ring[и_n00] = 1;
-
-		int num_smoothing_parameters = basis.roughness_vectors(0).n;
-
-		VoxelFit.logger.info(String.format("using %d 3d basis functions on %.1fum/%.1fum^3 morphology",
-		                                   basis.num_functions, r[r.length - 1], r[1]));
-
-		double[] image_vector = unravel_ragged(images);
-		int num_pixels = image_vector.length;
-
-		double[] data_vector = Math2.concatenate(
-				image_vector, new double[num_smoothing_parameters]); // unroll the data
-		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
-		double data_scale = Math2.max(data_vector)/6F;
-		for (int i = 0; i < num_pixels; i ++)
-//			inverse_variance_vector[i] = 1/(data_scale*data_scale); // uniform
-			inverse_variance_vector[i] = 1/(data_scale*(data_vector[i] + data_scale/36)); // unitless Poisson
-//			inverse_variance_vector[i] = 1/(data_vector[i] + 1); // corrected Poisson
-		for (int i = num_pixels; i < data_vector.length; i ++)
-			inverse_variance_vector[i] = 1;
-
-		// for primary images, infer the yield from the images themselves
-		if (!knockon) {
-			total_yield = 0;
-			for (int l = 0; l < images.length; l ++)
-				total_yield += Math2.sum(images[l])/images.length*(ξ[l][1] - ξ[l][0])*(υ[l][1] - υ[l][0])*4*Math.PI;
+	private static DiscreteFunction[] calculate_ranging_curves(
+			float temperature) {
+		float[] energy = new float[STOPPING_POWER_RESOLUTION];
+		for (int i = 0; i < energy.length; i ++)
+			energy[i] = Э_KOD*i/(energy.length - 1); // (MeV)
+		float[] range = new float[energy.length];
+		range[0] = 0;
+		for (int i = 1; i < energy.length; i ++) {
+			float dЭ = energy[i] - energy[i-1];
+			float Э_mean = (energy[i-1] + energy[i])/2;
+			range[i] = range[i - 1] - 1/dЭdρL(Э_mean, temperature)*dЭ; // (g/cm^2)
 		}
-		double volume_gess = 4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3);
-		double emission_gess = total_yield/volume_gess;
-
-		// set the initial emission to satisfy the total yield constraint
-		Vector emission = DenseVector.zeros(basis.num_functions);
-		emission.set(0, total_yield/basis.get_volume(0));
-
-		// set the initial temperature and density if needed
-		Vector density;
-		double temperature;
-		if (knockon) {
-			density = DenseVector.zeros(basis.num_functions);
-			int и = 0;
-			for (int s = 0; s < r.length; s ++) {
-				density.set(и, SHELL_DENSITY_GESS*
-				               Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2)))); // then set the density p0 terms to be this gaussian profile
-				и += Math.pow(Math.min(s + 1, MAX_MODE + 1), 2);
-			}
-			temperature = SHELL_TEMPERATURE_GESS;
-		}
-		else {
-			density = null;
-			temperature = Double.NaN;
-		}
-
-		double last_error, next_error = Double.POSITIVE_INFINITY;
-		int iter = 0;
-		do {
-			last_error = next_error;
-			logger.info(String.format("Pass %d", iter));
-
-			if (knockon) {
-				final double current_temperature = temperature;
-
-				// then optimize the hot spot subject to the yield constraint
-				final Vector current_density = density;
-				Optimum emission_optimum = Optimize.quasilinear_least_squares(
-						(coefs) -> generate_emission_knockon_response_matrix(
-								current_density,
-								current_temperature,
-								basis, object_radius, model_resolution,
-								lines_of_sight, Э_cuts, ξ, υ,
-								SMOOTHING/(emission_gess/Math.sqrt(r[r.length - 1]))),
-						data_vector,
-						inverse_variance_vector,
-						emission.getValues(),
-						Double.POSITIVE_INFINITY,
-						logger,
-						basis_volumes,
-						outer_ring);
-				emission = new DenseVector(emission_optimum.location);
-
-				// start by optimizing the cold fuel with no constraints
-				final Vector current_emission = emission;
-				Optimum density_optimum = Optimize.quasilinear_least_squares(
-						(coefs) -> generate_density_knockon_response_matrix(
-								current_emission,
-								new DenseVector(coefs),
-								current_temperature,
-								basis, object_radius, model_resolution,
-								lines_of_sight, Э_cuts, ξ, υ,
-								SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length - 1]))),
-						data_vector,
-						inverse_variance_vector,
-						density.getValues(),
-						1e-3,
-						logger);
-				density = new DenseVector(density_optimum.location);
-
-
-				// temperature = temperature; TODO: fit temperature
-				next_error = density_optimum.value;
-			}
-			else {
-				Optimum emission_optimum = Optimize.quasilinear_least_squares(
-						(coefs) -> generate_emission_primary_response_matrix(
-								basis, object_radius, model_resolution,
-								lines_of_sight, ξ, υ,
-								SMOOTHING/(emission_gess/Math.sqrt(r[r.length-1]))),
-						data_vector,
-						inverse_variance_vector,
-						emission.getValues(),
-						1e-3,
-						logger);
-				emission = new DenseVector(emission_optimum.location);
-				next_error = emission_optimum.value;
-			}
-
-			iter ++;
-		} while ((last_error - next_error)/next_error > TOLERANCE);
-
-		emission = output_basis.rebase(basis, emission);
-		if (knockon) {
-			density = output_basis.rebase(basis, density);
-			return new Vector[] {emission, density, new DenseVector(temperature)};
-		}
-		else {
-			return new Vector[] {emission};
-		}
+		DiscreteFunction range_of_energy = new DiscreteFunction(energy, range, true);
+		DiscreteFunction energy_of_range = new DiscreteFunction(range, energy).indexed(STOPPING_POWER_RESOLUTION);
+		return new DiscreteFunction[] {range_of_energy, energy_of_range};
 	}
 
 
-	public static void main(String[] args) throws IOException {
-		Logging.configureLogger(
-				logger,
-				(args.length == 6) ?
-					String.format("3d-%3$s-%4$s-%5$s-%6$s", (Object[]) args) :
-					"3d");
-
-		double model_resolution = Double.parseDouble(args[0]);
-
-		double[][] line_of_site_data = CSV.read(new File("tmp/lines_of_site.csv"), ',');
-		Vector[] lines_of_site = new Vector[line_of_site_data.length];
-		for (int i = 0; i < lines_of_site.length; i ++)
-			lines_of_site[i] = new DenseVector(line_of_site_data[i]);
-
-		float[] x = Math2.reducePrecision(CSV.readColumn(new File("tmp/x.csv"))); // load the coordinate system for 3d input and output (μm)
-		float[] y = Math2.reducePrecision(CSV.readColumn(new File("tmp/y.csv"))); // (μm)
-		float[] z = Math2.reducePrecision(CSV.readColumn(new File("tmp/z.csv"))); // (μm)
-		int n = x.length - 1;
-		Basis model_grid = new CartesianGrid(x[0], x[n], y[0], y[n], z[0], z[n], n);
-		double object_radius = Math.abs(x[0]);
-
-		Interval[][] Э_cuts = new Interval[lines_of_site.length][];
-		double[][] ξ = new double[lines_of_site.length][];
-		double[][] υ = new double[lines_of_site.length][];
-		for (int l = 0; l < lines_of_site.length; l ++) {
-			float[][] Э_array = Math2.reducePrecision(CSV.read(new File("tmp/energy-los"+l+".csv"), ',')); // (MeV)
-			Э_cuts[l] = new Interval[Э_array.length];
-			for (int h = 0; h < Э_cuts[l].length; h ++)
-				Э_cuts[l][h] = new Interval(Э_array[h][0], Э_array[h][1]);
-			ξ[l] = CSV.readColumn(new File("tmp/xye-los"+l+".csv"));
-			υ[l] = CSV.readColumn(new File("tmp/ypsilon-los"+l+".csv"));
+	/**
+	 * Li-Petrasso stopping power (deuteron, weakly coupled)
+	 * @param Э the energy of the test particle (MeV)
+	 * @param T the local ion and electron temperature of the field (keV)
+	 * @return the stopping power on a deuteron (MeV/(g/cm^2))
+	 */
+	private static float dЭdρL(float Э, float T) {
+		float dЭdx_per_ρ = 0;
+		for (float[] properties: medium) {
+			float qf = properties[0], mf = properties[1], number = properties[2];
+			float vf2 = Math.abs(T*keV*2/mf);
+			float vt2 = Math.abs(Э*MeV*2/m_D);
+			float x = vt2/vf2;
+			float μ = maxwellIntegral.evaluate(x);
+			float dμdx = maxwellFunction.evaluate(x);
+			float ωpf2_per_ρ = number*qf*qf/(ɛ0*mf);
+			float lnΛ = (float) Math.log(1000); // TODO calculate this for real
+			float Gx = μ - mf/m_D*(dμdx - 1/lnΛ*(μ + dμdx));
+			if (Gx < 0) // if Gx is negative
+				Gx = 0; // that means the field thermal speed is hier than the particle speed, so no slowing
+			dЭdx_per_ρ += -lnΛ*q_D*q_D/(4*πF*ɛ0)*Gx*ωpf2_per_ρ/vt2;
 		}
-		boolean knockon = Э_cuts[0].length > 0; // detect when it's xray images not deuteron images
+		return dЭdx_per_ρ/MeV*g/cm/cm;
+	}
 
-		double[][][][] images = new double[lines_of_site.length][][][];
-		double neutronYield;
 
-		if (containsTheWordTest(args)) {
-			String[] morphology_filenames = {"emission", "density"};
-			double[][] anser = new double[morphology_filenames.length][];
-			for (int q = 0; q < morphology_filenames.length; q++) {
-				anser[q] = CSV.readColumn(new File(
-						String.format("tmp/%s.csv", morphology_filenames[q]))); // load the input morphology (μm^-3, g/cm^3)
-				if (anser[q].length != model_grid.num_functions)
-					throw new IOException("this file had the rong number of things");
+	/**
+	 * calculate the first few spherical harmonicks
+	 * @param z the cosine of the polar angle
+	 * @param ф the azimuthal angle
+	 * @return the value of the specified harmonic P_l^m (z, ф)
+	 */
+	private static double spherical_harmonics(int l, int m, double z, double ф) {
+		if (m >= 0)
+			return Math2.legendre(l, m, z)*Math.cos(m*ф);
+		else
+			return Math2.legendre(l, -m, z)*Math.sin(m*ф);
+	}
+
+
+	/**
+	 * take a vector and reshape it into an nd array with the given shape
+	 * @param input an m×n×o array
+	 */
+	private static double[][][] reravel(double[] input, int[] shape) {
+		if (shape.length != 3)
+			throw new UnsupportedOperationException("ndim must be 3");
+		int size = 1;
+		for (int dim: shape)
+			size *= dim;
+		if (size != input.length)
+			throw new IllegalArgumentException("the shape is rong.");
+		double[][][] output = new double[shape[0]][shape[1]][shape[2]];
+		int[] index = new int[shape.length];
+		for (double v: input) {
+			output[index[0]][index[1]][index[2]] = v;
+			for (int k = shape.length - 1; k >= 0; k--) {
+				index[k]++;
+				if (index[k] >= shape[k]) index[k] = 0;
+				else                      break;
 			}
-			double temperature = CSV.readScalar(new File("tmp/temperature.csv")); // (keV)
-
-			VoxelFit.logger.info("generating images from the example morphology...");
-
-			// synthesize the true images (counts/μm^2/srad)
-			if (knockon) {
-				images = synthesize_knockon_images(
-						new DenseVector(anser[0]), new DenseVector(anser[1]), temperature,
-						model_grid, object_radius, model_resolution/2,
-						lines_of_site, Э_cuts, ξ, υ);
-			}
-			else {
-				double[][][] only_images = synthesize_primary_images(
-						new DenseVector(anser[0]),
-						model_grid, object_radius, model_resolution/2,
-						lines_of_site, ξ, υ);
-				for (int l = 0; l < lines_of_site.length; l ++)
-					images[l] = new double[][][] {only_images[l]}; // if it's x-ray images you'll have to add the energy dimension to make it all fit
-			}
-			for (int l = 0; l < lines_of_site.length; l ++)
-				CSV.writeColumn(unravel(images[l]), new File("tmp/image-los"+l+".csv"));
-
-			neutronYield = Math2.sum(anser[0])*(x[1] - x[0])*(y[1] - y[0])*(z[1] - z[0]);
-			CSV.writeScalar(neutronYield, new File("tmp/total-yield.csv"));
 		}
-		else {
-			for (int l = 0; l < lines_of_site.length; l ++) {
-				images[l] = reravel(CSV.readColumn(new File("tmp/image-los"+l+".csv")),
-				                    new int[] {Э_cuts[l].length, ξ[l].length, υ[l].length});
-				for (int h = 0; h < Э_cuts[l].length; h ++) {
-					if (images[l][h].length != ξ[l].length || images[l][h][0].length != υ[l].length)
-						throw new IllegalArgumentException(
-								"image size "+images[l][h].length+"x"+images[l][h][0].length+" does not match array " +
-								"lengths ("+ξ[l].length+" for xi and "+υ[l].length+" for ypsilon)");
-				}
-			}
-
-			neutronYield = CSV.readScalar(new File("tmp/total-yield.csv"));
-		}
-
-		Vector[] anser = reconstruct_images(
-				knockon, neutronYield, images,
-				lines_of_site, Э_cuts, ξ, υ,
-				object_radius, model_resolution, model_grid); // reconstruct the morphology
+		return output;
+	}
 
 
-		CSV.writeColumn(anser[0].getValues(), new File("tmp/emission-recon.csv"));
-		if (knockon) {
-			assert anser.length == 3;
-			CSV.writeColumn(anser[1].getValues(), new File("tmp/density-recon.csv"));
-			CSV.writeScalar(anser[2].get(0), new File("tmp/temperature-recon.csv"));
-			double[][][][] recon_images = synthesize_knockon_images(
-					anser[0], anser[1], anser[2].get(0),
-					model_grid, object_radius, model_resolution/2,
-					lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphology's images
-			for (int l = 0; l < lines_of_site.length; l ++)
-				CSV.writeColumn(unravel(recon_images[l]), new File("tmp/image-los"+l+"-recon.csv"));
-		}
-		else {
-			double[][][] recon_images = synthesize_primary_images(
-					anser[0],
-					model_grid, object_radius, model_resolution/2,
-					lines_of_site, ξ, υ);
-			for (int l = 0; l < lines_of_site.length; l ++)
-				CSV.writeColumn(unravel(recon_images[l]), new File("tmp/image-los"+l+"-recon.csv"));
-		}
+	/**
+	 * read thru an array in the intuitive order and put it into a 1d list in ijk order
+	 * @param input an m×n×o array
+	 */
+	private static double[] unravel(double[][] input) {
+		int m = input.length;
+		int n = input[0].length;
+		double[] output = new double[m*n];
+		for (int i = 0; i < m; i ++)
+			System.arraycopy(input[i], 0, output, i*n, n);
+		return output;
+	}
+
+
+	/**
+	 * read thru an array in the intuitive order and put it into a 1d list in ijk order
+	 * @param input an m×n×o array
+	 */
+	private static double[] unravel(double[][][] input) {
+		int m = input.length;
+		int n = input[0].length;
+		int o = input[0][0].length;
+		double[] output = new double[m*n*o];
+		for (int i = 0; i < m; i ++)
+			for (int j = 0; j < n; j ++)
+				System.arraycopy(input[i][j], 0, output, (i*n + j)*o, o);
+		return output;
+	}
+
+
+	/**
+	 * convert a 5D array to a 2D one such that
+	 * input[l][h][i][j][и] => output[l+H*(h+I*(i+J*j))][и] for a rectangular
+	 * array, but it also handles it correctly if the input is jagged on the
+	 * oneth, twoth, or third indeces
+	 * @param input a 4D array of any size and shape (jagged is okey)
+	 */
+	private static double[] unravel_ragged(double[][][][] input) {
+		List<Double> list = new ArrayList<>();
+		for (double[][][] stack: input)
+			for (double[][] row: stack)
+				for (double[] colum: row)
+					for (double v: colum)
+						list.add(v);
+		double[] array = new double[list.size()];
+		for (int i = 0; i < array.length; i ++)
+			array[i] = list.get(i);
+		return array;
+	}
+
+
+	/**
+	 * convert a 5D array to a 2D one such that
+	 * input[l][h][i][j][и] => output[((l*H+h)*I+i)*J+j][и] for a rectangular
+	 * array, but it also handles it correctly if the input is jagged on the
+	 * oneth, twoth, or third indeces
+	 * @param input a 4D array of any size and shape (jagged is okey)
+	 */
+	private static Vector[] unravel_ragged(Vector[][][][] input) {
+		List<Vector> list = new ArrayList<>();
+		for (Vector[][][] stack: input)
+			for (Vector[][] row: stack)
+				for (Vector[] colum: row)
+					list.addAll(Arrays.asList(colum));
+		return list.toArray(new Vector[0]);
+	}
+
+
+	/**
+	 * convert a 4D array to a 2D one such that
+	 * input[l][i][j][и] => output[(l*I+i)*J+j][и] for a rectangular
+	 * array, but it also handles it correctly if the input is jagged on the
+	 * oneth, twoth, or third indeces
+	 * @param input a 4D array of any size and shape (jagged is okey)
+	 */
+	private static Vector[] unravel_ragged(Vector[][][] input) {
+		List<Vector> list = new ArrayList<>();
+		for (Vector[][] row: input)
+			for (Vector[] colum: row)
+				list.addAll(Arrays.asList(colum));
+		return list.toArray(new Vector[0]);
 	}
 
 
