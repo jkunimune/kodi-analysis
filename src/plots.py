@@ -43,11 +43,7 @@ def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
 	for filetype in filetypes:
 		extension = filetype[1:] if filetype.startswith('.') else filetype
 		filepath = f"results/plots/{filename}.{extension}"
-		try:
-			plt.savefig(filepath, transparent=filetype == 'png')
-		except ValueError:
-			print("there's some edge case that makes this fail for no good reason")
-			raise
+		plt.savefig(filepath, transparent=filetype == 'png')
 		logging.debug(f"  saving {filepath}")
 
 
@@ -351,24 +347,27 @@ def save_and_plot_morphologies(filename: str,
 		plt.figure(figsize=LONG_FIGURE_SIZE)
 		levels = np.concatenate([np.linspace(-peak_source, 0, 9)[1:-1],
 		                         np.linspace(0, peak_source, 9)[1:-1]])
-		plt.contour(y, z,
-		            source_slice.T,
+		plt.contour(y, z, source_slice.T,
 		            levels=levels,
 		            negative_linestyles="dotted",
 		            colors="#000",
 		            zorder=2)
-		make_colorbar(vmin=0, vmax=peak_source, label="Neutron emission (μm^-3)")# , facecolor="#fdce45")
+		if np.unique(np.digitize(source_slice, levels)).size > 1:  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
+			make_colorbar(
+				vmin=0, vmax=peak_source,
+				label="Neutron emission (μm^-3)",
+				# facecolor="#fdce45",
+			)
 		if np.any(density_slice > 0):
-			plt.contourf(y, z,
-			             np.maximum(0, density_slice).T,
+			plt.contourf(y, z, np.maximum(0, density_slice).T,
 			             vmin=0, vmax=peak_density,
 			             levels=np.linspace(0, peak_density, 9),
 			             cmap='Reds',
 			             zorder=0)
-			make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
+			if np.any(density_slice > peak_density/8):  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
+				make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
 		if np.any(density_slice < 0):
-			plt.contourf(y, z,
-			             -density_slice.T,
+			plt.contourf(y, z, -density_slice.T,
 			             levels=[0, abs(np.max(density_slice))],
 			             cmap=CMAP["cyans"],
 			             zorder=1)
