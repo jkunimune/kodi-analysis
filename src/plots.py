@@ -345,8 +345,9 @@ def save_and_plot_morphologies(filename: str,
 		print(f"⟨ρR⟩ (arithmetic) = {np.mean(np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
 
 		plt.figure(figsize=LONG_FIGURE_SIZE)
-		levels = np.concatenate([np.linspace(-peak_source, 0, 9)[1:-1],
-		                         np.linspace(0, peak_source, 9)[1:-1]])
+		num_contours = max(9, int(2*peak_source/source_slice.max()))
+		levels = np.concatenate([np.linspace(-peak_source, 0, num_contours)[1:-1],
+		                         np.linspace(0, peak_source, num_contours)[1:-1]])
 		plt.contour(y, z, source_slice.T,
 		            levels=levels,
 		            negative_linestyles="dotted",
@@ -359,12 +360,13 @@ def save_and_plot_morphologies(filename: str,
 				# facecolor="#fdce45",
 			)
 		if np.any(density_slice > 0):
+			num_contours = min(max(9, int(2*peak_density/density_slice.max())), 200)
 			plt.contourf(y, z, np.maximum(0, density_slice).T,
 			             vmin=0, vmax=peak_density,
-			             levels=np.linspace(0, peak_density, 9),
+			             levels=np.linspace(0, peak_density, num_contours),
 			             cmap='Reds',
 			             zorder=0)
-			if np.any(density_slice > peak_density/8):  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
+			if np.any(density_slice > peak_density/(num_contours - 1)):  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
 				make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
 		if np.any(density_slice < 0):
 			plt.contourf(y, z, -density_slice.T,

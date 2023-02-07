@@ -600,26 +600,19 @@ public class Optimize {
 		System.out.println("differential evolution: y = "+c[0]+" exp("+c[1]+"x) + "+c[2]);
 	}
 
-	public static class Optimum {
-		public final double[] location;
-		public final double value;
-		public final double[] gradient;
-		public final double[][] hessian;
-
+	/**
+	 * @param location the input vector that optimizes the objective function
+	 * @param value the value of the objective function at the optimum
+	 * @param gradient the gradient of the objective function at the optimum
+	 * @param hessian the twoth-derivative matrix of the objective function at the optimum
+	 */
+	record Optimum(double[] location, double value, double[] gradient, double[][] hessian) {
 		public Optimum(double[] location) {
 			this(location, Double.NaN, null, null);
 		}
 
 		public Optimum(double[] location, double value) {
 			this(location, value, null, null);
-		}
-
-		public Optimum(double[] location, double value,
-					   double[] gradient, double[][] hessian) {
-			this.location = location;
-			this.value = value;
-			this.gradient = gradient;
-			this.hessian = hessian;
 		}
 	}
 

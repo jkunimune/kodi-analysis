@@ -19,7 +19,8 @@ public class VoxelFit {
 	public static final int STOPPING_POWER_RESOLUTION = 126;
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SHELL_DENSITY_GESS = 20; // (g/cm^3)
-	public static final double SHELL_RADIUS_GESS = 50;
+	public static final double SOME_ARBITRARY_LOW_DENSITY = 0.1; // (g/cm^3)
+	public static final double SHELL_RADIUS_GESS = 50; // (μm)
 	public static final double SMOOTHING = 1e+2;
 	public static final double TOLERANCE = 1e-3;
 
@@ -165,27 +166,27 @@ public class VoxelFit {
 			neutronYield = CSV.readScalar(new File("tmp/total-yield.csv"));
 		}
 
-		Vector[] anser = reconstruct_images(
+		Morphology anser = reconstruct_images(
 				knockon, neutronYield, images,
 				lines_of_site, Э_cuts, ξ, υ,
 				object_radius, model_resolution, model_grid); // reconstruct the morphology
 
-
-		CSV.writeColumn(anser[0].getValues(), new File("tmp/emission-recon.csv"));
+		CSV.writeColumn(anser.emission().getValues(), new File("tmp/emission-recon.csv"));
 		if (knockon) {
-			assert anser.length == 3;
-			CSV.writeColumn(anser[1].getValues(), new File("tmp/density-recon.csv"));
-			CSV.writeScalar(anser[2].get(0), new File("tmp/temperature-recon.csv"));
+			assert anser.density() != null;
+			CSV.writeColumn(anser.density().getValues(), new File("tmp/density-recon.csv"));
+			CSV.writeScalar(anser.temperature(), new File("tmp/temperature-recon.csv"));
 			double[][][][] recon_images = synthesize_knockon_images(
-					anser[0], anser[1], anser[2].get(0),
+					anser.emission(), anser.density(), anser.temperature(),
 					model_grid, object_radius, model_resolution/2,
 					lines_of_site, Э_cuts, ξ, υ); // get the reconstructed morphology's images
 			for (int l = 0; l < lines_of_site.length; l ++)
 				CSV.writeColumn(unravel(recon_images[l]), new File("tmp/image-los"+l+"-recon.csv"));
 		}
 		else {
+			assert anser.density() == null;
 			double[][][] recon_images = synthesize_primary_images(
-					anser[0],
+					anser.emission(),
 					model_grid, object_radius, model_resolution/2,
 					lines_of_site, ξ, υ);
 			for (int l = 0; l < lines_of_site.length; l ++)
@@ -212,12 +213,10 @@ public class VoxelFit {
 	 * @param object_radius the maximum radial extent of the implosion
 	 * @param model_resolution the minimum size of features to be reconstructed
 	 * @param knockon whether these images are generated thru a knock-on process
-	 * @return an array of two 3d matrices:
-	 *     the neutron emission (m^-3),
-	 *     the mass density (g/L), and
-	 *     the temperature (keV) (this one is actually a scalar)
+	 * @return an object containing the neutron emission (m^-3), the mass density (g/L) (if it’s a
+	 *         knockon image), and the temperature (keV) (if ranging is involved)
 	 */
-	private static Vector[] reconstruct_images(
+	private static Morphology reconstruct_images(
 			boolean knockon, double total_yield, double[][][][] images,
 			Vector[] lines_of_sight, Interval[][] Э_cuts, double[][] ξ, double[][] υ,
 			double object_radius, double model_resolution, Basis output_basis) {
@@ -265,27 +264,13 @@ public class VoxelFit {
 		double volume_gess = 4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3);
 		double emission_gess = total_yield/volume_gess;
 
-		// set the initial emission to satisfy the total yield constraint
-		Vector emission = DenseVector.zeros(basis.num_functions);
-		emission.set(0, total_yield/basis.get_volume(0));
-
-		// set the initial temperature and density if needed
-		Vector density;
-		double temperature;
-		if (knockon) {
-			density = DenseVector.zeros(basis.num_functions);
-			int и = 0;
-			for (int s = 0; s < r.length; s ++) {
-				density.set(и, SHELL_DENSITY_GESS*
-				               Math.exp(-r[s]*r[s]/(2*Math.pow(SHELL_RADIUS_GESS, 2)))); // then set the density p0 terms to be this gaussian profile
-				и += Math.pow(Math.min(s + 1, MAX_MODE + 1), 2);
-			}
-			temperature = SHELL_TEMPERATURE_GESS;
-		}
-		else {
-			density = null;
-			temperature = Double.NaN;
-		}
+		// pick an initial gess
+		Morphology initial_gess = reconstruct_images_naively(
+				knockon, total_yield, images, lines_of_sight, Э_cuts, ξ, υ,
+				object_radius, model_resolution, basis);
+		Vector emission = initial_gess.emission();
+		Vector density = initial_gess.density();
+		double temperature = initial_gess.temperature();
 
 		double last_error, next_error = Double.POSITIVE_INFINITY;
 		int iter = 0;
@@ -312,7 +297,7 @@ public class VoxelFit {
 						logger,
 						basis_volumes,
 						outer_ring);
-				emission = new DenseVector(emission_optimum.location);
+				emission = new DenseVector(emission_optimum.location());
 
 				// start by optimizing the cold fuel with no constraints
 				final Vector current_emission = emission;
@@ -329,38 +314,118 @@ public class VoxelFit {
 						density.getValues(),
 						1e-3,
 						logger);
-				density = new DenseVector(density_optimum.location);
+				density = new DenseVector(density_optimum.location());
 
 
 				// temperature = temperature; TODO: fit temperature
-				next_error = density_optimum.value;
+				next_error = density_optimum.value();
 			}
 			else {
 				Optimum emission_optimum = Optimize.quasilinear_least_squares(
 						(coefs) -> generate_emission_primary_response_matrix(
 								basis, object_radius, model_resolution,
 								lines_of_sight, ξ, υ,
-								SMOOTHING/(emission_gess/Math.sqrt(r[r.length-1]))),
+								SMOOTHING/(emission_gess/Math.sqrt(r[r.length - 1]))),
 						data_vector,
 						inverse_variance_vector,
 						emission.getValues(),
 						1e-3,
 						logger);
-				emission = new DenseVector(emission_optimum.location);
-				next_error = emission_optimum.value;
+				emission = new DenseVector(emission_optimum.location());
+				break;
 			}
 
 			iter ++;
 		} while ((last_error - next_error)/next_error > TOLERANCE);
 
+		VoxelFit.logger.info("completed reconstruction");
+
 		emission = output_basis.rebase(basis, emission);
 		if (knockon) {
 			density = output_basis.rebase(basis, density);
-			return new Vector[] {emission, density, new DenseVector(temperature)};
+			return new Morphology(output_basis, emission, density, temperature);
 		}
 		else {
-			return new Vector[] {emission};
+			return new Morphology(output_basis, emission, null, Double.NaN);
 		}
+	}
+
+
+	/**
+	 * reconstruct the implosion morphology that corresponds to the given images, but poorly.  this
+	 * function should be much faster than reconstruct_images() for the same inputs.
+	 * @param total_yield the total neutron total_yield (used to constrain emission in the knock-on
+	 *                    case, ignored in the primary case).
+	 * @param images an array of arrays of images.  images[l][h][i][j] is the ij
+	 *               pixel of the h energy bin of the l line of site
+	 * @param Э_cuts the edges of the energy bins of the images (MeV)
+	 * @param ξ the edges of the x bins of the images (μm)
+	 * @param υ the edges of the y bins of the images (μm)
+	 * @param lines_of_sight the normalized z vector of each line of site
+	 * @param basis the basis to use to represent the resulting morphology
+	 * @param object_radius the maximum radial extent of the implosion
+	 * @param model_resolution the minimum size of features to be reconstructed
+	 * @param knockon whether these images are generated thru a knock-on process
+	 * @return an object containing the neutron emission (m^-3), the mass density (g/L) (if it’s a
+	 *         knockon image), and the temperature (keV) (if ranging is involved)
+	 */
+	private static Morphology reconstruct_images_naively(
+			boolean knockon, double total_yield, double[][][][] images,
+			Vector[] lines_of_sight, Interval[][] Э_cuts, double[][] ξ, double[][] υ,
+			double object_radius, double model_resolution, Basis basis) {
+		Vector emission;
+		if (!knockon) {
+			// when preparing for a primary reconstruction, the emission can be arbitrarily shaped
+			emission = DenseVector.zeros(basis.num_functions);
+			emission.set(0, 1.);
+		}
+		else {
+			// if this is a knockon image, go ahead and do a primary-like reconstruction of the high-energy image
+			emission = reconstruct_images(
+					false, Double.NaN,
+					slice_second_axis(images, -1), lines_of_sight, null,
+					ξ, υ, object_radius, model_resolution, basis).emission();
+		}
+
+		// force this emission, whatever its shape, to satisfy the yield constraint
+		double total_emission = 0;
+		for (int и = 0; и < emission.getLength(); и ++)
+			total_emission += emission.get(и)*basis.get_volume(и);
+		for (int и = 0; и < emission.getLength(); и ++)
+			emission.set(и, emission.get(и)*total_yield/total_emission); // then set the density p0 terms to be this gaussian profile
+
+		Vector density;
+		double temperature;
+		// leave temperature and density as null if we don’t need them
+		if (!knockon) {
+			density = null;
+			temperature = Double.NaN;
+		}
+		else {
+			// temperature is whatever
+			temperature = SHELL_TEMPERATURE_GESS;
+
+			// for density, do a primary-like reconstruction of the low-energy image
+			density = reconstruct_images(
+					false, Double.NaN,
+					slice_second_axis(images, 0), lines_of_sight, null,
+					ξ, υ, object_radius, model_resolution, basis).emission();
+			double max_density = 0;
+			for (int и = 0; и < basis.num_functions; и ++)
+				if (basis.get_volume(и) > 0)
+					max_density = Math.max(max_density, density.get(и));
+			for (int и = 0; и < emission.getLength(); и ++)
+				density.set(и, density.get(и)*SOME_ARBITRARY_LOW_DENSITY/max_density);  // scale it to be some low density
+			double new_low_energy_yield = Math2.sum(  // then get an idea for the reconstructed low-energy deuteron yield
+			                                          synthesize_knockon_images(emission, density, temperature,
+			                                                                    basis, object_radius, model_resolution,
+			                                                                    lines_of_sight, Э_cuts, ξ, υ));
+			double true_low_energy_yield = Math2.sum(images);  // versus what it’s supposed to be
+			for (int и = 0; и < emission.getLength(); и ++)
+				density.set(и, density.get(и)*true_low_energy_yield/new_low_energy_yield);  // scale it to be some low density
+		}
+
+		return new Morphology(basis, emission, density, temperature);
 	}
 
 
@@ -757,10 +822,10 @@ public class VoxelFit {
 							else
 								break;
 						}
-						float dρL = (ρD + ρ_previus)/2F*dl*μm/cm;
+						float dρL = Math.max(0, ρD + ρ_previus)/2F*dl*μm/cm;
 						if (dρL > 50e-3 && warningsPrinted < 6) {
 							logger.warning(String.format(
-									"WARNING: the rhoL in a single integral step (%.3g mg/cm^2) is too hi.  you probably need " +
+									"the rhoL in a single integral step (%.3g mg/cm^2) is too hi.  you probably need " +
 									"a hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
 									dρL*1e3, ρD, 20e-3/ρD*cm/μm));
 							warningsPrinted++;
@@ -917,6 +982,26 @@ public class VoxelFit {
 			return Math2.legendre(l, m, z)*Math.cos(m*ф);
 		else
 			return Math2.legendre(l, -m, z)*Math.sin(m*ф);
+	}
+
+
+	/**
+	 * extract a slice from a 4d array.  the axis is hard-coded.
+	 * @param array the input, should be non-jagged
+	 * @param index the index to take along axis 1; negative numbers work like in Python
+	 * @return a 4d array where the shape along axis 1 has been set to 1 and the values are taken
+	 *         from the position at the given index
+	 */
+	private static double[][][][] slice_second_axis(double[][][][] array, int index) {
+		if (index < 0)
+			index += array[0].length;
+		double[][][][] output = new double[array.length][1][array[0][0].length][array[0][0][0].length];
+		for (int i = 0; i < output.length; i ++)
+			for (int k = 0; k < output[i][0].length; k ++)
+				System.arraycopy(array[i][index][k], 0,
+				                 output[i][0][k], 0,
+				                 output[i][0][k].length);
+		return output;
 	}
 
 
@@ -1311,6 +1396,10 @@ public class VoxelFit {
 
 		@Override
 		public Vector rebase(Basis that, Vector those_coefficients) {
+			if (that instanceof SphericalHarmonicBasis)
+				if (Arrays.equals(((SphericalHarmonicBasis) that).r_ref, this.r_ref) &&
+				    Arrays.equals(((SphericalHarmonicBasis) that).m, this.m))
+					return those_coefficients;
 			throw new UnsupportedOperationException("I didn't implement this");
 		}
 	}
@@ -1369,12 +1458,21 @@ public class VoxelFit {
 				for (int j = 0; j < this.num_points; j ++)
 					for (int k = 0; k < this.num_points; k ++)
 						these_coefficients.set((i*num_points + j)*num_points + k,
-						                       that.get((double)(x_min + i*x_step),
-						                                (double)(y_min + j*y_step),
-						                                (double)(z_min + k*z_step),
+						                       that.get(x_min + i*x_step,
+						                                y_min + j*y_step,
+						                                z_min + k*z_step,
 						                                those_coefficients));
 			return these_coefficients;
 		}
 	}
+
+
+	/**
+	 * @param basis       the basis by which these Vectors relate to physical space
+	 * @param emission    the neutron/photon emission (m^-3)
+	 * @param density     the shell density (g/L)
+	 * @param temperature the electron temperature (keV)
+	 */
+	record Morphology(Basis basis, Vector emission, Vector density, double temperature) {}
 
 }
