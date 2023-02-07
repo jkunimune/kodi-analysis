@@ -137,7 +137,7 @@ public class Optimize {
 		double last_error = Double.POSITIVE_INFINITY;
 		double new_error = 1/2.*residuals.sqr(); // compute inicial chi^2
 //		System.out.println("state: "+Arrays.toString(state));
-		if (logger != null) logger.info(String.format("inicial value: %.8e", new_error));
+		if (logger != null) logger.info(String.format("  inicial value: %.8e", new_error));
 
 		int iter = 0;
 		while (true) {
@@ -154,7 +154,7 @@ public class Optimize {
 			last_error = new_error;
 
 			if (logger != null)
-				logger.info(String.format("beginning line search with λ = %.4g", λ));
+				logger.info(String.format("  beginning line search with λ = %.4g", λ));
 
 			while (true) {
 				Matrix modified_hessian = hessian.copy();
@@ -168,7 +168,7 @@ public class Optimize {
 
 				new_error = 1/2.*residuals.sqr(); // compute new chi^2
 				if (logger != null)
-					logger.info(String.format("updated value: %.8e", new_error));
+					logger.info(String.format("    updated value: %.8e", new_error));
 
 				if (new_error <= last_error) { // terminate the line search if reasonable
 					state = new_state;
@@ -180,8 +180,8 @@ public class Optimize {
 			}
 
 			if (logger != null) {
-				logger.info(String.format("completed line search with λ = %.4g", λ));
-				logger.info("state: " + state);
+				logger.info(String.format("  completed line search with λ = %.4g", λ));
+				logger.info("  state: " + state);
 			}
 
 			λ *= 4e-5; // decrement the line search parameter XXX
@@ -257,7 +257,7 @@ public class Optimize {
 
 		double zai_error = 1/2.*residuals.dot(weights.times(residuals)); // compute the inicial total error ("zai" is the Pandunia word for "current")
 		if (logger != null)
-			logger.info(String.format("inicial value: %.8e", zai_error));
+			logger.info(String.format("  inicial value: %.8e", zai_error));
 		if (Double.isNaN(zai_error))
 			throw new RuntimeException("invalid initial value");
 		double new_error;
@@ -270,7 +270,7 @@ public class Optimize {
 			Matrix hessian = jacobian.trans().times(weights.times(jacobian));
 
 			if (logger != null)
-				logger.info("beginning line search");
+				logger.info("  beginning line search");
 
 			// do a Levenberg-Marquardt-like backtrack
 			for (double λ = 0; true; λ = λ*7 + .125) {
@@ -295,11 +295,11 @@ public class Optimize {
 				residuals = output.minus(data);
 				new_error = 1/2.*residuals.dot(weights.times(residuals));
 				if (logger != null)
-					logger.info(String.format("updated value: %.8e", new_error));
+					logger.info(String.format("    updated value: %.8e", new_error));
 
 				if (Double.isInfinite(tolerance)) { // if the tolerance is infinite,
 					if (logger != null)
-						logger.info("cancelled line search");
+						logger.info("  cancelled line search");
 					return new Optimum(new_input.getValues()); // that means we can just stop here
 				}
 
@@ -311,13 +311,13 @@ public class Optimize {
 				// check iterations
 				if (λ > 1e6) {
 					if (logger != null)
-						logger.warning("the line search did not converge");
+						logger.warning("  the line search did not converge");
 					break;
 				}
 			}
 
 			if (logger != null)
-				logger.info("completed line search");
+				logger.info("  completed line search");
 
 			iter += 1; // check iteracions
 			if (iter > 100)
