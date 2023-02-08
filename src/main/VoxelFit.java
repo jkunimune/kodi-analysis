@@ -18,10 +18,8 @@ public class VoxelFit {
 	public static final int MAX_MODE = 2;
 	public static final int STOPPING_POWER_RESOLUTION = 126;
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
-	public static final double SHELL_DENSITY_GESS = 20; // (g/cm^3)
 	public static final double SOME_ARBITRARY_LOW_DENSITY = 0.1; // (g/cm^3)
-	public static final double SHELL_RADIUS_GESS = 50; // (μm)
-	public static final double SMOOTHING = 1e+2;
+	public static final double SMOOTHING = 8e-3;
 	public static final double TOLERANCE = 1e-3;
 
 	private static final float Da = 1.66e-27F; // (kg)
@@ -236,18 +234,20 @@ public class VoxelFit {
 		int и_n00 = basis.num_functions - (int) Math.pow(Math.min(r.length, MAX_MODE + 1), 2);
 		outer_ring[и_n00] = 1;
 
-		int num_smoothing_parameters = basis.roughness_vectors(0).n;
+		Matrix roughness_vectors = basis.roughness_vectors();
 
-		VoxelFit.logger.info(String.format("using %d 3d basis functions on %.1fum/%.1fum^3 morphology",
-		                                   basis.num_functions, r[r.length - 1], r[1]));
+		VoxelFit.logger.info(String.format("using %d 3d basis functions (plus %d penalty terms) " +
+		                                   "on %.1fum/%.1fum^3 morphology",
+		                                   basis.num_functions, roughness_vectors.n,
+		                                   r[r.length - 1], r[1]));
 
 		double[] image_vector = unravel_ragged(images);
 		int num_pixels = image_vector.length;
 
 		double[] data_vector = Math2.concatenate(
-				image_vector, new double[num_smoothing_parameters]); // unroll the data
+				image_vector, new double[roughness_vectors.n]); // unroll the data
 		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
-		double data_scale = Math2.max(data_vector)/6F;
+		double data_scale = Math2.max(data_vector)/6.;
 		for (int i = 0; i < num_pixels; i ++)
 //			inverse_variance_vector[i] = 1/(data_scale*data_scale); // uniform
 			inverse_variance_vector[i] = 1/(data_scale*(data_vector[i] + data_scale/36)); // unitless Poisson
@@ -259,10 +259,9 @@ public class VoxelFit {
 		if (!knockon) {
 			total_yield = 0;
 			for (int l = 0; l < images.length; l ++)
-				total_yield += Math2.sum(images[l])/images.length*(ξ[l][1] - ξ[l][0])*(υ[l][1] - υ[l][0])*4*Math.PI;
+				total_yield += Math2.sum(images[l])/images.length*
+				               (ξ[l][1] - ξ[l][0])*(υ[l][1] - υ[l][0])*4*Math.PI;
 		}
-		double volume_gess = 4/3.*Math.PI*Math.pow(SHELL_RADIUS_GESS, 3);
-		double emission_gess = total_yield/volume_gess;
 
 		// pick an initial gess
 		Morphology initial_gess = reconstruct_images_naively(
@@ -272,6 +271,19 @@ public class VoxelFit {
 		Vector density = initial_gess.density();
 		double temperature = initial_gess.temperature();
 
+		// set the smoothing scale
+		double error_scale = 0;  // this is the maximum credible χ^2 term magnitude
+		for (int i = 0; i < num_pixels; i ++)
+			error_scale += 1/2.*inverse_variance_vector[i]*Math.pow(image_vector[i], 2);
+		double emission_smoothing = SMOOTHING*error_scale/Math.sqrt(
+				1/2.*roughness_vectors.matmul(emission).sqr());  // scale the emission smoothing term to be initially comparable
+		double density_smoothing;
+		if (density != null)
+			density_smoothing = SMOOTHING*error_scale/Math.sqrt(
+					1/2.*roughness_vectors.matmul(density).sqr());  // do the same for density if it’s a knockon fit
+		else
+			density_smoothing = 0;
+
 		double last_error, next_error = Double.POSITIVE_INFINITY;
 		int iter = 0;
 		do {
@@ -279,17 +291,19 @@ public class VoxelFit {
 			logger.info(String.format("Pass %d", iter));
 
 			if (knockon) {
+				assert density != null;
 				final double current_temperature = temperature;
 
 				// then optimize the hot spot subject to the yield constraint
 				final Vector current_density = density;
 				Optimum emission_optimum = Optimize.quasilinear_least_squares(
-						(coefs) -> generate_emission_knockon_response_matrix(
-								current_density,
-								current_temperature,
-								basis, object_radius, model_resolution,
-								lines_of_sight, Э_cuts, ξ, υ,
-								SMOOTHING/(emission_gess/Math.sqrt(r[r.length - 1]))),
+						(coefs) -> Matrix.verticly_stack(
+								generate_emission_knockon_response_matrix(
+										current_density,
+										current_temperature,
+										basis, object_radius, model_resolution,
+										lines_of_sight, Э_cuts, ξ, υ),
+								roughness_vectors.times(emission_smoothing)),
 						data_vector,
 						inverse_variance_vector,
 						emission.getValues(),
@@ -302,13 +316,14 @@ public class VoxelFit {
 				// start by optimizing the cold fuel with no constraints
 				final Vector current_emission = emission;
 				Optimum density_optimum = Optimize.quasilinear_least_squares(
-						(coefs) -> generate_density_knockon_response_matrix(
-								current_emission,
-								new DenseVector(coefs),
-								current_temperature,
-								basis, object_radius, model_resolution,
-								lines_of_sight, Э_cuts, ξ, υ,
-								SMOOTHING/(SHELL_DENSITY_GESS/Math.sqrt(r[r.length - 1]))),
+						(coefs) -> Matrix.verticly_stack(
+								generate_density_knockon_response_matrix(
+										current_emission,
+										new DenseVector(coefs),
+										current_temperature,
+										basis, object_radius, model_resolution,
+										lines_of_sight, Э_cuts, ξ, υ),
+								roughness_vectors.times(density_smoothing)),
 						data_vector,
 						inverse_variance_vector,
 						density.getValues(),
@@ -316,20 +331,20 @@ public class VoxelFit {
 						logger);
 				density = new DenseVector(density_optimum.location());
 
-
 				// temperature = temperature; TODO: fit temperature
 				next_error = density_optimum.value();
 			}
 			else {
 				Optimum emission_optimum = Optimize.quasilinear_least_squares(
-						(coefs) -> generate_emission_primary_response_matrix(
-								basis, object_radius, model_resolution,
-								lines_of_sight, ξ, υ,
-								SMOOTHING/(emission_gess/Math.sqrt(r[r.length - 1]))),
+						(coefs) -> Matrix.verticly_stack(
+								generate_emission_primary_response_matrix(
+										basis, object_radius, model_resolution,
+										lines_of_sight, ξ, υ),
+								roughness_vectors.times(emission_smoothing)),
 						data_vector,
 						inverse_variance_vector,
 						emission.getValues(),
-						1e-3,
+						Double.POSITIVE_INFINITY,
 						logger);
 				emission = new DenseVector(emission_optimum.location());
 				break;
@@ -444,15 +459,12 @@ public class VoxelFit {
 			double integral_step,
 			Vector[] lines_of_sight,
 			double[][] ξ,
-			double[][] υ,
-			double smoothing
+			double[][] υ
 	) {
-		return Matrix.verticly_stack(
-				new Matrix(unravel_ragged(simulate_primary_image_response(
-						null, basis,
-						object_size, integral_step, lines_of_sight, ξ, υ,
-						true))),
-				basis.roughness_vectors(smoothing));
+		return new Matrix(unravel_ragged(simulate_primary_image_response(
+				null, basis,
+				object_size, integral_step, lines_of_sight, ξ, υ,
+				true)));
 	}
 
 
@@ -561,7 +573,7 @@ public class VoxelFit {
 					boolean youve_seen_anything_yet = false;
 					// TODO: merge this with simulate_knockon_image_response when I break the inner loop of simulate_knockon_image_response into a separate task
 					for (float ζD = z_max; ζD >= -z_max; ζD -= integral_step) {
-						Vector r = rotate.times(ξ[l][i], υ[l][j], ζD);
+						Vector r = rotate.matmul(ξ[l][i], υ[l][j], ζD);
 
 						float[] local_emission; // get the emission
 						if (respond_to_emission) // either by basing it on the basis function
@@ -620,15 +632,12 @@ public class VoxelFit {
 			Vector[] lines_of_sight,
 			Interval[][] Э_cuts,
 			double[][] ξ,
-			double[][] υ,
-			double smoothing
+			double[][] υ
 	) {
-		return Matrix.verticly_stack(
-				new Matrix(unravel_ragged(simulate_knockon_image_response(
-						null, density, temperature, basis,
-						object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
-						true, false))),
-				basis.roughness_vectors(smoothing));
+		return new Matrix(unravel_ragged(simulate_knockon_image_response(
+				null, density, temperature, basis,
+				object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
+				true, false)));
 	}
 
 
@@ -655,15 +664,12 @@ public class VoxelFit {
 			Vector[] lines_of_sight,
 			Interval[][] Э_cuts,
 			double[][] ξ,
-			double[][] υ,
-			double smoothing
+			double[][] υ
 	) {
-		return Matrix.verticly_stack(
-				new Matrix(unravel_ragged(simulate_knockon_image_response(
-						emission, density, temperature, basis,
-						object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
-						false, true))),
-				basis.roughness_vectors(smoothing));
+		return new Matrix(unravel_ragged(simulate_knockon_image_response(
+				emission, density, temperature, basis,
+				object_size, integral_step, lines_of_sight, Э_cuts, ξ, υ,
+				false, true)));
 	}
 
 
@@ -806,7 +812,7 @@ public class VoxelFit {
 					float ρL = 0; // tally up ρL as you go
 					float ρ_previus = 0;
 					for (float ζD = z_max; ζD >= -z_max; ζD -= dl) {
-						Vector rD = rotate.times(ξ[l][iV], υ[l][jV], ζD);
+						Vector rD = rotate.matmul(ξ[l][iV], υ[l][jV], ζD);
 						float[] local_density;
 						float ρD;
 						if (respond_to_density) {
@@ -840,7 +846,7 @@ public class VoxelFit {
 							while (true) { // there's a fancy 2D for-loop-type-thing here
 								boolean we_should_keep_looking_here = false;
 
-								Vector Δr = rotate.times(Δξ, Δυ, Δζ);
+								Vector Δr = rotate.matmul(Δξ, Δυ, Δζ);
 								Vector rP = rD.plus(Δr);
 
 								float[] local_emission; // get the emission
@@ -1211,11 +1217,9 @@ public class VoxelFit {
 		/**
 		 * create an array that represents the dangers of overfitting with the basis functions you are given.
 		 * each row of the array represents one "bad mode", which is two basis functions with the same angular
-		 * distribution and adjacent radial positions, which ideally should have similar coefficients.  each
-		 * collum represents 
-		 * @param weit the quantity by which to scale the smoothing terms
+		 * distribution and adjacent radial positions, which ideally should have similar coefficients.
 		 */
-		public abstract Matrix roughness_vectors(double weit);
+		public abstract Matrix roughness_vectors();
 	}
 
 	/**
@@ -1354,7 +1358,7 @@ public class VoxelFit {
 		}
 
 		@Override
-		public Matrix roughness_vectors(double weit) {
+		public Matrix roughness_vectors() {
 			double dr = r_ref[1] - r_ref[0];
 			int l_max = this.l[this.l.length - 1];
 			List<Vector> bad_modes = new ArrayList<>(0);
@@ -1380,11 +1384,11 @@ public class VoxelFit {
 								Vector mode = new SparseVector(num_functions); // create a new "bad mode"
 
 								if (и_R >= 0)
-									mode.increment(и_R, 0.5*weit/Math.sqrt(dr));
+									mode.increment(и_R,  0.5/Math.sqrt(dr));
 								if (и_M >= 0)
-									mode.increment(и_M, - weit/Math.sqrt(dr)); // note that if there is no и_L, it just weys this value down
+									mode.increment(и_M, -1.0/Math.sqrt(dr)); // note that if there is no и_L, it just weys this value down
 								if (и_L >= 0)
-									mode.increment(и_L, 0.5*weit/Math.sqrt(dr));
+									mode.increment(и_L,  0.5/Math.sqrt(dr));
 								bad_modes.add(mode);
 							}
 						}
@@ -1447,7 +1451,7 @@ public class VoxelFit {
 		}
 
 		@Override
-		public Matrix roughness_vectors(double weit) {
+		public Matrix roughness_vectors() {
 			throw new UnsupportedOperationException("I haven't done that either.");
 		}
 

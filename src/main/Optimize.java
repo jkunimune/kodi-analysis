@@ -60,7 +60,7 @@ public class Optimize {
 
 		Function<double[], Matrix> compute_jacobian = (double[] state) -> {
 			double[] residuals = compute_residuals.apply(state);
-			Matrix jacobian = new Matrix(new double[residuals.length][state.length]);
+			Matrix jacobian = Matrix.zeros(residuals.length, state.length);
 			for (int j = 0; j < state.length; j ++) {
 				state[j] += scale[j]*h;
 				double[] turb_residuals = compute_residuals.apply(state);
@@ -136,14 +136,13 @@ public class Optimize {
 
 		double last_error = Double.POSITIVE_INFINITY;
 		double new_error = 1/2.*residuals.sqr(); // compute inicial chi^2
-//		System.out.println("state: "+Arrays.toString(state));
 		if (logger != null) logger.info(String.format("  inicial value: %.8e", new_error));
 
 		int iter = 0;
 		while (true) {
 			Matrix jacobian = compute_jacobian.apply(state.getValues()); // take the gradients
-			Matrix hessian = jacobian.trans().times(jacobian); // and do some linear algebra
-			Vector gradient = jacobian.trans().times(residuals);
+			Matrix hessian = jacobian.trans().matmul(jacobian); // and do some linear algebra
+			Vector gradient = jacobian.trans().matmul(residuals);
 
 			if (is_converged(last_error, new_error,
 							 residuals.getValues(),
@@ -160,7 +159,7 @@ public class Optimize {
 				Matrix modified_hessian = hessian.copy();
 				for (int i = 0; i < state.getLength(); i ++)
 					modified_hessian.set(i, i, (1 + λ)*hessian.get(i, i));
-				Vector step = modified_hessian.inverse().times(gradient);
+				Vector step = modified_hessian.inverse().matmul(gradient);
 
 				Vector new_state = state.minus(step); // take step
 
@@ -220,7 +219,7 @@ public class Optimize {
 		  double[] initial_input,
 		  double tolerance,
 		  Logger logger,
-		  double[]... constraints) {
+		  double[]... constraints) { // TODO: support bounds
 		if (data_values.length != data_weights.length)
 			throw new IllegalArgumentException("there must be the same number of residuals as weights");
 		Matrix initial_jacobian = compute_local_jacobian.apply(initial_input);
@@ -240,14 +239,16 @@ public class Optimize {
 		Vector input = new DenseVector(Arrays.copyOf(initial_input, initial_input.length));
 
 		Matrix jacobian = initial_jacobian;
-		Vector output = jacobian.times(input); // compute inicial residuals
+		Vector output = jacobian.matmul(input); // compute inicial residuals
 		Vector residuals = output.minus(data);
-		Matrix weights = new Matrix(data_weights);
+		Matrix weights = Matrix.diagonal(data_weights);
 		Matrix realign, constrain; // set up some basis changes that let you enforce constraints
 		if (constraints.length > 0) {
 			double[][][] orthogonalized = Math2.orthogonalComplement(constraints);
-			Matrix constrained = new Matrix(orthogonalized[0]);
-			Matrix free = new Matrix(orthogonalized[1]);
+			Matrix constrained = new Matrix(constraints.length,
+			                                input.getLength(), orthogonalized[0]);
+			Matrix free = new Matrix(input.getLength() - constraints.length,
+			                         input.getLength(), orthogonalized[1]);
 			realign = Matrix.verticly_stack(free, constrained);
 			constrain = Matrix.verticly_stack(free, Matrix.zeros(constraints.length, free.m));
 		}
@@ -255,7 +256,7 @@ public class Optimize {
 			realign = constrain = Matrix.identity(initial_input.length);
 		}
 
-		double zai_error = 1/2.*residuals.dot(weights.times(residuals)); // compute the inicial total error ("zai" is the Pandunia word for "current")
+		double zai_error = 1/2.*residuals.dot(weights.matmul(residuals)); // compute the inicial total error ("zai" is the Pandunia word for "current")
 		if (logger != null)
 			logger.info(String.format("  inicial value: %.8e", zai_error));
 		if (Double.isNaN(zai_error))
@@ -266,8 +267,8 @@ public class Optimize {
 		int iter = 0;
 		while (true) {
 			// calculate the hessian using linear algebra
-			Vector gradient = jacobian.trans().times(weights.times(residuals));
-			Matrix hessian = jacobian.trans().times(weights.times(jacobian));
+			Vector gradient = jacobian.trans().matmul(weights.matmul(residuals));
+			Matrix hessian = jacobian.trans().matmul(weights.matmul(jacobian));
 
 			if (logger != null)
 				logger.info("  beginning line search");
@@ -279,9 +280,9 @@ public class Optimize {
 					modified_hessian.set(i, i, (1 + λ)*hessian.get(i, i));
 
 				// calculate the step given the normalization λ and limited freedom
-				Matrix reduced_hessian = realign.times(modified_hessian);
-				Vector reduced_gradient = constrain.times(gradient);
-				Vector step = reduced_hessian.inverse().times(reduced_gradient).neg();
+				Matrix reduced_hessian = realign.matmul(modified_hessian);
+				Vector reduced_gradient = constrain.matmul(gradient);
+				Vector step = reduced_hessian.inverse().matmul(reduced_gradient).neg();
 //				Vector step = reduced_hessian.pseudoinverse_times(reduced_gradient, false).neg();
 				if (Double.isNaN(step.get(0)))
 					throw new RuntimeException("singular hessian");
@@ -291,9 +292,9 @@ public class Optimize {
 				if (Double.isFinite(tolerance))
 					jacobian = compute_local_jacobian.apply(new_input.getValues());
 				// figure out the new sum of squares
-				output = jacobian.times(new_input);
+				output = jacobian.matmul(new_input);
 				residuals = output.minus(data);
-				new_error = 1/2.*residuals.dot(weights.times(residuals));
+				new_error = 1/2.*residuals.dot(weights.matmul(residuals));
 				if (logger != null)
 					logger.info(String.format("    updated value: %.8e", new_error));
 
@@ -571,7 +572,7 @@ public class Optimize {
 				J[i][1] = x[i]*c[0]*Math.exp(c[1]*x[i]);
 				J[i][2] = 1;
 			}
-			return new Matrix(J);
+			return new Matrix(3, 3, J);
 		};
 
 		double[] c = least_squares(err, grad,

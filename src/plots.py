@@ -345,7 +345,7 @@ def save_and_plot_morphologies(filename: str,
 		print(f"⟨ρR⟩ (arithmetic) = {np.mean(np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
 
 		plt.figure(figsize=LONG_FIGURE_SIZE)
-		num_contours = max(9, int(2*peak_source/source_slice.max()))
+		num_contours = int(max(9, min(200, 3*peak_source/source_slice.max())))
 		levels = np.concatenate([np.linspace(-peak_source, 0, num_contours)[1:-1],
 		                         np.linspace(0, peak_source, num_contours)[1:-1]])
 		plt.contour(y, z, source_slice.T,
@@ -360,7 +360,7 @@ def save_and_plot_morphologies(filename: str,
 				# facecolor="#fdce45",
 			)
 		if np.any(density_slice > 0):
-			num_contours = min(max(9, int(2*peak_density/density_slice.max())), 200)
+			num_contours = int(max(9, min(200, 3*peak_density/density_slice.max())))
 			plt.contourf(y, z, np.maximum(0, density_slice).T,
 			             vmin=0, vmax=peak_density,
 			             levels=np.linspace(0, peak_density, num_contours),
@@ -370,7 +370,7 @@ def save_and_plot_morphologies(filename: str,
 				make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
 		if np.any(density_slice < 0):
 			plt.contourf(y, z, -density_slice.T,
-			             levels=[0, abs(np.max(density_slice))],
+			             levels=[0, np.max(abs(density_slice))],
 			             cmap=CMAP["cyans"],
 			             zorder=1)
 		plt.xlabel("x (μm)")

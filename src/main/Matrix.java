@@ -24,22 +24,24 @@
 package main;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 public class Matrix {
-	public final int n;
+	/** the number of rows */
+	public final int n;  // TODO: swap these
+	/** the number of collums */
 	public final int m;
+	/** the data */
 	private final Vector[] rows;
 
 	/**
-	 * generate a new matrix by giving a list of rows.
+	 * generate a new matrix by giving dimensions and a list of rows.
 	 */
-	public Matrix(Vector[] rows) {
-		this.n = rows.length;
-		if (rows.length == 0)
-			throw new IllegalArgumentException("if you want to create an array with height 0, you need to specify the width.");
-		this.m = rows[0].getLength();
+	public Matrix(int n, int m, Vector[] rows) {
+		this.n = n;
+		if (rows.length != n)
+			throw new IllegalArgumentException("the height doesn’t match the data.");
+		this.m = m;
 		for (Vector row: rows)
 			if (row.getLength() != m)
 				throw new IllegalArgumentException("do not accept jagged arrays.");
@@ -47,13 +49,20 @@ public class Matrix {
 	}
 
 	/**
+	 * generate a new matrix by giving a list of rows.
+	 */
+	public Matrix(Vector[] rows) {
+		this(rows.length, rows[0].getLength(), rows);
+	}
+
+	/**
 	 * generate a new matrix by specifying all of its values explicitly.
 	 */
-	public Matrix(double[][] values) {
-		this.n = values.length;
-		if (values.length == 0)
-			throw new IllegalArgumentException("if you want to create an array with height 0, you need to specify the width.");
-		this.m = values[0].length;
+	public Matrix(int n, int m, double[][] values) {
+		this.n = n;
+		if (values.length != n)
+			throw new IllegalArgumentException("the height doesn’t match the data.");
+		this.m = m;
 		for (double[] row: values)
 			if (row.length != m)
 				throw new IllegalArgumentException("do not accept jagged arrays.");
@@ -73,17 +82,17 @@ public class Matrix {
 		                 all_rows, 0, top.n);
 		System.arraycopy(bottom.rows, 0,
 		                 all_rows, top.n, bottom.n);
-		return new Matrix(all_rows);
+		return new Matrix(top.n + bottom.n, top.m, all_rows);
 	}
 
 	/**
 	 * generate a square diagonal matrix, given the diagonal values.
 	 */
-	public Matrix(double[] values) {
-		this.n = this.m = values.length;
-		this.rows = new Vector[values.length];
+	public static Matrix diagonal(double[] values) {
+		Vector[] rows = new Vector[values.length];
 		for (int i = 0; i < values.length; i ++)
-			this.rows[i] = new SparseVector(this.m, i, values[i]);
+			rows[i] = new SparseVector(values.length, i, values[i]);
+		return new Matrix(values.length, values.length, rows);
 	}
 
 	/**
@@ -93,7 +102,7 @@ public class Matrix {
 		Vector[] rows = new Vector[n];
 		for (int i = 0; i < n; i ++)
 			rows[i] = new SparseVector(n, i, 1F);
-		return new Matrix(rows);
+		return new Matrix(n, n, rows);
 	}
 
 	/**
@@ -103,14 +112,21 @@ public class Matrix {
 		Vector[] rows = new Vector[n];
 		for (int i = 0; i < n; i ++)
 			rows[i] = new SparseVector(m);
-		return new Matrix(rows);
+		return new Matrix(n, m, rows);
 	}
 
-	public Vector times(double... v) {
-		return this.times(new DenseVector(v));
+	public Matrix times(double a) {
+		Vector[] rows = new Vector[n];
+		for (int i = 0; i < n; i ++)
+			rows[i] = this.rows[i].times(a);
+		return new Matrix(n, m, rows);
 	}
 
-	public Vector times(Vector v) {
+	public Vector matmul(double... v) {
+		return this.matmul(new DenseVector(v));
+	}
+
+	public Vector matmul(Vector v) {
 		if (v.getLength() != this.m)
 			throw new IllegalArgumentException("the dimensions don't match.");
 		double[] product = new double[this.n];
@@ -119,18 +135,20 @@ public class Matrix {
 		return new DenseVector(product);
 	}
 
-	public Matrix times(Matrix that) {
+	public Matrix matmul(Matrix that) {
 		if (this.m != that.n)
 			throw new IllegalArgumentException("the matrix dimensions don't match");
-		double[][] values = new double[this.n][that.m];
+		Vector[] values = new Vector[this.n];
+		for (int i = 0; i < this.n; i ++)
+			values[i] = DenseVector.zeros(that.m);
 		for (int j = 0; j < that.m; j ++) {
 			Vector column = that.getColumn(j);
 			for (int i = 0; i < this.n; i ++) {
 				Vector row = this.getRow(i);
-				values[i][j] += row.dot(column);
+				values[i].set(j, row.dot(column));
 			}
 		}
-		return new Matrix(values);
+		return new Matrix(this.n, that.m, values);
 	}
 
 	/**
@@ -140,7 +158,7 @@ public class Matrix {
 		if (this.n != this.m || this.n > 10_000)
 			throw new RuntimeException(String.format("for a %dx%d, I think you should use the " +
 			                                         "pseudoinverse_times function.", n, m));
-		return new Matrix(Math2.matinv(this.getValues()));
+		return new Matrix(n, n, Math2.matinv(this.getValues()));
 	}
 
 	/**
@@ -172,7 +190,7 @@ public class Matrix {
 			for (int j = 0; j < pruned_inverse[i].length; j ++)
 				inverse[nonzero.get(i)][nonzero.get(j)] = pruned_inverse[i][j];
 
-		return new Matrix(inverse);
+		return new Matrix(n, n, inverse);
 	}
 
 	/**
@@ -221,18 +239,21 @@ public class Matrix {
 	 * the transpose of the matrix
 	 */
 	public Matrix trans() {
-		double[][] values = new double[this.m][this.n];
-		for (int i = 0; i < values.length; i ++)
-			for (int j = 0; j < values[i].length; j ++)
-				values[i][j] = this.get(j, i);
-		return new Matrix(values);
+		Vector[] values = new Vector[this.m];
+		for (int i = 0; i < values.length; i ++) {
+			values[i] = DenseVector.zeros(this.n);
+			for (int j = 0; j < values[i].getLength(); j ++) {
+				values[i].set(j, this.get(j, i));
+			}
+		}
+		return new Matrix(m, n, values);
 	}
 
 	public Matrix copy() {
 		Vector[] rows = new Vector[this.rows.length];
 		for (int i = 0; i < rows.length; i ++)
 			rows[i] = this.rows[i].copy();
-		return new Matrix(rows);
+		return new Matrix(n, m, rows);
 	}
 
 	public void set(int i, int j, double a) {
