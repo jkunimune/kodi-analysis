@@ -223,9 +223,9 @@ public class Optimize {
 		if (data_values.length != data_weights.length)
 			throw new IllegalArgumentException("there must be the same number of residuals as weights");
 		Matrix initial_jacobian = compute_local_jacobian.apply(initial_input);
-		if (initial_jacobian.n != data_values.length)
+		if (initial_jacobian.m != data_values.length)
 			throw new IllegalArgumentException("there must be the same number of gradients as residuals");
-		if (initial_jacobian.m != initial_input.length)
+		if (initial_jacobian.n != initial_input.length)
 			throw new IllegalArgumentException("the jacobian width must match the initial gess");
 		for (double[] constraint: constraints)
 			if (constraint.length != initial_input.length)
@@ -250,7 +250,7 @@ public class Optimize {
 			Matrix free = new Matrix(input.getLength() - constraints.length,
 			                         input.getLength(), orthogonalized[1]);
 			realign = Matrix.verticly_stack(free, constrained);
-			constrain = Matrix.verticly_stack(free, Matrix.zeros(constraints.length, free.m));
+			constrain = Matrix.verticly_stack(free, Matrix.zeros(constraints.length, free.n));
 		}
 		else {
 			realign = constrain = Matrix.identity(initial_input.length);
@@ -276,7 +276,7 @@ public class Optimize {
 			// do a Levenberg-Marquardt-like backtrack
 			for (double λ = 0; true; λ = λ*7 + .125) {
 				Matrix modified_hessian = hessian.copy();
-				for (int i = 0; i < hessian.n; i ++)
+				for (int i = 0; i < hessian.m; i ++)
 					modified_hessian.set(i, i, (1 + λ)*hessian.get(i, i));
 
 				// calculate the step given the normalization λ and limited freedom

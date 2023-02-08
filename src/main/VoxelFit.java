@@ -238,14 +238,14 @@ public class VoxelFit {
 
 		VoxelFit.logger.info(String.format("using %d 3d basis functions (plus %d penalty terms) " +
 		                                   "on %.1fum/%.1fum^3 morphology",
-		                                   basis.num_functions, roughness_vectors.n,
+		                                   basis.num_functions, roughness_vectors.m,
 		                                   r[r.length - 1], r[1]));
 
 		double[] image_vector = unravel_ragged(images);
 		int num_pixels = image_vector.length;
 
 		double[] data_vector = Math2.concatenate(
-				image_vector, new double[roughness_vectors.n]); // unroll the data
+				image_vector, new double[roughness_vectors.m]); // unroll the data
 		double[] inverse_variance_vector = new double[data_vector.length]; // define the input error bars
 		double data_scale = Math2.max(data_vector)/6.;
 		for (int i = 0; i < num_pixels; i ++)
