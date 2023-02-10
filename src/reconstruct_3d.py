@@ -27,7 +27,7 @@ from util import execute_java
 r_max = 100 # (μm)
 
 energy_resolution = 4 # (MeV)
-spatial_resolution = 10 # (μm)
+spatial_resolution = 7 # (μm)
 
 
 def get_shot_yield(shot: str) -> float:
@@ -93,7 +93,7 @@ if __name__ == '__main__':
 			x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
 			X, Y, Z = np.meshgrid(x_model, y_model, z_model, indexing='ij')
 			tru_emission = 1e+8*np.exp(-(np.sqrt(X**2 + Y**2 + 2.5*Z**2)/40)**4/2) # (μm^-3)
-			tru_density = 10*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 20)**2 + Z**2)/60)**4/2) * \
+			tru_density = .5*np.exp(-(np.sqrt(1.1*X**2 + 1.1*(Y + 15)**2 + Z**2)/50)**4/2) * \
 			              np.maximum(.1, 1 - 2*(tru_emission/tru_emission.max())**2) # (g/cc)
 			tru_temperature = 1 # (keV)
 

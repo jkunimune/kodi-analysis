@@ -203,6 +203,8 @@ public class Optimize {
 	 * @param data_values the correct y values to which we are minimizing the error
 	 * @param data_weights the relative importance of each residual (i.e. inverse variance)
 	 * @param initial_input the inicial gess for the minimizacion
+	 * @param bounded an array that specifies which of the input dimensions have bounds.  any dimensions
+	 *                corresponding to a true will be coerced into the range 0 <= x_i < ∞
 	 * @param tolerance the maximum acceptable value of the components of the gradient of the
 	 * 	                sum of squares, normalized by the norm of the errors and the norm of
 	 * 	                the gradients of the individual errors.
@@ -217,6 +219,7 @@ public class Optimize {
 		  double[] data_values,
 		  double[] data_weights,
 		  double[] initial_input,
+		  boolean[] bounded,
 		  double tolerance,
 		  Logger logger,
 		  double[]... constraints) { // TODO: support bounds
@@ -282,11 +285,14 @@ public class Optimize {
 				// calculate the step given the normalization λ and limited freedom
 				Matrix reduced_hessian = realign.matmul(modified_hessian);
 				Vector reduced_gradient = constrain.matmul(gradient);
-				Vector step = reduced_hessian.inverse().matmul(reduced_gradient).neg();
-//				Vector step = reduced_hessian.pseudoinverse_times(reduced_gradient, false).neg();
+				Vector step = reduced_hessian.inverse().matmul(reduced_gradient).neg(); // TODO: this could be more effective if it found bounded coordinates with negative gradients and locked them for the inverse
 				if (Double.isNaN(step.get(0)))
 					throw new RuntimeException("singular hessian");
 				Vector new_input = input.plus(step);
+				// project the stepped position
+				for (int i = 0; i < new_input.getLength(); i ++)
+					if (bounded[i] && new_input.get(i) < 0)
+						new_input.set(i, 0);
 
 				// get the updated jacobian if there mite be more
 				if (Double.isFinite(tolerance))

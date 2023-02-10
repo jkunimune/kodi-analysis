@@ -19,7 +19,7 @@ public class VoxelFit {
 	public static final int STOPPING_POWER_RESOLUTION = 126;
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SOME_ARBITRARY_LOW_DENSITY = 0.1; // (g/cm^3)
-	public static final double SMOOTHING = 8e-3;
+	public static final double SMOOTHING = 2e-3;
 	public static final double TOLERANCE = 1e-3;
 
 	private static final float Da = 1.66e-27F; // (kg)
@@ -233,6 +233,9 @@ public class VoxelFit {
 		double[] outer_ring = new double[basis.num_functions];
 		int и_n00 = basis.num_functions - (int) Math.pow(Math.min(r.length, MAX_MODE + 1), 2);
 		outer_ring[и_n00] = 1;
+		boolean[] isotropic_basis_functions = new boolean[basis.num_functions];
+		for (int и = 0; и < basis.num_functions; и ++)
+			isotropic_basis_functions[и] = basis_volumes[и] > 0;
 
 		Matrix roughness_vectors = basis.roughness_vectors();
 
@@ -307,6 +310,7 @@ public class VoxelFit {
 						data_vector,
 						inverse_variance_vector,
 						emission.getValues(),
+						isotropic_basis_functions,
 						Double.POSITIVE_INFINITY,
 						logger,
 						basis_volumes,
@@ -327,6 +331,7 @@ public class VoxelFit {
 						data_vector,
 						inverse_variance_vector,
 						density.getValues(),
+						isotropic_basis_functions,
 						1e-3,
 						logger);
 				density = new DenseVector(density_optimum.location());
@@ -344,6 +349,7 @@ public class VoxelFit {
 						data_vector,
 						inverse_variance_vector,
 						emission.getValues(),
+						isotropic_basis_functions,
 						Double.POSITIVE_INFINITY,
 						logger);
 				emission = new DenseVector(emission_optimum.location());
