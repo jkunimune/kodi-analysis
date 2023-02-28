@@ -10,6 +10,7 @@ from scipy import interpolate, integrate, optimize
 
 import coordinate
 import detector
+from cmap import CMAP
 from coordinate import Grid
 from hdf5_util import load_hdf5
 from plots import make_colorbar, save_current_figure
@@ -160,7 +161,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 		plt.plot(test_temperature[1:],
 		         emission[1:]/emissions[ref, 1:],
 		         label=print_filtering(filter_stack))
-	# plt.legend()
+	plt.legend()
 	plt.yscale("log")
 	plt.xlabel("Temperature (keV)")
 	plt.ylabel("X-ray emission")
@@ -184,7 +185,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	for filter_stack, image in zip(filter_stacks, images):
 		plt.plot(basis.x.get_bins(), image.at((basis.x.get_bins(), 0)),
 		         label=print_filtering(filter_stack))  # TODO: error bars
-	# plt.legend()
+	plt.legend()
 	plt.yscale("log")
 	plt.xlabel("x (μm)")
 	plt.ylabel("X-ray image")
@@ -247,9 +248,10 @@ def plot_electron_temperature(filename: str, show: bool,
 	    implosion actually is.
 	"""
 	plt.figure()
+	plt.gca().set_facecolor("k")
 	plt.imshow(temperature.T, extent=grid.extent,
-	           cmap="inferno", origin="lower", vmin=0, vmax=2)
-	make_colorbar(0, 2, "Te (keV)")
+	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=7)
+	make_colorbar(vmin=0, vmax=7, label="Te (keV)")
 	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
 	            colors="#000", linewidths=1,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
@@ -260,7 +262,7 @@ def plot_electron_temperature(filename: str, show: bool,
 		plt.plot([-x_stalk*50, x_stalk*50], [-y_stalk*50, y_stalk*50], color="#000", linewidth=2)
 	temperature_integrated = temperature[grid.x.num_bins//2, grid.y.num_bins//2]
 	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
-	         ha='left', va='top', transform=plt.gca().transAxes)
+	         color="w", ha='left', va='top', transform=plt.gca().transAxes)
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.title(filename.replace("-", " ").capitalize())
@@ -298,6 +300,7 @@ def main():
 	emissions = np.array(emissions)
 	temperatures = np.array(temperatures)
 
+	# plot the trends in all of the data hither plotted
 	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(6, 5))
 	x = np.ravel(
 		np.arange(len(SHOTS))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(TIMS))[np.newaxis, :])

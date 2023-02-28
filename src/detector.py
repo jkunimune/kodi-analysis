@@ -122,7 +122,7 @@ def log_xray_transmission(energy: Numeric, thickness: float, material: str) -> N
 
 
 def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_time: float,
-                         thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
+                         thickness=112., psl_attenuation=1/45., material="phosphor") -> Numeric:
 	""" calculate the log of the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
@@ -143,7 +143,7 @@ def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade
 
 
 def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_time: float,
-                     thickness=112., psl_attenuation=1/45., material="BaFBr") -> Numeric:
+                     thickness=112., psl_attenuation=1/45., material="phosphor") -> Numeric:
 	""" calculate the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
@@ -157,18 +157,13 @@ def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_tim
 	return np.exp(log_xray_sensitivity(energy, filter_stack, fade_time, thickness, psl_attenuation, material))
 
 
-def xray_energy_bounds(filter_stack: list[(float, str)], level=.10,
-                       ip_thickness=112., ip_psl_attenuation=1/45., ip_material="BaFBr") -> (float, float):
+def xray_energy_bounds(filter_stack: list[(float, str)], level=.10) -> (float, float):
 	""" calculate the minimum and maximum energies this filter and image plate configuration can detect
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
-	    :param time: the delay between the experiment and the image plate scan (min)
 	    :param level: the fraction of the max at which to define the min and the max
-	    :param ip_thickness: the thickness of the image plate (μm)
-	    :param ip_psl_attenuation: the attenuation constant of the image plate's characteristic photostimulated luminescence
-	    :param ip_material: the name of the image plate material (probably just the elemental symbol)
 	"""
 	energy = np.geomspace(3e-1, 3e+3, 401)
-	sensitivity = xray_sensitivity(energy, filter_stack, 0, ip_thickness, ip_psl_attenuation, ip_material)
+	sensitivity = xray_sensitivity(energy, filter_stack, 0)
 	lower = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][0]]
 	upper = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][-1]]
 	return lower, upper
@@ -209,8 +204,8 @@ if __name__ == '__main__':
 
 	energies = np.geomspace(1, 1e3, 301)
 	plt.figure()
-	front = [(2800, "cr39"), (200, "Al")]
-	back = [*front, (112, "BaFBr"), (200, "Al")]
+	front = [(3000, "cr39"), (200, "Al")]
+	back = [*front, (112, "phosphor"), (407, "CH2"), (200, "Al")]
 	for filters in [[(50, "Al"), *front], [(50, "Al"), *back], [(15, "Ta"), *front], [(15, "Ta"), *back]]:
 		sensitivity = xray_sensitivity(energies, filters, 30)
 		plt.plot(energies, sensitivity,
@@ -228,7 +223,7 @@ if __name__ == '__main__':
 	# plt.savefig("../ip_sensitivities.eps")
 
 	plt.figure()
-	for material, density in [("Ta", 16.6), ("Al", 2.7)]:
+	for material, density in [("Ta", 16.6), ("Al", 2.7), ("CH2", 1.4), ("cr39", 1.31)]:
 		attenuation = attenuation_curve(energies, material)*1e4/density
 		plt.plot(energies/1e3, attenuation, label=material)
 	plt.legend()
