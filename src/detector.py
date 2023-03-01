@@ -103,6 +103,13 @@ def attenuation_curve(energy: Numeric, material: str) -> Numeric:
 	    :param material: the name of the material (probably just the elemental symbol)
 	    :return: the attenuation constant at the specified energy (μm^-1)
 	"""
+	# since image plates aren’t really a material, go ahead and put that together from other materials
+	if material == "ip":
+		total = np.zeros(energy.shape, dtype=float)
+		for thickness, material in [(115, "phosphor"), (236, "plastic"), (80, "ferrite")]:
+			total += thickness/431*attenuation_curve(energy, material)
+		return total
+	# otherwise load from disc
 	try:
 		table = np.loadtxt(f"data/tables/attenuation_{material}.csv", delimiter=",")
 	except FileNotFoundError:
@@ -122,7 +129,7 @@ def log_xray_transmission(energy: Numeric, thickness: float, material: str) -> N
 
 
 def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_time: float,
-                         thickness=112., psl_attenuation=1/45., material="phosphor") -> Numeric:
+                         thickness=115., psl_attenuation=1/45., material="phosphor") -> Numeric:
 	""" calculate the log of the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
@@ -143,7 +150,7 @@ def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade
 
 
 def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_time: float,
-                     thickness=112., psl_attenuation=1/45., material="phosphor") -> Numeric:
+                     thickness=115., psl_attenuation=1/45., material="phosphor") -> Numeric:
 	""" calculate the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
@@ -205,8 +212,8 @@ if __name__ == '__main__':
 	energies = np.geomspace(1, 1e3, 301)
 	plt.figure()
 	front = [(3000, "cr39"), (200, "Al")]
-	back = [*front, (112, "phosphor"), (407, "CH2"), (200, "Al")]
-	for filters in [[(50, "Al"), *front], [(50, "Al"), *back], [(15, "Ta"), *front], [(15, "Ta"), *back]]:
+	back = [*front, (112, "phosphor"), (236, "plastic"), (80, "ferrite"), (200, "Al")]
+	for filters in [[(50, "Al"), *front], [(15, "Ta"), *front], [(50, "Al"), *back], [(15, "Ta"), *back]]:
 		sensitivity = xray_sensitivity(energies, filters, 30)
 		plt.plot(energies, sensitivity,
 		         label=f"{filters[0][0]}μm {filters[0][1]} + {len(filters) - 1}")
@@ -222,17 +229,23 @@ if __name__ == '__main__':
 	# plt.savefig("../ip_sensitivities.png", dpi=300)
 	# plt.savefig("../ip_sensitivities.eps")
 
-	plt.figure()
-	for material, density in [("Ta", 16.6), ("Al", 2.7), ("CH2", 1.4), ("cr39", 1.31)]:
-		attenuation = attenuation_curve(energies, material)*1e4/density
-		plt.plot(energies/1e3, attenuation, label=material)
-	plt.legend()
-	plt.grid()
-	plt.xscale("log")
-	plt.yscale("log")
-	plt.xlabel("Energy (MeV)")
-	plt.ylabel("Attenuation (cm^2/g)")
-	plt.xlim(1e-3, 1e+0)
-	plt.tight_layout()
+	for specific in [False, True]:
+		plt.figure()
+		for material, density in [("Ta", 16.6), ("Al", 2.7), ("ferrite", 3.0), ("phosphor", 3.3), ("cr39", 1.31), ("plastic", 1.4)]:
+			attenuation = attenuation_curve(energies, material)*1e4
+			if specific:
+				attenuation /= density
+			plt.plot(energies/1e3, attenuation, label=material)
+		plt.legend()
+		plt.grid()
+		plt.xscale("log")
+		plt.yscale("log")
+		plt.xlabel("Energy (MeV)")
+		if specific:
+			plt.ylabel("Mass attenuation (cm^2/g)")
+		else:
+			plt.ylabel("Attenuation (cm^-1)")
+		plt.xlim(1e-3, 1e+0)
+		plt.tight_layout()
 
 	plt.show()

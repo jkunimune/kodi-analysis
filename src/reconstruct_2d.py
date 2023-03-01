@@ -276,7 +276,7 @@ def analyze_scan(input_filename: str,
 		contour = X_RAY_CONTOUR
 		detector_type = "ip"
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
-	filter_stacks = sorted(filter_stacks, key=lambda stack: detector.xray_energy_bounds(stack, 0)[1])
+	filter_stacks = sorted(filter_stacks, key=lambda stack: detector.xray_energy_bounds(stack, .01)[0])
 	num_detectors = count_detectors(filtering, detector_type)
 
 	# then iterate thru each filtering section

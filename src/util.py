@@ -40,10 +40,9 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 					return filter_stacks
 				else:
 					num_detectors_seen += 1
-			# CR39 pieces are 1500μm C12H18O7 with density 1.31g/mL. the FujiFilm image plates have a 115μm, 3.3g/mL
-			# phosphor layer, and various layers of mostly plastic mostly 1.4g/mL totalling 316μm (one has some ferrite
-			# mixed in, raising its density to 3.0g/mL, so I scaled up the effective thickness to 407μm)
-			equivalent_filter = {":": "1500cr39", "|": "115phosphor 407CH2"}[filter_code[0]]
+			# CR39 pieces are 1500μm C12H18O7 with density 1.31g/mL. the FujiFilm image plates have a 115μm 3.3g/mL
+			# phosphor layer, an 80μm 3.0g/mL ferrite layer, and various layers of 1.4g/mL plastic totalling 236μm
+			equivalent_filter = {":": "1500cr39", "|": "431ip"}[filter_code[0]]
 			filter_code = equivalent_filter + " " + filter_code[1:]
 		# a slash indicates that there's an alternative to the previus filter
 		elif filter_code[0] == "/":
