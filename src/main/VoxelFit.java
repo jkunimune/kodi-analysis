@@ -24,6 +24,7 @@ public class VoxelFit {
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SOME_ARBITRARY_LOW_DENSITY = 0.1; // (g/cm^3)
 	public static final double SMOOTHING = 2e-3;
+	public static final double ROUGHENING_RATE = 2.5;
 	public static final double TOLERANCE = 1e-3;
 
 	private static final float Da = 1.66e-27F; // (kg)
@@ -237,9 +238,9 @@ public class VoxelFit {
 		double[] outer_ring = new double[basis.num_functions];
 		int и_n00 = basis.num_functions - (int) Math.pow(Math.min(r.length, MAX_MODE + 1), 2);
 		outer_ring[и_n00] = 1;
-		boolean[] isotropic_basis_functions = new boolean[basis.num_functions];
+		boolean[] must_be_positive = new boolean[basis.num_functions];
 		for (int и = 0; и < basis.num_functions; и ++)
-			isotropic_basis_functions[и] = basis_volumes[и] > 0;
+			must_be_positive[и] = false;//basis_volumes[и] > 0;
 
 		Matrix roughness_vectors = basis.roughness_vectors();
 
@@ -282,14 +283,14 @@ public class VoxelFit {
 		double error_scale = 0;  // this is the maximum credible χ^2 term magnitude
 		for (int i = 0; i < num_pixels; i ++)
 			error_scale += 1/2.*inverse_variance_vector[i]*Math.pow(image_vector[i], 2);
-		double emission_smoothing = SMOOTHING*error_scale/Math.sqrt(
+		double emission_smoothing_magnitude = SMOOTHING*error_scale/Math.sqrt(
 				1/2.*roughness_vectors.matmul(emission).sqr());  // scale the emission smoothing term to be initially comparable
-		double density_smoothing;
+		double density_smoothing_magnitude;
 		if (density != null)
-			density_smoothing = SMOOTHING*error_scale/Math.sqrt(
+			density_smoothing_magnitude = SMOOTHING*error_scale/Math.sqrt(
 					1/2.*roughness_vectors.matmul(density).sqr());  // do the same for density if it’s a knockon fit
 		else
-			density_smoothing = 0;
+			density_smoothing_magnitude = 0;
 
 		double last_error, next_error = Double.POSITIVE_INFINITY;
 		int iter = 0;
@@ -298,6 +299,9 @@ public class VoxelFit {
 			logger.info(String.format("Pass %d", iter));
 
 			if (knockon) {
+				// define a gradually declining smoothing parameter
+				double smoothing_parameter = Math.max(1, 1e2*Math.pow(ROUGHENING_RATE, -iter));
+
 				assert density != null;
 				final double current_temperature = temperature;
 
@@ -310,11 +314,12 @@ public class VoxelFit {
 										current_temperature,
 										basis, object_radius, model_resolution,
 										lines_of_sight, Э_cuts, ξ, υ),
-								roughness_vectors.times(emission_smoothing)),
+								roughness_vectors.times(
+										smoothing_parameter*emission_smoothing_magnitude)),
 						data_vector,
 						inverse_variance_vector,
 						emission.getValues(),
-						isotropic_basis_functions,
+						must_be_positive,
 						Double.POSITIVE_INFINITY,
 						logger,
 						basis_volumes,
@@ -331,17 +336,22 @@ public class VoxelFit {
 										current_temperature,
 										basis, object_radius, model_resolution,
 										lines_of_sight, Э_cuts, ξ, υ),
-								roughness_vectors.times(density_smoothing)),
+								roughness_vectors.times(
+										smoothing_parameter*density_smoothing_magnitude)),
 						data_vector,
 						inverse_variance_vector,
 						density.getValues(),
-						isotropic_basis_functions,
+						must_be_positive,
 						1e-3,
 						logger);
 				density = new DenseVector(density_optimum.location());
 
 				// temperature = temperature; TODO: fit temperature
-				next_error = density_optimum.value();
+
+				if (smoothing_parameter != 1) // it may not finish converging until smoothing_parameter reaches 1
+					next_error = Double.POSITIVE_INFINITY;
+				else
+					next_error = density_optimum.value();
 			}
 			else {
 				Optimum emission_optimum = Optimize.quasilinear_least_squares(
@@ -349,11 +359,12 @@ public class VoxelFit {
 								generate_emission_primary_response_matrix(
 										basis, object_radius, model_resolution,
 										lines_of_sight, ξ, υ),
-								roughness_vectors.times(emission_smoothing)),
+								roughness_vectors.times(
+										emission_smoothing_magnitude)),
 						data_vector,
 						inverse_variance_vector,
 						emission.getValues(),
-						isotropic_basis_functions,
+						must_be_positive,
 						Double.POSITIVE_INFINITY,
 						logger);
 				emission = new DenseVector(emission_optimum.location());
@@ -361,7 +372,7 @@ public class VoxelFit {
 			}
 
 			iter ++;
-		} while ((last_error - next_error)/next_error > TOLERANCE);
+		} while (Double.isInfinite(next_error) || (last_error - next_error)/next_error > TOLERANCE);
 
 		VoxelFit.logger.info("completed reconstruction");
 

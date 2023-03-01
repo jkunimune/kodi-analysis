@@ -337,8 +337,9 @@ def save_and_plot_morphologies(filename: str,
 		ф = np.linspace(0, 2*pi, 63, endpoint=False)
 		dx, dy, dz, dr = x[1] - x[0], y[1] - y[0], z[1] - z[0], r[1] - r[0]
 		r, θ, ф = np.meshgrid(r, θ, ф, indexing="ij")
-		density_polar = interpolate.RegularGridInterpolator((x, y, z), density)((
-			r*np.sin(θ)*np.cos(ф), r*np.sin(θ)*np.sin(ф), r*np.cos(θ)))
+		density_polar = interpolate.RegularGridInterpolator(
+			(x, y, z), density, bounds_error=False, fill_value=0)(
+			(r*np.sin(θ)*np.cos(ф), r*np.sin(θ)*np.sin(ф), r*np.cos(θ)))
 		print(f"Y = {np.sum(source*dx*dy*dz):.4g} neutrons")
 		print(f"ρ ∈ [{np.min(density):.4g}, {np.max(density):.4g}] g/cm^3")
 		print(f"⟨ρR⟩ (harmonic) = {1/np.mean(1/np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
