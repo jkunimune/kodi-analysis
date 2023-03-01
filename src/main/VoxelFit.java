@@ -9,6 +9,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 import static main.Math2.containsTheWordTest;
@@ -772,11 +776,15 @@ public class VoxelFit {
 
 		// reduce the emission if necessary to avoid overflow
 		double emission_scaling = 0;
+		Vector scaled_emission;
 		if (emission != null && Math2.max(emission.getValues()) > 1e26) {
 			emission_scaling = 1e-26*Math.max(
 					Math2.max(emission.getValues()),
 					Math2.max(emission.neg().getValues()));
-			emission = emission.over(emission_scaling);
+			scaled_emission = emission.over(emission_scaling);
+		}
+		else {
+			scaled_emission = emission;
 		}
 
 		DiscreteFunction[] ranging_curves = calculate_ranging_curves((float) temperature);
@@ -805,121 +813,144 @@ public class VoxelFit {
 			}
 		}
 
+		ExecutorService threads = Executors.newFixedThreadPool(
+				Math.min(36, Runtime.getRuntime().availableProcessors()));
+
 		// for each line of sight
-		int warningsPrinted = 0;
-		for (int l = 0; l < lines_of_sight.length; l ++) {
+		for (int l_task = 0; l_task < lines_of_sight.length; l_task ++) {
 			// define the rotated coordinate system (ζ points toward the TIM; ξ and υ are orthogonal)
-			Matrix rotate = Math2.rotated_basis(lines_of_sight[l]);
+			Matrix rotate = Math2.rotated_basis(lines_of_sight[l_task]);
 
 			// iterate thru the pixels
-			for (int iV = 0; iV < ξ[l].length; iV++) {
-				for (int jV = 0; jV < υ[l].length; jV++) { // TODO: move everything inside this to a parallelizable task
-					// iterate from the detector along a chord thru the implosion
-					float ρL = 0; // tally up ρL as you go
-					float ρ_previus = 0;
-					for (float ζD = z_max; ζD >= -z_max; ζD -= dl) {
-						Vector rD = rotate.matmul(ξ[l][iV], υ[l][jV], ζD);
-						float[] local_density;
-						float ρD;
-						if (respond_to_density) {
-							local_density = basis.get(rD);
-							ρD = Math2.dot(ρ_coefs, local_density);
-						} else {
-							ρD = basis.get(rD, density);
-							local_density = new float[]{ρD};
-						}
-						if (Math2.all_zero(local_density)) { // skip past the empty regions to focus on the implosion
-							if (ρL == 0)
-								continue;
-							else
-								break;
-						}
-						float dρL = Math.max(0, ρD + ρ_previus)/2F*dl*μm/cm;
-						if (dρL > 50e-3 && warningsPrinted < 6) {
-							logger.warning(String.format(
-									"the rhoL in a single integral step (%.3g mg/cm^2) is too hi.  you probably need " +
-									"a hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
-									dρL*1e3, ρD, 20e-3/ρD*cm/μm));
-							warningsPrinted++;
-						}
-						ρL += dρL; // (g/cm^2)
+			for (int i_task = 0; i_task < ξ[l_task].length; i_task ++) {
+				for (int j_task = 0; j_task < υ[l_task].length; j_task ++) {
 
-						// iterate thru all possible scattering locations
-						ζ_scan:
-						for (float Δζ = -dl/2F; true; Δζ -= dl) {
-							float Δξ = 0, Δυ = 0;
-							ξ_scan:
-							while (true) { // there's a fancy 2D for-loop-type-thing here
-								boolean we_should_keep_looking_here = false;
+					// create a new concurrent task for the spectrum in each pixel
+					final int l = l_task, iV = i_task, jV = j_task; // declare the variables that will be passed like attributes
+					Callable<Void> task = () -> {
+						// iterate from the detector along a chord thru the implosion
+						boolean warningPrinted = false;
+						float ρL = 0; // tally up ρL as you go
+						float ρ_previus = 0;
+						for (float ζD = z_max; ζD >= -z_max; ζD -= dl) {
+							Vector rD = rotate.matmul(ξ[l][iV], υ[l][jV], ζD);
+							float[] local_density;
+							float ρD;
+							if (respond_to_density) {
+								local_density = basis.get(rD);
+								ρD = Math2.dot(ρ_coefs, local_density);
+							} else {
+								ρD = basis.get(rD, density);
+								local_density = new float[]{ρD};
+							}
+							if (Math2.all_zero(local_density)) { // skip past the empty regions to focus on the implosion
+								if (ρL == 0)
+									continue;
+								else
+									break;
+							}
+							float dρL = Math.max(0, ρD + ρ_previus)/2F*dl*μm/cm;
+							if (dρL > 50e-3 && !warningPrinted) {
+								logger.warning(String.format(
+										"the rhoL in a single integral step (%.3g mg/cm^2) is too hi.  you probably need " +
+										"a hier resolution to resolve the spectrum properly.  for rho=%.3g, try %.3g um.\n",
+										dρL*1e3, ρD, 20e-3/ρD*cm/μm));
+								warningPrinted = true;
+							}
+							ρL += dρL; // (g/cm^2)
 
-								Vector Δr = rotate.matmul(Δξ, Δυ, Δζ);
-								Vector rP = rD.plus(Δr);
+							// iterate thru all possible scattering locations
+							ζ_scan:
+							for (float Δζ = -dl/2F; true; Δζ -= dl) {
+								float Δξ = 0, Δυ = 0;
+								ξ_scan:
+								while (true) { // there's a fancy 2D for-loop-type-thing here
+									boolean we_should_keep_looking_here = false;
 
-								float[] local_emission; // get the emission
-								if (respond_to_emission) // either by basing it on the basis function
-									local_emission = basis.get(rP);
-								else // or taking it at this point
-									local_emission = new float[]{basis.get(rP, emission)};
-								if (!Math2.all_zero(local_emission)) {
+									Vector Δr = rotate.matmul(Δξ, Δυ, Δζ);
+									Vector rP = rD.plus(Δr);
 
-									float Δr2 = (float) Δr.sqr(); // (μm^2)
-									float cosθ2 = (Δζ*Δζ)/Δr2;
-									float ЭD = Э_KOD*cosθ2;
+									float[] local_emission; // get the emission
+									if (respond_to_emission) // either by basing it on the basis function
+										local_emission = basis.get(rP);
+									else // or taking it at this point
+										local_emission = new float[]{basis.get(rP, scaled_emission)};
+									if (!Math2.all_zero(local_emission)) {
 
-									float ЭV = penetrating_energy.evaluate(
-											stopping_distance.evaluate(ЭD) - ρL); // (MeV)
-									if (ЭV > 0) { // make sure it doesn't range out
+										float Δr2 = (float) Δr.sqr(); // (μm^2)
+										float cosθ2 = (Δζ*Δζ)/Δr2;
+										float ЭD = Э_KOD*cosθ2;
 
-										int hV = Math2.bin(ЭV, Э_cuts[l]); // bin it in energy
-										if (hV >= 0 && hV < Э_cuts[l].length) {
+										float ЭV = penetrating_energy.evaluate(
+												stopping_distance.evaluate(ЭD) - ρL); // (MeV)
+										if (ЭV > 0) { // make sure it doesn't range out
 
-											float σ = σ_nD.evaluate(ЭD); // (μm^2)
+											int hV = Math2.bin(ЭV, Э_cuts[l]); // bin it in energy
+											if (hV >= 0 && hV < Э_cuts[l].length) {
 
-											float contribution =
-													1F/m_DT*
-													σ/(4*πF*Δr2)*
-													dx1dy1dz1dz2*μm3/cm3; // (d/μm^2/srad/(n/μm^3)/(g/cc))
-											assert Float.isFinite(contribution);
+												float σ = σ_nD.evaluate(ЭD); // (μm^2)
 
-											for (int и = 0; и < num_components; и ++) // finally, iterate over the basis functions
-												response[l][hV][iV][jV].increment(и,
-												                                  local_emission[respond_to_emission ? и : 0]*
-												                                  local_density[respond_to_density ? и : 0]*
-												                                  contribution);
-											for (int x = 0; x < num_components; x ++)
-												if (!Double.isFinite(response[l][hV][iV][jV].get(x)))
-													throw new RuntimeException("bleh");
-											we_should_keep_looking_here = true;
+												float contribution =
+														1F/m_DT*
+														σ/(4*πF*Δr2)*
+														dx1dy1dz1dz2*μm3/cm3; // (d/μm^2/srad/(n/μm^3)/(g/cc))
+												assert Float.isFinite(contribution);
+
+												for (int и = 0; и < num_components; и++) // finally, iterate over the basis functions
+													response[l][hV][iV][jV].increment(
+															и,
+															local_emission[respond_to_emission ? и : 0]*
+															local_density[respond_to_density ? и : 0]*
+															contribution);
+												for (int x = 0; x < num_components; x++)
+													if (!Double.isFinite(response[l][hV][iV][jV].get(x)))
+														throw new RuntimeException("bleh");
+												we_should_keep_looking_here = true;
+											}
 										}
 									}
-								}
 
-								// do the incrementation for the fancy 2D for-loop-type-thing
-								if (we_should_keep_looking_here) {
-									if (Δυ >= 0) Δυ += dl; // if you're scanning in the +υ direction, go up
-									else         Δυ -= dl; // if you're scanning in the -υ direction, go down
-								}
-								else {
-									if (Δυ > 0)
-										Δυ = -dl; // when you hit the end of the +υ scan, switch to -υ
-									else { // when you hit the end of the -υ scan,
-										if (Δυ < 0) {
-											if (Δξ >= 0) Δξ += dl; // if you're scanning in the +ξ direction, go rite
-											else         Δξ -= dl; // if you're scanning in the -ξ direction, go left
+									// do the incrementation for the fancy 2D for-loop-type-thing
+									if (we_should_keep_looking_here) {
+										if (Δυ >= 0) Δυ += dl; // if you're scanning in the +υ direction, go up
+										else Δυ -= dl; // if you're scanning in the -υ direction, go down
+									} else {
+										if (Δυ > 0)
+											Δυ = -dl; // when you hit the end of the +υ scan, switch to -υ
+										else { // when you hit the end of the -υ scan,
+											if (Δυ < 0) {
+												if (Δξ >= 0)
+													Δξ += dl; // if you're scanning in the +ξ direction, go rite
+												else Δξ -= dl; // if you're scanning in the -ξ direction, go left
+											} else { // if you hit the end of the ξ scan
+												if (Δξ > 0) Δξ = -dl; // if it's the +ξ scan, switch to -ξ
+												else if (Δξ < 0)
+													break ξ_scan; // if it's the end of the -ξ scan, we're done here
+												else break ζ_scan; // when you hit the end of the --ζ scan
+											}
+											Δυ = 0;
 										}
-										else { // if you hit the end of the ξ scan
-											if (Δξ > 0)      Δξ = -dl; // if it's the +ξ scan, switch to -ξ
-											else if (Δξ < 0) break ξ_scan; // if it's the end of the -ξ scan, we're done here
-											else             break ζ_scan; // when you hit the end of the --ζ scan
-										}
-										Δυ = 0;
 									}
 								}
 							}
 						}
-					}
+						return null;
+					};
+					threads.submit(task);
 				}
 			}
+		}
+
+		// let the threads do their thing
+		threads.shutdown(); // lock the Executor
+		boolean success;
+		try {
+			success = threads.awaitTermination(60, TimeUnit.MINUTES); // let all the threads finish
+		} catch (InterruptedException ex) {
+			throw new RuntimeException(ex);
+		}
+		if (!success) {
+			throw new RuntimeException("The calculation failed fsr.");
 		}
 
 		if (emission_scaling != 0) {
