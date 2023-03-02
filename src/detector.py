@@ -103,12 +103,6 @@ def attenuation_curve(energy: Numeric, material: str) -> Numeric:
 	    :param material: the name of the material (probably just the elemental symbol)
 	    :return: the attenuation constant at the specified energy (μm^-1)
 	"""
-	# since image plates aren’t really a material, go ahead and put that together from other materials
-	if material == "ip":
-		total = np.zeros(energy.shape, dtype=float)
-		for thickness, material in [(115, "phosphor"), (236, "plastic"), (80, "ferrite")]:
-			total += thickness/431*attenuation_curve(energy, material)
-		return total
 	# otherwise load from disc
 	try:
 		table = np.loadtxt(f"data/tables/attenuation_{material}.csv", delimiter=",")
@@ -124,6 +118,12 @@ def log_xray_transmission(energy: Numeric, thickness: float, material: str) -> N
 	    :param material: the name of the material (probably just the elemental symbol)
 	    :return: the fraction of photons that make it through the filter
 	"""
+	# image plates are a special case here: load the attenuation file but don’t multiply by -thickness (it’s empiricly pre-multiplied)
+	if material == "ip" or material == "srip":
+		return attenuation_curve(energy, "srip")
+	elif material == "msip":
+		return attenuation_curve(energy, "msip")
+	# otherwise this function is pretty simple
 	attenuation = attenuation_curve(energy, material)
 	return -attenuation*thickness
 
@@ -247,5 +247,20 @@ if __name__ == '__main__':
 			plt.ylabel("Attenuation (cm^-1)")
 		plt.xlim(1e-3, 1e+0)
 		plt.tight_layout()
+
+	# compare my theoretical curve to the experimentally measured IP attenuation
+	plt.figure()
+	for stack in [[(115., "phosphor"), (236., "plastic"), (80., "ferrite")], [(None, "srip")], [(None, "msip")]]:
+		attenuation = np.zeros(energies.shape)
+		for thickness, material in stack:
+			attenuation += log_xray_transmission(energies, thickness, material)
+		plt.plot(energies/1e3, np.exp(attenuation), label=stack[0][1])
+	plt.legend()
+	plt.grid()
+	plt.xscale("log")
+	plt.xlabel("Energy (MeV)")
+	plt.ylabel("Transmission")
+	plt.xlim(1e-3, 1e+0)
+	plt.tight_layout()
 
 	plt.show()

@@ -166,7 +166,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	plt.xlabel("Temperature (keV)")
 	plt.ylabel("X-ray emission")
 	plt.xscale("log")
-	plt.ylim(3e-3, 3e+0)
+	plt.ylim(3e-4, 3e+0)
 	plt.grid()
 	plt.tight_layout()
 
@@ -257,9 +257,9 @@ def plot_electron_temperature(filename: str, show: bool,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
 	x_stalk, y_stalk, _ = projected_stalk_direction
 	if num_stalks == 1:
-		plt.plot([0, x_stalk*50], [0, y_stalk*50], color="#000", linewidth=2)
+		plt.plot([0, x_stalk*40], [0, y_stalk*40], color="#000", linewidth=2)
 	elif num_stalks == 2:
-		plt.plot([-x_stalk*50, x_stalk*50], [-y_stalk*50, y_stalk*50], color="#000", linewidth=2)
+		plt.plot([-x_stalk*40, x_stalk*40], [-y_stalk*40, y_stalk*40], color="#000", linewidth=2)
 	temperature_integrated = temperature[grid.x.num_bins//2, grid.y.num_bins//2]
 	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
 	         color="w", ha='left', va='top', transform=plt.gca().transAxes)

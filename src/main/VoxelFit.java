@@ -24,7 +24,7 @@ public class VoxelFit {
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SOME_ARBITRARY_LOW_DENSITY = 0.1; // (g/cm^3)
 	public static final double SMOOTHING = 2e-3;
-	public static final double ROUGHENING_RATE = 2.5;
+	public static final double ROUGHENING_RATE = 1.7;
 	public static final double TOLERANCE = 1e-3;
 
 	private static final float Da = 1.66e-27F; // (kg)
@@ -301,6 +301,7 @@ public class VoxelFit {
 			if (knockon) {
 				// define a gradually declining smoothing parameter
 				double smoothing_parameter = Math.max(1, 1e2*Math.pow(ROUGHENING_RATE, -iter));
+				logger.info(String.format("setting smoothing to %.1f", smoothing_parameter));
 
 				assert density != null;
 				final double current_temperature = temperature;
