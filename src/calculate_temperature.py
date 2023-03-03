@@ -1,5 +1,5 @@
 import os
-from math import inf, nan
+from math import inf, nan, sqrt
 from typing import Callable
 
 import numpy as np
@@ -16,7 +16,7 @@ from hdf5_util import load_hdf5
 from plots import make_colorbar, save_current_figure
 from util import parse_filtering, print_filtering
 
-SHOW_PLOTS = True
+SHOW_PLOTS = False
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 TIMS = ["2", "4", "5"]
 
@@ -32,8 +32,8 @@ class Distribution:
 
 
 def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[float],
-                              energies: NDArray[float], log_sensitivities: NDArray[float]
-                              ) -> tuple[float, float, float, float]:
+                              energies: NDArray[float], log_sensitivities: NDArray[float],
+                              show_plot=False) -> tuple[float, float, float, float]:
 	""" take a set of measured x-ray intensity values from a single chord thru the implosion and
 	    use their average and their ratios to infer the emission-averaged electron temperature,
 	    and the total line-integrated photic emission along that chord.
@@ -41,6 +41,7 @@ def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[f
 	    :param errors: the uncertainty on each of the measured values (PSL/μm^2/sr)
 	    :param energies: the photon energies at which the sensitivities have been calculated (keV)
 	    :param log_sensitivities: the log of the dimensionless sensitivity of each detector at each reference energy
+	    :param show_plot: whether to generate a little plot showing how well the model fits the data
 	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr)
 	"""
 	def compute_values(βe):
@@ -86,9 +87,24 @@ def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[f
 			best_Te = 1/best_βe
 			error_Te = error_βe/best_βe**2
 
-			_, numerator, denominator, _ = compute_values(best_βe)
+			_, numerator, denominator, unscaled_values = compute_values(best_βe)
 			best_εL = numerator/denominator*best_Te
 			error_εL = 0
+			theoretic_values = numerator/denominator*unscaled_values
+
+			if show_plot:
+				plt.figure()
+				plt.errorbar(1 + np.arange(measured_values.size),
+				             y=measured_values, yerr=errors,
+				             fmt="oC1", zorder=2, markersize=8)
+				plt.errorbar(1 + np.arange(measured_values.size),
+				             y=theoretic_values, yerr=0,
+				             fmt="xC0", zorder=3, markersize=8, markeredgewidth=2)
+				plt.grid(axis="y")
+				plt.xlabel("Detector #")
+				plt.ylabel("Measured yield (units)")
+				plt.title(f"Best fit (Te = {best_Te:.3f} ± {error_Te:.3f})")
+				plt.tight_layout()
 
 			return best_Te, error_Te, best_εL, error_εL
 		else:
@@ -128,12 +144,13 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 		                                         reference_energies, log_sensitivities)[0]
 
 	# calculate the spacially integrated temperature
-	# print(f"integrated temperatures: {np.array([image.total for image in images])/images[0].total}")
-	# temperature_integrated, _ = compute_plasma_conditions(
-	# 	np.array([image.total for image in images]),
-	# 	np.array([error.total for error in errors]),
-	# 	reference_energies, log_sensitivities)
-	# print(f"Te = {temperature_integrated:.3f} keV")
+	temperature_integrated, _, _, _ = compute_plasma_conditions(
+		np.array([image.total for image in images]),
+		np.array([error.total for error in errors]),
+		reference_energies, log_sensitivities,
+		show_plot=True)
+	save_current_figure(f"{shot}-tim{tim}-temperature-fit")
+	print(f"Te = {temperature_integrated:.3f} keV")
 
 	# calculate the spacially resolved temperature
 	basis = Grid.from_size(50, 3, True)
@@ -197,7 +214,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	tim_coordinates = coordinate.tim_coordinates(tim)
 	stalk_direction = coordinate.project(1., *coordinate.TPS_LOCATIONS[2], tim_coordinates)
 	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, basis,
-	                          temperature_map, emission_map,
+	                          temperature_map, emission_map, temperature_integrated,
 	                          stalk_direction, num_stalks)
 
 	return (temperature_map[basis.shape[0]//2, basis.shape[1]//2],
@@ -236,13 +253,14 @@ def load_all_xray_images_for(shot: str, tim: str) \
 						bounds_error=False, fill_value=0),
 					))
 				errors.append(Distribution(
-					np.sum(source)*(x[1] - x[0])*(y[1] - y[0])/6,
+					sqrt(np.sum(source)*(x[1] - x[0])*(y[1] - y[0])/1e0),
 					lambda x: source.max()/6))  # TODO: real error bars
 	return images, errors, filter_stacks
 
 
 def plot_electron_temperature(filename: str, show: bool,
                               grid: Grid, temperature: NDArray[float], emission: NDArray[float],
+                              temperature_integrated: float,
                               projected_stalk_direction: tuple[float, float, float], num_stalks: int) -> None:
 	""" plot the electron temperature as a heatmap, along with some contours to show where the
 	    implosion actually is.
@@ -260,7 +278,6 @@ def plot_electron_temperature(filename: str, show: bool,
 		plt.plot([0, x_stalk*40], [0, y_stalk*40], color="#000", linewidth=2)
 	elif num_stalks == 2:
 		plt.plot([-x_stalk*40, x_stalk*40], [-y_stalk*40, y_stalk*40], color="#000", linewidth=2)
-	temperature_integrated = temperature[grid.x.num_bins//2, grid.y.num_bins//2]
 	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
 	         color="w", ha='left', va='top', transform=plt.gca().transAxes)
 	plt.xlabel("x (μm)")
@@ -296,7 +313,8 @@ def main():
 				for energy_min, energy_max in energies:
 					labels.append(f"{energy_min:.0f} – {energy_max:.0f} keV")
 			num_stalks = shot_table.loc[shot]["stalks"]
-			temperatures.append(analyze(shot, tim, num_stalks))
+			temperature, temperature_error = analyze(shot, tim, num_stalks)
+			temperatures.append((temperature, temperature_error))
 	emissions = np.array(emissions)
 	temperatures = np.array(temperatures)
 
