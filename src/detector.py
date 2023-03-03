@@ -254,13 +254,13 @@ if __name__ == '__main__':
 		attenuation = np.zeros(energies.shape)
 		for thickness, material in stack:
 			attenuation += log_xray_transmission(energies, thickness, material)
-		plt.plot(energies/1e3, np.exp(attenuation), label=stack[0][1])
+		plt.plot(energies, np.exp(attenuation), label=stack[0][1] if len(stack) == 1 else "model")
 	plt.legend()
 	plt.grid()
 	plt.xscale("log")
-	plt.xlabel("Energy (MeV)")
+	plt.xlabel("Energy (keV)")
 	plt.ylabel("Transmission")
-	plt.xlim(1e-3, 1e+0)
+	plt.xlim(1e+0, 1e+3)
 	plt.tight_layout()
 
 	plt.show()

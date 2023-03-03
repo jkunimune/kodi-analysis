@@ -1434,14 +1434,11 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		y_contour = np.interp(contour[:, 1], np.arange(scan_plane.y.num_bins), scan_plane.y.get_bins())
 		x0, y0, r_apparent = fit_circle(x_contour, y_contour)
 		if 0.7*r_nominal < r_apparent < 1.3*r_nominal:  # check the radius to avoid picking up noise
-			linear_gap = hypot(x_contour[-1] - x_contour[0], y_contour[-1] - y_contour[0])
 			extent = np.max(np.hypot(x_contour - x_contour[0], y_contour - y_contour[0]))
-			if extent > r_apparent:  # circle is big enuff to use its data…
-				if extent < 1.7*r_apparent or linear_gap > 1.3*r_apparent:  # …but not complete enuff to trust its center
-					circles.append((x0, y0, r_apparent, False))
-				else:  # …and big enuff to trust its center
-					circles.append((x0, y0, r_apparent, True))
-	if len(circles) == 0:
+			if extent > 0.8*r_apparent:  # circle is big enuff to use its data…
+				full = extent > 1.6*r_apparent  # …but is it complete enuff to trust its center
+				circles.append((x0, y0, r_apparent, full))
+	if len(circles) == 0:  # TODO: check for duplicate centers (tho I think they should be rare and not too big a problem)
 		raise DataError("I couldn't find any circles in this region")
 
 	# convert the found circles into numpy arrays
