@@ -48,6 +48,7 @@ if __name__ == '__main__':
 		os.mkdir("tmp")
 
 	name = sys.argv[1] if len(sys.argv) > 1 else "--test"
+	show_plots = "--show" in sys.argv
 
 	if "--skip" in sys.argv:
 		# load the previous inputs and don't run the reconstruction
@@ -216,4 +217,7 @@ if __name__ == '__main__':
 
 	save_and_plot_source_sets(filename, Э_cuts, ξ_centers, υ_centers, tru_images, recon_images)
 
-	plt.show()
+	if show_plots:
+		plt.show()
+	else:
+		plt.close("all")

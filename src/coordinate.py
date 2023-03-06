@@ -1,6 +1,6 @@
 # coordinate.py - I assume I will have more coordinate system garbage code to put here soon.
 from math import cos, sin, ceil
-from typing import Sequence
+from typing import Sequence, Union
 
 import numpy as np
 from numpy.typing import NDArray
@@ -32,15 +32,15 @@ TPS_LOCATIONS = {
 }
 
 
-def tim_coordinates(tim: int | str) -> NDArray[float]:
+def tim_coordinates(tim: Union[int, str]) -> NDArray[float]:
 	return orthogonal_basis(*TIM_LOCATIONS[tim])
 
 
-def tim_direction(tim: int | str) -> NDArray[float]:
+def tim_direction(tim: Union[int, str]) -> NDArray[float]:
 	return tim_coordinates(tim)[:, -1]
 
 
-def tps_direction(tps: int | str = 2) -> NDArray[float]:
+def tps_direction(tps: Union[int, str] = 2) -> NDArray[float]:
 	return orthogonal_basis(*TPS_LOCATIONS[tps])[:, -1]
 
 

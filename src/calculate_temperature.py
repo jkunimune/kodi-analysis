@@ -144,7 +144,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 		                                         reference_energies, log_sensitivities)[0]
 
 	# calculate the spacially integrated temperature
-	temperature_integrated, _, _, _ = compute_plasma_conditions(
+	temperature_integrated, temperature_error_integrated, _, _ = compute_plasma_conditions(
 		np.array([image.total for image in images]),
 		np.array([error.total for error in errors]),
 		reference_energies, log_sensitivities,
@@ -217,8 +217,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	                          temperature_map, emission_map, temperature_integrated,
 	                          stalk_direction, num_stalks)
 
-	return (temperature_map[basis.shape[0]//2, basis.shape[1]//2],
-	        temperature_errors[basis.shape[0]//2, basis.shape[1]//2])
+	return temperature_integrated, temperature_error_integrated
 
 
 def load_all_xray_images_for(shot: str, tim: str) \

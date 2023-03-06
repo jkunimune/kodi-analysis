@@ -1,10 +1,13 @@
+from typing import Union
+
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 from scipy import integrate
 
 
-Numeric = float | NDArray[float]
+Numeric = Union[float, list[float], NDArray[float]]
+Layer = tuple[float, str]
 
 
 def range_curve(z: float, a: float, material: str):
@@ -38,7 +41,7 @@ def particle_range(E_init: Numeric, z: float, a: float, material: str):
 	return np.interp(E_init, E, x)
 
 
-def particle_E_out(E_in: Numeric, z: float, a: float, layers: list[(float, str)]):
+def particle_E_out(E_in: Numeric, z: float, a: float, layers: list[Layer]):
 	""" calculate the energy of a particle after passing thru some material
 	    :param E_in: the initial energy of the particle (MeV)
 	    :param z: the charge number of the particle (e)
@@ -48,7 +51,7 @@ def particle_E_out(E_in: Numeric, z: float, a: float, layers: list[(float, str)]
 	return particle_E_in(E_in, z, a, [(-thickness, material) for (thickness, material) in reversed(layers)])
 
 
-def particle_E_in(E_out: Numeric, z: float, a: float, layers: list[(float, str)]):
+def particle_E_in(E_out: Numeric, z: float, a: float, layers: list[Layer]):
 	""" calculate the energy needed to exit some material with a given energy
 	    :param E_out: the final energy of the particle (MeV)
 	    :param z: the charge number of the particle (e)
@@ -128,7 +131,7 @@ def log_xray_transmission(energy: Numeric, thickness: float, material: str) -> N
 	return -attenuation*thickness
 
 
-def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_time: float,
+def log_xray_sensitivity(energy: Numeric, filter_stack: list[Layer], fade_time: float,
                          thickness=115., psl_attenuation=1/45., material="phosphor") -> Numeric:
 	""" calculate the log of the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
@@ -149,7 +152,7 @@ def log_xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade
 	return log_sensitivity
 
 
-def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_time: float,
+def xray_sensitivity(energy: Numeric, filter_stack: list[Layer], fade_time: float,
                      thickness=115., psl_attenuation=1/45., material="phosphor") -> Numeric:
 	""" calculate the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
@@ -164,7 +167,7 @@ def xray_sensitivity(energy: Numeric, filter_stack: list[(float, str)], fade_tim
 	return np.exp(log_xray_sensitivity(energy, filter_stack, fade_time, thickness, psl_attenuation, material))
 
 
-def xray_energy_bounds(filter_stack: list[(float, str)], level=.10) -> (float, float):
+def xray_energy_bounds(filter_stack: list[Layer], level=.10) -> tuple[float, float]:
 	""" calculate the minimum and maximum energies this filter and image plate configuration can detect
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
 	    :param level: the fraction of the max at which to define the min and the max

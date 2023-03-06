@@ -9,7 +9,7 @@ import sys
 import time
 import warnings
 from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degrees, atan2, isnan
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import h5py
 import matplotlib
@@ -926,7 +926,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	r_sph = bin_centers(r_sph_bins)  # TODO: this should be reritten to use the Linspace class
 	sphere_to_plane = abel_matrix(r_sph_bins)
 	# do this nested 1d reconstruction
-	def reconstruct_1d_assuming_Q(Q: float, return_other_stuff=False) -> float | tuple:
+	def reconstruct_1d_assuming_Q(Q: float, return_other_stuff=False) -> Union[float, tuple]:
 		r_psf, f_psf = electric_field.get_modified_point_spread(
 			r0, Q, energy_min, energy_max)
 		source_to_image = cumul_pointspread_function_matrix(

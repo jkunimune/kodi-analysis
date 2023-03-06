@@ -1,3 +1,5 @@
+from typing import Union
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -11,7 +13,7 @@ class RegularInterpolator:
 		self.x_max = x_max
 		self.y = y
 
-	def __call__(self, x: NDArray[float] | float):
+	def __call__(self, x: Union[NDArray[float], float]):
 		""" if x is out of bounds, this will extrapolate """
 		i = (x - self.x_min)/(self.x_max - self.x_min)*(self.y.size - 1)
 		i_r = np.maximum(1, np.minimum(self.y.size - 1, np.ceil(i).astype(int)))

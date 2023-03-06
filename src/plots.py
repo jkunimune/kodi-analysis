@@ -1,7 +1,7 @@
 import logging
 import re
 from math import pi
-from typing import cast, Optional, Sequence
+from typing import cast, Optional, Sequence, Union
 
 import matplotlib
 import numpy as np
@@ -16,7 +16,7 @@ from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
 	Point, nearest_value, shape_parameters, get_relative_aperture_positions
 
-matplotlib.use("Qt5agg")
+# matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'sans', 'font.size': 14})
 
@@ -278,8 +278,8 @@ def plot_source(filename: str, show: bool,
 	plt.close('all')
 
 
-def save_and_plot_source_sets(filename: str, energy_bins: list[list[Point] | np.ndarray],
-                              x: list[np.ndarray], y: list[np.ndarray], *image_sets: list[np.ndarray]) -> None:
+def save_and_plot_source_sets(filename: str, energy_bins: list[Union[list[Point], NDArray[float]]],
+                              x: list[NDArray[float]], y: list[NDArray[float]], *image_sets: list[NDArray[float]]) -> None:
 	""" plot a bunch of source images, specificly in comparison (e.g. between data and reconstruction)
 	    :param filename: the filename with which to save them
 	    :param energy_bins: the energy bins for each line of site, which must be the same between image sets

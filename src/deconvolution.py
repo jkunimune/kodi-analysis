@@ -1,7 +1,7 @@
 """ the deconvolution algorithms, including the all-important Gelfgat reconstruction """
 import logging
 from math import nan, isnan, sqrt, pi, inf, log
-from typing import cast
+from typing import cast, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,7 +19,7 @@ MAX_ARRAY_SIZE = 1.5e9/4 # an upper limit on the number of elements in a float32
 def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
                pixel_area: NDArray[int], source_region: NDArray[bool],
                r_psf: float = None,
-               noise: str | NDArray[float] = None,
+               noise: Union[str, NDArray[float]] = None,
                show_plots: bool = False) -> NDArray[float]:
 	""" deconvolve the simple discrete 2d kernel q from a measured image. a background
 	    value will be automatically inferred.
@@ -45,7 +45,7 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
 
 def gelfgat(F: NDArray[float], q: NDArray[float],
             pixel_area: NDArray[int], source_region: NDArray[bool],
-            noise: str | NDArray[float], show_plots=False) -> NDArray[float]:
+            noise: Union[str, NDArray[float]], show_plots=False) -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
 			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
 			data…" in *Comput. Phys. Commun.* 74 (1993)
@@ -245,7 +245,7 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 	return G[t]
 
 
-def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: str | NDArray[float] = "poisson") -> NDArray[float]:
+def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: Union[str, NDArray[float]] = "poisson") -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
 			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
 			data…" in *Comput. Phys. Commun.* 74 (1993)

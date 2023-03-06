@@ -5,7 +5,7 @@ import re
 import shutil
 import subprocess
 from math import pi, cos, sin, nan, sqrt, ceil
-from typing import Callable, Generator, Optional
+from typing import Callable, Generator, Optional, Union
 
 import numpy as np
 from colormath.color_conversions import convert_color
@@ -77,13 +77,12 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 
 def count_detectors(filter_code: str, detector: str) -> int:
 	""" return the number of detectors of a certain type are specified in a filtering string """
-	match detector.lower():
-		case "cr39":
-			return filter_code.count(":")
-		case "ip":
-			return filter_code.count("|")
-		case other:
-			raise ValueError(f"don’t recognize detector type ’{other}’")
+	if detector.lower() == "cr39":
+		return filter_code.count(":")
+	elif detector.lower() == "ip":
+		return filter_code.count("|")
+	else:
+		raise ValueError(f"don’t recognize detector type ’{detector}’")
 
 
 def print_filtering(filter_stack: list[Filter]) -> str:
@@ -157,14 +156,14 @@ def linregress(x, y, weights=None):
 	return m, b
 
 
-def nearest_index(points: float | np.ndarray, reference: np.ndarray):
+def nearest_index(points: Union[float, NDArray[float]], reference: NDArray[float]) -> Union[int, NDArray[int]]:
 	""" the nearest index """
 	if reference.ndim != 1:
 		raise ValueError("this is the opposite of the problem in DSitMoM: too many dimensions")
 	return np.round(np.interp(points, reference, np.arange(reference.size))).astype(int)
 
 
-def nearest_value(exact: float | np.ndarray, options: np.ndarray):
+def nearest_value(exact: Union[float, NDArray[float]], options: NDArray[float]) -> Union[float, NDArray[float]]:
 	""" the nearest match in the option array """
 	if options.ndim != 1:
 		raise ValueError("this is the opposite of the problem in DSitMoM: too many dimensions")
