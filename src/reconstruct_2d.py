@@ -45,12 +45,12 @@ warnings.filterwarnings("ignore")
 DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitted, not detected)
 # DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
 #                         (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
-SUPPORTED_FILETYPES = [".h5", ".pkl"]
+SUPPORTED_FILETYPES = [".h5", ".pkl", ".cpsa"]
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = False
 SHOW_CENTER_FINDING_CALCULATION = True
-SHOW_ELECTRIC_FIELD_CALCULATION = False
+SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
 BELIEVE_IN_APERTURE_TILTING = True
@@ -159,16 +159,17 @@ def analyze(shots_to_reconstruct: list[str],
 			else:
 				tim_match = re.search(rf"tim({tim})", filename, re.IGNORECASE)
 
-			if (os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES
-			    and shot_match is not None and tim_match is not None):
-				matching_tim = tim_match.group(1) # these regexes would work much nicer if _ wasn't a word haracter
+			if os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES and shot_match and (tim is None or tim_match):
+				if tim_match is None:
+					logging.warning(f"the file {filename} doesn’t specify a TIM, so I’m calling it TIM0.")
+				matching_tim = tim_match.group(1) if tim_match is not None else 0
 				detector_index = int(detector_match.group(1)) if detector_match is not None else 0
 				etch_time = float(etch_match.group(1)) if etch_match is not None else None
 				particle = "xray" if filename.endswith(".h5") else "deuteron"
 				matching_scans.append((shot, matching_tim, particle, detector_index, etch_time,
 				                       f"data/scans/{filename}"))
 		if len(matching_scans) == 0:
-			logging.info("  Could not find any text file for TIM {} on shot {}".format(tim, shot))
+			logging.info("  Could not find any scan file for TIM {} on shot {}".format(tim, shot))
 		else:
 			all_scans_to_analyze += matching_scans
 
@@ -183,7 +184,7 @@ def analyze(shots_to_reconstruct: list[str],
 
 		try:
 			shot_info = shot_table.loc[shot]
-		except IndexError:
+		except KeyError:
 			raise RecordNotFoundError(f"please add shot {shot!r} to the data/shots.csv file.")
 
 		# perform the 2d reconstruccion
@@ -331,7 +332,10 @@ def analyze_scan(input_filename: str,
 			num_missing_sections = num_sections - len(source_stack)
 			color_index = detector_index*num_sections + cut_index + num_missing_sections
 			num_colors = num_detectors*num_sections
-		tim_basis = tim_coordinates(tim)
+		try:
+			tim_basis = tim_coordinates(tim)
+		except KeyError:
+			tim_basis = np.identity(3)
 		plot_source(f"{shot}-tim{tim}-{particle}-{indices[cut_index]}",
 		            False, source_plane, source_stack[cut_index],
 		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
@@ -615,7 +619,7 @@ def analyze_scan_section_cut(input_filename: str,
 			                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
 			r_max = r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution
 
-		r_psf = electric_field.get_expansion_factor(Q, r0, energy_min, energy_max)
+		r_psf = min(electric_field.get_expanded_radius(Q, r0, energy_min, energy_max), 2*r0)
 
 		if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
 			r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
@@ -1019,7 +1023,7 @@ def user_defined_region(filename, title, default=None, timeout=None) -> list[Poi
 	""" solicit the user's help in circling a region """
 	if filename.endswith(".cpsa"):
 		x_tracks, y_tracks = load_cr39_scan_file(filename)
-		image, x, y = np.histogram2d(x_tracks, y_tracks, bins=100)
+		image, x, y = np.histogram2d(x_tracks, y_tracks, bins=200)
 		grid = Grid.from_edge_array(x, y)
 	elif filename.endswith(".pkl"):
 		with open(filename, "rb") as f:
@@ -1405,8 +1409,8 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 	# if we don't have a good gess, do a scan
 	if x0 is None or y0 is None:
-		x0, y0 = x_edges.mean(), y_edges.mean()
-		scale = max(x_edges.ptp(), y_edges.ptp())/2
+		x0, y0 = scan_plane.x.center, scan_plane.y.center
+		scale = max(scan_plane.x.range, scan_plane.y.range)/2
 		while scale > .5*r_nominal:
 			best_umbra = -inf
 			x_scan = np.linspace(x0 - scale, x0 + scale, 7)
@@ -1438,44 +1442,46 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 			if extent > 0.8*r_apparent:  # circle is big enuff to use its data…
 				full = extent > 1.6*r_apparent  # …but is it complete enuff to trust its center
 				circles.append((x0, y0, r_apparent, full))
-	if len(circles) == 0:  # TODO: check for duplicate centers (tho I think they should be rare and not too big a problem)
-		raise DataError("I couldn't find any circles in this region")
 
 	# convert the found circles into numpy arrays
-	x_circles = np.array([x for x, y, r, full in circles])
-	y_circles = np.array([y for x, y, r, full in circles])
-	circle_fullness = np.array([full for x, y, r, full in circles])
+	x_circles = np.array([x for x, y, r, full in circles], dtype=float)
+	y_circles = np.array([y for x, y, r, full in circles], dtype=float)
+	circle_fullness = np.array([full for x, y, r, full in circles], dtype=bool)
 
 	# use a simplex algorithm to fit for scale and angle
 	if grid_parameters is not None:
 		grid_transform, grid_x0, grid_y0 = grid_parameters
-	else:
+	elif x_circles.size > 0:
 		grid_transform, grid_x0, grid_y0 = fit_grid_to_points(
 			s_nominal, x_circles[circle_fullness], y_circles[circle_fullness])
+	else:
+		grid_transform, grid_x0, grid_y0 = np.identity(2), 0, 0
 
 	# aline the circles to whatever grid you found
-	x_circles, y_circles, _ = snap_to_grid(x_circles, y_circles,
-	                                       s_nominal*grid_transform, grid_x0, grid_y0)
+	if x_circles.size > 0:
+		x_circles, y_circles, _ = snap_to_grid(
+			x_circles, y_circles, s_nominal*grid_transform, grid_x0, grid_y0)
 	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
-		plt.pcolormesh(x_edges, y_edges, N_full.T,
-		               vmin=0, vmax=np.quantile(N_full, .99),
-		               cmap=CMAP["coffee"])
+		plt.imshow(N_full.T, extent=scan_plane.extent, origin="lower",
+		           vmin=0, vmax=np.quantile(N_full, .99), cmap=CMAP["coffee"])
 		θ = np.linspace(0, 2*pi, 145)
 		for x0, y0 in get_relative_aperture_positions(s_nominal, grid_transform, r_true, 10,
-		                                              x_circles[0], y_circles[0]):
+		                                              grid_x0, grid_y0):
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
 			         "C0--", linewidth=1.2)
 		plt.scatter(x_circles, y_circles, np.where(circle_fullness, 30, 5),
 		            c="C0", marker="x")
 		plt.contour(scan_plane.x.get_bins(), scan_plane.y.get_bins(), N_clipd.T,
 		            levels=[haff_density], colors="C6", linewidths=.6)
-		plt.axis("equal")
-		plt.ylim(np.min(y_edges), np.max(y_edges))
-		plt.xlim(np.min(x_edges), np.max(x_edges))
+		plt.xlim(scan_plane.x.minimum, scan_plane.x.maximum)
+		plt.ylim(scan_plane.y.minimum, scan_plane.y.maximum)
 		plt.show()
+
+	if len(circles) == 0:  # TODO: check for duplicate centers (tho I think they should be rare and not too big a problem)
+		raise DataError("I couldn't find any circles in this region")
 
 	return [(x, y) for x, y in zip(x_circles, y_circles)], grid_transform
 

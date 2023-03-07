@@ -443,8 +443,12 @@ def find_intercept(x: np.ndarray, y: np.ndarray):
 	""" find the x where this curve first crosses y=0 """
 	if x.shape != y.shape or x.ndim != 1:
 		raise ValueError("bad array dimensions")
-	i = np.nonzero(np.sign(y[:-1]) != np.sign(y[1:]))[0][0]
-	return x[i] - y[i]/(y[i + 1] - y[i])*(x[i + 1] - x[i])
+	sign_change = np.sign(y[:-1]) != np.sign(y[1:])
+	if np.any(sign_change):
+		i = np.nonzero(sign_change)[0][0]
+		return x[i] - y[i]/(y[i + 1] - y[i])*(x[i + 1] - x[i])
+	else:
+		raise ValueError("no intercept found")
 
 
 def execute_java(script: str, *args: str, classpath="out/production/kodi-analysis/") -> None:

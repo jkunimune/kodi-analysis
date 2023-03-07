@@ -144,10 +144,13 @@ def get_dilation_factor(Q: float, r0: float, energy_min: float, energy_max: floa
 	return find_intercept(r, z - z[0]*.50)/r0
 
 
-def get_expansion_factor(Q: float, r0: float, energy_min: float, energy_max: float) -> float:
-	""" get the factor by which the 1% radius of the penumbra increases due to aperture charging """
+def get_expanded_radius(Q: float, r0: float, energy_min: float, energy_max: float) -> float:
+	""" get the resulting 1% radius of the penumbra after aperture charging """
 	r, z = get_modified_point_spread(r0, Q, energy_min, energy_max)
-	return find_intercept(r, z - z[0]*.005)
+	try:
+		return find_intercept(r, z - z[0]*.005)
+	except ValueError:
+		return inf
 
 
 def get_charging_parameter(dilation: float, r0: float, energy_min: float, energy_max: float) -> float:
