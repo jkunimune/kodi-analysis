@@ -22,20 +22,12 @@ matplotlib.use("Qt5agg")
 
 
 SCAN_DIRECTORY = "../data/scans"
+TIM_SCAN_INFO_FILE = "../data/tim_info.txt"
 
 
-if __name__ == "__main__":
+def main():
 	# first get info about the tims on each scan
-	tim_sets: dict[str, list[int]] = {}
-	try:
-		with open(os.path.join(SCAN_DIRECTORY, "tim_scan_info.txt"), "r") as f:
-			for line in f:
-				shot, tim_set = line.split(":")
-				tim_sets[shot.strip()] = [int(tim.strip()) for tim in tim_set.split(",")]
-	except FileNotFoundError:
-		with open(os.path.join(SCAN_DIRECTORY, "tim_scan_info.txt"), "w") as f:
-			f.write("N210808: 2, 4, 5")
-		raise FileNotFoundError("please fill out the tim_scan_info.txt file in the scans directory")
+	tim_sets: dict[str, list[int]] = load_tims_fielded_on_each_shot()
 
 	# and the general shot info
 	shot_table = pd.read_csv("../data/shots.csv", index_col="shot", dtype={"shot": str}, skipinitialspace=True)
@@ -49,7 +41,7 @@ if __name__ == "__main__":
 			scan_index = int(re.search(r"_pcis([0-9+])", filename, re.IGNORECASE).group(1)) - 1
 
 			if shot not in tim_sets:
-				raise KeyError(f"please add {shot} to the tim_scan_info.txt file in the scans directory")
+				raise KeyError(f"please add {shot} to the tim_info.txt file in the scans directory")
 
 			with h5py.File(os.path.join(SCAN_DIRECTORY, filename), "r") as f:
 				dataset = f["PSL_per_px"]
@@ -91,7 +83,7 @@ if __name__ == "__main__":
 			try:
 				tim_set = tim_sets[shot][:]
 			except KeyError:
-				raise KeyError(f"please add shot {shot} to the data/scans/tim_scan_info.txt file.")
+				raise KeyError(f"please add shot {shot} to the data/scans/tim_info.txt file.")
 			try:
 				num_ip_positions = shot_table.loc[shot].filtering.count("|")
 			except KeyError: # TODO: I think this would be the place to load the filtering info
@@ -124,3 +116,27 @@ if __name__ == "__main__":
 					f["x"] = grid.x.get_edges()[start:end + 1]
 					f["y"] = grid.y.get_edges()
 					f["PSL_per_px"] = image[start:end, :]
+
+
+def load_tims_fielded_on_each_shot() -> dict[str, list[int]]:
+	result = {}
+	try:
+		with open(TIM_SCAN_INFO_FILE, "r") as f:
+			for line in f:
+				header_match = re.fullmatch(r"([0-9]+):\s*", line)
+				item_match = re.fullmatch(r"\s+([0-9]+):.*", line)
+				if header_match:
+					current_shot = header_match.group(1)
+					result[current_shot] = []
+				elif item_match:
+					result[current_shot].append(int(item_match.group(1)))
+	except FileNotFoundError:
+		with open(TIM_SCAN_INFO_FILE, "w") as f:
+			f.write("96969:\n2\n4\n5")
+		raise FileNotFoundError("please fill out the tim_info.txt file in the scans directory")
+	else:
+		return result
+
+
+if __name__ == "__main__":
+	main()

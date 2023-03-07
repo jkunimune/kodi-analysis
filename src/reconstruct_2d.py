@@ -41,6 +41,7 @@ matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
+# DEUTERON_ENERGY_CUTS = [(0, (0, 12.5))]
 # DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5))] # (MeV) (emitted, not detected)
 DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitted, not detected)
 # DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
@@ -162,7 +163,7 @@ def analyze(shots_to_reconstruct: list[str],
 			if os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES and shot_match and (tim is None or tim_match):
 				if tim_match is None:
 					logging.warning(f"the file {filename} doesn’t specify a TIM, so I’m calling it TIM0.")
-				matching_tim = tim_match.group(1) if tim_match is not None else 0
+				matching_tim = tim_match.group(1) if tim_match is not None else "0"
 				detector_index = int(detector_match.group(1)) if detector_match is not None else 0
 				etch_time = float(etch_match.group(1)) if etch_match is not None else None
 				particle = "xray" if filename.endswith(".h5") else "deuteron"
@@ -186,6 +187,7 @@ def analyze(shots_to_reconstruct: list[str],
 			shot_info = shot_table.loc[shot]
 		except KeyError:
 			raise RecordNotFoundError(f"please add shot {shot!r} to the data/shots.csv file.")
+		filtering = load_filtering_info(shot, tim)
 
 		# perform the 2d reconstruccion
 		try:
@@ -198,7 +200,7 @@ def analyze(shots_to_reconstruct: list[str],
 				particle           =particle,
 				detector_index     =detector_index,
 				etch_time          =etch_time,
-				filtering          =shot_info["filtering"],  # TODO: use different filter thickness for each TIM
+				filtering          =filtering,
 				rA                 =shot_info["aperture radius"]*1e-4,
 				sA                 =shot_info["aperture spacing"]*1e-4,
 				L1                 =shot_info["standoff"]*1e-4,
@@ -1200,6 +1202,22 @@ def load_shot_info(shot: str, tim: str,
 		return old_summary[matching_record].iloc[-1]
 	else:
 		raise RecordNotFoundError(f"couldn’t find {shot} TIM{tim} \"{filter_str}\" {energy_min}–{energy_max} cut in summary.csv")
+
+
+def load_filtering_info(shot: str, tim: str) -> str:
+	""" load the tim_info.txt file and grab and parse the filtering for the given TIM on the given shot """
+	current_shot = None
+	with open("data/tim_info.txt", "r") as f:
+		for line in f:
+			header_match = re.fullmatch(r"^([0-9]{5,6}):\s*", line)
+			item_match = re.fullmatch(r"^\s+([0-9]+):\s*([0-9A-Za-z\[| ]+)\s*", line)
+			if header_match:
+				current_shot = header_match.group(1)
+			elif item_match:
+				current_tim, filtering = item_match.groups()
+				if current_shot == shot and current_tim == tim:
+					return filtering
+	raise RecordNotFoundError(f"couldn’t find {shot} TIM{tim} filtering information in tim_info.txt")
 
 
 def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_points: NDArray[float]
