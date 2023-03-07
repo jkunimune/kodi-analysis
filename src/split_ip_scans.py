@@ -21,8 +21,8 @@ from util import downsample_2d
 matplotlib.use("Qt5agg")
 
 
-SCAN_DIRECTORY = "../data/scans"
-TIM_SCAN_INFO_FILE = "../data/tim_info.txt"
+SCAN_DIRECTORY = "../input/scans"
+TIM_SCAN_INFO_FILE = "../input/tim_info.txt"
 
 
 def main():
@@ -30,7 +30,7 @@ def main():
 	tim_sets: dict[str, list[int]] = load_tims_fielded_on_each_shot()
 
 	# and the general shot info
-	shot_table = pd.read_csv("../data/shots.csv", index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+	shot_table = pd.read_csv("../input/shots.csv", index_col="shot", dtype={"shot": str}, skipinitialspace=True)
 
 	# then search for scan files (most recent first)
 	for filename in reversed(os.listdir(SCAN_DIRECTORY)):
@@ -83,11 +83,11 @@ def main():
 			try:
 				tim_set = tim_sets[shot][:]
 			except KeyError:
-				raise KeyError(f"please add shot {shot} to the data/scans/tim_info.txt file.")
+				raise KeyError(f"please add shot {shot} to the input/scans/tim_info.txt file.")
 			try:
 				num_ip_positions = shot_table.loc[shot].filtering.count("|")
 			except KeyError: # TODO: I think this would be the place to load the filtering info
-				raise KeyError(f"please add shot {shot} to the data/shots.csv file.")
+				raise KeyError(f"please add shot {shot} to the input/shots.csv file.")
 
 			# then split it up
 			cut_positions = np.round(grid.x.get_index(sorted(cut_positions))).astype(int)

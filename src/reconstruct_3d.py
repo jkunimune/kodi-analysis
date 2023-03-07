@@ -31,7 +31,7 @@ spatial_resolution = 7 # (μm)
 
 
 def get_shot_yield(shot: str) -> float:
-	shot_table = pd.read_csv("data/shots.csv", dtype={"shot": str}, index_col="shot", skipinitialspace=True)
+	shot_table = pd.read_csv("input/shots.csv", dtype={"shot": str}, index_col="shot", skipinitialspace=True)
 	try:
 		return shot_table.loc[shot]["yield"]
 	except KeyError:

@@ -1,6 +1,6 @@
 # data files
-data/scans/*
-data/simulations/*
+input/scans/*
+input/simulations/*
 results/*
 tmp/*
 

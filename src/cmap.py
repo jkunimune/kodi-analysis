@@ -5,7 +5,7 @@ from matplotlib.colors import ListedColormap
 
 CMAP: dict[str, ListedColormap] = {}
 
-directory = "data/tables" if os.path.isdir("data/tables") else "../data/tables"
+directory = "input/tables" if os.path.isdir("input/tables") else "../input/tables"
 for filename in os.listdir(directory):
 	if filename.startswith("cmap_") and filename.endswith(".csv"):
 		try:

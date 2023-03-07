@@ -87,7 +87,7 @@ class FilterError(ValueError):
 def analyze(shots_to_reconstruct: list[str],
             skip_reconstruction: bool,
             show_plots: bool):
-	""" iterate thru the scan files in the data/scans directory that match the provided shot
+	""" iterate thru the scan files in the input/scans directory that match the provided shot
 	    numbers, preprocess them into some number of penumbral images, apply the 2D reconstruction
 	    algorithm to them (or load the results of the previus reconstruction if so desired),
 	    generate some plots of the data and results, and save all the important information to CSV
@@ -126,7 +126,7 @@ def analyze(shots_to_reconstruct: list[str],
 
 	# read in some of the existing information
 	try:
-		shot_table = pd.read_csv('data/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+		shot_table = pd.read_csv('input/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
 	except IOError as e:
 		logging.error("my shot table!  I can't do analysis without my shot table!")
 		raise e
@@ -151,7 +151,7 @@ def analyze(shots_to_reconstruct: list[str],
 
 		# search for filenames that match each row
 		matching_scans: list[tuple[str, str, str, int, float, str]] = []
-		for filename in os.listdir("data/scans"):
+		for filename in os.listdir("input/scans"):
 			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
 			detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
 			etch_match = re.search(r"([0-9]+)hr?", filename, re.IGNORECASE)
@@ -168,7 +168,7 @@ def analyze(shots_to_reconstruct: list[str],
 				etch_time = float(etch_match.group(1)) if etch_match is not None else None
 				particle = "xray" if filename.endswith(".h5") else "deuteron"
 				matching_scans.append((shot, matching_tim, particle, detector_index, etch_time,
-				                       f"data/scans/{filename}"))
+				                       f"input/scans/{filename}"))
 		if len(matching_scans) == 0:
 			logging.info("  Could not find any scan file for TIM {} on shot {}".format(tim, shot))
 		else:
@@ -177,7 +177,7 @@ def analyze(shots_to_reconstruct: list[str],
 	if len(all_scans_to_analyze) > 0:
 		logging.info(f"Planning to reconstruct {', '.join(scan[-1] for scan in all_scans_to_analyze)}")
 	else:
-		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the data folder.")
+		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the input folder.")
 
 	# then iterate thru that list and do the analysis
 	for shot, tim, particle, detector_index, etch_time, filename in all_scans_to_analyze:
@@ -186,7 +186,7 @@ def analyze(shots_to_reconstruct: list[str],
 		try:
 			shot_info = shot_table.loc[shot]
 		except KeyError:
-			raise RecordNotFoundError(f"please add shot {shot!r} to the data/shots.csv file.")
+			raise RecordNotFoundError(f"please add shot {shot!r} to the input/shots.csv file.")
 		filtering = load_filtering_info(shot, tim)
 
 		# perform the 2d reconstruccion
@@ -246,7 +246,7 @@ def analyze_scan(input_filename: str,
                  skip_reconstruction: bool, show_plots: bool,
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct all of the penumbral images contained in a single scan file.
-		:param input_filename: the location of the scan file in data/scans/
+		:param input_filename: the location of the scan file in input/scans/
 		:param shot: the shot number/name
 		:param tim: the TIM number
 		:param particle: the type of radiation being detected ("deuteron" for CR39 or "xray" for an image plate)
@@ -394,7 +394,7 @@ def analyze_scan_section(input_filename: str,
                          skip_reconstruction: bool, show_plots: bool,
                          ) -> tuple[HexGridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
-		:param input_filename: the location of the scan file in data/scans/
+		:param input_filename: the location of the scan file in input/scans/
 		:param shot: the shot number/name
 		:param tim: the TIM number
 		:param rA: the aperture radius (cm)
@@ -532,7 +532,7 @@ def analyze_scan_section_cut(input_filename: str,
                              ) -> tuple[Grid, NDArray[float], dict[str, Any]]:
 	""" reconstruct the penumbral image contained in a single energy cut in a single filtering
 	    region of a single scan file.
-		:param input_filename: the location of the scan file in data/scans/
+		:param input_filename: the location of the scan file in input/scans/
 		:param shot: the shot number/name
 		:param tim: the TIM number
 		:param rA: the aperture radius in cm
@@ -1207,7 +1207,7 @@ def load_shot_info(shot: str, tim: str,
 def load_filtering_info(shot: str, tim: str) -> str:
 	""" load the tim_info.txt file and grab and parse the filtering for the given TIM on the given shot """
 	current_shot = None
-	with open("data/tim_info.txt", "r") as f:
+	with open("input/tim_info.txt", "r") as f:
 		for line in f:
 			header_match = re.fullmatch(r"^([0-9]{5,6}):\s*", line)
 			item_match = re.fullmatch(r"^\s+([0-9]+):\s*([0-9A-Za-z\[| ]+)\s*", line)

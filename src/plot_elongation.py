@@ -190,7 +190,7 @@ def polar_plot_asymmetries(shots: list[str], asymmetries: NDArray[float], num_st
 
 
 def get_num_stalks(shot: str) -> int:
-	shot_table = pd.read_csv('data/shots.csv', index_col="shot",
+	shot_table = pd.read_csv('input/shots.csv', index_col="shot",
 	                         skipinitialspace=True, dtype={"shot": str, "stalks": "Int64"})
 	return shot_table.loc[shot]["stalks"]
 

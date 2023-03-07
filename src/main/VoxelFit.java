@@ -53,7 +53,7 @@ public class VoxelFit {
 		float[][] cross_sections = new float[0][];
 		try {
 			cross_sections = Math2.reducePrecision(CSV.read(new File(
-					"data/tables/endf-6[58591].txt"), ','));
+					"input/tables/endf-6[58591].txt"), ','));
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

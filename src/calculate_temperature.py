@@ -293,7 +293,7 @@ def main():
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir("..")
 
-	shot_table = pd.read_csv('data/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+	shot_table = pd.read_csv('input/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
 	reconstruction_table = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
 	emissions = []
 	temperatures = []

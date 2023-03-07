@@ -19,9 +19,9 @@ def range_curve(z: float, a: float, material: str):
 	"""
 	if z == 1:
 		try:
-			table = np.loadtxt(f"data/tables/stopping_power_protons_{material}.csv", delimiter=",")
+			table = np.loadtxt(f"input/tables/stopping_power_protons_{material}.csv", delimiter=",")
 		except FileNotFoundError:
-			table = np.loadtxt(f"../data/tables/stopping_power_protons_{material}.csv", delimiter=",")
+			table = np.loadtxt(f"../input/tables/stopping_power_protons_{material}.csv", delimiter=",")
 	else:
 		raise NotImplementedError("do I need another table for this?  I don't actually know.")
 	E = table[:, 0]*a*1e-3
@@ -108,9 +108,9 @@ def attenuation_curve(energy: Numeric, material: str) -> Numeric:
 	"""
 	# otherwise load from disc
 	try:
-		table = np.loadtxt(f"data/tables/attenuation_{material}.csv", delimiter=",")
+		table = np.loadtxt(f"input/tables/attenuation_{material}.csv", delimiter=",")
 	except FileNotFoundError:
-		table = np.loadtxt(f"../data/tables/attenuation_{material}.csv", delimiter=",")
+		table = np.loadtxt(f"../input/tables/attenuation_{material}.csv", delimiter=",")
 	return np.interp(energy, table[:, 0], table[:, 1])
 
 

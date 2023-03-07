@@ -87,7 +87,7 @@ def electric_field(r: NDArray[float], model: str, normalized_aperture_thickness:
 	    precalculated reference curves
 	"""
 	if model not in E_interpolator_dict:
-		filename = f"data/tables/electric_field_{model}_{normalized_aperture_thickness}.csv"
+		filename = f"input/tables/electric_field_{model}_{normalized_aperture_thickness}.csv"
 		if not os.path.isfile(filename):
 			x_ref = np.linspace(0, 4, 300, endpoint=False)
 			r_ref = 1 - np.exp(-x_ref)
