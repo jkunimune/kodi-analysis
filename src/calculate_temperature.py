@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from math import inf, nan, sqrt
 from typing import Callable
@@ -21,94 +23,52 @@ SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 TIMS = ["2", "4", "5"]
 
 
-class Distribution:
-	def __init__(self, total: float, interpolator: Callable[[tuple[float, float]], float]):
-		""" a number bundled with an interpolator
-		    :param total: can be either the arithmetic or quadratic total
-		    :param interpolator: takes a tuple of floats and returns a float scalar
-		"""
-		self.total = total
-		self.at = interpolator
+def main():
+	if os.path.basename(os.getcwd()) == "src":
+		os.chdir("..")
 
+	shot_table = pd.read_csv('input/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+	reconstruction_table = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
+	emissions = []
+	temperatures = []
+	labels = []
+	for shot in SHOTS:
+		for tim in TIMS:
+			print(shot, tim)
+			emissions.append([])
+			energies = []
+			for _, record in reconstruction_table[(reconstruction_table.shot == shot) &
+			                                      (reconstruction_table.tim == tim)].iterrows():
+				if record["particle"] == "xray":
+					emissions[-1].append(record["yield"])
+					energies.append((record["energy min"], record["energy max"]))
+			if len(temperatures) == 0:
+				for energy_min, energy_max in energies:
+					labels.append(f"{energy_min:.0f} – {energy_max:.0f} keV")
+			num_stalks = shot_table.loc[shot]["stalks"]
+			temperature, temperature_error = analyze(shot, tim, num_stalks)
+			temperatures.append((temperature, temperature_error))
+	emissions = np.array(emissions)
+	temperatures = np.array(temperatures)
 
-def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[float],
-                              energies: NDArray[float], log_sensitivities: NDArray[float],
-                              show_plot=False) -> tuple[float, float, float, float]:
-	""" take a set of measured x-ray intensity values from a single chord thru the implosion and
-	    use their average and their ratios to infer the emission-averaged electron temperature,
-	    and the total line-integrated photic emission along that chord.
-	    :param measured_values: the detected emission (PSL/μm^2/sr)
-	    :param errors: the uncertainty on each of the measured values (PSL/μm^2/sr)
-	    :param energies: the photon energies at which the sensitivities have been calculated (keV)
-	    :param log_sensitivities: the log of the dimensionless sensitivity of each detector at each reference energy
-	    :param show_plot: whether to generate a little plot showing how well the model fits the data
-	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr)
-	"""
-	def compute_values(βe):
-		integrand = np.exp(-energies*βe + log_sensitivities)
-		unscaled_values = integrate.trapezoid(x=energies, y=integrand, axis=1)
-		numerator = np.sum(unscaled_values*measured_values/errors**2)
-		denominator = np.sum(unscaled_values**2/errors**2)
-		return integrand, numerator, denominator, unscaled_values
-
-	def compute_residuals(βe):
-		_, numerator, denominator, unscaled_values = compute_values(βe)
-		values = numerator/denominator*unscaled_values
-		return (values - measured_values)/errors
-
-	def compute_derivatives(βe):
-		integrand, numerator, denominator, unscaled_values = compute_values(βe)
-		unscaled_derivatives = integrate.trapezoid(x=energies, y=-energies*integrand, axis=1)
-		numerator_derivative = np.sum(unscaled_derivatives*measured_values/errors**2)
-		denominator_derivative = 2*np.sum(unscaled_derivatives*unscaled_values/errors**2)
-		return (numerator/denominator*unscaled_derivatives +
-		        numerator_derivative/denominator*unscaled_values -
-		        numerator*denominator_derivative/denominator**2*unscaled_values
-		        )/errors
-
-	if np.all(measured_values == 0):
-		return 0, inf, 0, 0
-	else:
-		# start with a scan
-		best_Te, best_χ2 = None, inf
-		for Te in np.geomspace(5e-2, 5e-0, 11):
-			χ2 = np.sum(compute_residuals(1/Te)**2)
-			if χ2 < best_χ2:
-				best_Te = Te
-				best_χ2 = χ2
-		# then do a newton’s method
-		result = optimize.least_squares(fun=lambda x: compute_residuals(x[0]),
-		                                jac=lambda x: np.expand_dims(compute_derivatives(x[0]), 1),
-		                                x0=[1/best_Te],
-		                                bounds=(0, inf))
-		if result.success:
-			best_βe = result.x[0]
-			error_βe = np.linalg.inv(1/2*result.jac.T@result.jac)[0, 0]
-			best_Te = 1/best_βe
-			error_Te = error_βe/best_βe**2
-
-			_, numerator, denominator, unscaled_values = compute_values(best_βe)
-			best_εL = numerator/denominator*best_Te
-			error_εL = 0
-			theoretic_values = numerator/denominator*unscaled_values
-
-			if show_plot:
-				plt.figure()
-				plt.errorbar(1 + np.arange(measured_values.size),
-				             y=measured_values, yerr=errors,
-				             fmt="oC1", zorder=2, markersize=8)
-				plt.errorbar(1 + np.arange(measured_values.size),
-				             y=theoretic_values, yerr=0,
-				             fmt="xC0", zorder=3, markersize=8, markeredgewidth=2)
-				plt.grid(axis="y")
-				plt.xlabel("Detector #")
-				plt.ylabel("Measured yield (units)")
-				plt.title(f"Best fit (Te = {best_Te:.3f} ± {error_Te:.3f})")
-				plt.tight_layout()
-
-			return best_Te, error_Te, best_εL, error_εL
-		else:
-			return nan, nan, nan, nan
+	# plot the trends in all of the data hither plotted
+	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(6, 5))
+	x = np.ravel(
+		np.arange(len(SHOTS))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(TIMS))[np.newaxis, :])
+	top_ax.grid(axis="y", which="both")
+	for k, (marker, label) in enumerate(zip("*ovd", labels)):
+		top_ax.scatter(x, emissions[:, k], marker=marker, color=f"C{k}", label=label, zorder=10)
+	top_ax.legend()
+	top_ax.set_yscale("log")
+	top_ax.set_ylabel("X-ray intensity")
+	bottom_ax.grid(axis="y")
+	bottom_ax.errorbar(x, temperatures[:, 0], yerr=temperatures[:, 1], fmt=".C3")
+	bottom_ax.set_ylabel("$T_e$ (keV)")
+	bottom_ax.set_xticks(ticks=np.arange(len(SHOTS)), labels=SHOTS)
+	plt.tight_layout()
+	plt.subplots_adjust(hspace=0)
+	plt.savefig("results/plots/all_temperatures.png", transparent=True)
+	plt.show()
 
 
 def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
@@ -220,6 +180,118 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	return temperature_integrated, temperature_error_integrated
 
 
+def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[float],
+                              energies: NDArray[float], log_sensitivities: NDArray[float],
+                              show_plot=False) -> tuple[float, float, float, float]:
+	""" take a set of measured x-ray intensity values from a single chord thru the implosion and
+	    use their average and their ratios to infer the emission-averaged electron temperature,
+	    and the total line-integrated photic emission along that chord.
+	    :param measured_values: the detected emission (PSL/μm^2/sr)
+	    :param errors: the uncertainty on each of the measured values (PSL/μm^2/sr)
+	    :param energies: the photon energies at which the sensitivities have been calculated (keV)
+	    :param log_sensitivities: the log of the dimensionless sensitivity of each detector at each reference energy
+	    :param show_plot: whether to generate a little plot showing how well the model fits the data
+	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr)
+	"""
+	def compute_values(βe):
+		integrand = np.exp(-energies*βe + log_sensitivities)
+		unscaled_values = integrate.trapezoid(x=energies, y=integrand, axis=1)
+		numerator = np.sum(unscaled_values*measured_values/errors**2)
+		denominator = np.sum(unscaled_values**2/errors**2)
+		return integrand, numerator, denominator, unscaled_values
+
+	def compute_residuals(βe):
+		_, numerator, denominator, unscaled_values = compute_values(βe)
+		values = numerator/denominator*unscaled_values
+		return (values - measured_values)/errors
+
+	def compute_derivatives(βe):
+		integrand, numerator, denominator, unscaled_values = compute_values(βe)
+		unscaled_derivatives = integrate.trapezoid(x=energies, y=-energies*integrand, axis=1)
+		numerator_derivative = np.sum(unscaled_derivatives*measured_values/errors**2)
+		denominator_derivative = 2*np.sum(unscaled_derivatives*unscaled_values/errors**2)
+		return (numerator/denominator*unscaled_derivatives +
+		        numerator_derivative/denominator*unscaled_values -
+		        numerator*denominator_derivative/denominator**2*unscaled_values
+		        )/errors
+
+	if np.all(measured_values == 0):
+		return 0, inf, 0, 0
+	else:
+		# start with a scan
+		best_Te, best_χ2 = None, inf
+		for Te in np.geomspace(5e-2, 5e-0, 11):
+			χ2 = np.sum(compute_residuals(1/Te)**2)
+			if χ2 < best_χ2:
+				best_Te = Te
+				best_χ2 = χ2
+		# then do a newton’s method
+		result = optimize.least_squares(fun=lambda x: compute_residuals(x[0]),
+		                                jac=lambda x: np.expand_dims(compute_derivatives(x[0]), 1),
+		                                x0=[1/best_Te],
+		                                bounds=(0, inf))
+		if result.success:
+			best_βe = result.x[0]
+			error_βe = np.linalg.inv(1/2*result.jac.T@result.jac)[0, 0]
+			best_Te = 1/best_βe
+			error_Te = error_βe/best_βe**2
+
+			_, numerator, denominator, unscaled_values = compute_values(best_βe)
+			best_εL = numerator/denominator*best_Te
+			error_εL = 0
+			theoretic_values = numerator/denominator*unscaled_values
+
+			if show_plot:
+				plt.figure()
+				plt.errorbar(1 + np.arange(measured_values.size),
+				             y=measured_values, yerr=errors,
+				             fmt="oC1", zorder=2, markersize=8)
+				plt.errorbar(1 + np.arange(measured_values.size),
+				             y=theoretic_values, yerr=0,
+				             fmt="xC0", zorder=3, markersize=8, markeredgewidth=2)
+				plt.grid(axis="y")
+				plt.xlabel("Detector #")
+				plt.ylabel("Measured yield (units)")
+				plt.title(f"Best fit (Te = {best_Te:.3f} ± {error_Te:.3f})")
+				plt.tight_layout()
+
+			return best_Te, error_Te, best_εL, error_εL
+		else:
+			return nan, nan, nan, nan
+
+
+def plot_electron_temperature(filename: str, show: bool,
+                              grid: Grid, temperature: NDArray[float], emission: NDArray[float],
+                              temperature_integrated: float,
+                              projected_stalk_direction: tuple[float, float, float], num_stalks: int) -> None:
+	""" plot the electron temperature as a heatmap, along with some contours to show where the
+	    implosion actually is.
+	"""
+	plt.figure()
+	plt.gca().set_facecolor("k")
+	plt.imshow(temperature.T, extent=grid.extent,
+	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=7)
+	make_colorbar(vmin=0, vmax=7, label="Te (keV)")
+	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
+	            colors="#000", linewidths=1,
+	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
+	x_stalk, y_stalk, _ = projected_stalk_direction
+	if num_stalks == 1:
+		plt.plot([0, x_stalk*40], [0, y_stalk*40], color="#000", linewidth=2)
+	elif num_stalks == 2:
+		plt.plot([-x_stalk*40, x_stalk*40], [-y_stalk*40, y_stalk*40], color="#000", linewidth=2)
+	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
+	         color="w", ha='left', va='top', transform=plt.gca().transAxes)
+	plt.xlabel("x (μm)")
+	plt.ylabel("y (μm)")
+	plt.title(filename.replace("-", " ").capitalize())
+	plt.tight_layout()
+	save_current_figure(f"{filename}-temperature")
+	if show:
+		plt.show()
+	plt.close("all")
+
+
 def load_all_xray_images_for(shot: str, tim: str) \
 		-> tuple[list[Distribution], list[Distribution], list[list[tuple[float, str]]]]:
 	last_centroid = (0, 0)
@@ -257,84 +329,14 @@ def load_all_xray_images_for(shot: str, tim: str) \
 	return images, errors, filter_stacks
 
 
-def plot_electron_temperature(filename: str, show: bool,
-                              grid: Grid, temperature: NDArray[float], emission: NDArray[float],
-                              temperature_integrated: float,
-                              projected_stalk_direction: tuple[float, float, float], num_stalks: int) -> None:
-	""" plot the electron temperature as a heatmap, along with some contours to show where the
-	    implosion actually is.
-	"""
-	plt.figure()
-	plt.gca().set_facecolor("k")
-	plt.imshow(temperature.T, extent=grid.extent,
-	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=7)
-	make_colorbar(vmin=0, vmax=7, label="Te (keV)")
-	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
-	            colors="#000", linewidths=1,
-	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
-	x_stalk, y_stalk, _ = projected_stalk_direction
-	if num_stalks == 1:
-		plt.plot([0, x_stalk*40], [0, y_stalk*40], color="#000", linewidth=2)
-	elif num_stalks == 2:
-		plt.plot([-x_stalk*40, x_stalk*40], [-y_stalk*40, y_stalk*40], color="#000", linewidth=2)
-	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
-	         color="w", ha='left', va='top', transform=plt.gca().transAxes)
-	plt.xlabel("x (μm)")
-	plt.ylabel("y (μm)")
-	plt.title(filename.replace("-", " ").capitalize())
-	plt.tight_layout()
-	save_current_figure(f"{filename}-temperature")
-	if show:
-		plt.show()
-	plt.close("all")
-
-
-def main():
-	if os.path.basename(os.getcwd()) == "src":
-		os.chdir("..")
-
-	shot_table = pd.read_csv('input/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
-	reconstruction_table = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
-	emissions = []
-	temperatures = []
-	labels = []
-	for shot in SHOTS:
-		for tim in TIMS:
-			print(shot, tim)
-			emissions.append([])
-			energies = []
-			for _, record in reconstruction_table[(reconstruction_table.shot == shot) &
-			                                      (reconstruction_table.tim == tim)].iterrows():
-				if record["particle"] == "xray":
-					emissions[-1].append(record["yield"])
-					energies.append((record["energy min"], record["energy max"]))
-			if len(temperatures) == 0:
-				for energy_min, energy_max in energies:
-					labels.append(f"{energy_min:.0f} – {energy_max:.0f} keV")
-			num_stalks = shot_table.loc[shot]["stalks"]
-			temperature, temperature_error = analyze(shot, tim, num_stalks)
-			temperatures.append((temperature, temperature_error))
-	emissions = np.array(emissions)
-	temperatures = np.array(temperatures)
-
-	# plot the trends in all of the data hither plotted
-	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(6, 5))
-	x = np.ravel(
-		np.arange(len(SHOTS))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(TIMS))[np.newaxis, :])
-	top_ax.grid(axis="y", which="both")
-	for k, (marker, label) in enumerate(zip("*ovd", labels)):
-		top_ax.scatter(x, emissions[:, k], marker=marker, color=f"C{k}", label=label, zorder=10)
-	top_ax.legend()
-	top_ax.set_yscale("log")
-	top_ax.set_ylabel("X-ray intensity")
-	bottom_ax.grid(axis="y")
-	bottom_ax.errorbar(x, temperatures[:, 0], yerr=temperatures[:, 1], fmt=".C3")
-	bottom_ax.set_ylabel("$T_e$ (keV)")
-	bottom_ax.set_xticks(ticks=np.arange(len(SHOTS)), labels=SHOTS)
-	plt.tight_layout()
-	plt.subplots_adjust(hspace=0)
-	plt.savefig("results/plots/all_temperatures.png", transparent=True)
-	plt.show()
+class Distribution:
+	def __init__(self, total: float, interpolator: Callable[[tuple[float, float]], float]):
+		""" a number bundled with an interpolator
+		    :param total: can be either the arithmetic or quadratic total
+		    :param interpolator: takes a tuple of floats and returns a float scalar
+		"""
+		self.total = total
+		self.at = interpolator
 
 
 if __name__ == "__main__":
