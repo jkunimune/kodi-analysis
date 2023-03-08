@@ -152,6 +152,8 @@ def analyze(shots_to_reconstruct: list[str],
 		# search for filenames that match each row
 		matching_scans: list[tuple[str, str, str, int, float, str]] = []
 		for filename in os.listdir("input/scans"):
+			if "[phosphor].h5" in filename:  # skip these files because they’re unsplit
+				continue
 			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
 			detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
 			etch_match = re.search(r"([0-9]+)hr?", filename, re.IGNORECASE)
@@ -368,7 +370,7 @@ def analyze_scan(input_filename: str,
 			f"{shot}-tim{tim}-{particle}-{detector_index}", source_plane, source_stack, contour,
 			projected_offset, projected_flow, projected_stalk, num_stalks)
 
-	grid_matrix, grid_x0, grid_y0 = grid_parameters
+	grid_transform, grid_x0, grid_y0 = grid_parameters
 	for statblock in statistics:
 		statblock["shot"] = shot
 		statblock["tim"] = tim
@@ -376,8 +378,8 @@ def analyze_scan(input_filename: str,
 		statblock["detector index"] = detector_index
 		statblock["x0"] = grid_x0
 		statblock["y0"] = grid_y0
-		scale, rotation, skew, skew_rotation = decompose_2x2_into_intuitive_parameters(grid_matrix)
-		statblock["M"] = scale/sA
+		scale, rotation, skew, skew_rotation = decompose_2x2_into_intuitive_parameters(grid_transform)
+		statblock["M"] = scale*M_gess
 		statblock["grid angle"] = degrees(rotation)
 		statblock["grid skew"] = skew
 		statblock["grid skew angle"] = degrees(skew_rotation)
@@ -598,7 +600,6 @@ def analyze_scan_section_cut(input_filename: str,
 		resolution = X_RAY_RESOLUTION
 		diameter_max, diameter_min = nan, nan
 
-	r0 = M*rA
 	filter_str = print_filtering(filter_stack)
 
 	# start by loading the input file and stacking the images
@@ -616,12 +617,12 @@ def analyze_scan_section_cut(input_filename: str,
 			energy_min, energy_max,
 			centers, M*rA, M*sA, data_polygon, show_plots) # TODO: infer rA, as well?
 
-		if r_max > r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution:
-			logging.warning(f"the image appears to have a corona that extends to r={(r_max - r0)/(M - 1)/1e-4:.0f}μm, "
+		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
+			logging.warning(f"the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
 			                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
-			r_max = r0 + (M - 1)*MAX_OBJECT_PIXELS*resolution
+			r_max = M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution
 
-		r_psf = min(electric_field.get_expanded_radius(Q, r0, energy_min, energy_max), 2*r0)
+		r_psf = min(electric_field.get_expanded_radius(Q, M*rA, energy_min, energy_max), 2*M*rA)
 
 		if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
 			r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
@@ -700,7 +701,7 @@ def analyze_scan_section_cut(input_filename: str,
 
 	save_and_plot_penumbra(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
 	                       image_plane, image, image_plicity, energy_min, energy_max,
-	                       r0=rA*M, s0=sA*M, array_transform=array_transform)
+	                       r0=M*rA, s0=M*sA, array_transform=array_transform)
 
 	# now to apply the reconstruction algorithm!
 	if not skip_reconstruction:
@@ -716,7 +717,7 @@ def analyze_scan_section_cut(input_filename: str,
 		logging.info(f"  generating a {kernel_plane.shape} point spread function with Q={Q}")
 
 		# calculate the point-spread function
-		penumbral_kernel = point_spread_function(kernel_plane, Q, r0, array_transform,
+		penumbral_kernel = point_spread_function(kernel_plane, Q, M*rA, array_transform,
 		                                         energy_min, energy_max) # get the dimensionless shape of the penumbra
 		if account_for_overlap:
 			raise NotImplementedError("I also will need to add more things to the kernel")
@@ -727,7 +728,7 @@ def analyze_scan_section_cut(input_filename: str,
 		# mark pixels that are tuchd by all or none of the source pixels (and are therefore useless)
 		image_plane_pixel_distances = np.hypot(*image_plane.get_pixels(sparse=True))
 		if Q == 0:
-			within_penumbra = image_plane_pixel_distances < 2*r0 - r_max
+			within_penumbra = image_plane_pixel_distances < 2*M*rA - r_max
 			without_penumbra = image_plane_pixel_distances > r_max
 		elif source_plane.num_pixels*kernel_plane.num_pixels <= MAX_CONVOLUTION:
 			max_source = np.hypot(*source_plane.get_pixels(sparse=True)) <= source_plane.x.half_range
@@ -764,7 +765,7 @@ def analyze_scan_section_cut(input_filename: str,
 			plt.show()
 
 		# estimate the noise level, in case that's helpful
-		umbra = (image_plicity > 0) & (image_plane_pixel_distances < max(r0/2, r0 - (r_max - r_psf)))
+		umbra = (image_plicity > 0) & (image_plane_pixel_distances < max(M*rA/2, M*rA - (r_max - r_psf)))
 		umbra_value = np.mean(image/image_plicity, where=umbra)
 		umbra_variance = np.mean((image - umbra_value*image_plicity)**2/image_plicity, where=umbra)
 		estimated_data_variance = image/umbra_value*umbra_variance
@@ -778,7 +779,7 @@ def analyze_scan_section_cut(input_filename: str,
 		source = deconvolution.deconvolve(method,
 		                                  clipd_image,
 		                                  penumbral_kernel,
-		                                  r_psf=r0/image_plane.pixel_width,
+		                                  r_psf=M*rA/image_plane.pixel_width,
 		                                  pixel_area=clipd_plicity,
 		                                  source_region=source_region,
 		                                  noise=estimated_data_variance,
@@ -1172,10 +1173,15 @@ def load_source(shot: str, tim: str, particle_index: str,
                 filter_stack: list[Filter], energy_min: float, energy_max: float,
                 ) -> tuple[Grid, NDArray[float]]:
 	""" open up a saved HDF5 file and find and read a single source from the stack """
+	# get all the necessary info from the HDF5 file
 	x, y, source_stack, filterings, energy_bounds = load_hdf5(
 		f"results/data/{shot}-tim{tim}-{particle_index}-source",
-		["x", "y", "images", "filtering", "energies"])
-	source_plane = Grid.from_edge_array(x*1e-4, y*1e-4)
+		["x", "y", "images", "filtering", "energy"])
+	# fix this weird typing thing that I gess h5py does
+	if type(filterings[0]) is bytes:
+		filterings = [filtering.decode("utf-8") for filtering in filterings]
+	# then look for the matching filtering section and energy cut
+	source_plane = Grid.from_bin_array(x*1e-4, y*1e-4)
 	source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 	for i in range(source_stack.shape[0]):
 		if parse_filtering(filterings[i])[0] == filter_stack and \
@@ -1210,7 +1216,7 @@ def load_filtering_info(shot: str, tim: str) -> str:
 	with open("input/tim_info.txt", "r") as f:
 		for line in f:
 			header_match = re.fullmatch(r"^([0-9]{5,6}):\s*", line)
-			item_match = re.fullmatch(r"^\s+([0-9]+):\s*([0-9A-Za-z\[| ]+)\s*", line)
+			item_match = re.fullmatch(r"^\s+([0-9]+):\s*([0-9A-Za-z\[|/ ]+)\s*", line)
 			if header_match:
 				current_shot = header_match.group(1)
 			elif item_match:

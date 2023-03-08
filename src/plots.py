@@ -89,7 +89,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
                            counts: Optional[NDArray[float]],
                            area: Optional[NDArray[int]],
                            energy_min: float, energy_max: float,
-                           s0: float = np.inf, r0: float = 1.5, array_transform: NDArray[float] = np.identity(2)):
+                           s0: float, r0: float, array_transform: NDArray[float] = np.identity(2)):
 	""" plot the data along with the initial fit to it, and the reconstructed superaperture.
 	"""
 	save_as_hdf5(f'results/data/{filename}-penumbra',
