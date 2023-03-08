@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from math import inf, nan, sqrt
+from math import inf, nan
 from typing import Callable
 
 import numpy as np
@@ -16,11 +16,12 @@ from cmap import CMAP
 from coordinate import Grid
 from hdf5_util import load_hdf5
 from plots import make_colorbar, save_current_figure
-from util import parse_filtering, print_filtering
+from util import parse_filtering, print_filtering, Filter
 
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 TIMS = ["2", "4", "5"]
+NUM_SAMPLES = 100
 
 
 def main():
@@ -77,7 +78,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 		os.chdir(os.path.dirname(os.getcwd()))
 
 	# load imaging data
-	images, errors, filter_stacks = load_all_xray_images_for(shot, tim)
+	images, filter_stacks = load_all_xray_images_for(shot, tim)
 	if len(images) == 0:
 		print(f"can’t find anything for shot {shot} TIM{tim}")
 		return nan, nan
@@ -85,34 +86,25 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 		print(f"can’t infer temperatures with only one image on shot {shot} TIM{tim}")
 		return nan, nan
 
-	# calculate sensitivity curve for each filter image
-	reference_energies = np.geomspace(1, 1e3, 61)
-	log_sensitivities = []
-	for filter_stack in filter_stacks:
-		log_sensitivities.append(detector.log_xray_sensitivity(reference_energies, filter_stack, 0))
-	log_sensitivities = np.array(log_sensitivities)
-
 	# calculate some synthetic lineouts
 	test_temperature = np.geomspace(5e-1, 2e+1)
 	emissions = np.empty((len(filter_stacks), test_temperature.size))
 	inference = np.empty(test_temperature.size)
 	for i in range(test_temperature.size):
-		integrand = np.exp(-reference_energies/test_temperature[i] + log_sensitivities)
-		emissions[:, i] = integrate.trapezoid(x=reference_energies, y=integrand, axis=1)
+		emissions[:, i] = model_emission(test_temperature[i], *compute_sensitivity(filter_stacks))
 		emissions[:, i] /= emissions[:, i].mean()
-		inference[i] = compute_plasma_conditions(emissions[:, i], np.full(emissions[:, i].shape, 1e-1),
-		                                         reference_energies, log_sensitivities)[0]
+		inference[i] = compute_plasma_conditions(
+			emissions[:, i], *compute_sensitivity(filter_stacks))[0]
 
 	# calculate the spacially integrated temperature
-	temperature_integrated, temperature_error_integrated, _, _ = compute_plasma_conditions(
+	temperature_integrated, temperature_error_integrated, _, _ = compute_plasma_conditions_with_errorbars(
 		np.array([image.total for image in images]),
-		np.array([error.total for error in errors]),
-		reference_energies, log_sensitivities,
-		show_plot=True)
+		filter_stacks, show_plot=True)
 	save_current_figure(f"{shot}-tim{tim}-temperature-fit")
 	print(f"Te = {temperature_integrated:.3f} keV")
 
 	# calculate the spacially resolved temperature
+	measurement_errors = 0.05*np.array([image.supremum for image in images])  # this isn’t very quantitative, but it captures the character of errors in the reconstructions
 	basis = Grid.from_size(50, 3, True)
 	temperature_map = np.empty(basis.shape)
 	temperature_errors = np.empty(basis.shape)
@@ -120,9 +112,9 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	for i in range(basis.x.num_bins):
 		for j in range(basis.y.num_bins):
 			data = np.array([image.at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
-			error = np.array([error.at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for error in errors])
-			Te, dTe, εL, dεL = compute_plasma_conditions(data, error, reference_energies, log_sensitivities)
-			if dTe < Te/2:
+			reliable_measurements = data >= measurement_errors
+			if np.all(reliable_measurements):
+				Te, dTe, εL, dεL = compute_plasma_conditions_with_errorbars(data, filter_stacks)
 				temperature_map[i, j] = Te
 				temperature_errors[i, j] = dTe
 			else:
@@ -180,84 +172,153 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	return temperature_integrated, temperature_error_integrated
 
 
-def compute_plasma_conditions(measured_values: NDArray[float], errors: NDArray[float],
-                              energies: NDArray[float], log_sensitivities: NDArray[float],
-                              show_plot=False) -> tuple[float, float, float, float]:
+def compute_plasma_conditions_with_errorbars(measured_values: NDArray[float],
+                                             filter_stacks: list[list[Filter]],
+                                             error_bars=False, show_plot=False) -> tuple[float, float, float, float]:
+	""" take a set of measured x-ray intensity values from a single chord thru the implosion and
+	    use their average and their ratios to infer the emission-averaged electron temperature,
+	    and the total line-integrated photic emission along that chord.  compute the one-sigma error
+	    bars accounting for uncertainty in the filter thicknesses
+	    :param measured_values: the detected emission (PSL/μm^2/sr)
+	    :param filter_stacks: the filtering representing each energy bin
+	    :param error_bars: whether to calculate error bars (it’s kind of time-intensive)
+	    :param show_plot: whether to generate a little plot showing how well the model fits the data
+	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr)
+	"""
+	ref_energies, sensitivities = compute_sensitivity(filter_stacks)
+	temperature, emission = compute_plasma_conditions(measured_values, ref_energies, sensitivities)
+	if error_bars:
+		varied_sensitivities = np.empty((NUM_SAMPLES, *sensitivities.shape))
+		varied_temperatures = np.empty(NUM_SAMPLES, dtype=float)
+		varied_emissions = np.empty(NUM_SAMPLES, dtype=float)
+		for k in range(NUM_SAMPLES):
+			varied_filter_stacks = []
+			for filter_stack in filter_stacks:
+				varied_filter_stacks.append([])
+				for thickness, material in filter_stack:
+					varied_thickness = thickness*np.random.normal(1, .06)
+					varied_filter_stacks[-1].append((varied_thickness, material))
+			_, varied_sensitivity = compute_sensitivity(varied_filter_stacks)
+			varied_temperature, varied_emission = compute_plasma_conditions(
+				measured_values, ref_energies, varied_sensitivity)
+			varied_sensitivities[k, :, :] = varied_sensitivity
+			varied_temperatures[k] = varied_temperature
+			varied_emissions[k] = varied_emission
+
+		# compute the error bars as a residual RMS
+		reconstructed_values = emission/temperature*model_emission(
+			temperature, ref_energies, sensitivities)
+		temperature_error = np.sqrt(np.mean((varied_temperatures - temperature)**2))
+		emission_error = np.sqrt(np.mean((varied_emissions - emission)**2))
+		varied_reconstructed_values = np.empty((NUM_SAMPLES, reconstructed_values.size))
+		for k in range(NUM_SAMPLES):
+			varied_reconstructed_values[k, :] = emission/temperature*model_emission(
+				temperature, ref_energies, varied_sensitivities[k, :, :])
+		reconstructed_errors = np.sqrt(np.mean((varied_reconstructed_values - reconstructed_values)**2, axis=0))
+
+	else:
+		temperature_error = 0
+		emission_error = 0
+		reconstructed_values = emission/temperature*model_emission(
+			temperature, ref_energies, sensitivities)
+		reconstructed_errors = np.zeros(reconstructed_values.shape)
+
+	if show_plot:
+		plt.figure()
+		plt.errorbar(1 + np.arange(measured_values.size),
+		             y=measured_values,
+		             fmt="oC1", zorder=2, markersize=8)
+		plt.errorbar(1 + np.arange(measured_values.size),
+		             y=reconstructed_values, yerr=reconstructed_errors,
+		             fmt="xC0", zorder=3, markersize=8, markeredgewidth=2)
+		plt.grid(axis="y")
+		plt.xlabel("Detector #")
+		plt.ylabel("Measured yield (units)")
+		plt.ylim(0, None)
+		plt.title(f"Best fit (Te = {temperature:.3f} ± {temperature_error:.3f})")
+		plt.tight_layout()
+
+	return temperature, temperature_error, emission, emission_error
+
+
+def compute_plasma_conditions(measured_values: NDArray[float], ref_energies: NDArray[float],
+                              log_sensitivities: NDArray[float]) -> tuple[float, float]:
 	""" take a set of measured x-ray intensity values from a single chord thru the implosion and
 	    use their average and their ratios to infer the emission-averaged electron temperature,
 	    and the total line-integrated photic emission along that chord.
 	    :param measured_values: the detected emission (PSL/μm^2/sr)
-	    :param errors: the uncertainty on each of the measured values (PSL/μm^2/sr)
-	    :param energies: the photon energies at which the sensitivities have been calculated (keV)
-	    :param log_sensitivities: the log of the dimensionless sensitivity of each detector at each reference energy
-	    :param show_plot: whether to generate a little plot showing how well the model fits the data
+	    :param ref_energies: the energies at which the sensitivities are defined
+	    :param log_sensitivities: energy-resolved sensitivity curve of each detector section
 	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr)
 	"""
-	def compute_values(βe):
-		integrand = np.exp(-energies*βe + log_sensitivities)
-		unscaled_values = integrate.trapezoid(x=energies, y=integrand, axis=1)
-		numerator = np.sum(unscaled_values*measured_values/errors**2)
-		denominator = np.sum(unscaled_values**2/errors**2)
-		return integrand, numerator, denominator, unscaled_values
+	if np.all(measured_values == 0):
+		return nan, 0
+
+	def compute_model_with_optimal_scaling(βe):
+		unscaled_values = model_emission(1/βe, ref_energies, log_sensitivities)
+		numerator = np.sum(unscaled_values)
+		denominator = np.sum(unscaled_values**2/measured_values)
+		return unscaled_values, numerator, denominator
 
 	def compute_residuals(βe):
-		_, numerator, denominator, unscaled_values = compute_values(βe)
+		unscaled_values, numerator, denominator = compute_model_with_optimal_scaling(βe)
 		values = numerator/denominator*unscaled_values
-		return (values - measured_values)/errors
+		return (values - measured_values)/np.sqrt(measured_values)
 
 	def compute_derivatives(βe):
-		integrand, numerator, denominator, unscaled_values = compute_values(βe)
-		unscaled_derivatives = integrate.trapezoid(x=energies, y=-energies*integrand, axis=1)
-		numerator_derivative = np.sum(unscaled_derivatives*measured_values/errors**2)
-		denominator_derivative = 2*np.sum(unscaled_derivatives*unscaled_values/errors**2)
+		unscaled_values, numerator, denominator = compute_model_with_optimal_scaling(βe)
+		unscaled_derivatives = model_emission_derivative(1/βe, ref_energies, log_sensitivities)
+		numerator_derivative = np.sum(unscaled_derivatives)
+		denominator_derivative = 2*np.sum(unscaled_derivatives*unscaled_values/measured_values)
 		return (numerator/denominator*unscaled_derivatives +
 		        numerator_derivative/denominator*unscaled_values -
 		        numerator*denominator_derivative/denominator**2*unscaled_values
-		        )/errors
+		        )/np.sqrt(measured_values)
 
-	if np.all(measured_values == 0):
-		return 0, inf, 0, 0
+	# start with a scan
+	best_Te, best_χ2 = None, inf
+	for Te in np.geomspace(5e-2, 5e-0, 11):
+		χ2 = np.sum(compute_residuals(1/Te)**2)
+		if χ2 < best_χ2:
+			best_Te = Te
+			best_χ2 = χ2
+	# then do a newton’s method
+	result = optimize.least_squares(fun=lambda x: compute_residuals(x[0]),
+	                                jac=lambda x: np.expand_dims(compute_derivatives(x[0]), 1),
+	                                x0=[1/best_Te],
+	                                bounds=(0, inf))
+	if result.success:
+		best_βe = result.x[0]
+		best_Te = 1/best_βe
+
+		unscaled_values, numerator, denominator = compute_model_with_optimal_scaling(best_βe)
+		best_εL = numerator/denominator*best_Te
+
+		return best_Te, best_εL
 	else:
-		# start with a scan
-		best_Te, best_χ2 = None, inf
-		for Te in np.geomspace(5e-2, 5e-0, 11):
-			χ2 = np.sum(compute_residuals(1/Te)**2)
-			if χ2 < best_χ2:
-				best_Te = Te
-				best_χ2 = χ2
-		# then do a newton’s method
-		result = optimize.least_squares(fun=lambda x: compute_residuals(x[0]),
-		                                jac=lambda x: np.expand_dims(compute_derivatives(x[0]), 1),
-		                                x0=[1/best_Te],
-		                                bounds=(0, inf))
-		if result.success:
-			best_βe = result.x[0]
-			error_βe = np.linalg.inv(1/2*result.jac.T@result.jac)[0, 0]
-			best_Te = 1/best_βe
-			error_Te = error_βe/best_βe**2
+		return nan, nan
 
-			_, numerator, denominator, unscaled_values = compute_values(best_βe)
-			best_εL = numerator/denominator*best_Te
-			error_εL = 0
-			theoretic_values = numerator/denominator*unscaled_values
 
-			if show_plot:
-				plt.figure()
-				plt.errorbar(1 + np.arange(measured_values.size),
-				             y=measured_values, yerr=errors,
-				             fmt="oC1", zorder=2, markersize=8)
-				plt.errorbar(1 + np.arange(measured_values.size),
-				             y=theoretic_values, yerr=0,
-				             fmt="xC0", zorder=3, markersize=8, markeredgewidth=2)
-				plt.grid(axis="y")
-				plt.xlabel("Detector #")
-				plt.ylabel("Measured yield (units)")
-				plt.title(f"Best fit (Te = {best_Te:.3f} ± {error_Te:.3f})")
-				plt.tight_layout()
+def compute_sensitivity(filter_stacks: list[list[Filter]]) -> tuple[NDArray[float], NDArray[float]]:
+	ref_energies = np.geomspace(1, 1e3, 61)
+	log_sensitivities = []
+	for filter_stack in filter_stacks:
+		log_sensitivities.append(detector.log_xray_sensitivity(ref_energies, filter_stack, 0))
+	log_sensitivities = np.array(log_sensitivities)
+	return ref_energies, log_sensitivities
 
-			return best_Te, error_Te, best_εL, error_εL
-		else:
-			return nan, nan, nan, nan
+
+def model_emission(temperature: float, ref_energies: NDArray[float],
+                   log_sensitivities: NDArray[float]) -> NDArray[float]:
+	integrand = np.exp(-ref_energies/temperature + log_sensitivities)
+	return integrate.trapezoid(x=ref_energies, y=integrand, axis=1)
+
+
+def model_emission_derivative(temperature: float, ref_energies: NDArray[float],
+                              log_sensitivities: NDArray[float]) -> NDArray[float]:
+	""" this returns the derivative of model_emission() with respect to 1/temperature """
+	integrand = np.exp(-ref_energies/temperature + log_sensitivities)
+	return integrate.trapezoid(x=ref_energies, y=-ref_energies*integrand, axis=1)
 
 
 def plot_electron_temperature(filename: str, show: bool,
@@ -270,8 +331,8 @@ def plot_electron_temperature(filename: str, show: bool,
 	plt.figure()
 	plt.gca().set_facecolor("k")
 	plt.imshow(temperature.T, extent=grid.extent,
-	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=7)
-	make_colorbar(vmin=0, vmax=7, label="Te (keV)")
+	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=5)
+	make_colorbar(vmin=0, vmax=5, label="Te (keV)")
 	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
 	            colors="#000", linewidths=1,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
@@ -293,7 +354,7 @@ def plot_electron_temperature(filename: str, show: bool,
 
 
 def load_all_xray_images_for(shot: str, tim: str) \
-		-> tuple[list[Distribution], list[Distribution], list[list[tuple[float, str]]]]:
+		-> tuple[list[Distribution], list[list[Filter]]]:
 	last_centroid = (0, 0)
 	images, errors, filter_stacks = [], [], []
 	for filename in os.listdir("results/data"):
@@ -319,23 +380,22 @@ def load_all_xray_images_for(shot: str, tim: str) \
 				filter_stacks.append(parse_filtering(filter_str)[0])
 				images.append(Distribution(
 					np.sum(source)*(x[1] - x[0])*(y[1] - y[0]),
+					np.max(source),
 					interpolate.RegularGridInterpolator(
 						(x, y), source,
 						bounds_error=False, fill_value=0),
 					))
-				errors.append(Distribution(
-					sqrt(np.sum(source)*(x[1] - x[0])*(y[1] - y[0])/1e0),
-					lambda x: source.max()/6))  # TODO: real error bars
-	return images, errors, filter_stacks
+	return images, filter_stacks
 
 
 class Distribution:
-	def __init__(self, total: float, interpolator: Callable[[tuple[float, float]], float]):
+	def __init__(self, total: float, supremum: float, interpolator: Callable[[tuple[float, float]], float]):
 		""" a number bundled with an interpolator
 		    :param total: can be either the arithmetic or quadratic total
 		    :param interpolator: takes a tuple of floats and returns a float scalar
 		"""
 		self.total = total
+		self.supremum = supremum
 		self.at = interpolator
 
 

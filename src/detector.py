@@ -1,3 +1,4 @@
+from math import inf
 from typing import Union
 
 import matplotlib.pyplot as plt
@@ -111,7 +112,7 @@ def attenuation_curve(energy: Numeric, material: str) -> Numeric:
 		table = np.loadtxt(f"input/tables/attenuation_{material}.csv", delimiter=",")
 	except FileNotFoundError:
 		table = np.loadtxt(f"../input/tables/attenuation_{material}.csv", delimiter=",")
-	return np.interp(energy, table[:, 0], table[:, 1])
+	return np.interp(energy, table[:, 0], table[:, 1], left=-inf, right=0)
 
 
 def log_xray_transmission(energy: Numeric, thickness: float, material: str) -> Numeric:
@@ -264,6 +265,8 @@ if __name__ == '__main__':
 	plt.xlabel("Energy (keV)")
 	plt.ylabel("Transmission")
 	plt.xlim(1e+0, 1e+3)
+	plt.yscale("log")
+	plt.ylim(5e-5, 2)
 	plt.tight_layout()
 
 	plt.show()
