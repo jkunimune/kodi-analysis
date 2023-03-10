@@ -1231,7 +1231,7 @@ def load_filtering_info(shot: str, tim: str) -> str:
 	with open("input/tim_info.txt", "r") as f:
 		for line in f:
 			header_match = re.fullmatch(r"^([0-9]{5,6}):\s*", line)
-			item_match = re.fullmatch(r"^\s+([0-9]+):\s*([0-9A-Za-z\[|/ ]+)\s*", line)
+			item_match = re.fullmatch(r"^\s+([0-9]+):\s*([0-9A-Za-z\[\]|/ ]+)\s*", line)
 			if header_match:
 				current_shot = header_match.group(1)
 			elif item_match:
