@@ -31,21 +31,18 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 	filter_stacks = [[]]
 	num_detectors_seen = 0
 	# loop thru the filtering
-	while len(filter_code) > 0:  # TODO: use spaces to make this more readable
-		# a colon indicates a piece of CR-39, a pipe indicates an image plate
-		if filter_code[0] == "[" or filter_code[0] == "|":
-			detector_found = {"[": "cr39", "|": "ip"}[filter_code[0]]
-			if detector_found == detector.lower():
-				if num_detectors_seen == index:
-					return filter_stacks
-				else:
-					num_detectors_seen += 1
-			# CR39 pieces are 1500μm C12H18O7 with density 1.31g/mL. the FujiFilm image plates have a 115μm 3.3g/mL
-			# phosphor layer, an 80μm 3.0g/mL ferrite layer, and various layers of 1.4g/mL plastic totalling 236μm
-			equivalent_filter = {"[": "1500cr39", "|": "1ip"}[filter_code[0]]
-			filter_code = equivalent_filter + " " + filter_code[1:]
+	while len(filter_code) > 0:
+		# brackets indicate a piece of CR-39, a pipe indicates an image plate
+		for detector_code, detector_type, thickness in [("[]", "cr39", 1500), ("|", "ip", 1)]:
+			if filter_code.startswith(detector_code):
+				if detector_type == detector.lower():
+					if num_detectors_seen == index:
+						return filter_stacks
+					else:
+						num_detectors_seen += 1
+				filter_code = f"{thickness}{detector_type} " + filter_code[len(detector_code):]
 		# a slash indicates that there's an alternative to the previus filter
-		elif filter_code[0] == "/":
+		if filter_code[0] == "/":
 			if len(filter_stacks) > 1:
 				raise ValueError("this detector stack had multiple split filters?  idk what to do about that.  how did you aline them??")
 			filter_stacks.append(filter_stacks[0][:-1])
