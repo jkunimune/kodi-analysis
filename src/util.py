@@ -20,6 +20,7 @@ SMOOTHING = 100 # entropy weight
 
 
 Point = tuple[float, float]
+Interval = tuple[float, float]
 Filter = tuple[float, str]
 
 
@@ -245,7 +246,7 @@ def inside_polygon(polygon: list[Point], x: np.ndarray, y: np.ndarray):
 def get_relative_aperture_positions(spacing: float, transform: NDArray[float],
                                     r_img: float, r_max: float,
                                     x0: float = 0., y0: float = 0.
-                                    ) -> Generator[tuple[float, float], None, None]:
+                                    ) -> Generator[Point, None, None]:
 	""" yield the positions of the individual penumbral images in the array relative
 		to the center, in the detector plane
 	"""

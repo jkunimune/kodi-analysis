@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import integrate
 
+from util import Interval
 
 Numeric = Union[float, list[float], NDArray[float]]
 Layer = tuple[float, str]
@@ -168,7 +169,7 @@ def xray_sensitivity(energy: Numeric, filter_stack: list[Layer], fade_time: floa
 	return np.exp(log_xray_sensitivity(energy, filter_stack, fade_time, thickness, psl_attenuation, material))
 
 
-def xray_energy_bounds(filter_stack: list[Layer], level=.10) -> tuple[float, float]:
+def xray_energy_bounds(filter_stack: list[Layer], level=.10) -> Interval:
 	""" calculate the minimum and maximum energies this filter and image plate configuration can detect
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
 	    :param level: the fraction of the max at which to define the min and the max

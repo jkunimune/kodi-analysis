@@ -35,17 +35,16 @@ from util import center_of_mass, shape_parameters, find_intercept, fit_circle, r
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
 	line_search, quantile, bin_centers_and_sizes, get_relative_aperture_positions, periodic_mean, parse_filtering, \
 	print_filtering, Filter, count_detectors, compose_2x2_from_intuitive_parameters, \
-	decompose_2x2_into_intuitive_parameters
+	decompose_2x2_into_intuitive_parameters, Interval
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
-# DEUTERON_ENERGY_CUTS = [(0, (0, 12.5))]
-# DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5))] # (MeV) (emitted, not detected)
-DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitted, not detected)
-# DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
-#                         (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
+PROTON_ENERGY_CUTS = [(0, (0, inf))]
+NORMAL_DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitted, not detected)
+FINE_DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
+                             (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
 SUPPORTED_FILETYPES = [".h5", ".pkl", ".cpsa"]
 
 ASK_FOR_HELP = False
@@ -85,6 +84,7 @@ class FilterError(ValueError):
 
 
 def analyze(shots_to_reconstruct: list[str],
+            energy_cut_mode: str,
             skip_reconstruction: bool,
             show_plots: bool):
 	""" iterate thru the scan files in the input/scans directory that match the provided shot
@@ -96,6 +96,8 @@ def analyze(shots_to_reconstruct: list[str],
 	                                 present in the shots.csv file (for all TIMs on that shot), or a
 	                                 shot name/number followed by the word "tim" and a tim number
 	                                 (for just the data on one TIM)
+	    :param energy_cut_mode: one of "normal" for three deuteron energy bins, "fine" for a lot of
+	                            deuteron energy bins, and "proton" for one huge energy bin.
 		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 		                            than performing the full analysis procedure again.
 		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -139,6 +141,16 @@ def analyze(shots_to_reconstruct: list[str],
 		                             "detector index": pd.Series(dtype=int),
 		                             "energy min":     pd.Series(dtype=float),
 		                             "energy max":     pd.Series(dtype=float)})
+
+	# choose energy bins according to the input arguments
+	if energy_cut_mode == "normal":
+		deuteron_energy_cuts = NORMAL_DEUTERON_ENERGY_CUTS
+	elif energy_cut_mode == "fine":
+		deuteron_energy_cuts = FINE_DEUTERON_ENERGY_CUTS
+	elif energy_cut_mode == "proton":
+		deuteron_energy_cuts = PROTON_ENERGY_CUTS
+	else:
+		raise ValueError(f"unrecognized energy cut mode: '{energy_cut_mode}'")
 
 	# iterate thru the shots we're supposed to analyze and make a list of scan files
 	all_scans_to_analyze: list[tuple[str, str, float, str]] = []
@@ -215,6 +227,7 @@ def analyze(shots_to_reconstruct: list[str],
 				velocity           =(shot_info["flow (r)"],
 				                     radians(shot_info["flow (θ)"]),
 				                     radians(shot_info["flow (ф)"])),
+				deuteron_energy_cuts=deuteron_energy_cuts,
 			)
 		except DataError as e:
 			logging.warning(e)
@@ -245,6 +258,7 @@ def analyze_scan(input_filename: str,
                  etch_time: Optional[float], filtering: str,
                  offset: tuple[float, float, float], velocity: tuple[float, float, float],
                  stalk_position: str, num_stalks: int,
+                 deuteron_energy_cuts: list[tuple[int, Interval]],
                  skip_reconstruction: bool, show_plots: bool,
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct all of the penumbral images contained in a single scan file.
@@ -265,6 +279,7 @@ def analyze_scan(input_filename: str,
 		:param velocity: the measured hot-spot velocity of the capsule in spherical coordinates (km/s, rad, rad)
 		:param stalk_position: the name of the port from which the target is held (should be "TPS2")
 		:param num_stalks: the number of stalks on this target (usually 1)
+		:param deuteron_energy_cuts: the energy bins to use for reconstructing deuterons
 		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 		                            than performing the full analysis procedure again.
 		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -289,9 +304,15 @@ def analyze_scan(input_filename: str,
 	source_stack: list[NDArray[float]] = []
 	statistics: list[dict[str, Any]] = []
 	filter_strings: list[str] = []
-	energy_bounds: list[tuple[float, float]] = []
+	energy_bounds: list[Interval] = []
 	indices: list[str] = []
 	for filter_section_index, filter_stack in enumerate(filter_stacks):
+		# choose the energy cuts given the filtering and type of radiation
+		if particle == "deuteron":
+			energy_cuts = deuteron_energy_cuts  # these energy bounds are in MeV
+		else:
+			energy_cuts = [(0, detector.xray_energy_bounds(filter_stack, .10))]  # these energy bounds are in keV
+
 		# perform the analysis on each section
 		try:
 			grid_parameters, source_plane, filter_section_sources, filter_section_statistics =\
@@ -304,6 +325,7 @@ def analyze_scan(input_filename: str,
 					filter_stack,
 					grid_parameters,
 					source_plane,
+					energy_cuts,
 					skip_reconstruction, show_plots)
 		except DataError as e:
 			logging.warning(e)
@@ -330,7 +352,7 @@ def analyze_scan(input_filename: str,
 	for cut_index in range(len(source_stack)):
 		if particle == "deuteron":
 			color_index = int(indices[cut_index][-1])
-			num_colors = max(DEUTERON_ENERGY_CUTS)[0] + 1
+			num_colors = max(deuteron_energy_cuts)[0] + 1
 		else:
 			num_sections = len(filter_stacks)
 			num_missing_sections = num_sections - len(source_stack)
@@ -393,6 +415,7 @@ def analyze_scan_section(input_filename: str,
                          section_index: str, filter_stack: list[Filter],
                          grid_parameters: Optional[HexGridParameters],
                          source_plane: Optional[Grid],
+                         energy_cuts: list[tuple[int, Interval]],
                          skip_reconstruction: bool, show_plots: bool,
                          ) -> tuple[HexGridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
@@ -415,6 +438,7 @@ def analyze_scan_section(input_filename: str,
         :param source_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
+	    :param energy_cuts: the energy cuts to use when you break this section up into diameter bins
 		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 		                            than performing the full analysis procedure again.
 		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -426,15 +450,6 @@ def analyze_scan_section(input_filename: str,
 	"""
 	# start by establishing some things that depend on what's being measured
 	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
-
-	# figure out the energy cuts given the filtering and type of radiation
-	if particle == "xray":
-		energy_min, energy_max = detector.xray_energy_bounds(filter_stack, .10)  # these energy bounds are in keV
-		energy_cuts = [(0, (energy_min, energy_max))]
-	elif shot.startswith("synth"):
-		energy_cuts = [(0, (0., inf))]
-	else:
-		energy_cuts = DEUTERON_ENERGY_CUTS  # these energy bounds are in MeV
 
 	# prepare the coordinate grids
 	if not skip_reconstruction:
@@ -1281,7 +1296,7 @@ def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_point
 
 
 def fit_grid_alignment(x_points, y_points, grid_matrix: NDArray[float]
-                       ) -> tuple[float, float]:
+                       ) -> Point:
 	""" take a bunch of points that are supposed to be in a grid structure with some known spacing
 	    and orientation but unknown translational alignment, and return the alignment vector
 	    :param x_points: the x coordinate of each point
@@ -1517,4 +1532,6 @@ if __name__ == '__main__':
 	else:
 		analyze(shots_to_reconstruct=sys.argv[1].split(","),
 		        skip_reconstruction="--skip" in sys.argv,
-		        show_plots="--show" in sys.argv)
+		        show_plots="--show" in sys.argv,
+		        energy_cut_mode="proton" if "--proton" in sys.argv else "fine" if "--fine" in sys.argv else "normal"
+		        )
