@@ -131,14 +131,16 @@ def dilate(array: np.ndarray) -> np.ndarray:
 
 
 def median(x, weights=None):
-	""" weited median, assuming a sorted input """
+	""" weited median """
 	return quantile(x, .5, weights)
 
 
 def quantile(x, q, weights=None):
-	""" weited quantile, assuming a sorted input """
+	""" weited quantile """
 	if weights is None:
 		weights = np.ones(x.shape)
+	order = np.argsort(x)
+	x, weights = x[order], weights[order]
 	y = np.cumsum(weights)
 	y /= y[-1]
 	return np.interp(q, y, x)

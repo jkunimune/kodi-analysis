@@ -173,7 +173,7 @@ def xray_energy_bounds(filter_stack: list[Layer], level=.10) -> tuple[float, flo
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
 	    :param level: the fraction of the max at which to define the min and the max
 	"""
-	energy = np.geomspace(3e-1, 3e+3, 401)
+	energy = np.geomspace(1e+0, 1e+3, 401)
 	sensitivity = xray_sensitivity(energy, filter_stack, 0)
 	lower = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][0]]
 	upper = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][-1]]

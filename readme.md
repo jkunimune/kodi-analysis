@@ -8,10 +8,10 @@ Code for analyzing penumbral imaging, and in particular knock-on deuteron & x-ra
 The file structure goes like this:
 - `src` – various Python scripts
     - `main` – Java files for some of the more time-consuming operations
-- `data` – input files (including the file `shots.csv`)
+- `input` – input files (including the files `shots.csv` and `tim_info.txt`)
   - `scans` – CR-39 and image plate scan files
   - `tables` – stopping power and cross section tables
-- `results` – outputs from the analysis (including logs and tables and stuff)
+- `results` – outputs from the analysis (including the file `summary.csv` and varius logs)
   - `plots` – pretty pictures of the reconstructions
   - `data` – HDF files of the reconstructions
 - `tmp` – dump for temporary files used to communicate between Java and Python

@@ -16,7 +16,7 @@ from cmap import CMAP
 from coordinate import Grid
 from hdf5_util import load_hdf5
 from plots import make_colorbar, save_current_figure
-from util import parse_filtering, print_filtering, Filter
+from util import parse_filtering, print_filtering, Filter, median, quantile
 
 SHOW_PLOTS = True
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
@@ -99,27 +99,24 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	# calculate the spacially integrated temperature
 	temperature_integrated, temperature_error_integrated, _, _ = compute_plasma_conditions_with_errorbars(
 		np.array([image.total for image in images]),
-		filter_stacks, show_plot=True)
+		filter_stacks, error_bars=True, show_plot=True)
 	save_current_figure(f"{shot}-tim{tim}-temperature-fit")
-	print(f"Te = {temperature_integrated:.3f} keV")
+	print(f"Te = {temperature_integrated:.3f} ± {temperature_error_integrated:.3f} keV")
 
 	# calculate the spacially resolved temperature
 	measurement_errors = 0.05*np.array([image.supremum for image in images])  # this isn’t very quantitative, but it captures the character of errors in the reconstructions
 	basis = Grid.from_size(50, 3, True)
 	temperature_map = np.empty(basis.shape)
-	temperature_errors = np.empty(basis.shape)
 	emission_map = np.empty(basis.shape)
 	for i in range(basis.x.num_bins):
 		for j in range(basis.y.num_bins):
 			data = np.array([image.at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
 			reliable_measurements = data >= measurement_errors
 			if np.all(reliable_measurements):
-				Te, dTe, εL, dεL = compute_plasma_conditions_with_errorbars(data, filter_stacks)
+				Te, _, _, _ = compute_plasma_conditions_with_errorbars(data, filter_stacks)
 				temperature_map[i, j] = Te
-				temperature_errors[i, j] = dTe
 			else:
 				temperature_map[i, j] = nan
-				temperature_errors[i, j] = nan
 			# emission_map[i, j] = εL
 			emission_map[i, j] = np.mean(data)
 
@@ -186,9 +183,8 @@ def compute_plasma_conditions_with_errorbars(measured_values: NDArray[float],
 	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr)
 	"""
 	ref_energies, sensitivities = compute_sensitivity(filter_stacks)
-	temperature, emission = compute_plasma_conditions(measured_values, ref_energies, sensitivities)
 	if error_bars:
-		varied_sensitivities = np.empty((NUM_SAMPLES, *sensitivities.shape))
+		varied_sensitivities = np.empty((NUM_SAMPLES, *sensitivities.shape), dtype=float)
 		varied_temperatures = np.empty(NUM_SAMPLES, dtype=float)
 		varied_emissions = np.empty(NUM_SAMPLES, dtype=float)
 		for k in range(NUM_SAMPLES):
@@ -199,17 +195,19 @@ def compute_plasma_conditions_with_errorbars(measured_values: NDArray[float],
 					varied_thickness = thickness*np.random.normal(1, .06)
 					varied_filter_stacks[-1].append((varied_thickness, material))
 			_, varied_sensitivity = compute_sensitivity(varied_filter_stacks)
-			varied_temperature, varied_emission = compute_plasma_conditions(
+			varied_temperature, varied_emission, _ = compute_plasma_conditions(
 				measured_values, ref_energies, varied_sensitivity)
 			varied_sensitivities[k, :, :] = varied_sensitivity
 			varied_temperatures[k] = varied_temperature
 			varied_emissions[k] = varied_emission
 
-		# compute the error bars as a residual RMS
+		# compute the error bars as the std (approximately) of these points
+		temperature = median(varied_temperatures)
+		emission = median(varied_emissions)
 		reconstructed_values = emission/temperature*model_emission(
 			temperature, ref_energies, sensitivities)
-		temperature_error = np.sqrt(np.mean((varied_temperatures - temperature)**2))
-		emission_error = np.sqrt(np.mean((varied_emissions - emission)**2))
+		temperature_error = 1/2*(quantile(varied_temperatures, .85) - quantile(varied_temperatures, .15))
+		emission_error = 1/2*(quantile(varied_emissions, .85) - quantile(varied_emissions, .15))
 		varied_reconstructed_values = np.empty((NUM_SAMPLES, reconstructed_values.size))
 		for k in range(NUM_SAMPLES):
 			varied_reconstructed_values[k, :] = emission/temperature*model_emission(
@@ -217,8 +215,8 @@ def compute_plasma_conditions_with_errorbars(measured_values: NDArray[float],
 		reconstructed_errors = np.sqrt(np.mean((varied_reconstructed_values - reconstructed_values)**2, axis=0))
 
 	else:
-		temperature_error = 0
-		emission_error = 0
+		temperature, emission, _ = compute_plasma_conditions(measured_values, ref_energies, sensitivities)
+		temperature_error, emission_error = 0, 0
 		reconstructed_values = emission/temperature*model_emission(
 			temperature, ref_energies, sensitivities)
 		reconstructed_errors = np.zeros(reconstructed_values.shape)
@@ -242,17 +240,17 @@ def compute_plasma_conditions_with_errorbars(measured_values: NDArray[float],
 
 
 def compute_plasma_conditions(measured_values: NDArray[float], ref_energies: NDArray[float],
-                              log_sensitivities: NDArray[float]) -> tuple[float, float]:
+                              log_sensitivities: NDArray[float]) -> tuple[float, float, float]:
 	""" take a set of measured x-ray intensity values from a single chord thru the implosion and
 	    use their average and their ratios to infer the emission-averaged electron temperature,
 	    and the total line-integrated photic emission along that chord.
 	    :param measured_values: the detected emission (PSL/μm^2/sr)
 	    :param ref_energies: the energies at which the sensitivities are defined
 	    :param log_sensitivities: energy-resolved sensitivity curve of each detector section
-	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr)
+	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr) and the arbitrarily scaled χ^2
 	"""
 	if np.all(measured_values == 0):
-		return nan, 0
+		return nan, 0, 0
 
 	def compute_model_with_optimal_scaling(βe):
 		unscaled_values = model_emission(1/βe, ref_energies, log_sensitivities)
@@ -286,17 +284,18 @@ def compute_plasma_conditions(measured_values: NDArray[float], ref_energies: NDA
 	result = optimize.least_squares(fun=lambda x: compute_residuals(x[0]),
 	                                jac=lambda x: np.expand_dims(compute_derivatives(x[0]), 1),
 	                                x0=[1/best_Te],
-	                                bounds=(0, inf))
+	                                bounds=(0, inf))  # TODO: optimize the filter thicknesses as well as temperature to maximize the Bayesian posterior, then have Bayesian error bars
 	if result.success:
 		best_βe = result.x[0]
 		best_Te = 1/best_βe
+		χ2 = np.sum(compute_residuals(best_βe)**2)
 
 		unscaled_values, numerator, denominator = compute_model_with_optimal_scaling(best_βe)
 		best_εL = numerator/denominator*best_Te
 
-		return best_Te, best_εL
+		return best_Te, best_εL, χ2
 	else:
-		return nan, nan
+		return nan, nan, nan
 
 
 def compute_sensitivity(filter_stacks: list[list[Filter]]) -> tuple[NDArray[float], NDArray[float]]:
