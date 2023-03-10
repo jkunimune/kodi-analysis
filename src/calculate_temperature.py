@@ -336,10 +336,11 @@ def plot_electron_temperature(filename: str, show: bool,
 	            colors="#000", linewidths=1,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
 	x_stalk, y_stalk, _ = projected_stalk_direction
+	L = 30  # length of stalk image (μm)
 	if num_stalks == 1:
-		plt.plot([0, x_stalk*40], [0, y_stalk*40], color="#000", linewidth=2)
+		plt.plot([0, x_stalk*L], [0, y_stalk*L], color="#000", linewidth=2)
 	elif num_stalks == 2:
-		plt.plot([-x_stalk*40, x_stalk*40], [-y_stalk*40, y_stalk*40], color="#000", linewidth=2)
+		plt.plot([-x_stalk*L, x_stalk*L], [-y_stalk*L, y_stalk*L], color="#000", linewidth=2)
 	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
 	         color="w", ha='left', va='top', transform=plt.gca().transAxes)
 	plt.xlabel("x (μm)")

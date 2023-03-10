@@ -9,27 +9,39 @@ The file structure goes like this:
 - `src` – various Python scripts
     - `main` – Java files for some of the more time-consuming operations
 - `input` – input files (including the files `shots.csv` and `tim_info.txt`)
-  - `scans` – CR-39 and image plate scan files
+  - `scans` – CR-39 and image plate scan files (put your scans here!)
   - `tables` – stopping power and cross section tables
 - `results` – outputs from the analysis (including the file `summary.csv` and varius logs)
-  - `plots` – pretty pictures of the reconstructions
-  - `data` – HDF files of the reconstructions
+  - `plots` – pretty pictures of the reconstructions (see your results here!)
+  - `data` – HDF5 files of the reconstructions
 - `tmp` – dump for temporary files used to communicate between Java and Python
+- `out` – compiled Java files
 
 # How to use
 
 The typical workflow for doing 2D reconstructions looks like this:
-1. Get `.cpsa` files from the LLE or MIT etch/scan lab.
-2. Open them in AnalyzeCR39 and export the track data to a `.txt` file. (in the future I will have this automatically read cpsa)
-3. Create a `shot_list.csv` file in the root kodi-analysis directory that lists the shots and lines of sight to analyze.
-   It should have "Shot number", "TIM", "L1", "Magnification", "Aperture Radius",
-   "Aperture Separation", "Rotation", "Filtering", and "Etch time" columns.
-4. Run `src/reconstruct_2d.py shot_number [--skip]` with the shots you want to analyze passed as an argument.
-   This looks for the `.txt` files in the `scans/` directory and performs the reconstruction.
+1. Drop your `.cpsa` or `.h5` scan files into the `input/scans` directory.
+2. Edit the `shot_list.csv` file in the `input` directory to include the shots you want to analyze.
+   It should have "shot", "standoff", "magnification", "aperture radius", and "aperture spacing" columns.
+3. Edit the `tim_info.txt` file in the `input` directory to include the lines of sight fielded and the filtering used on each one.
+   The filtering should be specified as stacks of thicknesses (in microns) and materials, from TCC out,
+   with "[]" standing for pieces of CR39 and "|" standing for image plates.
+   For example, "2: 15Ta [] 200Al | 200Al |" for a typical KoDI/XRIS setup on TIM2.
+4. Run `src/reconstruct_2d.py shot_number [--show] [--skip] [--proton]` with the shots you want to analyze passed as an argument.
+   This looks for the `.txt` files in the `input/scans/` directory and performs the reconstruction.
    1. The first argument should be a comma-separated list of shot numbers.
-      You can also specify specific TIMs to analyze; for example, "95520tim4,95521tim2"
-   2. You can also add "--skip" as an argument to tell it to reload the previous reconstructions and simply update the plots.
-5. It automatically outputs a bunch of plots, HDF5 files, and log messages.
+      You can also specify specific TIMs to analyze; for example, `95520tim4,95521tim2`
+   2. The `--show` flag causes it to show each plot it generates and wait for the user to close it
+      before moving on.  By default, it will only save them to the `results/plots` directory without showing them.
+   3. The `--skip` flag causes it to reload the previous reconstructions and simply update the plots,
+      skipping the actual reconstruction algorithm.
+   4. The `--proton` flag tell it that you’re analyzing charged particles that don’t follow a knock-on deuteron spectrum.
+      This is important so that it doesn’t try to group the signal into < 6 MeV and > 9 MeV parts by their diameters.
+5. The only input you need to provide once it starts running is the data region (and that’s only if you use `--show`).
+   When it asks you to "select" a "region", simply click on the plot to draw a polygon enclosing the good signal region,
+   and ideally excluding any scratches or fiducials.
+   You may right-click at any time during this process to un-place a point.
+6. It automatically outputs a bunch of plots, HDF5 files, and log messages.
 
 For 3D reconstruction, run `src/reconstruct_3d.py shot_number [--skip]`,
 and it will automaticly run on the reconstructed 2d images.

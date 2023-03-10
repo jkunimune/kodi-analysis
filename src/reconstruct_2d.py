@@ -48,7 +48,7 @@ FINE_DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (
 SUPPORTED_FILETYPES = [".h5", ".pkl", ".cpsa"]
 
 ASK_FOR_HELP = False
-SHOW_DIAMETER_CUTS = False
+SHOW_DIAMETER_CUTS = True
 SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
@@ -776,7 +776,8 @@ def analyze_scan_section_cut(input_filename: str,
 			plt.contour(image_plane.x.get_bins(), image_plane.y.get_bins(), clipd_plicity,
 			            levels=[0.5], colors="k")
 			plt.axis('square')
-			plt.title("Point spread function")
+			plt.title("Point spread function (close to confirm)")
+			plt.tight_layout()
 			plt.show()
 
 		# estimate the noise level, in case that's helpful
@@ -1006,6 +1007,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		plt.axvline(r0, color="C3", linestyle="dashed")
 		plt.axvline(r_01, color="C4")
 		plt.xlim(0, r[-1])
+		plt.title("Matched this charged PSF to the radial lineout (close to confirm)")
 		plt.tight_layout()
 		plt.show()
 
@@ -1154,6 +1156,8 @@ def load_cr39_scan_file(filename: str,
 		x1 = min(max_diameter, max_diameter_to_plot)
 		y1 = min(max_contrast, max_contrast_to_plot)
 		plt.plot([x0, x0, x1, x1], [0, y1, y1, 0], "k--")
+		plt.title("Making these cuts in contrast-diameter space (close to confirm)")
+		plt.tight_layout()
 		plt.show()
 
 	return x_tracks, y_tracks
@@ -1515,8 +1519,10 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		            c="C0", marker="x")
 		plt.contour(scan_plane.x.get_bins(), scan_plane.y.get_bins(), N_clipd.T,
 		            levels=[haff_density], colors="C6", linewidths=.6)
+		plt.title("Located apertures marked with exes (close to confirm)")
 		plt.xlim(scan_plane.x.minimum, scan_plane.x.maximum)
 		plt.ylim(scan_plane.y.minimum, scan_plane.y.maximum)
+		plt.tight_layout()
 		plt.show()
 
 	if len(circles) == 0:  # TODO: check for duplicate centers (tho I think they should be rare and not too big a problem)
