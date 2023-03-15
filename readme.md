@@ -21,13 +21,15 @@ The file structure goes like this:
 
 The typical workflow for doing 2D reconstructions looks like this:
 1. Drop your `.cpsa` or `.h5` scan files into the `input/scans` directory.
-2. Edit the `shot_list.csv` file in the `input` directory to include the shots you want to analyze.
+2. If you are analyzing x-ray data, you must run `src/split_ip_scans.py`
+   to convert the multiple-scan-files to individual image plate scans.
+3. Edit the `shot_list.csv` file in the `input` directory to include the shots you want to analyze.
    It should have "shot", "standoff", "magnification", "aperture radius", and "aperture spacing" columns.
-3. Edit the `tim_info.txt` file in the `input` directory to include the lines of sight fielded and the filtering used on each one.
+4. Edit the `tim_info.txt` file in the `input` directory to include the lines of sight fielded and the filtering used on each one.
    The filtering should be specified as stacks of thicknesses (in microns) and materials, from TCC out,
    with "[]" standing for pieces of CR39 and "|" standing for image plates.
    For example, "2: 15Ta [] 200Al | 200Al |" for a typical KoDI/XRIS setup on TIM2.
-4. Run `src/reconstruct_2d.py shot_number [--show] [--skip] [--proton]` with the shots you want to analyze passed as an argument.
+5. Run `src/reconstruct_2d.py shot_number [--show] [--skip] [--proton]` with the shots you want to analyze passed as an argument.
    This looks for the `.txt` files in the `input/scans/` directory and performs the reconstruction.
    1. The first argument should be a comma-separated list of shot numbers.
       You can also specify specific TIMs to analyze; for example, `95520tim4,95521tim2`
@@ -37,11 +39,11 @@ The typical workflow for doing 2D reconstructions looks like this:
       skipping the actual reconstruction algorithm.
    4. The `--proton` flag tell it that you’re analyzing charged particles that don’t follow a knock-on deuteron spectrum.
       This is important so that it doesn’t try to group the signal into < 6 MeV and > 9 MeV parts by their diameters.
-5. The only input you need to provide once it starts running is the data region (and that’s only if you use `--show`).
+6. The only input you need to provide once it starts running is the data region (and that’s only if you use `--show`).
    When it asks you to "select" a "region", simply click on the plot to draw a polygon enclosing the good signal region,
    and ideally excluding any scratches or fiducials.
    You may right-click at any time during this process to un-place a point.
-6. It automatically outputs a bunch of plots, HDF5 files, and log messages.
+7. It automatically outputs a bunch of plots, HDF5 files, and log messages.
 
 For 3D reconstruction, run `src/reconstruct_3d.py shot_number [--skip]`,
 and it will automaticly run on the reconstructed 2d images.
