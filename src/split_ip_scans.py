@@ -87,8 +87,13 @@ def main():
 			cut_positions = np.round(grid.x.get_index(sorted(cut_positions))).astype(int)
 			cut_intervals = []
 			for cut_index in range(1, len(cut_positions)):
-				if cut_positions[cut_index] - cut_positions[cut_index - 1] >= image.shape[1]/2:
-					cut_intervals.append((cut_positions[cut_index - 1], cut_positions[cut_index]))  # TODO: apparently I need to sort these by briteness
+				start, end = cut_positions[cut_index - 1], cut_positions[cut_index]
+				if end - start >= image.shape[1]/2:
+					cut_intervals.append((start, end))
+			# sort them from brightest to dimmest
+			cut_intervals = sorted(
+				cut_intervals, reverse=True,
+				key=lambda bounds: np.quantile(image[bounds[0]:bounds[1], :], .96))
 
 			# and save each section with the correct filename
 			for cut_index, (start, end) in enumerate(cut_intervals):
