@@ -10,11 +10,12 @@ from numpy.typing import NDArray
 from scipy import optimize, interpolate
 from scipy import special
 
+import aperture_array
 from cmap import CMAP
 from coordinate import Grid
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	Point, nearest_value, shape_parameters, get_relative_aperture_positions
+	Point, nearest_value, shape_parameters
 
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
@@ -107,7 +108,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	plt.imshow((counts/area).T, extent=image_plane.extent, origin="lower", cmap=CMAP["coffee"], vmax=vmax)
 	T = np.linspace(0, 2*np.pi)
 	if PLOT_THEORETICAL_50c_CONTOUR:
-		for dx, dy in get_relative_aperture_positions(grid_shape, s0, grid_transform, r0, image_plane.x.half_range):
+		for dx, dy in aperture_array.positions(grid_shape, s0, grid_transform, r0, image_plane.x.half_range):
 			plt.plot(dx + r0*np.cos(T), dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
 	if "deuteron" in filename:
@@ -163,11 +164,11 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.imshow(((reconstruction - measurement)/reconstruction).T,
 	           extent=image_plane.extent, origin="lower",
-	           cmap='RdBu', vmin=-1/6, vmax=1/6)
+	           cmap='RdBu', vmin=-.2, vmax=.2)
 	plt.axis('square')
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	make_colorbar(-1/3, 1/3, "(reconst. – data)/reconst.")
+	make_colorbar(-.2, .2, "(reconst. – data)/reconst.")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-residual")
 

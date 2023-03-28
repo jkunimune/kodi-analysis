@@ -23,6 +23,7 @@ from numpy.typing import NDArray
 from scipy import interpolate, optimize, linalg
 from skimage import measure
 
+import aperture_array
 import deconvolution
 import detector
 import electric_field
@@ -32,9 +33,9 @@ from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
-	line_search, quantile, bin_centers_and_sizes, get_relative_aperture_positions, periodic_mean, parse_filtering, \
+	line_search, quantile, bin_centers_and_sizes, periodic_mean, parse_filtering, \
 	print_filtering, Filter, count_detectors, compose_2x2_from_intuitive_parameters, \
-	decompose_2x2_into_intuitive_parameters, Interval, name_filter_stacks
+	decompose_2x2_into_intuitive_parameters, Interval, name_filter_stacks, crop_to_finite
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -66,9 +67,6 @@ MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
 MAX_CONTRAST = 45.  # contrast cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
 MIN_DETECTABLE_ENERGY = 0.5  # lowest energy deuteron we think we can see on CR-39
-
-SRTE_APERTURE_RADIUS = 60e-4
-SRTE_APERTURE_SPACING = 819.912e-4
 
 
 GridParameters = tuple[NDArray[float], float, float]
@@ -313,8 +311,8 @@ def analyze_scan(input_filename: str,
 		detector_type = "ip"
 	# overwrite the aperture information if this is SRTe
 	if los == "srte":
-		rA = SRTE_APERTURE_RADIUS
-		sA = SRTE_APERTURE_SPACING
+		rA = aperture_array.SRTE_APERTURE_RADIUS
+		sA = aperture_array.SRTE_APERTURE_SPACING
 		grid_shape = "srte"
 
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
@@ -329,7 +327,7 @@ def analyze_scan(input_filename: str,
 	filter_strings: list[str] = []
 	energy_bounds: list[Interval] = []
 	indices: list[str] = []
-	for filter_section_index, (filter_section_name, filter_stack) in enumerate(zip(filter_stack_names, filter_stacks)):
+	for filter_section_index, (filter_section_name, filter_stack) in enumerate(zip(filter_stack_names, filter_stacks)):  # TODO: somehow I should make it start with the biggest filtering region of SRTe
 		# choose the energy cuts given the filtering and type of radiation
 		if particle == "deuteron":
 			energy_cuts = deuteron_energy_cuts  # these energy bounds are in MeV
@@ -679,7 +677,7 @@ def analyze_scan_section_cut(input_filename: str,
 		if input_filename.endswith(".cpsa"): # if it's a cpsa file
 			x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
 			for x_center, y_center in centers:
-				shifted_image_plane = image_plane.shifted(x_center, y_center)  # TODO: rotate along with the image_plane?
+				shifted_image_plane = image_plane.shifted(x_center, y_center)  # TODO: rotate according to the grid tilt?
 				local_image = np.histogram2d(x_tracks, y_tracks,
 				                             bins=(shifted_image_plane.x.get_edges(),
 				                                   shifted_image_plane.y.get_edges()))[0]
@@ -994,7 +992,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		ρ_recon = n_recon/A
 		plt.figure()
 		plt.plot(r_sph, n_sph)
-		plt.xlim(0, quantile(r_sph, .99, n_sph*r_sph**2))
+		plt.xlim(0, quantile(r_sph, .999, n_sph*r_sph**2))
 		# plt.yscale("log")
 		# plt.ylim(n_sph.max()*2e-3, n_sph.max()*2e+0)
 		plt.xlabel("Magnified spherical radius (cm)")
@@ -1290,9 +1288,10 @@ def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],
 		return cost + 1e-2*nominal_spacing**2*log(s0/s1)**2
 
 	# first do a scan thru a few reasonable values
+	Δθ = aperture_array.ANGULAR_PERIOD[grid_shape]/2
 	scale, angle, cost = None, None, inf
 	for test_scale in np.linspace(0.9, 1.1, 5):
-		for test_angle in np.linspace(-pi/6, pi/6, 12, endpoint=False):
+		for test_angle in np.linspace(-Δθ, Δθ, round(Δθ/radians(5)), endpoint=False):
 			test_cost = cost_function((test_scale, test_angle))
 			if test_cost < cost:
 				scale, angle, cost = test_scale, test_angle, test_cost
@@ -1300,18 +1299,18 @@ def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],
 	# then use Powell's method
 	if BELIEVE_IN_APERTURE_TILTING and x_points.size >= 3:
 		# either fit the whole 2×2 at once
-		solution = optimize.minimize(method="Powell",
+		solution = optimize.minimize(method="Nelder-Mead",
 		                             fun=cost_function,
-		                             x0=np.ravel(scale*rotation_matrix(angle)),
-		                             bounds=[(0.8, 1.2), (-0.6, 0.6), (-0.6, 0.6), (0.8, 1.2)])
+		                             x0=np.ravel(scale*rotation_matrix(angle)))
 		transform = np.reshape(solution.x, (2, 2))
 	else:
 		# or just fit the scale and rotation
-		solution = optimize.minimize(method="Powell",
+		solution = optimize.minimize(method="Nelder-Mead",
 		                             fun=cost_function,
-		                             x0=np.array([scale, angle]),
-		                             bounds=[(0.8, 1.2), (angle - pi/6, angle + pi/6)])
+		                             x0=np.array([scale, angle]))
 		transform = solution.x[0]*rotation_matrix(solution.x[1])
+	if not solution.success:
+		raise DataError(solution.message)
 
 	# either way, return the transform matrix with the best image_plane alinement
 	x0, y0 = fit_grid_alignment(x_points, y_points, grid_shape, nominal_spacing*transform)
@@ -1335,14 +1334,17 @@ def fit_grid_alignment(x_points, y_points, grid_shape: str, grid_matrix: NDArray
 	if np.linalg.det(grid_matrix) == 0:
 		return nan, nan
 
+	Δξ = aperture_array.Ξ_PERIOD[grid_shape]/2
+	Δυ = aperture_array.Υ_PERIOD[grid_shape]/2
+
 	# start by applying the projection and fitting the phase in x and y separately and algebraicly
 	ξ_points, υ_points = np.linalg.inv(grid_matrix)@[x_points, y_points]
 	ξ0, υ0 = np.mean(ξ_points), np.mean(υ_points)
-	ξ0 = periodic_mean(ξ_points, ξ0 - 1/4, ξ0 + 1/4)
-	υ0 = periodic_mean(υ_points, υ0 - sqrt(3)/4, υ0 + sqrt(3)/4)
+	ξ0 = periodic_mean(ξ_points, ξ0 - Δξ, ξ0 + Δξ)
+	υ0 = periodic_mean(υ_points, υ0 - Δυ, υ0 + Δυ)
 	naive_x0, naive_y0 = grid_matrix@[ξ0, υ0]
 
-	# there's a degeneracy here, so I haff to compare these two cases...
+	# there's often a degeneracy here, so I haff to compare these two cases...
 	results = []
 	for ξ_offset in [0, 1/2]:
 		x0, y0 = [naive_x0, naive_y0] + grid_matrix@[ξ_offset, 0]
@@ -1387,7 +1389,7 @@ def snap_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float
 	y_fit = np.full(n, nan)
 	errors = np.full(n, inf)
 	x_aps, y_aps = [], []
-	for i, (x, y) in enumerate(get_relative_aperture_positions(
+	for i, (x, y) in enumerate(aperture_array.positions(
 			grid_shape, 1, grid_matrix, 0, image_size, grid_x0, grid_y0)):
 		distances = np.hypot(x - x_points, y - y_points)
 		point_is_close_to_here = distances < errors
@@ -1396,13 +1398,6 @@ def snap_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float
 		y_fit[point_is_close_to_here] = y
 		x_aps.append(x)
 		y_aps.append(y)
-	# plt.scatter(x_aps, y_aps, s=20, marker="x")
-	# plt.scatter(x_points, y_points, s=9, marker="o")
-	# plt.scatter(x_fit, y_fit, s=8, marker="o")
-	# plt.xlim(0, 7)
-	# plt.ylim(0, 3)
-	# plt.axis("equal")
-	# plt.show()
 	total_error = np.sum(errors**2)
 
 	return x_fit, y_fit, total_error  # type: ignore
@@ -1435,41 +1430,43 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
 		x0_data = (np.min(x_tracks) + np.max(x_tracks))/2
 		y0_data = (np.min(y_tracks) + np.max(y_tracks))/2
-		scan_plane = Grid.from_num_bins(r_data, n_bins).shifted(x0_data, y0_data)
+		full_domain = Grid.from_num_bins(r_data, n_bins).shifted(x0_data, y0_data)
 
 		# make a histogram
 		N_full, _, _ = np.histogram2d(
-			x_tracks, y_tracks, bins=(scan_plane.x.get_edges(), scan_plane.y.get_edges()))
+			x_tracks, y_tracks, bins=(full_domain.x.get_edges(), full_domain.y.get_edges()))
 
 	elif filename.endswith(".h5"):  # if it's an h5 file
-		scan_plane, N_full = load_ip_scan_file(filename)
+		full_domain, N_full = load_ip_scan_file(filename)
 
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
-	if scan_plane.x.range <= 2*r_nominal or scan_plane.y.range <= 2*r_nominal:
+	if full_domain.x.range <= 2*r_nominal or full_domain.y.range <= 2*r_nominal:
 		raise DataError("the scan is smaller than the nominal image size, so a reconstruction is probably not possible.")
 
 	# ask the user for help finding the center
 	if ASK_FOR_HELP:
 		try:
-			x0, y0 = where_is_the_ocean(scan_plane, N_full, "Please click on the center of a penumbrum.", timeout=8.64)
+			x0, y0 = where_is_the_ocean(full_domain, N_full, "Please click on the center of a penumbrum.", timeout=8.64)
 		except TimeoutError:
 			x0, y0 = None, None
 	else:
 		x0, y0 = None, None
 
-	X_pixels, Y_pixels = scan_plane.get_pixels()
-	N_clipd = np.where(inside_polygon(region, X_pixels, Y_pixels), N_full, nan)
-	if np.all(np.isnan(N_clipd)):
+	X_pixels, Y_pixels = full_domain.get_pixels()
+	crop_domain, N_crop = crop_to_finite(
+		full_domain, np.where(inside_polygon(region, X_pixels, Y_pixels), N_full, nan))
+	X_pixels, Y_pixels = crop_domain.get_pixels()
+	if np.all(np.isnan(N_crop)):
 		raise DataError("this polygon had no area inside it.")
-	elif np.sum(N_clipd, where=np.isfinite(N_clipd)) == 0:
+	elif np.sum(N_crop, where=np.isfinite(N_crop)) == 0:
 		raise DataError("there are no tracks in this region.")
 
 	# if we don't have a good center gess, do a recursively narrowing scan
 	if x0 is None or y0 is None:
-		x0, y0 = scan_plane.x.center, scan_plane.y.center
-		scan_scale = max(scan_plane.x.range, scan_plane.y.range)/2
+		x0, y0 = crop_domain.x.center, crop_domain.y.center
+		scan_scale = max(crop_domain.x.range, crop_domain.y.range)/2
 		while scan_scale > .5*r_nominal:
 			net_radius = max(r_nominal, scan_scale*sqrt(2)/6)
 			best_umbra_at_this_scale = -inf
@@ -1479,7 +1476,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 				for y in y_scan:
 					# we’re looking for the brightest umbra on the map
 					umbra_counts = np.nansum(
-						N_clipd, where=np.hypot(X_pixels - x, Y_pixels - y) < net_radius)
+						N_crop, where=np.hypot(X_pixels - x, Y_pixels - y) < net_radius)
 					if umbra_counts > best_umbra_at_this_scale:
 						best_umbra_at_this_scale = umbra_counts
 						x0, y0 = x, y
@@ -1487,16 +1484,16 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 	# now that's squared away, find the largest 50% contures
 	R_pixels = np.hypot(X_pixels - x0, Y_pixels - y0)
-	max_density = np.nanmean(N_clipd, where=R_pixels < .5*r_nominal)
-	min_density = np.nanmean(N_clipd, where=R_pixels > 1.5*r_nominal)
+	max_density = np.nanmean(N_crop, where=R_pixels < .5*r_nominal)
+	min_density = np.nanmean(N_crop, where=R_pixels > 1.5*r_nominal)
 	haff_density = (max_density + min_density)*.5
-	contours = measure.find_contours(N_clipd, haff_density)
+	contours = measure.find_contours(N_crop, haff_density)
 	if len(contours) == 0:
 		raise DataError("there were no tracks.  we should have caut that by now.")
 	circles = []
 	for contour in contours:
-		x_contour = np.interp(contour[:, 0], np.arange(scan_plane.x.num_bins), scan_plane.x.get_bins())
-		y_contour = np.interp(contour[:, 1], np.arange(scan_plane.y.num_bins), scan_plane.y.get_bins())
+		x_contour = np.interp(contour[:, 0], np.arange(crop_domain.x.num_bins), crop_domain.x.get_bins())
+		y_contour = np.interp(contour[:, 1], np.arange(crop_domain.y.num_bins), crop_domain.y.get_bins())
 		x_apparent, y_apparent, r_apparent = fit_circle(x_contour, y_contour)
 		if 0.7*r_nominal < r_apparent < 1.3*r_nominal:  # check the radius to avoid picking up noise
 			extent = np.max(np.hypot(x_contour - x_contour[0], y_contour - y_contour[0]))
@@ -1520,29 +1517,30 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 
 	# aline the circles to whatever image_plane you found
 	if SNAP_IMAGES_TO_GRID and x_circles_raw.size > 0:
-		x_circles, y_circles, _ = snap_to_grid(
+		x_circles, y_circles, _ = snap_to_grid(  # TODO: exclude penumbra that are significantly misalined
 			x_circles_raw, y_circles_raw, grid_shape, s_nominal*grid_transform, grid_x0, grid_y0)
 	else:
 		x_circles, y_circles = x_circles_raw, y_circles_raw
 	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
 
-	print(grid_shape, s_nominal, grid_transform)
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
-		plt.imshow(N_full.T, extent=scan_plane.extent, origin="lower",
-		           vmin=0, vmax=np.quantile(N_full, .99), cmap=CMAP["coffee"])
+		plt.imshow(N_full.T, extent=full_domain.extent, origin="lower",
+		           vmin=0, vmax=np.nanquantile(N_crop, .999), cmap=CMAP["coffee"])
 		θ = np.linspace(0, 2*pi, 145)
-		for x0, y0 in get_relative_aperture_positions(grid_shape, s_nominal, grid_transform,
-		                                              r_true, 10, grid_x0, grid_y0):
+		for x0, y0 in aperture_array.positions(grid_shape, s_nominal, grid_transform,
+		                                       r_true, full_domain.diagonal, grid_x0, grid_y0):
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
 			         "C0--", linewidth=1.2)
 		plt.scatter(x_circles_raw, y_circles_raw, np.where(circle_fullness, 30, 5),
 		            c="C0", marker="x")
-		plt.contour(scan_plane.x.get_bins(), scan_plane.y.get_bins(), N_clipd.T,
+		plt.contour(crop_domain.x.get_bins(), crop_domain.y.get_bins(), N_crop.T,
 		            levels=[haff_density], colors="C6", linewidths=.6)
 		plt.title("Located apertures marked with exes (close to confirm)")
-		plt.xlim(scan_plane.x.minimum, scan_plane.x.maximum)
-		plt.ylim(scan_plane.y.minimum, scan_plane.y.maximum)
+		plt.xlim(min(np.min(x_circles_raw), crop_domain.x.minimum),
+		         max(np.max(x_circles_raw), crop_domain.x.maximum))
+		plt.ylim(min(np.min(y_circles_raw), crop_domain.y.minimum),
+		         max(np.max(y_circles_raw), crop_domain.y.maximum))
 		plt.tight_layout()
 		plt.show()
 

@@ -4,8 +4,8 @@ import os
 import re
 import shutil
 import subprocess
-from math import pi, cos, sin, nan, sqrt, ceil, hypot, radians
-from typing import Callable, Generator, Optional, Union
+from math import pi, cos, sin, nan, sqrt
+from typing import Callable, Optional, Union
 
 import numpy as np
 from colormath.color_conversions import convert_color
@@ -15,9 +15,6 @@ from scipy import optimize, integrate
 from skimage import measure
 
 from coordinate import Grid, LinSpace
-
-SRTE_ANGLE = radians(45)
-
 
 Point = tuple[float, float]
 Interval = tuple[float, float]
@@ -250,35 +247,15 @@ def inside_polygon(polygon: list[Point], x: np.ndarray, y: np.ndarray):
 	return num_crossings%2 == 1
 
 
-def get_relative_aperture_positions(shape: str, spacing: float, transform: NDArray[float],
-                                    r_img: float, r_max: float,
-                                    x0: float = 0., y0: float = 0.
-                                    ) -> Generator[Point, None, None]:
-	""" yield the positions of the individual penumbral images in the array relative
-		to the center, in the detector plane
-	"""
-	# estimate how many images to yield
-	if shape == "single":
-		yield 0, 0
-	else:
-		true_spacing = spacing*np.linalg.norm(transform, ord=2)
-		n = ceil(r_max/true_spacing)
-		for i in range(-n, n + 1):
-			for j in range(-n, n + 1):
-				if shape == "square":
-					dξ, dυ = i, j
-				elif shape == "hex":
-					dξ, dυ = (2*i + j%2)/2, j*sqrt(3)/2
-				elif shape == "srte":
-					dξ0, dυ0 = (2*i + j%2)/2, j
-					dξ = dξ0*cos(SRTE_ANGLE) - dυ0*sin(SRTE_ANGLE)
-					dυ = dξ0*sin(SRTE_ANGLE) + dυ0*cos(SRTE_ANGLE)
-				else:
-					raise ValueError(f"unrecognized aperture arrangement: {shape!r} (must be "
-					                 f"'single', 'square', 'hex' or 'srte')")
-				dx, dy = spacing*transform@[dξ, dυ]
-				if hypot(dx, dy) + r_img <= r_max:
-					yield x0 + dx, y0 + dy
+def crop_to_finite(domain: Grid, values: NDArray[float]) -> tuple[Grid, NDArray[float]]:
+	i_min = np.min(np.nonzero(np.any(np.isfinite(values), axis=1)))
+	i_max = np.max(np.nonzero(np.any(np.isfinite(values), axis=1))) + 1
+	j_min = np.min(np.nonzero(np.any(np.isfinite(values), axis=0)))
+	j_max = np.max(np.nonzero(np.any(np.isfinite(values), axis=0))) + 1
+	new_domain = Grid(LinSpace(domain.x.get_edge(i_min), domain.x.get_edge(i_max), i_max - i_min),
+	                  LinSpace(domain.y.get_edge(j_min), domain.y.get_edge(j_max), j_max - j_min))
+	new_values = values[i_min:i_max, j_min:j_max]
+	return new_domain, new_values
 
 
 def abel_matrix(r_bins):

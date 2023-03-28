@@ -1,5 +1,5 @@
 # coordinate.py - varius coordinate system math type stuff
-from math import cos, sin, ceil
+from math import cos, sin, ceil, hypot
 from typing import Sequence, Union
 
 import numpy as np
@@ -134,6 +134,9 @@ class LinSpace:
 	def get_index(self, values: Sequence[float]) -> Sequence[float]:
 		return (np.array(values) - self.minimum)/self.bin_width
 
+	def get_edge(self, index: int) -> float:
+		return self.minimum + index*self.bin_width
+
 
 class Grid:
 	def __init__(self, x: LinSpace, y: LinSpace = None):
@@ -210,6 +213,10 @@ class Grid:
 			return (self.x.bin_width + self.y.bin_width)/2
 		else:
 			raise ValueError(f"this isn't a square coordinate system ({self.x.bin_width} != {self.y.bin_width})")
+
+	@property
+	def diagonal(self) -> float:
+		return hypot(self.x.range, self.y.range)
 
 	def get_pixels(self, sparse=False) -> tuple[NDArray[float], NDArray[float]]:
 		return np.meshgrid(self.x.get_bins(), self.y.get_bins(), sparse=sparse, indexing="ij")
