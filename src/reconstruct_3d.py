@@ -4,10 +4,11 @@
 # in index subscripts, P indicates neutron birth (production) and D indicates scattering (density).
 # also, V indicates deuteron detection (visibility)
 # z^ points upward, x^ points to 90-00, and y^ points whichever way makes it a rite-handed system.
-# ζ^ points toward the TIM, υ^ points perpendicular to ζ^ and upward, and ξ^ makes it rite-handed.
+# ζ^ points toward the detector, υ^ points perpendicular to ζ^ and upward, and ξ^ makes it rite-handed.
 # Э stands for Энергия
 # и is the index of a basis function
 import os
+import re
 import sys
 from math import ceil, sqrt
 from typing import cast
@@ -31,11 +32,11 @@ spatial_resolution = 7 # (μm)
 
 
 def get_shot_yield(shot: str) -> float:
-	shot_table = pd.read_csv("input/shots.csv", dtype={"shot": str}, index_col="shot", skipinitialspace=True)
+	shot_table = pd.read_csv("input/shot_info.csv", dtype={"shot": str}, index_col="shot", skipinitialspace=True)
 	try:
 		return shot_table.loc[shot]["yield"]
 	except KeyError:
-		raise KeyError(f"please add shot {shot!r} to the shots.csv table.")
+		raise KeyError(f"please add shot {shot!r} to the shot_info.csv table.")
 
 
 if __name__ == '__main__':
@@ -125,10 +126,10 @@ if __name__ == '__main__':
 				if extension == '.h5' and name in metadata and "deuteron" in metadata and "source" in metadata: # only take h5 files
 					los = None
 					for metadatum in metadata: # pull out the different peces of information from the filename
-						if metadatum.startswith('tim'):
-							los = metadatum[3:]
+						if re.fullmatch(r"(tim[0-9]|srte)", metadatum):
+							los = metadatum
 					if los in los_indices:
-						print(f"I found multiple images for tim{los}, so I'm ignoring {filename}")
+						print(f"I found multiple images for {los}, so I'm ignoring {filename}")
 						continue
 					else:
 						los_indices[los] = len(lines_of_sight)
@@ -161,11 +162,11 @@ if __name__ == '__main__':
 						images = (images[:, :-1:2, :-1:2] + images[:, :-1:2, 1::2] +
 						          images[:, 1::2, :-1:2] + images[:, 1::2, 1::2])/4
 
-					np.savetxt(f"tmp/energy-los{los_indices[los]}.csv", Э_cuts, delimiter=',') # (MeV) TODO: save hdf5 files of the results
-					np.savetxt(f"tmp/xye-los{los_indices[los]}.csv", ξ_centers) # (μm)
-					np.savetxt(f"tmp/ypsilon-los{los_indices[los]}.csv", υ_centers) # (μm)
-					np.savetxt(f"tmp/image-los{los_indices[los]}.csv", images.ravel()) # (d/μm^2/srad)
-					lines_of_sight.append(coordinate.tim_direction(los))
+					np.savetxt(f"tmp/energy-{los_indices[los]}.csv", Э_cuts, delimiter=',') # (MeV) TODO: save hdf5 files of the results
+					np.savetxt(f"tmp/xye-{los_indices[los]}.csv", ξ_centers) # (μm)
+					np.savetxt(f"tmp/ypsilon-{los_indices[los]}.csv", υ_centers) # (μm)
+					np.savetxt(f"tmp/image-{los_indices[los]}.csv", images.ravel()) # (d/μm^2/srad)
+					lines_of_sight.append(coordinate.los_direction(los))
 					num_pixels += images.size
 
 			n_space_bins = ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion

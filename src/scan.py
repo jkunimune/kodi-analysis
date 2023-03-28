@@ -1,3 +1,4 @@
+# construct a bunch of synthetic images at different yields with different apertures
 from construct import construct_data
 
 if __name__ == '__main__':

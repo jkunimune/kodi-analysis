@@ -126,7 +126,7 @@ if __name__ == '__main__':
 		Yn = nD*nT*σv # [1/(m^3 s)]
 
 		r_bins = np.linspace(0, 150, 151)
-		Y, _ = np.histogram(R, bins=r_bins, weights=Yn*(4*np.pi*R**2*dR)*dt)
+		# Y, _ = np.histogram(R, bins=r_bins, weights=Yn*(4*np.pi*R**2*dR)*dt)
 		# plt.plot(np.repeat(r_bins, 2)[1:-1], np.repeat(Y,2))
 
 		r = bin_centers(r_bins)
@@ -141,8 +141,8 @@ if __name__ == '__main__':
 		for z in np.linspace(-150, 150/2, 100):
 			blu += np.interp(np.hypot(z, r_img), r, Yn_integrated)
 			red += np.interp(np.hypot(z, r_img), r, nD_burn_average)
-		print(f"hi-energy: {nonunimodal_interp(blu.max()/4, blu, r_img)} μm")
-		print(f"lo-energy: {nonunimodal_interp(red.max()/4, red, r_img)} μm")
+		print(f"hi-energy: {nonunimodal_interp(np.max(blu)/4, blu, r_img)} μm")
+		print(f"lo-energy: {nonunimodal_interp(np.max(red)/4, red, r_img)} μm")
 		fig, ax_left = plt.subplots()
 		plt.grid('on')
 		ax_rite = ax_left.twinx()
@@ -156,7 +156,7 @@ if __name__ == '__main__':
 		plt.title(SHOT)
 		plt.tight_layout()
 
-		Y, _ = np.histogram(R, bins=r_bins, weights=(Yn*(4*np.pi*R**2*dR)))
+		# Y, _ = np.histogram(R, bins=r_bins, weights=(Yn*(4*np.pi*R**2*dR)))
 		# plt.figure()
 		# plt.plot(np.repeat(r_bins, 2)[1:-1], np.repeat(Y, 2))
 		# plt.show()

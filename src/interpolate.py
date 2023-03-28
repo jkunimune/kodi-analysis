@@ -3,8 +3,6 @@ from typing import Union
 import numpy as np
 from numpy.typing import NDArray
 
-from util import normalize
-
 
 class RegularInterpolator:
 	def __init__(self, x_min: float, x_max: float, y: NDArray[float]):

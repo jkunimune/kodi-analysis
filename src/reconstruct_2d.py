@@ -3,7 +3,6 @@
 
 import logging
 import os
-import pickle
 import re
 import sys
 import time
@@ -28,24 +27,18 @@ import deconvolution
 import detector
 import electric_field
 from cmap import CMAP
-from coordinate import project, tim_coordinates, rotation_matrix, Grid, TPS_LOCATIONS
+from coordinate import project, los_coordinates, rotation_matrix, Grid, NAMED_LOS, LinSpace
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
 	line_search, quantile, bin_centers_and_sizes, get_relative_aperture_positions, periodic_mean, parse_filtering, \
 	print_filtering, Filter, count_detectors, compose_2x2_from_intuitive_parameters, \
-	decompose_2x2_into_intuitive_parameters, Interval
+	decompose_2x2_into_intuitive_parameters, Interval, name_filter_stacks
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
-
-PROTON_ENERGY_CUTS = [(0, (0, inf))]
-NORMAL_DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitted, not detected)
-FINE_DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
-                             (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
-SUPPORTED_FILETYPES = [".h5", ".pkl", ".cpsa"]
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = True
@@ -53,33 +46,46 @@ SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
-BELIEVE_IN_APERTURE_TILTING = True
-MAX_NUM_PIXELS = 1000
-DEUTERON_RESOLUTION = 5e-4
-X_RAY_RESOLUTION = 2e-4
-DEUTERON_CONTOUR = .50
-X_RAY_CONTOUR = .17
-MIN_OBJECT_SIZE = 100e-4
-MAX_OBJECT_PIXELS = 250
-MAX_CONVOLUTION = 1e+12
-MAX_ECCENTRICITY = 15.
-MAX_CONTRAST = 45.
-MAX_DETECTABLE_ENERGY = 11.
-MIN_DETECTABLE_ENERGY = 0.5
+PROTON_ENERGY_CUTS = [(0, (0, inf))]
+NORMAL_DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitted, not detected)
+FINE_DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
+                             (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
+SUPPORTED_FILETYPES = [".h5"]
+
+BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
+SNAP_IMAGES_TO_GRID = True  # whether to assume the aperture array is perfect and use that when locating images
+MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
+DEUTERON_RESOLUTION = 5e-4  # resolution of reconstructed KoD sources
+X_RAY_RESOLUTION = 2e-4  # spatial resolution of reconstructed x-ray sources
+DEUTERON_CONTOUR = .30  # contour to use when characterizing KoDI sources
+X_RAY_CONTOUR = .17  # contour to use when characterizing x-ray sources
+MIN_OBJECT_SIZE = 100e-4  # minimum amount of space to allocate in the source plane
+MAX_OBJECT_PIXELS = 250  # maximum size of the source array to use in reconstructions
+MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
+MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
+MAX_CONTRAST = 45.  # contrast cut to apply in CR-39 data
+MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
+MIN_DETECTABLE_ENERGY = 0.5  # lowest energy deuteron we think we can see on CR-39
+
+SRTE_APERTURE_RADIUS = 60e-4
+SRTE_APERTURE_SPACING = 819.912e-4
 
 
-HexGridParameters = tuple[NDArray[float], float, float]
+GridParameters = tuple[NDArray[float], float, float]
 
 
 class DataError(ValueError):
+	""" when the data don’t make any sense """
 	pass
 
 
 class RecordNotFoundError(KeyError):
+	""" when an entry is missing from one of the CSV files """
 	pass
 
 
 class FilterError(ValueError):
+	""" when the filtering renders the specified radiation undetectable """
 	pass
 
 
@@ -93,15 +99,15 @@ def analyze(shots_to_reconstruct: list[str],
 	    generate some plots of the data and results, and save all the important information to CSV
 	    and HDF5 files in the results directory.
 	    :param shots_to_reconstruct: a list of specifiers; each should be either a shot name/number
-	                                 present in the shots.csv file (for all TIMs on that shot), or a
-	                                 shot name/number followed by the word "tim" and a tim number
-	                                 (for just the data on one TIM)
+	                                 present in the shot_info.csv file (for all images from that shot), or a
+	                                 shot name/number followed by the name of a line of sight
+	                                 (for just the data on one line of sight)
 	    :param energy_cut_mode: one of "normal" for three deuteron energy bins, "fine" for a lot of
 	                            deuteron energy bins, and "proton" for one huge energy bin.
-		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
-		                            than performing the full analysis procedure again.
-		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
-		                   user to close them, rather than only saving them to disc and silently proceeding.
+	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
+	                                than performing the full analysis procedure again.
+	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
+	                       user to close them, rather than only saving them to disc and silently proceeding.
 	"""
 	# set it to work from the base directory regardless of whence we call the file
 	if os.path.basename(os.getcwd()) == "src":
@@ -128,15 +134,18 @@ def analyze(shots_to_reconstruct: list[str],
 
 	# read in some of the existing information
 	try:
-		shot_table = pd.read_csv('input/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+		shot_table = pd.read_csv('input/shot_info.csv', index_col="shot",
+		                         dtype={"shot": str}, skipinitialspace=True)
+		los_table = pd.read_csv("input/los_info.csv", index_col=["shot", "los"],
+		                        dtype={"shot": str}, skipinitialspace=True)
 	except IOError as e:
-		logging.error("my shot table!  I can't do analysis without my shot table!")
-		raise e
+		logging.error(e)
+		raise
 	try:
-		summary = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
+		summary = pd.read_csv("results/summary.csv", dtype={"shot": str})
 	except IOError:
 		summary = pd.DataFrame(data={"shot":           pd.Series(dtype=str),
-		                             "tim":            pd.Series(dtype=str),
+		                             "los":            pd.Series(dtype=str),
 		                             "particle":       pd.Series(dtype=str),
 		                             "detector index": pd.Series(dtype=int),
 		                             "energy min":     pd.Series(dtype=float),
@@ -155,36 +164,39 @@ def analyze(shots_to_reconstruct: list[str],
 	# iterate thru the shots we're supposed to analyze and make a list of scan files
 	all_scans_to_analyze: list[tuple[str, str, float, str]] = []
 	for specifier in shots_to_reconstruct:
-		match = re.fullmatch(r"([A-Z]?[0-9]+)(tim|t)([0-9]+)", specifier)
-		if match:
-			shot, tim = match.group(1, 3)
+		match = re.fullmatch(r"([A-Z]?[0-9]+)([A-Za-z][A-Za-z0-9]*)", specifier)
+		if match and match.group(2) in NAMED_LOS:
+			shot, los = match.groups()
 		else:
-			shot, tim = specifier, None
+			shot, los = specifier, None
 
 		# search for filenames that match each row
 		matching_scans: list[tuple[str, str, str, int, float, str]] = []
 		for filename in os.listdir("input/scans"):
-			if "[phosphor].h5" in filename:  # skip these files because they’re unsplit
+			if re.search(r"_pcis[0-9]_", filename):  # skip these files because they’re unsplit
 				continue
 			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
 			detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
-			etch_match = re.search(r"([0-9]+)hr?", filename, re.IGNORECASE)
-			if tim is None:
-				tim_match = re.search(r"tim([0-9]+)", filename, re.IGNORECASE)
+			etch_match = re.search(r"([0-9]+(\.[0-9]+)?)hr?", filename, re.IGNORECASE)
+			if los is None:
+				los_match = re.search(r"(tim([0-9]+)|srte)", filename, re.IGNORECASE)
 			else:
-				tim_match = re.search(rf"tim({tim})", filename, re.IGNORECASE)
+				los_match = re.search(rf"({los})", filename, re.IGNORECASE)
 
-			if os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES and shot_match and (tim is None or tim_match):
-				if tim_match is None:
-					logging.warning(f"the file {filename} doesn’t specify a TIM, so I’m calling it TIM0.")
-				matching_tim = tim_match.group(1) if tim_match is not None else "0"
+			if os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES and shot_match and (los_match or los is None):
+				if los_match is None:
+					logging.warning(f"the file {filename} doesn’t specify a LOS, so I’m calling it none.")
+				matching_los = los_match.group(1).lower() if los_match is not None else "none"
 				detector_index = int(detector_match.group(1)) if detector_match is not None else 0
 				etch_time = float(etch_match.group(1)) if etch_match is not None else None
 				particle = "xray" if filename.endswith(".h5") else "deuteron"
-				matching_scans.append((shot, matching_tim, particle, detector_index, etch_time,
+				matching_scans.append((shot, matching_los, particle, detector_index, etch_time,
 				                       f"input/scans/{filename}"))
 		if len(matching_scans) == 0:
-			logging.info("  Could not find any scan file for TIM {} on shot {}".format(tim, shot))
+			if los is None:
+				logging.info(f"  Could not find any scan files for shot {shot}")
+			else:
+				logging.info(f"  Could not find any scan file for {los} on shot {shot}")
 		else:
 			all_scans_to_analyze += matching_scans
 
@@ -194,14 +206,18 @@ def analyze(shots_to_reconstruct: list[str],
 		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the input folder.")
 
 	# then iterate thru that list and do the analysis
-	for shot, tim, particle, detector_index, etch_time, filename in all_scans_to_analyze:
-		logging.info("Beginning reconstruction for TIM {} on shot {}".format(tim, shot))
+	for shot, los, particle, detector_index, etch_time, filename in all_scans_to_analyze:
+		logging.info(f"Beginning reconstruction for {los.upper()} on shot {shot} (detector #{detector_index})")
 
 		try:
 			shot_info = shot_table.loc[shot]
 		except KeyError:
-			raise RecordNotFoundError(f"please add shot {shot!r} to the input/shots.csv file.")
-		filtering = load_filtering_info(shot, tim)
+			raise RecordNotFoundError(f"please add shot {shot!r} to the input/shot_info.csv file.")
+		try:
+			los_specific_shot_info = los_table.loc[(shot, los)]
+		except KeyError:
+			raise RecordNotFoundError(f"please add shot {shot!r}, LOS {los!r} to the input/los_info.csv file.")
+		shot_info = pd.concat([shot_info, los_specific_shot_info])
 
 		# perform the 2d reconstruccion
 		try:
@@ -210,13 +226,14 @@ def analyze(shots_to_reconstruct: list[str],
 				skip_reconstruction=skip_reconstruction,
 				show_plots         =show_plots,
 				shot               =shot,
-				tim                =tim,
+				los                =los,
 				particle           =particle,
 				detector_index     =detector_index,
 				etch_time          =etch_time,
-				filtering          =filtering,
+				filtering          =shot_info["filtering"],
 				rA                 =shot_info["aperture radius"]*1e-4,
 				sA                 =shot_info["aperture spacing"]*1e-4,
+				grid_shape         =shot_info["aperture arrangement"],
 				L1                 =shot_info["standoff"]*1e-4,
 				M_gess             =shot_info["magnification"],
 				stalk_position     =shot_info["TPS"],
@@ -234,7 +251,7 @@ def analyze(shots_to_reconstruct: list[str],
 			continue
 
 		# clear any previous versions of this reconstruccion
-		matching = (summary["shot"] == shot) & (summary["tim"] == tim) & \
+		matching = (summary["shot"] == shot) & (summary["los"] == los) & \
 		           (summary["particle"] == particle) & (summary["detector index"] == detector_index)
 		summary = summary[~matching]
 
@@ -244,7 +261,7 @@ def analyze(shots_to_reconstruct: list[str],
 				result,
 				ignore_index=True)
 
-		summary = summary.sort_values(['shot', 'tim', 'particle', 'energy max'])
+		summary = summary.sort_values(['shot', 'los', 'particle', 'energy max'])
 		try:
 			summary.to_csv("results/summary.csv", index=False) # save the results to disk
 		except PermissionError:
@@ -253,8 +270,8 @@ def analyze(shots_to_reconstruct: list[str],
 
 
 def analyze_scan(input_filename: str,
-                 shot: str, tim: str, particle: str, detector_index: int,
-                 rA: float, sA: float, M_gess: float, L1: float,
+                 shot: str, los: str, particle: str, detector_index: int,
+                 rA: float, sA: float, grid_shape: str, M_gess: float, L1: float,
                  etch_time: Optional[float], filtering: str,
                  offset: tuple[float, float, float], velocity: tuple[float, float, float],
                  stalk_position: str, num_stalks: int,
@@ -262,31 +279,30 @@ def analyze_scan(input_filename: str,
                  skip_reconstruction: bool, show_plots: bool,
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct all of the penumbral images contained in a single scan file.
-		:param input_filename: the location of the scan file in input/scans/
-		:param shot: the shot number/name
-		:param tim: the TIM number
-		:param particle: the type of radiation being detected ("deuteron" for CR39 or "xray" for an image plate)
-		:param detector_index: the index of the detector, to identify it out of multiple detectors of the same type
-		:param rA: the aperture radius (cm)
-		:param sA: the aperture spacing (cm), which also encodes the shape of the aperture array. a positive number
-		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
-		           center-to-center distance in a rectangular array. a 0 means that there is only one aperture.
-		:param L1: the distance between the aperture and the implosion (cm)
-		:param M_gess: the nominal radiography magnification (L1 + L2)/L1
-		:param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
-		:param filtering: a string that indicates what filtering was used on this tim on this shot
-		:param offset: the initial offset of the capsule from TCC in spherical coordinates (cm, rad, rad)
-		:param velocity: the measured hot-spot velocity of the capsule in spherical coordinates (km/s, rad, rad)
-		:param stalk_position: the name of the port from which the target is held (should be "TPS2")
-		:param num_stalks: the number of stalks on this target (usually 1)
-		:param deuteron_energy_cuts: the energy bins to use for reconstructing deuterons
-		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
-		                            than performing the full analysis procedure again.
-		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
-		                   user to close them, rather than only saving them to disc and silently proceeding.
-		:return: a list of dictionaries, each containing various measurables for the reconstruction in a particular
-		         energy bin. the reconstructed image will not be returned, but simply saved to disc after various nice
-		         pictures have been taken and also saved.
+	    :param input_filename: the location of the scan file in input/scans/
+	    :param shot: the shot number/name
+	    :param los: the name of the line of sight (e.g. "tim2", "srte")
+	    :param particle: the type of radiation being detected ("deuteron" for CR39 or "xray" for an image plate)
+	    :param detector_index: the index of the detector, to identify it out of multiple detectors of the same type
+	    :param rA: the aperture radius (cm)
+	    :param sA: the aperture spacing (cm), specificly the distance from one aperture to its nearest neighbor.
+	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
+	    :param L1: the distance between the aperture and the implosion (cm)
+	    :param M_gess: the nominal radiography magnification (L1 + L2)/L1
+	    :param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
+	    :param filtering: a string that indicates what filtering was used on this LOS on this shot
+	    :param offset: the initial offset of the capsule from TCC in spherical coordinates (cm, rad, rad)
+	    :param velocity: the measured hot-spot velocity of the capsule in spherical coordinates (km/s, rad, rad)
+	    :param stalk_position: the name of the port from which the target is held (should be "TPS2")
+	    :param num_stalks: the number of stalks on this target (usually 1)
+	    :param deuteron_energy_cuts: the energy bins to use for reconstructing deuterons
+	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
+	                                than performing the full analysis procedure again.
+	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
+	                       user to close them, rather than only saving them to disc and silently proceeding.
+	    :return: a list of dictionaries, each containing various measurables for the reconstruction in a particular
+	             energy bin. the reconstructed image will not be returned, but simply saved to disc after various nice
+	             pictures have been taken and also saved.
 	"""
 	# start by parsing the filter stacks
 	if particle == "deuteron":
@@ -295,8 +311,15 @@ def analyze_scan(input_filename: str,
 	else:
 		contour = X_RAY_CONTOUR
 		detector_type = "ip"
+	# overwrite the aperture information if this is SRTe
+	if los == "srte":
+		rA = SRTE_APERTURE_RADIUS
+		sA = SRTE_APERTURE_SPACING
+		grid_shape = "srte"
+
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
 	filter_stacks = sorted(filter_stacks, key=lambda stack: detector.xray_energy_bounds(stack, .01)[0])
+	filter_stack_names = name_filter_stacks(filter_stacks)
 	num_detectors = count_detectors(filtering, detector_type)
 
 	# then iterate thru each filtering section
@@ -306,7 +329,7 @@ def analyze_scan(input_filename: str,
 	filter_strings: list[str] = []
 	energy_bounds: list[Interval] = []
 	indices: list[str] = []
-	for filter_section_index, filter_stack in enumerate(filter_stacks):
+	for filter_section_index, (filter_section_name, filter_stack) in enumerate(zip(filter_stack_names, filter_stacks)):
 		# choose the energy cuts given the filtering and type of radiation
 		if particle == "deuteron":
 			energy_cuts = deuteron_energy_cuts  # these energy bounds are in MeV
@@ -318,10 +341,11 @@ def analyze_scan(input_filename: str,
 			grid_parameters, source_plane, filter_section_sources, filter_section_statistics =\
 				analyze_scan_section(
 					input_filename,
-					shot, tim, rA, sA,
+					shot, los, rA, sA, grid_shape,
 					M_gess, L1,
 					etch_time,
 					f"{detector_index}{filter_section_index}",
+					filter_section_name,
 					filter_stack,
 					grid_parameters,
 					source_plane,
@@ -341,7 +365,7 @@ def analyze_scan(input_filename: str,
 		raise DataError("well, that was pointless")
 
 	# finally, save the combined image set
-	save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{detector_index}-source",
+	save_as_hdf5(f"results/data/{shot}-{los}-{particle}-{detector_index}-source",
 	             filtering=filter_strings,
 	             energy=energy_bounds,
 	             x=source_plane.x.get_bins()/1e-4,
@@ -359,14 +383,14 @@ def analyze_scan(input_filename: str,
 			color_index = detector_index*num_sections + cut_index + num_missing_sections
 			num_colors = num_detectors*num_sections
 		try:
-			tim_basis = tim_coordinates(tim)
+			los_basis = los_coordinates(los)
 		except KeyError:
-			tim_basis = np.identity(3)
-		plot_source(f"{shot}-tim{tim}-{particle}-{indices[cut_index]}",
+			los_basis = np.identity(3)
+		plot_source(f"{shot}-{los}-{particle}-{indices[cut_index]}",
 		            False, source_plane, source_stack[cut_index],
 		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
 		            color_index=color_index, num_colors=num_colors,
-		            projected_stalk_direction=project(1., *TPS_LOCATIONS[2], tim_basis),
+		            projected_stalk_direction=project(1., *NAMED_LOS["tps2"], los_basis),
 		            num_stalks=num_stalks)
 
 	# if can, plot some plots that overlay the sources in the stack
@@ -379,23 +403,23 @@ def analyze_scan(input_filename: str,
 			statblock["separation magnitude"] = hypot(dx, dy)/1e-4
 			statblock["separation angle"] = degrees(atan2(dy, dx))
 
-		tim_basis = tim_coordinates(tim)
+		los_basis = los_coordinates(los)
 		projected_offset = project(
-			offset[0], offset[1], offset[2], tim_basis)
+			offset[0], offset[1], offset[2], los_basis)
 		projected_flow = project(
-			velocity[0], velocity[1], velocity[2], tim_basis)
+			velocity[0], velocity[1], velocity[2], los_basis)
 		assert stalk_position == "TPS2"
 		projected_stalk = project(
-			1, TPS_LOCATIONS[2][0], TPS_LOCATIONS[2][1], tim_basis)
+			1, NAMED_LOS["tps2"][0], NAMED_LOS["tps2"][1], los_basis)
 
 		plot_overlaid_contores(
-			f"{shot}-tim{tim}-{particle}-{detector_index}", source_plane, source_stack, contour,
+			f"{shot}-{los}-{particle}-{detector_index}", source_plane, source_stack, contour,
 			projected_offset, projected_flow, projected_stalk, num_stalks)
 
 	grid_transform, grid_x0, grid_y0 = grid_parameters
 	for statblock in statistics:
 		statblock["shot"] = shot
-		statblock["tim"] = tim
+		statblock["los"] = los
 		statblock["particle"] = particle
 		statblock["detector index"] = detector_index
 		statblock["x0"] = grid_x0
@@ -410,43 +434,45 @@ def analyze_scan(input_filename: str,
 
 
 def analyze_scan_section(input_filename: str,
-                         shot: str, tim: str, rA: float, sA: float, M_gess: float, L1: float,
+                         shot: str, los: str,
+                         rA: float, sA: float, grid_shape: str,
+                         M_gess: float, L1: float,
                          etch_time: Optional[float],
-                         section_index: str, filter_stack: list[Filter],
-                         grid_parameters: Optional[HexGridParameters],
+                         section_index: str, section_name: str, filter_stack: list[Filter],
+                         grid_parameters: Optional[GridParameters],
                          source_plane: Optional[Grid],
                          energy_cuts: list[tuple[int, Interval]],
                          skip_reconstruction: bool, show_plots: bool,
-                         ) -> tuple[HexGridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
+                         ) -> tuple[GridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
-		:param input_filename: the location of the scan file in input/scans/
-		:param shot: the shot number/name
-		:param tim: the TIM number
-		:param rA: the aperture radius (cm)
-		:param sA: the aperture spacing (cm), which also encodes the shape of the aperture array. a positive number
-		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
-		           center-to-center distance in a rectangular array. a 0 means that there is only one aperture.
-		:param L1: the distance between the aperture and the implosion (cm)
-		:param M_gess: the nominal radiography magnification (L1 + L2)/L1
-		:param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
-		:param section_index: a string that uniquely identifies this detector and filtering section, for a line-of-sight
-		                      that has multiple detectors of the same type
-		:param filter_stack: the list of filters between the implosion and the detector. each filter is specified by its
-		                     thickness in micrometers and its material. they should be ordered from TCC to detector.
-		:param grid_parameters: the transformation array and x and y offsets that define the hexagonal grid on which
-		                         the images all fall
+	    :param input_filename: the location of the scan file in input/scans/
+	    :param shot: the shot number/name
+	    :param los: the name of the line of sight (e.g. "tim2", "srte")
+	    :param rA: the aperture radius (cm)
+	    :param sA: the aperture spacing (cm), specificly the distance from one aperture to its nearest neighbor.
+	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
+	    :param L1: the distance between the aperture and the implosion (cm)
+	    :param M_gess: the nominal radiography magnification (L1 + L2)/L1
+	    :param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
+	    :param section_index: a string that uniquely identifies this detector and filtering section, for a line-of-sight
+	                          that has multiple detectors of the same type
+	    :param section_name: a human-readable string that uniquely identifies this filtering section to a human
+	    :param filter_stack: the list of filters between the implosion and the detector. each filter is specified by its
+	                         thickness in micrometers and its material. they should be ordered from TCC to detector.
+	    :param grid_parameters: the transformation array and x and y offsets that define the hexagonal image_plane on which
+	                             the images all fall
         :param source_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
 	    :param energy_cuts: the energy cuts to use when you break this section up into diameter bins
-		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
-		                            than performing the full analysis procedure again.
-		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
-		                   user to close them, rather than only saving them to disc and silently proceeding.
-		:return: 0. the image array parameters that we fit to the centers,
-		         1. the Grid that ended up being used for the output,
-		         2. the list of reconstructed sources, and
-		         3. a list of dictionaries containing various measurables for the reconstruction in each energy bin.
+	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
+	                                than performing the full analysis procedure again.
+	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
+	                       user to close them, rather than only saving them to disc and silently proceeding.
+	    :return: 0. the image array parameters that we fit to the centers,
+	             1. the Grid that ended up being used for the output,
+	             2. the list of reconstructed sources, and
+	             3. a list of dictionaries containing various measurables for the reconstruction in each energy bin.
 	"""
 	# start by establishing some things that depend on what's being measured
 	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
@@ -461,15 +487,14 @@ def analyze_scan_section(input_filename: str,
 
 		# start by asking the user to highlight the data
 		try:
-			old_data_polygon, = load_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{section_index}-region",
+			old_data_polygon, = load_hdf5(f"results/data/{shot}-{los}-{particle}-{section_index}-region",
 			                              ["vertices"])
 		except FileNotFoundError:
 			old_data_polygon = None
 		if show_plots:
 			try:
-				region_name = "{:.0f}{:s}".format(*filter_stack[0])
 				data_polygon = user_defined_region(input_filename, default=old_data_polygon,
-				                                   title=f"Select the {region_name} region, then close this window.")
+				                                   title=f"Select the {section_name} region, then close this window.")
 				if len(data_polygon) < 3:
 					data_polygon = None
 			except TimeoutError:
@@ -482,12 +507,12 @@ def analyze_scan_section(input_filename: str,
 			else:
 				data_polygon = old_data_polygon
 		else:
-			save_as_hdf5(f"results/data/{shot}-tim{tim}-{particle}-{section_index}-region",
+			save_as_hdf5(f"results/data/{shot}-{los}-{particle}-{section_index}-region",
 			             vertices=data_polygon)
 
 		# find the centers and spacings of the penumbral images
 		centers, grid_transform = find_circle_centers(
-			input_filename, M_gess*rA, M_gess*sA, grid_parameters, data_polygon, show_plots)
+			input_filename, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon, show_plots)
 		new_grid_parameters = (grid_transform, centers[0][0], centers[0][1])
 		grid_major_scale, grid_minor_scale = linalg.svdvals(grid_transform)
 		grid_mean_scale = sqrt(grid_major_scale*grid_minor_scale)
@@ -503,11 +528,11 @@ def analyze_scan_section(input_filename: str,
 		logging.info(f"re-loading the previous reconstructions")
 		data_polygon = None
 		centers = None
-		previus_parameters = load_shot_info(shot, tim)
+		previus_parameters = load_shot_info(shot, los)
 		M = previus_parameters["M"]
 		grid_transform = compose_2x2_from_intuitive_parameters(
-			sA*previus_parameters["M"], previus_parameters["grid angle"],
-			previus_parameters["grid skew"], previus_parameters["grid skew angle"])
+			sA*previus_parameters["M"], previus_parameters["image_plane angle"],
+			previus_parameters["image_plane skew"], previus_parameters["image_plane skew angle"])
 		new_grid_parameters = (grid_transform, 0, 0)
 
 	# now go thru each energy cut and compile the results
@@ -516,7 +541,7 @@ def analyze_scan_section(input_filename: str,
 	for energy_cut_index, (energy_min, energy_max) in energy_cuts:
 		try:
 			source_plane, source, statblock = analyze_scan_section_cut(
-				input_filename, shot, tim, rA, sA, M, L1,
+				input_filename, shot, los, rA, sA, grid_shape, M, L1,
 				etch_time, filter_stack, data_polygon,
 				grid_transform, centers,
 				f"{section_index}{energy_cut_index}", max(3, len(energy_cuts)),
@@ -531,15 +556,15 @@ def analyze_scan_section(input_filename: str,
 			source_stack.append(source)
 			results.append(statblock)
 
-	if len(results) > 0:  # update the grid iff any of these analyses worked
+	if len(results) > 0:  # update the image_plane iff any of these analyses worked
 		grid_parameters = new_grid_parameters
 
 	return grid_parameters, source_plane, source_stack, results
 
 
 def analyze_scan_section_cut(input_filename: str,
-                             shot: str, tim: str, rA: float, sA: float, M: float,
-                             L1: float, etch_time: Optional[float],
+                             shot: str, los: str, rA: float, sA: float, grid_shape: str,
+                             M: float, L1: float, etch_time: Optional[float],
                              filter_stack: list[Filter], data_polygon: list[Point],
                              array_transform: NDArray[float], centers: list[Point],
                              cut_index: str, num_colors: int,
@@ -549,22 +574,21 @@ def analyze_scan_section_cut(input_filename: str,
                              ) -> tuple[Grid, NDArray[float], dict[str, Any]]:
 	""" reconstruct the penumbral image contained in a single energy cut in a single filtering
 	    region of a single scan file.
-		:param input_filename: the location of the scan file in input/scans/
-		:param shot: the shot number/name
-		:param tim: the TIM number
-		:param rA: the aperture radius in cm
-		:param sA: the aperture spacing in cm, which also encodes the shape of the aperture array. a positive number
-		           means the nearest center-to-center distance in a hexagonal array. a negative number means the nearest
-		           center-to-center distance in a rectangular array. a 0 means that there is only one aperture.
+	    :param input_filename: the location of the scan file in input/scans/
+	    :param shot: the shot number/name
+	    :param los: the name of the line of sight (e.g. "tim2", "srte")
+	    :param rA: the aperture radius in cm
+	    :param sA: the aperture spacing (cm), specificly the distance from one aperture to its nearest neighbor.
 	    :param M: the radiography magnification (L1 + L2)/L1
-		:param L1: the distance between the aperture and the implosion
-		:param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
-		:param filter_stack: the list of filters between the implosion and the detector. each filter is specified by its
-		                     thickness in micrometers and its material. they should be ordered from TCC to detector.
-		:param data_polygon: the polygon that separates this filtering section of the scan from regions that should be
-		                     ignored
-		:param array_transform: a 2×2 matrix that specifies the orientation and skewness of the hexagonal aperture array
-		                        pattern on the detector
+	    :param L1: the distance between the aperture and the implosion
+	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
+	    :param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
+	    :param filter_stack: the list of filters between the implosion and the detector. each filter is specified by its
+	                         thickness in micrometers and its material. they should be ordered from TCC to detector.
+	    :param data_polygon: the polygon that separates this filtering section of the scan from regions that should be
+	                         ignored
+	    :param array_transform: a 2×2 matrix that specifies the orientation and skewness of the hexagonal aperture array
+	                            pattern on the detector
         :param centers: the list of center locations of penumbra that have been identified as good
         :param cut_index: a string that uniquely identifies this detector, filtering section, and energy cut, for a
                           line-of-sight that has multiple detectors of the same type
@@ -574,12 +598,12 @@ def analyze_scan_section_cut(input_filename: str,
         :param output_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
-		:param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
-		                            than performing the full analysis procedure again.
-		:param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
-		                   user to close them, rather than only saving them to disc and silently proceeding.
-		:return: the coordinate basis we ended up using for the source map, the source map, and a dict that contains
-		         some miscellaneus statistics for the source
+	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
+	                                than performing the full analysis procedure again.
+	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
+	                       user to close them, rather than only saving them to disc and silently proceeding.
+	    :return: the coordinate basis we ended up using for the source map, the source map, and a dict that contains
+	             some miscellaneus statistics for the source
 	"""
 	# switch out some values depending on whether these are xrays or deuterons
 	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
@@ -629,8 +653,8 @@ def analyze_scan_section_cut(input_filename: str,
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
 			input_filename, diameter_min, diameter_max,
-			energy_min, energy_max,
-			centers, M*rA, M*sA, data_polygon, show_plots) # TODO: infer rA, as well?
+			energy_min, energy_max, M*rA, M*sA,
+			centers, data_polygon, show_plots) # TODO: infer rA, as well?
 
 		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
 			logging.warning(f"the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
@@ -655,7 +679,7 @@ def analyze_scan_section_cut(input_filename: str,
 		if input_filename.endswith(".cpsa"): # if it's a cpsa file
 			x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
 			for x_center, y_center in centers:
-				shifted_image_plane = image_plane.shifted(x_center, y_center)  # TODO: rotate along with the grid?
+				shifted_image_plane = image_plane.shifted(x_center, y_center)  # TODO: rotate along with the image_plane?
 				local_image = np.histogram2d(x_tracks, y_tracks,
 				                             bins=(shifted_image_plane.x.get_edges(),
 				                                   shifted_image_plane.y.get_edges()))[0]
@@ -666,23 +690,9 @@ def analyze_scan_section_cut(input_filename: str,
 
 			# since PCIS CR-39 scans are saved like you’re looking toward TCC, do not rotate it
 
-		else:
-			if input_filename.endswith(".pkl"): # if it's a pickle file
-				with open(input_filename, "rb") as f:
-					x, y, scan = pickle.load(f)
+		elif input_filename.endswith(".h5"): # if it's an HDF5 file
+			scan_plane, scan = load_ip_scan_file(input_filename)
 
-			elif input_filename.endswith(".h5"): # if it's an HDF5 file
-				with h5py.File(input_filename, "r") as f:
-					x = f["x"][:]
-					y = f["y"][:]
-					scan = f["PSL_per_px"][:, :]
-					fade_time = f.attrs["scan_delay"]
-				scan /= detector.psl_fade(fade_time) # J of psl per bin
-
-			else:
-				raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
-
-			scan_plane = Grid.from_edge_array(x, y)
 			if scan_plane.pixel_width > image_plane.pixel_width:
 				logging.warning(f"The scan resolution of this image plate scan ({scan_plane.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
 				                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
@@ -701,22 +711,25 @@ def analyze_scan_section_cut(input_filename: str,
 				image = image[:, ::-1]
 				image_plicity = image_plicity[:, ::-1]
 
+		else:
+			raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
+
 	# if we’re skipping the reconstruction, just load the previus stacked penumbra
 	else:
 		logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
-		previus_parameters = load_shot_info(shot, tim, energy_min, energy_max, filter_str)
+		previus_parameters = load_shot_info(shot, los, energy_min, energy_max, filter_str)
 		account_for_overlap = False
 		r_psf, r_max, r_object, num_bins_K = 0, 0, 0, 0
 		Q = previus_parameters.Q
 		x, y, image, image_plicity = load_hdf5(
-			f"results/data/{shot}-tim{tim}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
+			f"results/data/{shot}-{los}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
 		image_plane = Grid.from_edge_array(x, y)
 		image = image.T  # don’t forget to convert from (y,x) to (i,j) indexing
 		image_plicity = image_plicity.T
 
-	save_and_plot_penumbra(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
+	save_and_plot_penumbra(f"{shot}-{los}-{particle}-{cut_index}", show_plots,
 	                       image_plane, image, image_plicity, energy_min, energy_max,
-	                       r0=M*rA, s0=M*sA, array_transform=array_transform)
+	                       r0=M*rA, s0=M*sA, grid_shape=grid_shape, grid_transform=array_transform)
 
 	# now to apply the reconstruction algorithm!
 	if not skip_reconstruction:
@@ -820,7 +833,7 @@ def analyze_scan_section_cut(input_filename: str,
 		# after reproducing the input, we must make some adjustments to the source
 		if output_plane is None:
 			output_plane = Grid.from_size(source_plane.x.half_range, source_plane.pixel_width/2, True)
-		# specificly, we must rebin it to a unified grid for the stack
+		# specificly, we must rebin it to a unified image_plane for the stack
 		output = interpolate.RegularGridInterpolator(
 			(source_plane.x.get_bins(), source_plane.x.get_bins()), source,
 			bounds_error=False, fill_value=0)(
@@ -828,10 +841,10 @@ def analyze_scan_section_cut(input_filename: str,
 
 	# if we’re skipping the reconstruction, just load the previusly reconstructed source
 	else:
-		output_plane, output = load_source(shot, tim, f"{particle}-{cut_index[0]}",
+		output_plane, output = load_source(shot, los, f"{particle}-{cut_index[0]}",
 		                                   filter_stack, energy_min, energy_max)
 		residual, = load_hdf5(
-			f"results/data/{shot}-tim{tim}-{particle}-{cut_index}-penumbra-residual", ["z"])
+			f"results/data/{shot}-{los}-{particle}-{cut_index}-penumbra-residual", ["z"])
 		residual = residual.T  # remember to convert from (y,x) indexing to (i,j)
 		reconstructed_image = image - residual
 
@@ -848,12 +861,12 @@ def analyze_scan_section_cut(input_filename: str,
 		color_index = int(cut_index[0])  # we’ll redo the colors later, so just use a heuristic here
 	else:
 		color_index = int(cut_index[-1])
-	plot_source(f"{shot}-tim{tim}-{particle}-{cut_index}",
+	plot_source(f"{shot}-{los}-{particle}-{cut_index}",
 	            show_plots,
 	            output_plane, output, contour, energy_min, energy_max,
 	            color_index=color_index, num_colors=num_colors,
 	            projected_stalk_direction=(nan, nan, nan), num_stalks=0)
-	save_and_plot_overlaid_penumbra(f"{shot}-tim{tim}-{particle}-{cut_index}", show_plots,
+	save_and_plot_overlaid_penumbra(f"{shot}-{los}-{particle}-{cut_index}", show_plots,
 	                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
 
 	statblock = {"Q": Q, "dQ": 0.,
@@ -867,7 +880,7 @@ def analyze_scan_section_cut(input_filename: str,
 
 def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
                          energy_min: float, energy_max: float,
-                         centers: list[Point], r0: float, s0: float, region: list[Point],
+                         r0: float, s0: float, centers: list[Point], region: list[Point],
                          show_plots: bool) -> Point:
 	""" perform an inverse Abel transformation while fitting for charging
 	    :param filename: the scanfile containing the data to be analyzed
@@ -897,34 +910,26 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		histogram = True
 
 	# or rebin the cartesian bins in radius
-	else:
-		if filename.endswith(".pkl"):  # if it's a pickle file
-			with open(filename, 'rb') as f:
-				xC_bins, yC_bins, NC = pickle.load(f)
-		elif filename.endswith(".h5"): # if it's an HDF5 file
-			with h5py.File(filename, "r") as f:
-				xC_bins = f["x"][:]
-				yC_bins = f["y"][:]
-				NC = f["PSL_per_px"][:, :]
-		else:
-			raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
-
-		xC, yC = (xC_bins[:-1] + xC_bins[1:])/2, (yC_bins[:-1] + yC_bins[1:])/2
-		XC, YC = np.meshgrid(xC, yC, indexing='ij')
+	elif filename.endswith(".h5"):  # if it's an HDF5 file
+		scan_plane, NC = load_ip_scan_file(filename)
+		XC, YC = scan_plane.get_pixels()
 		NC[~inside_polygon(region, XC, YC)] = 0
-		RC = np.full(XC.shape, inf)
+		RC = np.full(scan_plane.shape, inf)
 		for x0, y0 in centers:
 			RC = np.minimum(RC, np.hypot(XC - x0, YC - y0))
-		dr = (xC_bins[1] - xC_bins[0] + yC_bins[1] - yC_bins[0])/2
+		dr = (scan_plane.x.bin_width + scan_plane.y.bin_width)/2
 		r_bins = np.linspace(0, r_max, int(r0/(dr*2)))
-		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)
+		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)  # TODO: I think maybe I should use interpolation instead of binning here, because sometimes this profile looks wacky
 		histogram = False
+
+	else:
+		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 	r, dr = bin_centers_and_sizes(r_bins)
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 	A = np.zeros(r.size)
 	for x0, y0 in centers:
-		A += pi*r*dr*np.mean(inside_polygon(region, x0 + r*np.cos(θ), y0 + r*np.sin(θ)), axis=0)
+		A += 2*pi*r*dr*np.mean(inside_polygon(region, x0 + r*np.cos(θ), y0 + r*np.sin(θ)), axis=0)
 	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
 	inside = A > 0
 	umbra, exterior = (r < 0.5*r0), (r > 1.8*r0)
@@ -1044,22 +1049,16 @@ def user_defined_region(filename, title, default=None, timeout=None) -> list[Poi
 	if filename.endswith(".cpsa"):
 		x_tracks, y_tracks = load_cr39_scan_file(filename)
 		image, x, y = np.histogram2d(x_tracks, y_tracks, bins=200)
-		grid = Grid.from_edge_array(x, y)
-	elif filename.endswith(".pkl"):
-		with open(filename, "rb") as f:
-			x, y, image = pickle.load(f)
-		grid = Grid.from_edge_array(x, y)
+		image_plane = Grid.from_edge_array(x, y)
 	elif filename.endswith(".h5"):
-		with h5py.File(filename, "r") as f:
-			x, y, image = f["x"][:], f["y"][:], f["PSL_per_px"][:, :]
-		grid = Grid.from_edge_array(x, y)
-		while grid.num_pixels > 1e6:
-			grid, image = downsample_2d(grid, image)
+		image_plane, image = load_ip_scan_file(filename)
+		while image_plane.num_pixels > 1e6:
+			image_plane, image = downsample_2d(image_plane, image)
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 	fig = plt.figure()
-	plt.pcolormesh(grid.x.get_edges(), grid.y.get_edges(), image.T,
+	plt.pcolormesh(image_plane.x.get_edges(), image_plane.y.get_edges(), image.T,
 	               vmax=np.quantile(image, .99), cmap=CMAP["spiral"])
 	polygon, = plt.plot([], [], "k-")
 	cap, = plt.plot([], [], "k:")
@@ -1163,6 +1162,29 @@ def load_cr39_scan_file(filename: str,
 	return x_tracks, y_tracks
 
 
+def load_ip_scan_file(filename: str) -> tuple[Grid, NDArray[float]]:
+	""" load a scan file, accounting for the fact that it may be in one of a few formats
+	    :return: the coordinate Grid on which the scan pixels are defined (cm), the values in the scan
+	             pixels (PSL units per pixel).
+	"""
+	with h5py.File(filename, "r") as f:
+		scan = f["PSL_per_px"][:, :].T
+		if "x" in f:
+			x, y = f["x"][:], f["y"][:]
+			scan_plane = Grid.from_edge_array(x, y)
+		else:
+			dx = f["PSL_per_px"].attrs["pixelSizeX"]*1e-4
+			dy = f["PSL_per_px"].attrs["pixelSizeY"]*1e-4
+			scan_plane = Grid(LinSpace(0, scan.shape[0]*dx, scan.shape[0]),
+			                  LinSpace(0, scan.shape[1]*dy, scan.shape[1]))
+		if "scan_delay" in f.attrs:
+			fade_time = f.attrs["scan_delay"]
+		else:
+			fade_time = f["PSL_per_px"].attrs["scanDelaySeconds"]/60.
+	scan /= detector.psl_fade(fade_time)  # don’t forget to fade correct when you load it
+	return scan_plane, scan
+
+
 def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float, show_plots: bool
                          ) -> tuple[float, float, float, float, float]:
 	""" open a scan file and simply count the total number of tracks without putting
@@ -1177,24 +1199,20 @@ def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float
 		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max,
 		                                         show_plots=show_plots)
 		return x_tracks.size, np.min(x_tracks), np.max(x_tracks), np.min(y_tracks), np.max(y_tracks)
-	elif filename.endswith(".pkl"):
-		with open(filename, "rb") as f:
-			x_bins, y_bins, N = pickle.load(f)
-		return int(np.sum(N)), x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]
 	elif filename.endswith(".h5"):
-		x_bins, y_bins = load_hdf5(filename, ["x", "y"])
-		return inf, x_bins[0], x_bins[-1], y_bins[0], y_bins[-1]
+		bounds, _ = load_ip_scan_file(filename)
+		return inf, bounds.x.minimum, bounds.x.maximum, bounds.y.minimum, bounds.y.maximum
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 
-def load_source(shot: str, tim: str, particle_index: str,
+def load_source(shot: str, los: str, particle_index: str,
                 filter_stack: list[Filter], energy_min: float, energy_max: float,
                 ) -> tuple[Grid, NDArray[float]]:
 	""" open up a saved HDF5 file and find and read a single source from the stack """
 	# get all the necessary info from the HDF5 file
 	x, y, source_stack, filterings, energy_bounds = load_hdf5(
-		f"results/data/{shot}-tim{tim}-{particle_index}-source",
+		f"results/data/{shot}-{los}-{particle_index}-source",
 		["x", "y", "images", "filtering", "energy"])
 	# fix this weird typing thing that I gess h5py does
 	if type(filterings[0]) is bytes:
@@ -1207,16 +1225,16 @@ def load_source(shot: str, tim: str, particle_index: str,
 			np.array_equal(energy_bounds[i], [energy_min, energy_max]):
 			return source_plane, source_stack[i, :, :].transpose()/1e-4**2  # remember to convert units and switch to (i,j) indexing
 	raise RecordNotFoundError(f"couldn’t find a {print_filtering(filter_stack)}, [{energy_min}, "
-	                          f"{energy_max}] k/MeV source for {shot}, tim{tim}, {particle_index}")
+	                          f"{energy_max}] k/MeV source for {shot}, {los}, {particle_index}")
 
 
-def load_shot_info(shot: str, tim: str,
+def load_shot_info(shot: str, los: str,
                    energy_min: Optional[float] = None,
                    energy_max: Optional[float] = None,
                    filter_str: Optional[str] = None) -> pd.Series:
 	""" load the summary.csv file and look for a row that matches the given criteria """
-	old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'tim': str})
-	matching_record = (old_summary["shot"] == shot) & (old_summary["tim"] == tim)
+	old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'los': str})
+	matching_record = (old_summary["shot"] == shot) & (old_summary["los"] == los)
 	if energy_min is not None:
 		matching_record &= np.isclose(old_summary["energy min"], energy_min)
 	if energy_max is not None:
@@ -1226,13 +1244,13 @@ def load_shot_info(shot: str, tim: str,
 	if np.any(matching_record):
 		return old_summary[matching_record].iloc[-1]
 	else:
-		raise RecordNotFoundError(f"couldn’t find {shot} TIM{tim} \"{filter_str}\" {energy_min}–{energy_max} cut in summary.csv")
+		raise RecordNotFoundError(f"couldn’t find {shot} {los} \"{filter_str}\" {energy_min}–{energy_max} cut in summary.csv")
 
 
-def load_filtering_info(shot: str, tim: str) -> str:
-	""" load the tim_info.txt file and grab and parse the filtering for the given TIM on the given shot """
+def load_filtering_info(shot: str, los: str) -> str:
+	""" load the los_info.csv file and grab and parse the filtering for the given LOS on the given shot """
 	current_shot = None
-	with open("input/tim_info.txt", "r") as f:
+	with open("input/los_info.csv", "r") as f:
 		for line in f:
 			header_match = re.fullmatch(r"^([0-9]{5,6}):\s*", line)
 			item_match = re.fullmatch(r"^\s+([0-9]+):\s*([0-9A-Za-z\[\]|/ ]+)\s*", line)
@@ -1240,20 +1258,21 @@ def load_filtering_info(shot: str, tim: str) -> str:
 				current_shot = header_match.group(1)
 			elif item_match:
 				current_tim, filtering = item_match.groups()
-				if current_shot == shot and current_tim == tim:
+				if current_shot == shot and current_tim == los:
 					return filtering
-	raise RecordNotFoundError(f"couldn’t find {shot} TIM{tim} filtering information in tim_info.txt")
+	raise RecordNotFoundError(f"couldn’t find {shot} {los} filtering information in los_info.csv")
 
 
-def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_points: NDArray[float]
-                       ) -> HexGridParameters:
-	""" take some points approximately arranged in a hexagonal grid and find its spacing,
+def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],
+                       nominal_spacing: float, grid_shape: str,
+                       ) -> GridParameters:
+	""" take some points approximately arranged in a hexagonal image_plane and find its spacing,
 	    orientation, and translational alignment
-	    :return: the 2×2 grid matrix that converts dimensionless [ξ, υ] to [x, y], and the x and y
-	             coordinates of one of the grid nodes
+	    :return: the 2×2 image_plane matrix that converts dimensionless [ξ, υ] to [x, y], and the x and y
+	             coordinates of one of the image_plane nodes
 	"""
 	if x_points.size < 1:
-		raise DataError("you can’t fit a grid to zero apertures.")
+		raise DataError("you can’t fit a image_plane to zero apertures.")
 	if x_points.size == 1:
 		return np.identity(2), x_points[0], y_points[0]
 
@@ -1265,8 +1284,8 @@ def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_point
 		else:
 			raise ValueError
 		matrix = nominal_spacing*transform
-		x0, y0 = fit_grid_alignment(x_points, y_points, matrix)
-		_, _, cost = snap_to_grid(x_points, y_points, matrix, x0, y0)
+		x0, y0 = fit_grid_alignment(x_points, y_points, grid_shape, matrix)
+		_, _, cost = snap_to_grid(x_points, y_points, grid_shape, matrix, x0, y0)
 		s0, s1 = linalg.svdvals(transform)
 		return cost + 1e-2*nominal_spacing**2*log(s0/s1)**2
 
@@ -1294,23 +1313,24 @@ def fit_grid_to_points(nominal_spacing: float, x_points: NDArray[float], y_point
 		                             bounds=[(0.8, 1.2), (angle - pi/6, angle + pi/6)])
 		transform = solution.x[0]*rotation_matrix(solution.x[1])
 
-	# either way, return the transform matrix with the best grid alinement
-	x0, y0 = fit_grid_alignment(x_points, y_points, nominal_spacing*transform)
+	# either way, return the transform matrix with the best image_plane alinement
+	x0, y0 = fit_grid_alignment(x_points, y_points, grid_shape, nominal_spacing*transform)
 	return transform, x0, y0
 
 
-def fit_grid_alignment(x_points, y_points, grid_matrix: NDArray[float]
+def fit_grid_alignment(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float]
                        ) -> Point:
-	""" take a bunch of points that are supposed to be in a grid structure with some known spacing
+	""" take a bunch of points that are supposed to be in a image_plane structure with some known spacing
 	    and orientation but unknown translational alignment, and return the alignment vector
 	    :param x_points: the x coordinate of each point
 	    :param y_points: the y coordinate of each point
-	    :param grid_matrix: the matrix that defines the grid scale and orientation.  for a horizontally-
-	                 oriented orthogonal hex grid, this should be [[s, 0], [0, s]] where s is the
+	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
+	    :param grid_matrix: the matrix that defines the image_plane scale and orientation.  for a horizontally-
+	                 oriented orthogonal hex image_plane, this should be [[s, 0], [0, s]] where s is the
 	                 distance from each aperture to its nearest neibor, but it can also encode
 	                 rotation and skew.  variations on the plain scaling work as 2d affine
 	                 transformations usually do.
-	    :return: the x and y coordinates of one of the grid nodes
+	    :return: the x and y coordinates of one of the image_plane nodes
 	"""
 	if np.linalg.det(grid_matrix) == 0:
 		return nan, nan
@@ -1326,27 +1346,28 @@ def fit_grid_alignment(x_points, y_points, grid_matrix: NDArray[float]
 	results = []
 	for ξ_offset in [0, 1/2]:
 		x0, y0 = [naive_x0, naive_y0] + grid_matrix@[ξ_offset, 0]
-		_, _, total_error = snap_to_grid(x_points, y_points, grid_matrix, x0, y0)
+		_, _, total_error = snap_to_grid(x_points, y_points, grid_shape, grid_matrix, x0, y0)
 		results.append((total_error, x0, y0))
 	total_error, x0, y0 = min(results)
 
 	return x0, y0
 
 
-def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float], grid_x0: float, grid_y0: float,
+def snap_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float], grid_x0: float, grid_y0: float,
                  ) -> tuple[NDArray[float], NDArray[float], float]:
-	""" take a bunch of points that are supposed to be in a grid structure with some known spacing,
+	""" take a bunch of points that are supposed to be in a image_plane structure with some known spacing,
 	    orientation, and translational alignment, and return where you think they really are; the
-	    output points will all be exactly on that grid.
+	    output points will all be exactly on that image_plane.
 	    :param x_points: the x coordinate of each point
 	    :param y_points: the y coordinate of each point
-	    :param grid_matrix: the matrix that defines the grid scale and orientation.  for a horizontally-
-	                 oriented orthogonal hex grid, this should be [[s, 0], [0, s]] where s is the
+	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
+	    :param grid_matrix: the matrix that defines the image_plane scale and orientation.  for a horizontally-
+	                 oriented orthogonal hex image_plane, this should be [[s, 0], [0, s]] where s is the
 	                 distance from each aperture to its nearest neibor, but it can also encode
 	                 rotation and skew.  variations on the plain scaling work as 2d affine
 	                 transformations usually do.
-	    :param grid_x0: the x coordinate of one grid node
-	    :param grid_y0: the y coordinate of one grid node
+	    :param grid_x0: the x coordinate of one image_plane node
+	    :param grid_y0: the y coordinate of one image_plane node
 	    :return: the new x coordinates, the new y coordinates, and the total squared distances from
 	             the old points to the new ones
 	"""
@@ -1357,17 +1378,17 @@ def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float], grid_x0: float
 	if isnan(grid_x0) or isnan(grid_y0):
 		return np.full(n, nan), np.full(n, nan), inf
 
-	# determine the size so you can iterate thru the grid nodes correctly
+	# determine the size so you can iterate thru the image_plane nodes correctly
 	spacing = np.linalg.norm(grid_matrix, ord=2)
 	image_size = np.max(np.hypot(x_points - grid_x0, y_points - grid_y0)) + spacing
 
-	# check each possible grid point and find the best fit
+	# check each possible image_plane point and find the best fit
 	x_fit = np.full(n, nan)
 	y_fit = np.full(n, nan)
 	errors = np.full(n, inf)
 	x_aps, y_aps = [], []
 	for i, (x, y) in enumerate(get_relative_aperture_positions(
-			1, grid_matrix, 0, image_size, grid_x0, grid_y0)):
+			grid_shape, 1, grid_matrix, 0, image_size, grid_x0, grid_y0)):
 		distances = np.hypot(x - x_points, y - y_points)
 		point_is_close_to_here = distances < errors
 		errors[point_is_close_to_here] = distances[point_is_close_to_here]
@@ -1388,7 +1409,7 @@ def snap_to_grid(x_points, y_points, grid_matrix: NDArray[float], grid_x0: float
 
 
 def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
-                        grid_parameters: Optional[HexGridParameters],
+                        grid_shape: str, grid_parameters: Optional[GridParameters],
                         region: list[Point], show_plots: bool,
                         ) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
@@ -1398,6 +1419,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	                      nearest center-to-center distance in a hexagonal array. a negative number
 	                      means the nearest center-to-center distance in a rectangular array. a 0
 	                      means that there is only one aperture.
+	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
 		:param region: the region in which to care about tracks
 	    :param show_plots: if False, overrides SHOW_CENTER_FINDING_CALCULATION
 	    :param grid_parameters: the previusly fit image array parameters, if any (the spacing, rotation, etc.)
@@ -1419,20 +1441,14 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		N_full, _, _ = np.histogram2d(
 			x_tracks, y_tracks, bins=(scan_plane.x.get_edges(), scan_plane.y.get_edges()))
 
-	elif filename.endswith(".pkl"):  # if it's a pickle file
-		with open(filename, "rb") as f:
-			x_edges, y_edges, N_full = pickle.load(f)
-		scan_plane = Grid.from_edge_array(x_edges, y_edges)
-
 	elif filename.endswith(".h5"):  # if it's an h5 file
-		with h5py.File(filename, "r") as f:
-			x_edges = f["x"][:]
-			y_edges = f["y"][:]
-			N_full = f["PSL_per_px"][:, :]
-		scan_plane = Grid.from_edge_array(x_edges, y_edges)
+		scan_plane, N_full = load_ip_scan_file(filename)
 
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
+
+	if scan_plane.x.range <= 2*r_nominal or scan_plane.y.range <= 2*r_nominal:
+		raise DataError("the scan is smaller than the nominal image size, so a reconstruction is probably not possible.")
 
 	# ask the user for help finding the center
 	if ASK_FOR_HELP:
@@ -1450,22 +1466,24 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	elif np.sum(N_clipd, where=np.isfinite(N_clipd)) == 0:
 		raise DataError("there are no tracks in this region.")
 
-	# if we don't have a good gess, do a scan
+	# if we don't have a good center gess, do a recursively narrowing scan
 	if x0 is None or y0 is None:
 		x0, y0 = scan_plane.x.center, scan_plane.y.center
-		scale = max(scan_plane.x.range, scan_plane.y.range)/2
-		while scale > .5*r_nominal:
-			best_umbra = -inf
-			x_scan = np.linspace(x0 - scale, x0 + scale, 7)
-			y_scan = np.linspace(y0 - scale, y0 + scale, 7)
+		scan_scale = max(scan_plane.x.range, scan_plane.y.range)/2
+		while scan_scale > .5*r_nominal:
+			net_radius = max(r_nominal, scan_scale*sqrt(2)/6)
+			best_umbra_at_this_scale = -inf
+			x_scan = np.linspace(x0 - scan_scale, x0 + scan_scale, 7)
+			y_scan = np.linspace(y0 - scan_scale, y0 + scan_scale, 7)
 			for x in x_scan:
 				for y in y_scan:
+					# we’re looking for the brightest umbra on the map
 					umbra_counts = np.nansum(
-						N_clipd, where=np.hypot(X_pixels - x, Y_pixels - y) < r_nominal)
-					if umbra_counts > best_umbra:
-						best_umbra = umbra_counts
+						N_clipd, where=np.hypot(X_pixels - x, Y_pixels - y) < net_radius)
+					if umbra_counts > best_umbra_at_this_scale:
+						best_umbra_at_this_scale = umbra_counts
 						x0, y0 = x, y
-			scale /= 6
+			scan_scale /= 6
 
 	# now that's squared away, find the largest 50% contures
 	R_pixels = np.hypot(X_pixels - x0, Y_pixels - y0)
@@ -1479,43 +1497,46 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	for contour in contours:
 		x_contour = np.interp(contour[:, 0], np.arange(scan_plane.x.num_bins), scan_plane.x.get_bins())
 		y_contour = np.interp(contour[:, 1], np.arange(scan_plane.y.num_bins), scan_plane.y.get_bins())
-		x0, y0, r_apparent = fit_circle(x_contour, y_contour)
+		x_apparent, y_apparent, r_apparent = fit_circle(x_contour, y_contour)
 		if 0.7*r_nominal < r_apparent < 1.3*r_nominal:  # check the radius to avoid picking up noise
 			extent = np.max(np.hypot(x_contour - x_contour[0], y_contour - y_contour[0]))
 			if extent > 0.8*r_apparent:  # circle is big enuff to use its data…
 				full = extent > 1.6*r_apparent  # …but is it complete enuff to trust its center
-				circles.append((x0, y0, r_apparent, full))
+				circles.append((x_apparent, y_apparent, r_apparent, full))
 
 	# convert the found circles into numpy arrays
-	x_circles = np.array([x for x, y, r, full in circles], dtype=float)
-	y_circles = np.array([y for x, y, r, full in circles], dtype=float)
+	x_circles_raw = np.array([x for x, y, r, full in circles], dtype=float)
+	y_circles_raw = np.array([y for x, y, r, full in circles], dtype=float)
 	circle_fullness = np.array([full for x, y, r, full in circles], dtype=bool)
 
 	# use a simplex algorithm to fit for scale and angle
 	if grid_parameters is not None:
 		grid_transform, grid_x0, grid_y0 = grid_parameters
-	elif x_circles.size > 0:
+	elif x_circles_raw.size > 0:
 		grid_transform, grid_x0, grid_y0 = fit_grid_to_points(
-			s_nominal, x_circles[circle_fullness], y_circles[circle_fullness])
+			x_circles_raw[circle_fullness], y_circles_raw[circle_fullness], s_nominal, grid_shape)
 	else:
-		grid_transform, grid_x0, grid_y0 = np.identity(2), 0, 0
+		grid_transform, grid_x0, grid_y0 = np.identity(2), x0, y0
 
-	# aline the circles to whatever grid you found
-	if x_circles.size > 0:
+	# aline the circles to whatever image_plane you found
+	if SNAP_IMAGES_TO_GRID and x_circles_raw.size > 0:
 		x_circles, y_circles, _ = snap_to_grid(
-			x_circles, y_circles, s_nominal*grid_transform, grid_x0, grid_y0)
+			x_circles_raw, y_circles_raw, grid_shape, s_nominal*grid_transform, grid_x0, grid_y0)
+	else:
+		x_circles, y_circles = x_circles_raw, y_circles_raw
 	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
 
+	print(grid_shape, s_nominal, grid_transform)
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
 		plt.imshow(N_full.T, extent=scan_plane.extent, origin="lower",
 		           vmin=0, vmax=np.quantile(N_full, .99), cmap=CMAP["coffee"])
 		θ = np.linspace(0, 2*pi, 145)
-		for x0, y0 in get_relative_aperture_positions(s_nominal, grid_transform, r_true, 10,
-		                                              grid_x0, grid_y0):
+		for x0, y0 in get_relative_aperture_positions(grid_shape, s_nominal, grid_transform,
+		                                              r_true, 10, grid_x0, grid_y0):
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
 			         "C0--", linewidth=1.2)
-		plt.scatter(x_circles, y_circles, np.where(circle_fullness, 30, 5),
+		plt.scatter(x_circles_raw, y_circles_raw, np.where(circle_fullness, 30, 5),
 		            c="C0", marker="x")
 		plt.contour(scan_plane.x.get_bins(), scan_plane.y.get_bins(), N_clipd.T,
 		            levels=[haff_density], colors="C6", linewidths=.6)

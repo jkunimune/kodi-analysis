@@ -85,28 +85,29 @@ def save_and_plot_radial_data(filename: str, show: bool,
 
 
 def save_and_plot_penumbra(filename: str, show: bool,
-                           grid: Optional[Grid],
+                           image_plane: Optional[Grid],
                            counts: Optional[NDArray[float]],
                            area: Optional[NDArray[int]],
                            energy_min: float, energy_max: float,
-                           s0: float, r0: float, array_transform: NDArray[float] = np.identity(2)):
+                           s0: float, r0: float, grid_shape: str,
+                           grid_transform: NDArray[float] = np.identity(2)):
 	""" plot the data along with the initial fit to it, and the reconstructed superaperture. """
 	save_as_hdf5(f'results/data/{filename}-penumbra',
-	             x=grid.x.get_edges(),
-	             y=grid.y.get_edges(),
+	             x=image_plane.x.get_edges(),
+	             y=image_plane.y.get_edges(),
 	             N=counts.T, A=area.T)  # save it with (y,x) indexing, not (i,j)
 
 	# while x_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
 	# 	x_bins, y_bins, N = resample_2d(x_bins, y_bins, N)
 
-	A_circle, A_square = np.pi*r0**2, grid.total_area
+	A_circle, A_square = np.pi*r0**2, image_plane.total_area
 	vmax = max(np.nanquantile(counts/area, (counts.size - 6)/counts.size),
 	           np.nanquantile(counts/area, 1 - A_circle/A_square/2)*1.25)
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	plt.imshow((counts/area).T, extent=grid.extent, origin="lower", cmap=CMAP["coffee"], vmax=vmax)
+	plt.imshow((counts/area).T, extent=image_plane.extent, origin="lower", cmap=CMAP["coffee"], vmax=vmax)
 	T = np.linspace(0, 2*np.pi)
 	if PLOT_THEORETICAL_50c_CONTOUR:
-		for dx, dy in get_relative_aperture_positions(s0, array_transform, r0, grid.x.half_range):
+		for dx, dy in get_relative_aperture_positions(grid_shape, s0, grid_transform, r0, image_plane.x.half_range):
 			plt.plot(dx + r0*np.cos(T), dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
 	if "deuteron" in filename:
@@ -144,10 +145,10 @@ def save_and_plot_penumbra(filename: str, show: bool,
 
 
 def save_and_plot_overlaid_penumbra(filename: str, show: bool,
-                                    grid: Grid, reconstruction: NDArray[float], measurement: NDArray[float]) -> None:
+                                    image_plane: Grid, reconstruction: NDArray[float], measurement: NDArray[float]) -> None:
 	save_as_hdf5(f'results/data/{filename}-penumbra-residual',
-	             x=grid.x.get_edges(),
-	             y=grid.y.get_edges(),
+	             x=image_plane.x.get_edges(),
+	             y=image_plane.y.get_edges(),
 	             z=(reconstruction - measurement).T)  # save it with (y,x) indexing, not (i,j)
 
 	# sometimes this is all nan, but we don't need to plot it
@@ -155,14 +156,14 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 		return
 
 	# resample the penumbral images to increase the bin size
-	while grid.num_pixels > MAX_NUM_PIXELS:
-		_, reconstruction = downsample_2d(grid, reconstruction)
-		grid, measurement = downsample_2d(grid, measurement)
+	while image_plane.num_pixels > MAX_NUM_PIXELS:
+		_, reconstruction = downsample_2d(image_plane, reconstruction)
+		image_plane, measurement = downsample_2d(image_plane, measurement)
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.imshow(((reconstruction - measurement)/reconstruction).T,
-	           extent=grid.extent, origin="lower",
-	           cmap='RdBu', vmin=-1/3, vmax=1/3)
+	           extent=image_plane.extent, origin="lower",
+	           cmap='RdBu', vmin=-1/6, vmax=1/6)
 	plt.axis('square')
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
@@ -171,8 +172,8 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	save_current_figure(f"{filename}-penumbra-residual")
 
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.plot(grid.x.get_bins(), reconstruction[:, reconstruction.shape[1]//2], "--", label="Reconstruction")
-	plt.plot(grid.x.get_bins(), measurement[:, measurement.shape[1]//2], "-o", label="Data")
+	plt.plot(image_plane.x.get_bins(), reconstruction[:, reconstruction.shape[1]//2], "--", label="Reconstruction")
+	plt.plot(image_plane.x.get_bins(), measurement[:, measurement.shape[1]//2], "-o", label="Data")
 	plt.legend()
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
@@ -183,13 +184,13 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 
 
 def plot_source(filename: str, show: bool,
-                grid: Grid, source: NDArray[float], contour_level: float,
+                source_plane: Grid, source: NDArray[float], contour_level: float,
                 energy_min: float, energy_max: float, color_index: int, num_colors: int,
                 projected_stalk_direction: tuple[float, float, float], num_stalks: int) -> None:
 	""" plot a single reconstructed deuteron/xray source
 	    :param filename: the name with which to save the resulting files, minus the fluff
 	    :param show: whether to make the user look at it
-	    :param grid: the coordinates that go with the brightness array (cm)
+	    :param source_plane: the coordinates that go with the brightness array (cm)
 	    :param source: the brightness of each pixel (d/cm^2/srad)
 	    :param contour_level: the value of the contour, relative to the peak, to draw around the source
 	    :param energy_min: the minimum energy being plotted (for the label)
@@ -206,8 +207,8 @@ def plot_source(filename: str, show: bool,
 	particle = re.search(r"-(xray|deuteron)", filename, re.IGNORECASE).group(1)
 
 	# choose the plot limits
-	grid = grid.scaled(1e+4)  # convert coordinates to μm
-	object_size, (r0, θ), _ = shape_parameters(grid, source, contour=.25)
+	source_plane = source_plane.scaled(1e+4)  # convert coordinates to μm
+	object_size, (r0, θ), _ = shape_parameters(source_plane, source, contour=.25)
 	object_size = nearest_value(2*object_size,
 	                            np.array([100, 250, 800, 2000]))
 	x0, y0 = r0*np.cos(θ), r0*np.sin(θ)
@@ -215,12 +216,12 @@ def plot_source(filename: str, show: bool,
 	# plot the reconstructed source image
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
-	plt.imshow(source.T, extent=grid.extent, origin="lower",
+	plt.imshow(source.T, extent=source_plane.extent, origin="lower",
 	           cmap=choose_colormaps(particle, num_colors)[int(color_index)],
 	           vmin=0, interpolation="bilinear")
 
 	if PLOT_SOURCE_CONTOUR:
-		plt.contour(grid.x.get_bins(), grid.y.get_bins(), source.T,
+		plt.contour(source_plane.x.get_bins(), source_plane.y.get_bins(), source.T,
 		            levels=[contour_level*np.max(source)], colors='#ddd', linestyles='solid', linewidths=1)
 	if PLOT_STALK:
 		x_stalk, y_stalk, _ = projected_stalk_direction
@@ -250,19 +251,19 @@ def plot_source(filename: str, show: bool,
 	j_lineout = np.argmax(np.sum(source, axis=0))
 	scale = 1/np.max(source[:, j_lineout])
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.plot(grid.x.get_bins(), source[:, j_lineout]*scale)
+	plt.plot(source_plane.x.get_bins(), source[:, j_lineout]*scale)
 
 	# and fit a curve to it if it's a "disc"
 	if "disc" in filename:
 		def blurred_boxcar(x, A, d):
 			return A*special.erfc((x - 100)/d/np.sqrt(2))*special.erfc(-(x + 100)/d/np.sqrt(2))/4
-		r_centers = np.hypot(*grid.get_pixels())
+		r_centers = np.hypot(*source_plane.get_pixels())
 		popt, pcov = cast(tuple[list, list], optimize.curve_fit(
 			blurred_boxcar,
 			r_centers.ravel(), source.ravel(),
 			[np.max(source), 10]))
 		logging.info(f"  1σ resolution = {popt[1]} μm")
-		plt.plot(grid.x.get_bins(), blurred_boxcar(grid.x.get_bins(), *popt)*scale, '--')
+		plt.plot(source_plane.x.get_bins(), blurred_boxcar(source_plane.x.get_bins(), *popt)*scale, '--')
 
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
@@ -382,7 +383,7 @@ def save_and_plot_morphologies(filename: str,
 
 
 def plot_overlaid_contores(filename: str,
-                           grid: Grid,
+                           source_plane: Grid,
                            images: Sequence[NDArray[float]],
                            contour_level: float,
                            projected_offset: tuple[float, float, float],
@@ -391,7 +392,7 @@ def plot_overlaid_contores(filename: str,
                            num_stalks: int) -> None:
 	""" plot the plot with the multiple energy cuts overlaid
 	    :param filename: the extensionless filename with which to save the figure
-	    :param grid: the coordinates of the pixels (cm)
+	    :param source_plane: the coordinates of the pixels (cm)
 	    :param images: a 3d array, which is a stack of all the x centers we have
 	    :param contour_level: the contour level in (0, 1) to plot
 	    :param projected_offset: the capsule offset from TCC in cm, given as (x, y, z)
@@ -400,8 +401,8 @@ def plot_overlaid_contores(filename: str,
 	    :param num_stalks: the number of stalks to draw: 0, 1, or 2
 	"""
 	# calculate the centroid of the highest energy bin
-	x0, y0 = center_of_mass(grid, images[-1])
-	grid = grid.shifted(-x0, -y0).scaled(1e+4)
+	x0, y0 = center_of_mass(source_plane, images[-1])
+	source_plane = source_plane.shifted(-x0, -y0).scaled(1e+4)
 
 	x_off, y_off, z_off = projected_offset
 	x_flo, y_flo, z_flo = projected_flow
@@ -414,7 +415,7 @@ def plot_overlaid_contores(filename: str,
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
 	for image, colormap in zip(images, colormaps):
 		color = saturate(*colormap.colors[-1], factor=2.0)
-		plt.contour(grid.x.get_bins(), grid.y.get_bins(),
+		plt.contour(source_plane.x.get_bins(), source_plane.y.get_bins(),
 		            image.T/np.max(image),
 		            levels=[contour_level], colors=[color], linewidths=[2])
 

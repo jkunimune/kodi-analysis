@@ -28,7 +28,7 @@ def main():
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir("..")
 
-	shot_table = pd.read_csv('input/shots.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+	shot_table = pd.read_csv('input/shot_info.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
 	reconstruction_table = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
 	emissions = []
 	temperatures = []
@@ -160,7 +160,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	plt.tight_layout()
 
 	# plot the temperature
-	tim_coordinates = coordinate.tim_coordinates(tim)
+	tim_coordinates = coordinate.los_coordinates(tim)
 	stalk_direction = coordinate.project(1., *coordinate.TPS_LOCATIONS[2], tim_coordinates)
 	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, basis,
 	                          temperature_map, emission_map, temperature_integrated,
@@ -293,7 +293,7 @@ def compute_plasma_conditions(measured_values: NDArray[float], ref_energies: NDA
 		unscaled_values, numerator, denominator = compute_model_with_optimal_scaling(best_βe)
 		best_εL = numerator/denominator*best_Te
 
-		return best_Te, best_εL, χ2
+		return best_Te, best_εL, χ2  # type: ignore
 	else:
 		return nan, nan, nan
 

@@ -1,0 +1,17 @@
+shot,         aperture radius, aperture spacing, aperture arrangement, yield,   TPS,  stalks, offset (r), offset (θ), offset (ф), flow (r), flow (θ), flow (ф)
+95519,        1000,              0,              single,               0.00e00, TPS2, 1
+95520,        1000,              0,              single,               1.20e13, TPS2, 1,      39.9,        80.3,       28.9,      57.13408, 102.8962,  56.3785
+95521,        1000,              0,              single,               1.14e13, TPS2, 1,      40.3,       101.4,      212.3,      69.11829, 117.4682, 191.7521
+95522,        1000,              0,              single,               1.14e13, TPS2, 1,       0.3,        84,           23
+95523,        1000,              0,              single,               4.16e12, TPS2, 1,      39.6,        79.7,       29.9
+95524,        1000,              0,              single,               2.60e12, TPS2, 1,      76.6,       115.5,      151.3
+104779,        202,            800,              hex,                  1.80e13, TPS2, 1
+104780,        202,            800,              hex,                  1.80e13, TPS2, 2
+104781,        202,            800,              hex,                  1.50e13, TPS2, 2
+104782,        202,            800,              hex,                  2.50e13, TPS2, 1
+104783,        202,            800,              hex,                  2.30e13, TPS2, 2
+107129,        150,            600,              hex
+107130,        150,            600,              hex
+107132,        150,            600,              hex
+ben,             0,              0,              hex,                  1.413e14
+synth-square, 1000,              0,              single

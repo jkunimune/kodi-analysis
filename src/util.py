@@ -4,7 +4,7 @@ import os
 import re
 import shutil
 import subprocess
-from math import pi, cos, sin, nan, sqrt, ceil
+from math import pi, cos, sin, nan, sqrt, ceil, hypot, radians
 from typing import Callable, Generator, Optional, Union
 
 import numpy as np
@@ -16,7 +16,7 @@ from skimage import measure
 
 from coordinate import Grid, LinSpace
 
-SMOOTHING = 100 # entropy weight
+SRTE_ANGLE = radians(45)
 
 
 Point = tuple[float, float]
@@ -44,8 +44,6 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 				filter_code = f"{thickness}{detector_type} " + filter_code[len(detector_code):]
 		# a slash indicates that there's an alternative to the previus filter
 		if filter_code[0] == "/":
-			if len(filter_stacks) > 1:
-				raise ValueError("this detector stack had multiple split filters?  idk what to do about that.  how did you aline them??")
 			filter_stacks.append(filter_stacks[0][:-1])
 			filter_code = filter_code[1:]
 		# whitespace is ignored
@@ -58,9 +56,9 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 				raise ValueError(f"I can't parse '{filter_code}'")
 			thickness, material = top_filter.group(1, 2)
 			thickness = float(thickness)
-			# etiher add it to the shorter one (if there was a slash recently)
-			if len(filter_stacks) == 2 and len(filter_stacks[1]) < len(filter_stacks[0]):
-				filter_stacks[1].append((thickness, material))
+			# etiher add it to the shortest one (if there was a slash recently)
+			if len(filter_stacks[-1]) < len(filter_stacks[0]):
+				filter_stacks[-1].append((thickness, material))
 			# or add it to all stacks that currently exist
 			else:
 				for filter_stack in filter_stacks:
@@ -86,6 +84,15 @@ def count_detectors(filter_code: str, detector: str) -> int:
 def print_filtering(filter_stack: list[Filter]) -> str:
 	""" encode a filter stack in a str that can be read by parse_filtering """
 	return " ".join(f"{thickness:.0f}{material}" for thickness, material in filter_stack)
+
+
+def name_filter_stacks(filter_stacks: list[list[Filter]]) -> list[str]:
+	""" find a human-readable way to uniquely identify each of a set of filter stacks to a human """
+	for i in range(min(len(filter_stack) for filter_stack in filter_stacks)):
+		filters = [filter_stack[i] for filter_stack in filter_stacks]
+		if all(filtre != filters[-1] for filtre in filters[:-1]):
+			return [f"{thickness:.0f}μm {material}" for thickness, material in filters]
+	raise ValueError("I can’t find a way to succinctly describe these filter stacks because they’re too similar.")
 
 
 def bin_centers(bin_edges: np.ndarray):
@@ -243,24 +250,34 @@ def inside_polygon(polygon: list[Point], x: np.ndarray, y: np.ndarray):
 	return num_crossings%2 == 1
 
 
-def get_relative_aperture_positions(spacing: float, transform: NDArray[float],
+def get_relative_aperture_positions(shape: str, spacing: float, transform: NDArray[float],
                                     r_img: float, r_max: float,
                                     x0: float = 0., y0: float = 0.
                                     ) -> Generator[Point, None, None]:
 	""" yield the positions of the individual penumbral images in the array relative
 		to the center, in the detector plane
 	"""
-	true_spacing = spacing*np.linalg.norm(transform, ord=2)
-	if true_spacing == 0:
-		yield x0, y0
+	# estimate how many images to yield
+	if shape == "single":
+		yield 0, 0
 	else:
+		true_spacing = spacing*np.linalg.norm(transform, ord=2)
 		n = ceil(r_max/true_spacing)
 		for i in range(-n, n + 1):
-			dυ = i*sqrt(3)/2
 			for j in range(-n, n + 1):
-				dξ = (2*j + i%2)/2
+				if shape == "square":
+					dξ, dυ = i, j
+				elif shape == "hex":
+					dξ, dυ = (2*i + j%2)/2, j*sqrt(3)/2
+				elif shape == "srte":
+					dξ0, dυ0 = (2*i + j%2)/2, j
+					dξ = dξ0*cos(SRTE_ANGLE) - dυ0*sin(SRTE_ANGLE)
+					dυ = dξ0*sin(SRTE_ANGLE) + dυ0*cos(SRTE_ANGLE)
+				else:
+					raise ValueError(f"unrecognized aperture arrangement: {shape!r} (must be "
+					                 f"'single', 'square', 'hex' or 'srte')")
 				dx, dy = spacing*transform@[dξ, dυ]
-				if np.hypot(dx, dy) + r_img <= r_max:
+				if hypot(dx, dy) + r_img <= r_max:
 					yield x0 + dx, y0 + dy
 
 

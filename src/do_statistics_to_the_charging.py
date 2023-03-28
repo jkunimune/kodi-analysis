@@ -15,8 +15,10 @@ M = 14
 L = 4.21*cm
 rA = 1000*μm
 
+
 def r2_to_std(r2):
 	return r2/np.sqrt(2*np.log(2))
+
 
 data = pd.read_csv("../images/summary.csv", dtype={'shot': str}) # start by reading the existing data or creating a new file
 good = data.shot.str.contains("9552") & (data.energy_cut != 'xray')
@@ -31,7 +33,7 @@ energy_max = energy_max_lookup_table[data.energy_cut]
 energy_min.index = energy_max.index = data.index
 data['energy (MeV)'] = (energy_min + energy_max)/2
 MLeσdz4πɛ0 = data.Q*cm*MeV # in SI
-data['TIM'] = data.tim
+data['TIM'] = [int(los[-1]) for los in data["los"]]
 data['energy (J)'] = data['energy (MeV)']*MeV
 data['time (s)'] = L/np.sqrt(2*data['energy (J)']/(2.014*Da))
 data['time (ns)'] = data['time (s)']/ns
@@ -58,5 +60,5 @@ print(output)
 
 output.to_csv('../images/charging_info.csv', index=False)
 
-plt.scatter(x=data['energy (MeV)'], y=data['Q (C/cm^2)'], c=data['tim'])
+plt.scatter(x=data['energy (MeV)'], y=data['Q (C/cm^2)'], c=data['TIM'])
 plt.show()

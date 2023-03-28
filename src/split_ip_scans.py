@@ -22,15 +22,11 @@ matplotlib.use("Qt5agg")
 
 
 SCAN_DIRECTORY = "../input/scans"
-TIM_SCAN_INFO_FILE = "../input/tim_info.txt"
 
 
 def main():
-	# first get info about the tims on each scan
-	tim_sets: dict[str, list[int]] = load_tims_fielded_on_each_shot()
-
-	# and the general shot info
-	shot_table = pd.read_csv("../input/shots.csv", index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+	# load the general shot info
+	los_table = pd.read_csv("../input/los_info.csv", dtype={"shot": str}, skipinitialspace=True)
 
 	# then search for scan files (most recent first)
 	for filename in reversed(os.listdir(SCAN_DIRECTORY)):
@@ -40,12 +36,9 @@ def main():
 			shot = re.search(r"s([0-9]+)", filename, re.IGNORECASE).group(1)
 			scan_index = int(re.search(r"_pcis([0-9+])", filename, re.IGNORECASE).group(1)) - 1
 
-			if shot not in tim_sets:
-				raise KeyError(f"please add {shot} to the tim_info.txt file in the scans directory")
-
 			with h5py.File(os.path.join(SCAN_DIRECTORY, filename), "r") as f:
 				dataset = f["PSL_per_px"]
-				image = dataset[:, :].transpose()
+				image = dataset[:, :].transpose()  # (PSL/pixel) (don’t forget to switch from i,j to x,y
 				scan_delay = dataset.attrs["scanDelaySeconds"]/60. # (min)
 				dx = dataset.attrs["pixelSizeX"]*1e-4 # (cm)
 				dy = dataset.attrs["pixelSizeY"]*1e-4 # (cm)
@@ -62,7 +55,7 @@ def main():
 			fig = plt.figure(figsize=(9, 5))
 			plt.imshow(image_reduc.T, extent=grid.extent,
 			           norm=colors.LogNorm(
-				           vmin=np.quantile(image_reduc[image_reduc != 0], .01),
+				           vmin=np.quantile(image_reduc[image_reduc != 0], .20),
 				           vmax=np.quantile(image_reduc, .99)),
 			           cmap=CMAP["spiral"], origin="lower")
 			plt.xlabel("x (cm)")
@@ -80,62 +73,43 @@ def main():
 			fig.canvas.mpl_connect('button_press_event', on_click)
 			plt.show()
 
-			try:
-				tim_set = tim_sets[shot][:]
-			except KeyError:
-				raise KeyError(f"please add shot {shot} to the input/scans/tim_info.txt file.")
-			try:
-				num_ip_positions = shot_table.loc[shot].filtering.count("|")
-			except KeyError: # TODO: I think this would be the place to load the filtering info
-				raise KeyError(f"please add shot {shot} to the input/shots.csv file.")
+			# figure out how many TIMs there are supposed to be and how many image plates are on each
+			tim_set: list[str] = []
+			num_ip_positions: list[int] = []
+			for _, tim in los_table[los_table.shot == shot].iterrows():
+				if tim.los != "srte":
+					tim_set.append(tim.los)
+					num_ip_positions.append(tim.filtering.count("|"))
+			if len(tim_set) == 0:
+				raise KeyError(f"please add shot {shot} to the input/scans/los_info.csv file.")
 
-			# then split it up
+			# then split the image along those lines
 			cut_positions = np.round(grid.x.get_index(sorted(cut_positions))).astype(int)
 			cut_intervals = []
 			for cut_index in range(1, len(cut_positions)):
 				if cut_positions[cut_index] - cut_positions[cut_index - 1] >= image.shape[1]/2:
-					cut_intervals.append((cut_positions[cut_index - 1], cut_positions[cut_index]))
+					cut_intervals.append((cut_positions[cut_index - 1], cut_positions[cut_index]))  # TODO: apparently I need to sort these by briteness
 
 			# and save each section with the correct filename
 			for cut_index, (start, end) in enumerate(cut_intervals):
-
-				if len(cut_intervals) == num_ip_positions:
+				# you have to infer whether each scan is a single TIM or a single detector position
+				if len(cut_intervals) == num_ip_positions[scan_index]:
 					tim = tim_set[scan_index]
 					ip_position = cut_index
 				elif len(cut_intervals) == len(tim_set):
 					tim = tim_set[cut_index]
 					ip_position = scan_index
 				else:
-					raise ValueError(f"I expected {len(tim_set)} TIMs with {num_ip_positions} IPs "
+					raise ValueError(f"I expected {len(tim_set)} LOSs with {num_ip_positions} IPs "
 					                 f"each, so I don't understand why there are {len(cut_intervals)} "
-					                 f"image plates in this scan.")
+					                 f"image plates in this scan ({filename}).")
 
-				new_filename = f"{shot}_tim{tim}_ip{ip_position}.h5"
+				new_filename = f"{shot}_{tim}_ip{ip_position}.h5"
 				with h5py.File(os.path.join(SCAN_DIRECTORY, new_filename), "w") as f:
 					f.attrs["scan_delay"] = scan_delay
 					f["x"] = grid.x.get_edges()[start:end + 1]
 					f["y"] = grid.y.get_edges()
-					f["PSL_per_px"] = image[start:end, :]
-
-
-def load_tims_fielded_on_each_shot() -> dict[str, list[int]]:
-	result = {}
-	try:
-		with open(TIM_SCAN_INFO_FILE, "r") as f:
-			for line in f:
-				header_match = re.fullmatch(r"([0-9]+):\s*", line)
-				item_match = re.fullmatch(r"\s+([0-9]+):.*", line)
-				if header_match:
-					current_shot = header_match.group(1)
-					result[current_shot] = []
-				elif item_match:
-					result[current_shot].append(int(item_match.group(1)))
-	except FileNotFoundError:
-		with open(TIM_SCAN_INFO_FILE, "w") as f:
-			f.write("96969:\n2\n4\n5")
-		raise FileNotFoundError("please fill out the tim_info.txt file in the scans directory")
-	else:
-		return result
+					f["PSL_per_px"] = image[start:end, :].T  # save it as i,j rather than x,y
 
 
 if __name__ == "__main__":

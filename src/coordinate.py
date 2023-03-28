@@ -1,54 +1,47 @@
-# coordinate.py - I assume I will have more coordinate system garbage code to put here soon.
+# coordinate.py - varius coordinate system math type stuff
 from math import cos, sin, ceil
 from typing import Sequence, Union
 
 import numpy as np
 from numpy.typing import NDArray
 
-TIM_LOCATIONS = {
-	1: [ 63.44, 126.00],
-	2: [ 37.38, 162.00],
-	3: [142.62, 342.00],
-	4: [ 63.44, 342.00],
-	5: [100.81, 270.00],
-	6: [ 63.44, 342.00],
-	'x': [90, 0],
-	'y': [90, 270],
-	'z': [0, 0],
-	'xy': [90, 315],
+NAMED_LOS = {
+	"TIM1": [ 63.44, 126.00],
+	"TIM2": [ 37.38, 162.00],
+	"TIM3": [142.62, 342.00],
+	"TIM4": [ 63.44, 342.00],
+	"TIM5": [100.81, 270.00],
+	"TIM6": [ 63.44, 342.00],
+	"SRTe": [100.70, 134.27],
+	"TPS2": [37.38, 90.00],
+	'x':    [90, 0],
+	'y':    [90, 270],
+	'z':    [0, 0],
+	'xy':   [90, 315],
+	'yz':   [45, 0],
+	'xz':   [45, 270],
 }
-# TIM_LOCATIONS = [
-# 	None,
-# 	[90, 0],
-# 	None,
-# 	[90, 90],
-# 	[1, 0],
-# 	None]
-for tim in list(TIM_LOCATIONS.keys()):
-	TIM_LOCATIONS[str(tim)] = TIM_LOCATIONS[tim]
-
-TPS_LOCATIONS = {
-	2: [37.38, 90.00],
-}
+for name in list(NAMED_LOS.keys()):
+	NAMED_LOS[name.lower()] = NAMED_LOS[name]
+	NAMED_LOS[name.upper()] = NAMED_LOS[name]
 
 
-def tim_coordinates(tim: Union[int, str]) -> NDArray[float]:
-	return orthogonal_basis(*TIM_LOCATIONS[tim])
+def los_coordinates(name: str) -> NDArray[float]:
+	""" return a 3×3 array whose collums are the i, j, and k unit vectors in this LOS’s coordinate system """
+	return orthogonal_basis(*NAMED_LOS[name])
 
 
-def tim_direction(tim: Union[int, str]) -> NDArray[float]:
-	return tim_coordinates(tim)[:, -1]
+def los_direction(name: str) -> NDArray[float]:
+	return los_coordinates(name)[:, -1]
 
 
-def tps_direction(tps: Union[int, str] = 2) -> NDArray[float]:
-	return orthogonal_basis(*TPS_LOCATIONS[tps])[:, -1]
+def tps_direction(tps: Union[int, str] = "2") -> NDArray[float]:
+	return orthogonal_basis(*NAMED_LOS[f"tps{tps}"])[:, -1]
 
 
 def orthogonal_basis(polar_angle: float, azimuthal_angle: float) -> NDArray[float]:
-	""" return a 3×3 array whose collums are the i, j, and k unit vectors in the TIM coordinate
-		system specified by the given spherical angles in degrees.
-		in the TIM coordinate system, k points away from TCC, and j points as close to [0, 0, 1] as possible.
-		in the TC coordinate system, i points toward 90-00, j points toward 90-90, and k points toward 00-00.
+	""" return a 3×3 array whose collums are the i, j, and k unit vectors in the coordinate system of the LOS specified
+		by the given spherical angles in degrees. k points away from TCC, and j points as close to [0, 0, 1] as possible.
 	"""
 	polar_angle, azimuthal_angle = np.radians([polar_angle, azimuthal_angle])
 
@@ -223,9 +216,9 @@ class Grid:
 
 
 if __name__ == '__main__':
-	tim2 = tim_direction(2)
-	tim4 = tim_direction(4)
-	tim5 = tim_direction(5)
+	tim2 = los_direction("tim2")
+	tim4 = los_direction("tim4")
+	tim5 = los_direction("tim5")
 	print(np.degrees(np.arccos(np.sum(tim2*tim4))))
 	print(np.degrees(np.arccos(np.sum(tim4*tim5))))
 	print(np.degrees(np.arccos(np.sum(tim5*tim2))))
