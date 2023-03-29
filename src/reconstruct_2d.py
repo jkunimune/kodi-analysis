@@ -31,11 +31,12 @@ from cmap import CMAP
 from coordinate import project, los_coordinates, rotation_matrix, Grid, NAMED_LOS, LinSpace
 from hdf5_util import load_hdf5, save_as_hdf5
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
-from util import center_of_mass, shape_parameters, find_intercept, fit_circle, resample_2d, \
+from util import center_of_mass, shape_parameters, find_intercept, fit_circle, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
 	line_search, quantile, bin_centers_and_sizes, periodic_mean, parse_filtering, \
 	print_filtering, Filter, count_detectors, compose_2x2_from_intuitive_parameters, \
-	decompose_2x2_into_intuitive_parameters, Interval, name_filter_stacks, crop_to_finite
+	decompose_2x2_into_intuitive_parameters, Interval, name_filter_stacks, crop_to_finite, shift_and_rotate, \
+	resample_and_rotate
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -315,10 +316,13 @@ def analyze_scan(input_filename: str,
 		sA = aperture_array.SRTE_APERTURE_SPACING
 		grid_shape = "srte"
 
-	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
-	filter_stacks = sorted(filter_stacks, key=lambda stack: detector.xray_energy_bounds(stack, .01)[0])
-	filter_stack_names = name_filter_stacks(filter_stacks)
 	num_detectors = count_detectors(filtering, detector_type)
+	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
+	filter_section_indices = np.argsort(np.argsort(
+		[detector.xray_energy_bounds(stack, .01)[0] for stack in filter_stacks]))
+	filter_section_names = name_filter_stacks(filter_stacks)
+	filter_sections = reversed(list(  # the reason we reverse this is that SRTe has its biggest filter section last
+		zip(filter_section_indices, filter_section_names, filter_stacks)))
 
 	# then iterate thru each filtering section
 	grid_parameters, source_plane = None, None
@@ -327,7 +331,7 @@ def analyze_scan(input_filename: str,
 	filter_strings: list[str] = []
 	energy_bounds: list[Interval] = []
 	indices: list[str] = []
-	for filter_section_index, (filter_section_name, filter_stack) in enumerate(zip(filter_stack_names, filter_stacks)):  # TODO: somehow I should make it start with the biggest filtering region of SRTe
+	for filter_section_index, filter_section_name, filter_stack in filter_sections:
 		# choose the energy cuts given the filtering and type of radiation
 		if particle == "deuteron":
 			energy_cuts = deuteron_energy_cuts  # these energy bounds are in MeV
@@ -353,7 +357,7 @@ def analyze_scan(input_filename: str,
 			logging.warning(e)
 		else:
 			source_stack += filter_section_sources
-			statistics += filter_section_statistics  # TODO: sort results by energy
+			statistics += filter_section_statistics
 			for energy_cut_index, statblock in enumerate(filter_section_statistics):
 				filter_strings.append(print_filtering(filter_stack))
 				energy_bounds.append((statblock["energy min"], statblock["energy max"]))
@@ -361,6 +365,14 @@ def analyze_scan(input_filename: str,
 
 	if len(source_stack) == 0:
 		raise DataError("well, that was pointless")
+
+	# sort the results by energy if you can
+	order = np.argsort([bound[0] for bound in energy_bounds])
+	source_stack = [source_stack[i] for i in order]
+	statistics = [statistics[i] for i in order]
+	filter_strings = [filter_strings[i] for i in order]
+	energy_bounds = [energy_bounds[i] for i in order]
+	indices = [indices[i] for i in order]
 
 	# finally, save the combined image set
 	save_as_hdf5(f"results/data/{shot}-{los}-{particle}-{detector_index}-source",
@@ -564,7 +576,7 @@ def analyze_scan_section_cut(input_filename: str,
                              shot: str, los: str, rA: float, sA: float, grid_shape: str,
                              M: float, L1: float, etch_time: Optional[float],
                              filter_stack: list[Filter], data_polygon: list[Point],
-                             array_transform: NDArray[float], centers: list[Point],
+                             grid_transform: NDArray[float], centers: list[Point],
                              cut_index: str, num_colors: int,
                              energy_min: float, energy_max: float,
                              output_plane: Optional[Grid],
@@ -585,7 +597,7 @@ def analyze_scan_section_cut(input_filename: str,
 	                         thickness in micrometers and its material. they should be ordered from TCC to detector.
 	    :param data_polygon: the polygon that separates this filtering section of the scan from regions that should be
 	                         ignored
-	    :param array_transform: a 2×2 matrix that specifies the orientation and skewness of the hexagonal aperture array
+	    :param grid_transform: a 2×2 matrix that specifies the orientation and skewness of the hexagonal aperture array
 	                            pattern on the detector
         :param centers: the list of center locations of penumbra that have been identified as good
         :param cut_index: a string that uniquely identifies this detector, filtering section, and energy cut, for a
@@ -670,47 +682,66 @@ def analyze_scan_section_cut(input_filename: str,
 			resolution = DEUTERON_RESOLUTION
 		else:
 			resolution = X_RAY_RESOLUTION
+		_, angle, _, _ = decompose_2x2_into_intuitive_parameters(grid_transform)
 		image_plane = Grid.from_size(radius=r_max, max_bin_width=(M - 1)*resolution, odd=True)
 
-		image_plicity = np.zeros(image_plane.shape, dtype=int)
-		image = np.zeros(image_plane.shape, dtype=float)
-		if input_filename.endswith(".cpsa"): # if it's a cpsa file
-			x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max) # load all track coordinates
-			for x_center, y_center in centers:
-				shifted_image_plane = image_plane.shifted(x_center, y_center)  # TODO: rotate according to the grid tilt?
-				local_image = np.histogram2d(x_tracks, y_tracks,
-				                             bins=(shifted_image_plane.x.get_edges(),
-				                                   shifted_image_plane.y.get_edges()))[0]
-				area = np.where(inside_polygon(
-					data_polygon, *shifted_image_plane.get_pixels()), 1, 0)
-				image += local_image*area
-				image_plicity += area
+		local_images = np.empty((len(centers),) + image_plane.shape, dtype=float)
 
-			# since PCIS CR-39 scans are saved like you’re looking toward TCC, do not rotate it
+		# if it's a cpsa file
+		if input_filename.endswith(".cpsa"):
+			x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max)  # load all track coordinates
+			for k, (x_center, y_center) in enumerate(centers):
+				# center them on the penumbra and rotate them to account for the grid
+				x_relative, y_relative = shift_and_rotate(x_tracks, y_tracks,
+				                                          -x_center, -y_center, -angle)
+				local_images[k, :, :] = np.histogram2d(x_relative, y_relative,
+				                                       bins=(image_plane.x.get_edges(),
+				                                             image_plane.y.get_edges()))[0]
 
-		elif input_filename.endswith(".h5"): # if it's an HDF5 file
+		elif input_filename.endswith(".h5"): # if it's a HDF5 file
 			scan_plane, scan = load_ip_scan_file(input_filename)
-
 			if scan_plane.pixel_width > image_plane.pixel_width:
 				logging.warning(f"The scan resolution of this image plate scan ({scan_plane.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
 				                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
 				                f"be zoomed and enhanced.")
-
-			for x_center, y_center in centers:
+			for k, (x_center, y_center) in enumerate(centers):
+				# center them on the penumbra and rotate them to account for the grid
 				shifted_image_plane = image_plane.shifted(x_center, y_center)
-				shifted_image = resample_2d(scan, scan_plane, shifted_image_plane) # resample to the chosen bin size
-				area = np.where(inside_polygon(data_polygon, *shifted_image_plane.get_pixels()), 1, 0)
-				image[area > 0] += shifted_image[area > 0]
-				image_plicity += area
-
-			if input_filename.endswith(".h5"):
-				# since image plates are flipped vertically before scanning, flip vertically
-				image_plane = image_plane.flipped_vertically()
-				image = image[:, ::-1]
-				image_plicity = image_plicity[:, ::-1]
+				local_images[k, :, :] = resample_and_rotate(scan, scan_plane, shifted_image_plane, -angle) # resample to the chosen bin size
 
 		else:
 			raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
+
+		# now you can combine them all
+		image = np.zeros(image_plane.shape, dtype=float)
+		image_plicity = np.zeros(image_plane.shape, dtype=int)
+		for k, (x_center, y_center) in enumerate(centers):
+			relative_polygon_x, relative_polygon_y = zip(*data_polygon)
+			relative_data_polygon = list(zip(*shift_and_rotate(
+				relative_polygon_x, relative_polygon_y, -x_center, -y_center, -angle)))
+			area = inside_polygon(relative_data_polygon, *image_plane.get_pixels())
+			image[area] += local_images[k, area]
+			image_plicity += area
+
+		if np.any(np.isnan(image)):
+			raise DataError("it appears that the specified data region extended outside of the image")
+
+		# finally, orient the penumbra correctly, so it’s like you’re looking toward TCC
+		if input_filename.endswith(".cpsa"):
+			# since PCIS CR-39 scans are saved like you’re looking toward TCC, do absolutely noting
+			pass
+		elif los.startswith("tim"):
+			# since XRIS image plates are flipped vertically before scanning, flip vertically
+			image_plane = image_plane.flipped_vertically()
+			image = image[:, ::-1]
+			image_plicity = image_plicity[:, ::-1]
+		elif los == "srte":
+			# since SRTe image plates are flipped horizontally before scanning, flip horizontally
+			image_plane = image_plane.flipped_horizontally()
+			image = image[::-1, :]
+			image_plicity = image_plicity[::-1, :]
+		else:
+			raise ValueError(f"please specify how image plates are oriented on {los}")
 
 	# if we’re skipping the reconstruction, just load the previus stacked penumbra
 	else:
@@ -727,7 +758,7 @@ def analyze_scan_section_cut(input_filename: str,
 
 	save_and_plot_penumbra(f"{shot}-{los}-{particle}-{cut_index}", show_plots,
 	                       image_plane, image, image_plicity, energy_min, energy_max,
-	                       r0=M*rA, s0=M*sA, grid_shape=grid_shape, grid_transform=array_transform)
+	                       r0=M*rA, s0=M*sA, grid_shape=grid_shape, grid_transform=grid_transform)
 
 	# now to apply the reconstruction algorithm!
 	if not skip_reconstruction:
@@ -743,7 +774,7 @@ def analyze_scan_section_cut(input_filename: str,
 		logging.info(f"  generating a {kernel_plane.shape} point spread function with Q={Q}")
 
 		# calculate the point-spread function
-		penumbral_kernel = point_spread_function(kernel_plane, Q, M*rA, array_transform,
+		penumbral_kernel = point_spread_function(kernel_plane, Q, M*rA, grid_transform,
 		                                         energy_min, energy_max) # get the dimensionless shape of the penumbra
 		if account_for_overlap:
 			raise NotImplementedError("I also will need to add more things to the kernel")
@@ -894,6 +925,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
 	"""
 	r_max = min(2*r0, s0/2)
+	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 
 	# either bin the tracks in radius
 	if filename.endswith(".cpsa"):  # if it's a cpsa file
@@ -905,6 +937,8 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 			r_tracks = np.minimum(r_tracks, np.hypot(x_tracks - x0, y_tracks - y0))
 		r_bins = np.linspace(0, r_max, min(200, int(np.sum(r_tracks <= r0)/1000)))
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
+		dn = np.sqrt(n) + 1
+		r, dr = bin_centers_and_sizes(r_bins)
 		histogram = True
 
 	# or rebin the cartesian bins in radius
@@ -912,23 +946,26 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		scan_plane, NC = load_ip_scan_file(filename)
 		XC, YC = scan_plane.get_pixels()
 		NC[~inside_polygon(region, XC, YC)] = 0
-		RC = np.full(scan_plane.shape, inf)
-		for x0, y0 in centers:
-			RC = np.minimum(RC, np.hypot(XC - x0, YC - y0))
+		interpolator = interpolate.RegularGridInterpolator(
+			(scan_plane.x.get_bins(), scan_plane.y.get_bins()), NC,
+			bounds_error=False, fill_value=0)
 		dr = (scan_plane.x.bin_width + scan_plane.y.bin_width)/2
+		dθ = 2*pi/θ.size
 		r_bins = np.linspace(0, r_max, int(r0/(dr*2)))
-		n, r_bins = np.histogram(RC, bins=r_bins, weights=NC)  # TODO: I think maybe I should use interpolation instead of binning here, because sometimes this profile looks wacky
+		r, dr = bin_centers_and_sizes(r_bins)
+		n = np.zeros(r.size)
+		for x0, y0 in centers:
+			n += r*dr*dθ*np.sum(interpolator((x0 + r*np.cos(θ), y0 + r*np.sin(θ))), axis=0)
+		dn = np.max(n)*.001*sqrt(r0)/np.sqrt(r)
 		histogram = False
 
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
-	r, dr = bin_centers_and_sizes(r_bins)
-	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 	A = np.zeros(r.size)
 	for x0, y0 in centers:
 		A += 2*pi*r*dr*np.mean(inside_polygon(region, x0 + r*np.cos(θ), y0 + r*np.sin(θ)), axis=0)
-	ρ, dρ = n/A, (np.sqrt(n) + 1)/A
+	ρ, dρ = n/A, dn/A
 	inside = A > 0
 	umbra, exterior = (r < 0.5*r0), (r > 1.8*r0)
 	if not np.any(inside & umbra):
@@ -1010,6 +1047,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		plt.axvline(r0, color="C3", linestyle="dashed")
 		plt.axvline(r_01, color="C4")
 		plt.xlim(0, r[-1])
+		plt.ylim(0, ρ_max*1.2)
 		plt.title("Matched this charged PSF to the radial lineout (close to confirm)")
 		plt.tight_layout()
 		plt.show()
@@ -1056,11 +1094,12 @@ def user_defined_region(filename, title, default=None, timeout=None) -> list[Poi
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
 
 	fig = plt.figure()
-	plt.pcolormesh(image_plane.x.get_edges(), image_plane.y.get_edges(), image.T,
-	               vmax=np.quantile(image, .99), cmap=CMAP["spiral"])
-	polygon, = plt.plot([], [], "k-")
+	plt.imshow(image.T, extent=image_plane.extent, origin="lower",
+	           vmin=np.quantile(image, 1 - pi/4), vmax=np.quantile(image, .999),
+	           cmap=CMAP["spiral"])
+	polygon, = plt.plot([], [], "k-", linewidth=1)
 	cap, = plt.plot([], [], "k:")
-	cursor, = plt.plot([], [], "ko")
+	cursor, = plt.plot([], [], "ko", markersize=2)
 	if default is not None:
 		default = np.concatenate([default[-1:], default[0:]])
 		default_polygon, = plt.plot(default[:, 0], default[:, 1], "k-", alpha=0.3)
@@ -1516,12 +1555,16 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		grid_transform, grid_x0, grid_y0 = np.identity(2), x0, y0
 
 	# aline the circles to whatever image_plane you found
+	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
 	if SNAP_IMAGES_TO_GRID and x_circles_raw.size > 0:
-		x_circles, y_circles, _ = snap_to_grid(  # TODO: exclude penumbra that are significantly misalined
+		x_circles, y_circles, _ = snap_to_grid(
 			x_circles_raw, y_circles_raw, grid_shape, s_nominal*grid_transform, grid_x0, grid_y0)
+		error = np.hypot(x_circles - x_circles_raw, y_circles - y_circles_raw)
+		outlying = error > max(r_true/2, 2*np.median(error))  # check for misplaced apertures if you do it like this
+		x_circles, y_circles = x_circles[~outlying], y_circles[~outlying]
 	else:
 		x_circles, y_circles = x_circles_raw, y_circles_raw
-	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
+		outlying = np.full(False, x_circles.size)
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
@@ -1531,11 +1574,13 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		for x0, y0 in aperture_array.positions(grid_shape, s_nominal, grid_transform,
 		                                       r_true, full_domain.diagonal, grid_x0, grid_y0):
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-			         "C0--", linewidth=1.2)
-		plt.scatter(x_circles_raw, y_circles_raw, np.where(circle_fullness, 30, 5),
-		            c="C0", marker="x")
+			         "#063", linestyle="solid", linewidth=1.2)
+			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
+			         "#3e7", linestyle="dashed", linewidth=1.2)
+		plt.scatter(x_circles_raw[~outlying], y_circles_raw[~outlying],
+		            np.where(circle_fullness[~outlying], 30, 5), c="#8ae", marker="x")
 		plt.contour(crop_domain.x.get_bins(), crop_domain.y.get_bins(), N_crop.T,
-		            levels=[haff_density], colors="C6", linewidths=.6)
+		            levels=[haff_density], colors="#fff", linewidths=.6)
 		plt.title("Located apertures marked with exes (close to confirm)")
 		plt.xlim(min(np.min(x_circles_raw), crop_domain.x.minimum),
 		         max(np.max(x_circles_raw), crop_domain.x.maximum))

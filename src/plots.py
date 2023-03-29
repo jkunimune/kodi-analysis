@@ -164,11 +164,11 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.imshow(((reconstruction - measurement)/reconstruction).T,
 	           extent=image_plane.extent, origin="lower",
-	           cmap='RdBu', vmin=-.2, vmax=.2)
+	           cmap='RdBu', vmin=-.3, vmax=.3)
 	plt.axis('square')
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	make_colorbar(-.2, .2, "(reconst. – data)/reconst.")
+	make_colorbar(-.3, .3, "(reconst. – data)/reconst.")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-residual")
 
@@ -268,7 +268,7 @@ def plot_source(filename: str, show: bool,
 
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
-	plt.xlim(x0 - object_size, y0 + object_size)
+	plt.xlim(x0 - object_size, x0 + object_size)
 	plt.ylim(0, 2)
 	plt.yscale("symlog", linthresh=1e-2, linscale=1/np.log(10))
 	plt.tight_layout()

@@ -4,17 +4,17 @@ import os
 import re
 import shutil
 import subprocess
-from math import pi, cos, sin, nan, sqrt
+from math import pi, cos, sin, nan, sqrt, ceil, atan2
 from typing import Callable, Optional, Union
 
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
 from numpy.typing import NDArray
-from scipy import optimize, integrate
+from scipy import optimize, integrate, interpolate
 from skimage import measure
 
-from coordinate import Grid, LinSpace
+from coordinate import Grid, LinSpace, rotation_matrix
 
 Point = tuple[float, float]
 Interval = tuple[float, float]
@@ -198,22 +198,29 @@ def downsample_2d(grid: Grid, image: NDArray[float]) -> tuple[Grid, NDArray[floa
 	return grid, reduced
 
 
-def resample_2d(image_old: NDArray[float], grid_old: Grid, grid_new: Grid):
-	""" apply new bins to a 2d function, preserving quality and accuraccy as much as possible.
-	    the result will sum to the same number as the old one.
+def resample_and_rotate(image_old: NDArray[float], grid_old: Grid, grid_new: Grid, angle: float):
+	""" apply new bins to a 2d function, preserving quality and accuraccy as much as possible, and
+	    also rotate it about the new grid’s center by some number of radians. the result will sum
+	    to the same number as the old one.
 	"""
 	# convert to densities
 	ρ_old = image_old/grid_old.pixel_area
-	λ = max(grid_old.pixel_width, grid_new.pixel_width)
-	# do this bilinear-type-thing
-	kernel_x = np.maximum(0, (1 - abs(
-		grid_new.x.get_bins()[:, np.newaxis] - grid_old.x.get_bins()[np.newaxis, :])/λ))
-	kernel_x /= np.expand_dims(np.sum(kernel_x, axis=1), axis=1)
-	ρ_mid = np.matmul(kernel_x, ρ_old)
-	kernel_y = np.maximum(0, (1 - abs(
-		grid_new.y.get_bins()[:, np.newaxis] - grid_old.y.get_bins()[np.newaxis, :])/λ))
-	kernel_y /= np.expand_dims(np.sum(kernel_y, axis=1), axis=1)
-	ρ_new = np.matmul(kernel_y, ρ_mid.transpose()).transpose()
+	# make an interpolator
+	f_old = interpolate.RegularGridInterpolator((grid_old.x.get_bins(), grid_old.y.get_bins()), ρ_old,
+	                                            method="nearest", bounds_error=False)
+	# decide what points to sample
+	sampling = max(3, ceil(2*grid_new.pixel_width/grid_old.pixel_width))
+	dx = grid_new.x.bin_width*np.linspace(-1/2, 1/2, 2*sampling + 1)[1:-1:2]
+	dy = grid_new.y.bin_width*np.linspace(-1/2, 1/2, 2*sampling + 1)[1:-1:2]
+	dx, dy = np.meshgrid(dx, dy, indexing="ij")
+	x0, y0 = grid_new.x.center, grid_new.y.center
+	x_new, y_new = grid_new.get_pixels(sparse=True)
+	x_new = x_new[:, :, np.newaxis, np.newaxis] + dx[np.newaxis, np.newaxis, :, :]
+	y_new = y_new[:, :, np.newaxis, np.newaxis] + dy[np.newaxis, np.newaxis, :, :]
+	x_old =  cos(angle)*(x_new - x0) + sin(angle)*(y_new - y0) + x0
+	y_old = -sin(angle)*(x_new - x0) + cos(angle)*(y_new - y0) + y0
+	# interpolate and sum along the sampling axes
+	ρ_new = np.mean(f_old((x_old, y_old)), axis=(2, 3))
 	# convert back to counts
 	image_new = ρ_new*grid_new.pixel_area
 	return image_new
@@ -248,6 +255,7 @@ def inside_polygon(polygon: list[Point], x: np.ndarray, y: np.ndarray):
 
 
 def crop_to_finite(domain: Grid, values: NDArray[float]) -> tuple[Grid, NDArray[float]]:
+	""" crop an image to the smallest rectangular region containing all finite pixels """
 	i_min = np.min(np.nonzero(np.any(np.isfinite(values), axis=1)))
 	i_max = np.max(np.nonzero(np.any(np.isfinite(values), axis=1))) + 1
 	j_min = np.min(np.nonzero(np.any(np.isfinite(values), axis=0)))
@@ -283,18 +291,40 @@ def cumul_pointspread_function_matrix(r_source, r_image, r_pointspread_ref, f_po
 	return res
 
 
+def shift_and_rotate(x: NDArray[float], y: NDArray[float],
+                     x_shift: float, y_shift: float, rotation: float) -> tuple[NDArray[float], NDArray[float]]:
+	""" take a set of x coordinates of any shape and a set of y coordinates of the same shape, and convert them to
+	    another coordinate system defined by shifting them and then rotating them about the new origin.
+	"""
+	x_new, y_new = np.ravel(x), np.ravel(y)
+	x_new, y_new = x_new + x_shift, y_new + y_shift
+	x_new, y_new = rotation_matrix(rotation)@[x_new, y_new]
+	return x_new.reshape(np.shape(x)), y_new.reshape(np.shape(y))
+
+
 def decompose_2x2_into_intuitive_parameters(matrix: NDArray[float]
                                             ) -> tuple[float, float, float, float]:
-	""" take an array and decompose it into four scalars that uniquely define it """
+	""" take an array and decompose it into four scalars that uniquely define it:
+	    a magnitude, a rotation, a skewness, and a skewness direction
+	"""
 	if matrix.shape != (2, 2):
 		raise ValueError("the word 2x2 is in the name of the function, my dude.")
-	U, (σ1, σ2), VT = np.linalg.svd(matrix)
+	L, (σ1, σ2), R = np.linalg.svd(matrix)
+	# deal with these sign degeneracies
+	if L[1, 0] != -L[0, 1]:
+		L[:, 1] *= -1
+		R[1, :] *= -1
+	if np.dot(L[0, :], R[:, 0]) < 0:
+		L, R = -L, -R
 	scale = sqrt(σ1*σ2)
 	skew = 1 - σ2/σ1
-	left_angle = np.arcsin(U[1, 0])
-	rite_angle = np.arcsin(VT[0, 1])
+	left_angle = atan2(L[1, 0], L[0, 0])
+	rite_angle = atan2(R[1, 0], R[0, 0])
 	angle = left_angle + rite_angle
+	if angle < -pi:
+		angle += 2*pi
 	skew_angle = left_angle - rite_angle
+	assert abs(angle) < pi
 	return scale, angle, skew, skew_angle
 
 
@@ -310,7 +340,7 @@ def compose_2x2_from_intuitive_parameters(scale: float, angle: float, skew: floa
 	              [sin(left_angle),  cos(left_angle)]])
 	V = np.array([[cos(rite_angle), -sin(rite_angle)],
 	              [sin(rite_angle),  cos(rite_angle)]])
-	return U @ Σ @ V.T
+	return U @ Σ @ V
 
 
 def covariance_from_harmonics(p0, p1, θ1, p2, θ2):
