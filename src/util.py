@@ -4,7 +4,7 @@ import os
 import re
 import shutil
 import subprocess
-from math import pi, cos, sin, nan, sqrt, ceil, atan2
+from math import pi, cos, sin, nan, sqrt, ceil, atan2, copysign
 from typing import Callable, Optional, Union
 
 import numpy as np
@@ -287,7 +287,7 @@ def cumul_pointspread_function_matrix(r_source, r_image, r_pointspread_ref, f_po
 	r_image, r_source, θ = np.meshgrid(r_image, r_source, θ, indexing="ij", sparse=True)
 	r_pointspread = np.hypot(r_image + r_source*np.cos(θ), r_source*np.sin(θ))
 	f_pointspread = np.interp(r_pointspread, r_pointspread_ref, f_pointspread_ref)
-	res = integrate.trapezoid(f_pointspread, θ, axis=2)
+	res = integrate.trapezoid(f_pointspread, θ, axis=2)  # TODO: this approximation breaks down for non-penumbral images
 	return res
 
 
@@ -321,8 +321,8 @@ def decompose_2x2_into_intuitive_parameters(matrix: NDArray[float]
 	left_angle = atan2(L[1, 0], L[0, 0])
 	rite_angle = atan2(R[1, 0], R[0, 0])
 	angle = left_angle + rite_angle
-	if angle < -pi:
-		angle += 2*pi
+	if abs(angle) > pi:
+		angle -= copysign(2*pi, angle)
 	skew_angle = left_angle - rite_angle
 	assert abs(angle) < pi
 	return scale, angle, skew, skew_angle

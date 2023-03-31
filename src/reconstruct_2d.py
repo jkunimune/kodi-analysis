@@ -49,13 +49,13 @@ SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
 PROTON_ENERGY_CUTS = [(0, (0, inf))]
-NORMAL_DEUTERON_ENERGY_CUTS = [(0, (0, 6)), (2, (9, 12.5)), (1, (6, 9))] # (MeV) (emitted, not detected)
+NORMAL_DEUTERON_ENERGY_CUTS = [(2, (9, 12.5)), (0, (0, 6)), (1, (6, 9))] # (MeV) (emitted, not detected)
 FINE_DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
                              (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
-SUPPORTED_FILETYPES = [".h5"]
+SUPPORTED_FILETYPES = [".cpsa", ".h5"]
 
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
-SNAP_IMAGES_TO_GRID = True  # whether to assume the aperture array is perfect and use that when locating images
+SNAP_IMAGES_TO_GRID = False  # whether to assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
 DEUTERON_RESOLUTION = 5e-4  # resolution of reconstructed KoD sources
 X_RAY_RESOLUTION = 2e-4  # spatial resolution of reconstructed x-ray sources
@@ -65,7 +65,7 @@ MIN_OBJECT_SIZE = 100e-4  # minimum amount of space to allocate in the source pl
 MAX_OBJECT_PIXELS = 250  # maximum size of the source array to use in reconstructions
 MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
 MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
-MAX_CONTRAST = 45.  # contrast cut to apply in CR-39 data
+MAX_CONTRAST = 50.  # contrast cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
 MIN_DETECTABLE_ENERGY = 0.5  # lowest energy deuteron we think we can see on CR-39
 
@@ -524,14 +524,13 @@ def analyze_scan_section(input_filename: str,
 		centers, grid_transform = find_circle_centers(
 			input_filename, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon, show_plots)
 		new_grid_parameters = (grid_transform, centers[0][0], centers[0][1])
-		grid_major_scale, grid_minor_scale = linalg.svdvals(grid_transform)
-		grid_mean_scale = sqrt(grid_major_scale*grid_minor_scale)
+		grid_mean_scale, grid_angle, grid_skew, _ = decompose_2x2_into_intuitive_parameters(grid_transform)
 		# update the magnification to be based on this check
-		grid_transform = grid_transform/grid_mean_scale
 		M = M_gess*grid_mean_scale
-		logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f})")
-		if grid_major_scale/grid_minor_scale > 1.01:
-			logging.info(f"detected an aperture array skewness of {grid_major_scale/grid_minor_scale - 1:.3f}")
+		grid_transform = grid_transform/grid_mean_scale
+		logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f}) and angle of {degrees(grid_angle):.2f}°")
+		if grid_skew > .01:
+			logging.info(f"detected an aperture array skewness of {grid_skew - 1:.3f}")
 
 	# or if we’re skipping the reconstruction, just set up some default values
 	else:
@@ -725,6 +724,8 @@ def analyze_scan_section_cut(input_filename: str,
 
 		if np.any(np.isnan(image)):
 			raise DataError("it appears that the specified data region extended outside of the image")
+		elif particle == "deuteron" and np.sum(image) < 1e+3:
+			raise DataError("Not enuff tracks to reconstuct")
 
 		# finally, orient the penumbra correctly, so it’s like you’re looking toward TCC
 		if input_filename.endswith(".cpsa"):
@@ -924,7 +925,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	    :param show_plots: if False, overrides SHOW_ELECTRIC_FIELD_CALCULATION
 	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
 	"""
-	r_max = min(2*r0, s0/2)
+	r_max = s0/2 if s0 != 0 else 2*r0
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 
 	# either bin the tracks in radius
@@ -935,11 +936,13 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		r_tracks = np.full(np.count_nonzero(valid), inf)
 		for x0, y0 in centers:
 			r_tracks = np.minimum(r_tracks, np.hypot(x_tracks - x0, y_tracks - y0))
-		r_bins = np.linspace(0, r_max, min(200, int(np.sum(r_tracks <= r0)/1000)))
+		r_bins = np.linspace(0, r_max, max(12, min(200, int(np.sum(r_tracks <= r0)/1000))))
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
 		dn = np.sqrt(n) + 1
 		r, dr = bin_centers_and_sizes(r_bins)
 		histogram = True
+		if np.sum(n) < 1e+3:
+			raise DataError("Not enuff tracks to reconstuct")
 
 	# or rebin the cartesian bins in radius
 	elif filename.endswith(".h5"):  # if it's an HDF5 file
@@ -951,7 +954,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 			bounds_error=False, fill_value=0)
 		dr = (scan_plane.x.bin_width + scan_plane.y.bin_width)/2
 		dθ = 2*pi/θ.size
-		r_bins = np.linspace(0, r_max, int(r0/(dr*2)))
+		r_bins = np.linspace(0, r_max, int(r_max/(dr*2)))
 		r, dr = bin_centers_and_sizes(r_bins)
 		n = np.zeros(r.size)
 		for x0, y0 in centers:
@@ -966,18 +969,20 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	for x0, y0 in centers:
 		A += 2*pi*r*dr*np.mean(inside_polygon(region, x0 + r*np.cos(θ), y0 + r*np.sin(θ)), axis=0)
 	ρ, dρ = n/A, dn/A
-	inside = A > 0
-	umbra, exterior = (r < 0.5*r0), (r > 1.8*r0)
-	if not np.any(inside & umbra):
+	valid = A > 0
+	if not np.any(valid):
+		raise DataError("none of the found penumbrums are anywhere near the data region.")
+	inside_umbra, outside_penumbra = (r < 0.5*r0), (r > r[np.nonzero(valid)[0][-1]] - 0.2*r0)
+	if not np.any(valid & inside_umbra):
 		plt.figure()
 		plt.plot(r, A)
 		plt.axvline(0.5*r0)
 		plt.show()
 		raise DataError("the whole inside of the image is clipd for some reason.")
-	if not np.any(inside & exterior):
+	if not np.any(valid & outside_penumbra):
 		raise DataError("too much of the image is clipd; I need a background region.")
-	ρ_max = np.average(ρ[inside], weights=np.where(umbra, 1/dρ**2, 0)[inside])
-	ρ_min = np.average(ρ[inside], weights=np.where(exterior, 1/dρ**2, 0)[inside])
+	ρ_max = np.average(ρ[valid], weights=np.where(inside_umbra, 1/dρ**2, 0)[valid])
+	ρ_min = np.average(ρ[valid], weights=np.where(outside_penumbra, 1/dρ**2, 0)[valid])
 	n_background = np.mean(n, where=r > 1.8*r0)
 	dρ2_background = np.var(ρ, where=r > 1.8*r0)
 	domain = r > r0/2
@@ -985,7 +990,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
 
 	# now compute the relation between spherical radius and image radius
-	r_sph_bins = r_bins[:r_bins.size//2:2]
+	r_sph_bins = r_bins[r_bins <= r0][::2]
 	r_sph = bin_centers(r_sph_bins)  # TODO: this should be reritten to use the Linspace class
 	sphere_to_plane = abel_matrix(r_sph_bins)
 	# do this nested 1d reconstruction
@@ -1012,11 +1017,14 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		# 	source_size, background = r_sph[-1]/36, 0
 		# profile = np.concatenate([np.exp(-r_sph**2/(2*source_size**2)), [background]])
 		reconstruction = forward_matrix@profile
-		χ2 = -np.sum(n*np.log(reconstruction))
+		if histogram:
+			χ2 = -np.sum(n*np.log(reconstruction))
+		else:
+			χ2 = np.sum(((n - reconstruction)/dn)**2)
 		if return_other_stuff:
 			return χ2, profile[:-1], reconstruction
 		else:
-			return χ2
+			return χ2  # type: ignore
 
 	if isfinite(diameter_min):
 		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e-0, 1e-3, 0)
@@ -1030,8 +1038,6 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		plt.figure()
 		plt.plot(r_sph, n_sph)
 		plt.xlim(0, quantile(r_sph, .999, n_sph*r_sph**2))
-		# plt.yscale("log")
-		# plt.ylim(n_sph.max()*2e-3, n_sph.max()*2e+0)
 		plt.xlabel("Magnified spherical radius (cm)")
 		plt.ylabel("Emission")
 		plt.tight_layout()
@@ -1047,7 +1053,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		plt.axvline(r0, color="C3", linestyle="dashed")
 		plt.axvline(r_01, color="C4")
 		plt.xlim(0, r[-1])
-		plt.ylim(0, ρ_max*1.2)
+		plt.ylim(0, 1.15*max(ρ_max, np.max(ρ_recon)))
 		plt.title("Matched this charged PSF to the radial lineout (close to confirm)")
 		plt.tight_layout()
 		plt.show()
@@ -1553,18 +1559,23 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 			x_circles_raw[circle_fullness], y_circles_raw[circle_fullness], s_nominal, grid_shape)
 	else:
 		grid_transform, grid_x0, grid_y0 = np.identity(2), x0, y0
+	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
 
 	# aline the circles to whatever image_plane you found
-	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
+	x_grid_nodes, y_grid_nodes, _ = snap_to_grid(
+		x_circles_raw, y_circles_raw, grid_shape, s_nominal*grid_transform, grid_x0, grid_y0)
 	if SNAP_IMAGES_TO_GRID and x_circles_raw.size > 0:
-		x_circles, y_circles, _ = snap_to_grid(
-			x_circles_raw, y_circles_raw, grid_shape, s_nominal*grid_transform, grid_x0, grid_y0)
-		error = np.hypot(x_circles - x_circles_raw, y_circles - y_circles_raw)
-		outlying = error > max(r_true/2, 2*np.median(error))  # check for misplaced apertures if you do it like this
-		x_circles, y_circles = x_circles[~outlying], y_circles[~outlying]
+		error = np.hypot(x_grid_nodes - x_circles_raw, y_grid_nodes - y_circles_raw)
+		valid = error < max(r_true/2, 2*np.median(error))  # check for misplaced apertures if you do it like this
+		x_circles, y_circles = x_grid_nodes, y_grid_nodes
 	else:
+		valid = np.full(len(circles), True)
 		x_circles, y_circles = x_circles_raw, y_circles_raw
-		outlying = np.full(False, x_circles.size)
+
+	# remove duplicates
+	for i in range(len(circles) - 1, -1, -1):
+		if np.any((x_grid_nodes[:i] == x_grid_nodes[i]) & (y_grid_nodes[:i] == y_grid_nodes[i])):
+			valid[i] = False
 
 	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
@@ -1577,8 +1588,8 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 			         "#063", linestyle="solid", linewidth=1.2)
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
 			         "#3e7", linestyle="dashed", linewidth=1.2)
-		plt.scatter(x_circles_raw[~outlying], y_circles_raw[~outlying],
-		            np.where(circle_fullness[~outlying], 30, 5), c="#8ae", marker="x")
+		plt.scatter(x_circles_raw[valid], y_circles_raw[valid],
+		            np.where(circle_fullness[valid], 30, 5), c="#8ae", marker="x")
 		plt.contour(crop_domain.x.get_bins(), crop_domain.y.get_bins(), N_crop.T,
 		            levels=[haff_density], colors="#fff", linewidths=.6)
 		plt.title("Located apertures marked with exes (close to confirm)")
@@ -1592,7 +1603,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	if len(circles) == 0:  # TODO: check for duplicate centers (tho I think they should be rare and not too big a problem)
 		raise DataError("I couldn't find any circles in this region")
 
-	return [(x, y) for x, y in zip(x_circles, y_circles)], grid_transform
+	return [(x, y) for x, y in zip(x_circles[valid], y_circles[valid])], grid_transform
 
 
 if __name__ == '__main__':

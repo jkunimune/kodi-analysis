@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 
 from util import Point
 
-SRTE_APERTURE_RADIUS = 66e-4
+SRTE_APERTURE_RADIUS = 65e-4
 SRTE_APERTURE_SPACING = 819.912e-4
 
 
