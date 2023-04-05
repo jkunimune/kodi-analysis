@@ -1,6 +1,6 @@
 import logging
 import re
-from math import pi
+from math import pi, cos, sin, sqrt, log
 from typing import cast, Optional, Sequence, Union
 
 import matplotlib
@@ -101,12 +101,12 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	# while x_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
 	# 	x_bins, y_bins, N = resample_2d(x_bins, y_bins, N)
 
-	A_circle, A_square = np.pi*r0**2, image_plane.total_area
+	A_circle, A_square = pi*r0**2, image_plane.total_area
 	vmax = max(np.nanquantile(counts/area, (counts.size - 6)/counts.size),
 	           np.nanquantile(counts/area, 1 - A_circle/A_square/2)*1.25)
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.imshow((counts/area).T, extent=image_plane.extent, origin="lower", cmap=CMAP["coffee"], vmax=vmax)
-	T = np.linspace(0, 2*np.pi)
+	T = np.linspace(0, 2*pi)
 	if PLOT_THEORETICAL_50c_CONTOUR:
 		for dx, dy in aperture_array.positions(grid_shape, s0, grid_transform, r0, image_plane.x.half_range):
 			plt.plot(dx + r0*np.cos(T), dy + r0*np.sin(T), 'k--')
@@ -212,7 +212,7 @@ def plot_source(filename: str, show: bool,
 	object_size, (r0, θ), _ = shape_parameters(source_plane, source, contour=.25)
 	object_size = nearest_value(2*object_size,
 	                            np.array([100, 250, 800, 2000]))
-	x0, y0 = r0*np.cos(θ), r0*np.sin(θ)
+	x0, y0 = r0*cos(θ), r0*sin(θ)
 
 	# plot the reconstructed source image
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
@@ -257,7 +257,7 @@ def plot_source(filename: str, show: bool,
 	# and fit a curve to it if it's a "disc"
 	if "disc" in filename:
 		def blurred_boxcar(x, A, d):
-			return A*special.erfc((x - 100)/d/np.sqrt(2))*special.erfc(-(x + 100)/d/np.sqrt(2))/4
+			return A*special.erfc((x - 100)/d/sqrt(2))*special.erfc(-(x + 100)/d/sqrt(2))/4
 		r_centers = np.hypot(*source_plane.get_pixels())
 		popt, pcov = cast(tuple[list, list], optimize.curve_fit(
 			blurred_boxcar,
@@ -270,7 +270,7 @@ def plot_source(filename: str, show: bool,
 	plt.ylabel("Intensity (normalized)")
 	plt.xlim(x0 - object_size, x0 + object_size)
 	plt.ylim(0, 2)
-	plt.yscale("symlog", linthresh=1e-2, linscale=1/np.log(10))
+	plt.yscale("symlog", linthresh=1e-2, linscale=1/log(10))
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source-lineout")
 
@@ -426,7 +426,7 @@ def plot_overlaid_contores(filename: str,
 		plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k',
 		          head_width=5, head_length=5, length_includes_head=True)
 		plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(
-			z_off/np.sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/np.sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
+			z_off/sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
 		         verticalalignment='top', transform=plt.gca().transAxes)
 	elif PLOT_STALK:
 		if num_stalks == 1:

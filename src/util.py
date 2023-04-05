@@ -317,22 +317,24 @@ def decompose_2x2_into_intuitive_parameters(matrix: NDArray[float]
 	if np.dot(L[0, :], R[:, 0]) < 0:
 		L, R = -L, -R
 	scale = sqrt(σ1*σ2)
-	skew = 1 - σ2/σ1
+	skew = σ1/σ2 - 1
 	left_angle = atan2(L[1, 0], L[0, 0])
 	rite_angle = atan2(R[1, 0], R[0, 0])
 	angle = left_angle + rite_angle
+	skew_angle = left_angle - rite_angle
 	if abs(angle) > pi:
 		angle -= copysign(2*pi, angle)
-	skew_angle = left_angle - rite_angle
-	assert abs(angle) < pi
+	if abs(skew_angle) > pi:
+		skew_angle -= copysign(2*pi, skew_angle)
+	assert abs(angle) < pi and abs(skew_angle) < pi
 	return scale, angle, skew, skew_angle
 
 
 def compose_2x2_from_intuitive_parameters(scale: float, angle: float, skew: float, skew_angle: float
                                           ) -> NDArray[float]:
 	""" take four scalars that together uniquely define an array, and put together that array """
-	σ1 = scale/sqrt(1 - skew)
-	σ2 = scale/sqrt(1 + skew)
+	σ1 = scale*sqrt(skew + 1)
+	σ2 = scale/sqrt(skew + 1)
 	Σ = np.array([[σ1, 0], [0, σ2]])
 	left_angle = (angle + skew_angle)/2
 	rite_angle = (angle - skew_angle)/2

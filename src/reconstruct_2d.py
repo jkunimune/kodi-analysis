@@ -426,19 +426,11 @@ def analyze_scan(input_filename: str,
 			f"{shot}-{los}-{particle}-{detector_index}", source_plane, source_stack, contour,
 			projected_offset, projected_flow, projected_stalk, num_stalks)
 
-	grid_transform, grid_x0, grid_y0 = grid_parameters
 	for statblock in statistics:
 		statblock["shot"] = shot
 		statblock["los"] = los
 		statblock["particle"] = particle
 		statblock["detector index"] = detector_index
-		statblock["x0"] = grid_x0
-		statblock["y0"] = grid_y0
-		scale, rotation, skew, skew_rotation = decompose_2x2_into_intuitive_parameters(grid_transform)
-		statblock["M"] = scale*M_gess
-		statblock["grid angle"] = degrees(rotation)
-		statblock["grid skew"] = skew
-		statblock["grid skew angle"] = degrees(skew_rotation)
 
 	return statistics
 
@@ -469,7 +461,7 @@ def analyze_scan_section(input_filename: str,
 	    :param section_name: a human-readable string that uniquely identifies this filtering section to a human
 	    :param filter_stack: the list of filters between the implosion and the detector. each filter is specified by its
 	                         thickness in micrometers and its material. they should be ordered from TCC to detector.
-	    :param grid_parameters: the transformation array and x and y offsets that define the hexagonal image_plane on which
+	    :param grid_parameters: the transformation array and x and y offsets that define the hexagonal grid on which
 	                             the images all fall
         :param source_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
@@ -523,26 +515,33 @@ def analyze_scan_section(input_filename: str,
 		# find the centers and spacings of the penumbral images
 		centers, grid_transform = find_circle_centers(
 			input_filename, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon, show_plots)
-		new_grid_parameters = (grid_transform, centers[0][0], centers[0][1])
-		grid_mean_scale, grid_angle, grid_skew, _ = decompose_2x2_into_intuitive_parameters(grid_transform)
-		# update the magnification to be based on this check
-		M = M_gess*grid_mean_scale
-		grid_transform = grid_transform/grid_mean_scale
-		logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f}) and angle of {degrees(grid_angle):.2f}°")
-		if grid_skew > .01:
-			logging.info(f"detected an aperture array skewness of {grid_skew - 1:.3f}")
+		grid_x0, grid_y0 = centers[0]
+		new_grid_parameters = (grid_transform, grid_x0, grid_y0)
 
 	# or if we’re skipping the reconstruction, just set up some default values
 	else:
 		logging.info(f"re-loading the previous reconstructions")
+		try:
+			previus_parameters = load_shot_info(shot, los, filter_str=print_filtering(filter_stack))
+		except RecordNotFoundError as e:
+			logging.warning(e)
+			return grid_parameters, source_plane, [], []
 		data_polygon = None
 		centers = None
-		previus_parameters = load_shot_info(shot, los)
-		M = previus_parameters["M"]
+		grid_x0, grid_y0 = previus_parameters["x0"], previus_parameters["y0"]
 		grid_transform = compose_2x2_from_intuitive_parameters(
-			sA*previus_parameters["M"], previus_parameters["image_plane angle"],
-			previus_parameters["image_plane skew"], previus_parameters["image_plane skew angle"])
-		new_grid_parameters = (grid_transform, 0, 0)
+			previus_parameters["M"]/M_gess, radians(previus_parameters["grid angle"]),
+			previus_parameters["grid skew"], radians(previus_parameters["grid skew angle"]))
+		new_grid_parameters = (grid_transform, grid_x0, grid_y0)
+
+	# represent whatever grid_transform you’re going to use as these more intuitive numbers
+	grid_mean_scale, grid_angle, grid_skew, grid_skew_angle = \
+		decompose_2x2_into_intuitive_parameters(grid_transform)
+	# update the magnification to be based on this check
+	M = M_gess*grid_mean_scale
+	logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f}) and angle of {degrees(grid_angle):.2f}°")
+	if grid_skew > .01:
+		logging.info(f"detected an aperture array skewness of {grid_skew:.3f}")
 
 	# now go thru each energy cut and compile the results
 	source_stack: list[NDArray[float]] = []
@@ -552,7 +551,7 @@ def analyze_scan_section(input_filename: str,
 			source_plane, source, statblock = analyze_scan_section_cut(
 				input_filename, shot, los, rA, sA, grid_shape, M, L1,
 				etch_time, filter_stack, data_polygon,
-				grid_transform, centers,
+				grid_transform/grid_mean_scale, centers,
 				f"{section_index}{energy_cut_index}", max(3, len(energy_cuts)),
 				energy_min, energy_max,
 				source_plane, skip_reconstruction, show_plots)
@@ -562,10 +561,16 @@ def analyze_scan_section(input_filename: str,
 			statblock["filtering"] = print_filtering(filter_stack)
 			statblock["energy min"] = energy_min
 			statblock["energy max"] = energy_max
+			statblock["x0"] = grid_x0
+			statblock["y0"] = grid_y0
+			statblock["M"] = M
+			statblock["grid angle"] = degrees(grid_angle)
+			statblock["grid skew"] = grid_skew
+			statblock["grid skew angle"] = degrees(grid_skew_angle)
 			source_stack.append(source)
 			results.append(statblock)
 
-	if len(results) > 0:  # update the image_plane iff any of these analyses worked
+	if len(results) > 0:  # update the grid iff any of these analyses worked
 		grid_parameters = new_grid_parameters
 
 	return grid_parameters, source_plane, source_stack, results
@@ -597,7 +602,8 @@ def analyze_scan_section_cut(input_filename: str,
 	    :param data_polygon: the polygon that separates this filtering section of the scan from regions that should be
 	                         ignored
 	    :param grid_transform: a 2×2 matrix that specifies the orientation and skewness of the hexagonal aperture array
-	                            pattern on the detector
+	                           pattern on the detector.  its determinant should be 1, assuming the M you’ve supplied is
+	                           already correct and consistent with the observed aperture positions.
         :param centers: the list of center locations of penumbra that have been identified as good
         :param cut_index: a string that uniquely identifies this detector, filtering section, and energy cut, for a
                           line-of-sight that has multiple detectors of the same type
@@ -655,7 +661,7 @@ def analyze_scan_section_cut(input_filename: str,
 		logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
 		num_tracks, _, _, _, _ = count_tracks_in_scan(input_filename, diameter_min, diameter_max,
 		                                              show_plots and SHOW_DIAMETER_CUTS)
-		logging.info(f"found {num_tracks:.4g} tracks in the cut")
+		logging.info(f"  found {num_tracks:.4g} tracks in the cut")
 		if num_tracks < 1e+3:
 			raise DataError("Not enuff tracks to reconstuct")
 
@@ -690,7 +696,7 @@ def analyze_scan_section_cut(input_filename: str,
 		if input_filename.endswith(".cpsa"):
 			x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max)  # load all track coordinates
 			for k, (x_center, y_center) in enumerate(centers):
-				# center them on the penumbra and rotate them to account for the grid
+				# center them on the penumbra and rotate them if the aperture grid appears rotated
 				x_relative, y_relative = shift_and_rotate(x_tracks, y_tracks,
 				                                          -x_center, -y_center, -angle)
 				local_images[k, :, :] = np.histogram2d(x_relative, y_relative,
@@ -704,7 +710,7 @@ def analyze_scan_section_cut(input_filename: str,
 				                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
 				                f"be zoomed and enhanced.")
 			for k, (x_center, y_center) in enumerate(centers):
-				# center them on the penumbra and rotate them to account for the grid
+				# center them on the penumbra and rotate them if the aperture grid appears rotated
 				shifted_image_plane = image_plane.shifted(x_center, y_center)
 				local_images[k, :, :] = resample_and_rotate(scan, scan_plane, shifted_image_plane, -angle) # resample to the chosen bin size
 
@@ -780,8 +786,6 @@ def analyze_scan_section_cut(input_filename: str,
 		if account_for_overlap:
 			raise NotImplementedError("I also will need to add more things to the kernel")
 		penumbral_kernel *= source_plane.pixel_area*image_plane.pixel_area/(M*L1)**2 # scale by the solid angle subtended by each image pixel
-
-		logging.info(f"  generating a data mask to reduce noise")
 
 		# mark pixels that are tuchd by all or none of the source pixels (and are therefore useless)
 		image_plane_pixel_distances = np.hypot(*image_plane.get_pixels(sparse=True))
@@ -863,7 +867,7 @@ def analyze_scan_section_cut(input_filename: str,
 		# after reproducing the input, we must make some adjustments to the source
 		if output_plane is None:
 			output_plane = Grid.from_size(source_plane.x.half_range, source_plane.pixel_width/2, True)
-		# specificly, we must rebin it to a unified image_plane for the stack
+		# specificly, we must rebin it to a unified Grid for the stack
 		output = interpolate.RegularGridInterpolator(
 			(source_plane.x.get_bins(), source_plane.x.get_bins()), source,
 			bounds_error=False, fill_value=0)(
@@ -1262,11 +1266,11 @@ def load_source(shot: str, los: str, particle_index: str,
 		filterings = [filtering.decode("utf-8") for filtering in filterings]
 	# then look for the matching filtering section and energy cut
 	source_plane = Grid.from_bin_array(x*1e-4, y*1e-4)
-	source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
+	source_stack = source_stack.transpose((0, 2, 1))/1e-4**2  # don’t forget to convert from (y,x) to (i,j) indexing
 	for i in range(source_stack.shape[0]):
 		if parse_filtering(filterings[i])[0] == filter_stack and \
 			np.array_equal(energy_bounds[i], [energy_min, energy_max]):
-			return source_plane, source_stack[i, :, :].transpose()/1e-4**2  # remember to convert units and switch to (i,j) indexing
+			return source_plane, source_stack[i, :, :]
 	raise RecordNotFoundError(f"couldn’t find a {print_filtering(filter_stack)}, [{energy_min}, "
 	                          f"{energy_max}] k/MeV source for {shot}, {los}, {particle_index}")
 
@@ -1309,13 +1313,13 @@ def load_filtering_info(shot: str, los: str) -> str:
 def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],
                        nominal_spacing: float, grid_shape: str,
                        ) -> GridParameters:
-	""" take some points approximately arranged in a hexagonal image_plane and find its spacing,
+	""" take some points approximately arranged in a hexagonal grid and find its spacing,
 	    orientation, and translational alignment
-	    :return: the 2×2 image_plane matrix that converts dimensionless [ξ, υ] to [x, y], and the x and y
-	             coordinates of one of the image_plane nodes
+	    :return: the 2×2 grid matrix that converts dimensionless [ξ, υ] to [x, y], and the x and y
+	             coordinates of one of the grid nodes
 	"""
 	if x_points.size < 1:
-		raise DataError("you can’t fit a image_plane to zero apertures.")
+		raise DataError("you can’t fit an aperture array to zero apertures.")
 	if x_points.size == 1:
 		return np.identity(2), x_points[0], y_points[0]
 
@@ -1357,24 +1361,24 @@ def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],
 	if not solution.success:
 		raise DataError(solution.message)
 
-	# either way, return the transform matrix with the best image_plane alinement
+	# either way, return the transform matrix with the best grid alinement
 	x0, y0 = fit_grid_alignment(x_points, y_points, grid_shape, nominal_spacing*transform)
 	return transform, x0, y0
 
 
 def fit_grid_alignment(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float]
                        ) -> Point:
-	""" take a bunch of points that are supposed to be in a image_plane structure with some known spacing
+	""" take a bunch of points that are supposed to be in a grid structure with some known spacing
 	    and orientation but unknown translational alignment, and return the alignment vector
 	    :param x_points: the x coordinate of each point
 	    :param y_points: the y coordinate of each point
 	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
-	    :param grid_matrix: the matrix that defines the image_plane scale and orientation.  for a horizontally-
-	                 oriented orthogonal hex image_plane, this should be [[s, 0], [0, s]] where s is the
+	    :param grid_matrix: the matrix that defines the grid scale and orientation.  for a horizontally-
+	                 oriented orthogonal hex grid, this should be [[s, 0], [0, s]] where s is the
 	                 distance from each aperture to its nearest neibor, but it can also encode
 	                 rotation and skew.  variations on the plain scaling work as 2d affine
 	                 transformations usually do.
-	    :return: the x and y coordinates of one of the image_plane nodes
+	    :return: the x and y coordinates of one of the grid nodes
 	"""
 	if np.linalg.det(grid_matrix) == 0:
 		return nan, nan
@@ -1402,19 +1406,19 @@ def fit_grid_alignment(x_points, y_points, grid_shape: str, grid_matrix: NDArray
 
 def snap_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float], grid_x0: float, grid_y0: float,
                  ) -> tuple[NDArray[float], NDArray[float], float]:
-	""" take a bunch of points that are supposed to be in a image_plane structure with some known spacing,
+	""" take a bunch of points that are supposed to be in a grid structure with some known spacing,
 	    orientation, and translational alignment, and return where you think they really are; the
-	    output points will all be exactly on that image_plane.
+	    output points will all be exactly on that grid.
 	    :param x_points: the x coordinate of each point
 	    :param y_points: the y coordinate of each point
 	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
-	    :param grid_matrix: the matrix that defines the image_plane scale and orientation.  for a horizontally-
-	                 oriented orthogonal hex image_plane, this should be [[s, 0], [0, s]] where s is the
+	    :param grid_matrix: the matrix that defines the grid scale and orientation.  for a horizontally-
+	                 oriented orthogonal hex grid, this should be [[s, 0], [0, s]] where s is the
 	                 distance from each aperture to its nearest neibor, but it can also encode
 	                 rotation and skew.  variations on the plain scaling work as 2d affine
 	                 transformations usually do.
-	    :param grid_x0: the x coordinate of one image_plane node
-	    :param grid_y0: the y coordinate of one image_plane node
+	    :param grid_x0: the x coordinate of one grid node
+	    :param grid_y0: the y coordinate of one grid node
 	    :return: the new x coordinates, the new y coordinates, and the total squared distances from
 	             the old points to the new ones
 	"""
@@ -1425,11 +1429,11 @@ def snap_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float
 	if isnan(grid_x0) or isnan(grid_y0):
 		return np.full(n, nan), np.full(n, nan), inf
 
-	# determine the size so you can iterate thru the image_plane nodes correctly
+	# determine the size so you can iterate thru the grid nodes correctly
 	spacing = np.linalg.norm(grid_matrix, ord=2)
 	image_size = np.max(np.hypot(x_points - grid_x0, y_points - grid_y0)) + spacing
 
-	# check each possible image_plane point and find the best fit
+	# check each possible grid point and find the best fit
 	x_fit = np.full(n, nan)
 	y_fit = np.full(n, nan)
 	errors = np.full(n, inf)
@@ -1561,7 +1565,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		grid_transform, grid_x0, grid_y0 = np.identity(2), x0, y0
 	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
 
-	# aline the circles to whatever image_plane you found
+	# aline the circles to whatever grid you found
 	x_grid_nodes, y_grid_nodes, _ = snap_to_grid(
 		x_circles_raw, y_circles_raw, grid_shape, s_nominal*grid_transform, grid_x0, grid_y0)
 	if SNAP_IMAGES_TO_GRID and x_circles_raw.size > 0:
