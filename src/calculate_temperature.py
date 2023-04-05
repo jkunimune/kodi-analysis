@@ -18,6 +18,7 @@ from hdf5_util import load_hdf5
 from plots import make_colorbar, save_current_figure
 from util import parse_filtering, print_filtering, Filter, median, quantile
 
+
 SHOW_PLOTS = True
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 LOSs = ["tim2", "tim4", "tim5", "srte"]
@@ -71,7 +72,7 @@ def main():
 	bottom_ax.set_xticks(ticks=np.arange(len(SHOTS)), labels=SHOTS)
 	plt.tight_layout()
 	plt.subplots_adjust(hspace=0)
-	plt.savefig("results/plots/all_temperatures.png", transparent=True)
+	plt.savefig("results/plots/all_temperatures.png")
 	plt.show()
 
 
@@ -136,16 +137,6 @@ def analyze(shot: str, los: str, num_stalks: int) -> tuple[float, float]:
 	plt.ylabel("X-ray emission")
 	plt.xscale("log")
 	plt.ylim(3e-4, 3e+0)
-	plt.grid()
-	plt.tight_layout()
-
-	# plot a test of the inference procedure
-	plt.figure()
-	plt.plot(test_temperature, inference, "o")
-	plt.xlabel("Input temperature (keV)")
-	plt.xscale("log")
-	plt.yscale("log")
-	plt.ylabel("Inferd temperature (keV)")
 	plt.grid()
 	plt.tight_layout()
 
@@ -352,6 +343,22 @@ def plot_electron_temperature(filename: str, show: bool,
 	plt.title(filename.replace("-", " ").capitalize())
 	plt.tight_layout()
 	save_current_figure(f"{filename}-temperature")
+
+	plt.figure()
+	l = np.linspace(-grid.x.half_range, grid.x.half_range, 101)
+	temperature_interpolator = interpolate.RegularGridInterpolator(
+		(grid.x.get_bins(), grid.y.get_bins()), temperature)
+	plt.plot(l, temperature_interpolator((l*x_stalk, l*y_stalk)), "C0-", label="Along stalk")
+	plt.plot(l, temperature_interpolator((l*y_stalk, -l*x_stalk)), "C1-.", label="Orthogonal to stalk")
+	plt.xlim(l[0], l[-1])
+	plt.xlabel("Position (μm)")
+	plt.ylabel("Temperature (keV)")
+	plt.grid()
+	plt.legend()
+	plt.title(filename.replace("-", " ").capitalize())
+	plt.tight_layout()
+	save_current_figure(f"{filename}-temperature-lineout")
+
 	if show:
 		plt.show()
 	plt.close("all")

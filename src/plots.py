@@ -20,6 +20,7 @@ from util import downsample_2d, saturate, center_of_mass, \
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
 plt.rcParams.update({'font.family': 'sans', 'font.size': 14})
+plt.rcParams["savefig.facecolor"] = 'none'
 
 
 PLOT_THEORETICAL_50c_CONTOUR = True
@@ -44,7 +45,7 @@ def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
 	for filetype in filetypes:
 		extension = filetype[1:] if filetype.startswith('.') else filetype
 		filepath = f"results/plots/{filename}.{extension}"
-		plt.savefig(filepath, transparent=filetype == 'png')
+		plt.savefig(filepath)
 		logging.debug(f"  saving {filepath}")
 
 

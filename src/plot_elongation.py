@@ -190,7 +190,6 @@ def polar_plot_asymmetries(shots: list[str], asymmetries: NDArray[float], num_st
 	# ax.set_thetalabel("Angle between stalk and prolate axis")
 	ax.set_xlabel("Prolateness (P2/P0)", labelpad=20.)
 	fig.tight_layout()
-	fig.savefig("results/plots/prolateness.eps", transparent=False)
 	save_current_figure("prolateness")
 	plt.show()
 
