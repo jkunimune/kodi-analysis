@@ -16,10 +16,10 @@ from plots import save_current_figure
 from util import fit_ellipse
 
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
-LOS = ["tim2", "tim4", "tim5", "srte"]
+LOS = ["tim2", "tim4", "tim5"]
 
-SHOW_ALIGNED_LINEOUTS = False
-SHOW_ELLIPSOIDS = False
+SHOW_ALIGNED_LINEOUTS = True
+SHOW_ELLIPSOIDS = True
 
 
 def main():
@@ -33,7 +33,7 @@ def main():
 		print(shot)
 		if SHOW_ALIGNED_LINEOUTS:
 			for j in range(len(LOS)):
-				show_aligned_lineouts(shot, LOS[j], LOS[(j + 1)%3])
+				show_aligned_lineouts(shot, LOS[j], LOS[(j + 1)%len(LOS)])
 		asymmetries[i, :] = fit_ellipsoid(shot, LOS)
 		num_stalks[i] = get_num_stalks(shot)
 
@@ -46,18 +46,18 @@ def show_aligned_lineouts(shot: str, los_0: str, los_1: str) -> None:
 	mutual_axis = np.cross(axis_0, axis_1)
 	images_0 = load_images(shot, los_0)
 	images_1 = load_images(shot, los_1)
-	if len(images_0) != len(images_1):
-		raise ValueError("can’t compare under these conditions")
+	if len(images_0) == 0 or len(images_1) == 0:
+		return
+
 	fig, (ax_left, ax_middle, ax_right) = plt.subplots(1, 3, sharey="all", figsize=(8, 4))
 	mutual_grid = Grid.from_size(100, 2, True)
-	lineouts = np.empty((2, len(images_0), mutual_grid.x.num_bins))
-	comparisons = np.empty((2, *mutual_grid.shape))
+	lineouts = np.zeros((2, max(len(images_0), len(images_1)), mutual_grid.x.num_bins))
 	for i, (los, images) in enumerate([(los_0, images_0), (los_1, images_1)]):
 		basis = coordinate.los_coordinates(los)
 		axis = np.linalg.inv(basis)@mutual_axis
 		for j, (grid, image) in enumerate(images):
 			# normalize the image, because we can’t garantee the filterings of the images we’re comparing match exactly
-			reference_grid, reference_image = images_0[j]
+			reference_grid, reference_image = images_0[j] if j < len(images_0) else images_0[-1]
 			image = image/(np.sum(image)*grid.pixel_area)*(np.sum(reference_image)*reference_grid.pixel_area)
 			rotated_image = project_image_to_axis(grid, image, mutual_grid.x.get_bins(), axis[:2])
 			lineouts[i, j, :] = np.sum(rotated_image, axis=1)*mutual_grid.y.bin_width
@@ -67,15 +67,17 @@ def show_aligned_lineouts(shot: str, los_0: str, los_1: str) -> None:
 				_, ax = plt.subplots()
 				ax.imshow(image.T, extent=grid.extent, origin="lower")
 				ax.axis("square")
-				ax.axline(xy1=[0, 0], xy2=axis[:2])
-				comparisons[i, :, :] = rotated_image
+				ax.axline(xy1=[0, 0], xy2=axis[:2], color="w")
+				ax.set_title(los)
 				ax = [ax_left, ax_right][i]
-				ax.imshow(comparisons[i, :, ::-1].T.T,
+				ax.imshow(rotated_image[:, ::-1].T.T,
 				          extent=mutual_grid.shifted(0, -x_median).extent,
 				          origin="lower", interpolation="bilinear", aspect="auto")
-				ax.plot(comparisons[i, :, :].sum(axis=1)*mutual_grid.x.bin_width*10,
+				print(mutual_grid.x.bin_width)
+				ax.plot(rotated_image.sum(axis=1)*mutual_grid.x.bin_width/rotated_image.sum(axis=1).max()*20,
 				        mutual_grid.shifted(0, -x_median).y.get_bins(), "w")
 				ax.axis("equal")
+				ax.set_title(los)
 			ax_middle.plot(lineouts[i, j, :], mutual_grid.x.get_bins() - x_median, f"C{j}" + ["-", "--"][i])
 	ax_middle.set_xscale("log")
 	ax_middle.set_xlim(np.max(lineouts)/1e2, np.max(lineouts))
@@ -106,10 +108,13 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 	# separation_magnitudes = []
 
 	# on each los we have
-	for tim in tims:
+	for los in tims:
 		# grab the 2d covariance matrix and our axes’ coordinates in 3d
-		grid, image = load_images(shot, tim)[0]
-		basis = coordinate.los_coordinates(tim)
+		try:
+			grid, image = load_images(shot, los)[0]
+		except IndexError:
+			continue
+		basis = coordinate.los_coordinates(los)
 		cov, μ = fit_ellipse(grid, image)
 
 		# enumerate the four measurable covariances and the 3×3 that defines each one’s weighting
@@ -157,13 +162,14 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 		ax.set_ylim(-1.0*max_radius, 1.0*max_radius)
 		ax.set_zlim(-1.0*max_radius, 1.0*max_radius)
 
-		for tim in ["tim2", "tim4", "tim5"]:
-			tim_direction = coordinate.los_coordinates(tim)[:, 2]
-			plt.plot(*np.transpose([[0, 0, 0], max_radius*tim_direction]), f'C{tim}--o', label=f"To TIM{tim}")
+		for i, los in enumerate(["tim2", "tim4", "tim5", "srte"]):
+			tim_direction = coordinate.los_coordinates(los)[:, 2]
+			plt.plot(*np.transpose([[0, 0, 0], max_radius*tim_direction]), f'C{i}--o', label=f"To {los}")
 		plt.plot(*np.transpose([[0, 0, 0], max_radius*stalk_direction]), "k", label="Stalk")
 
 		plt.title(shot)
 		plt.legend()
+		plt.tight_layout()
 		plt.show()
 
 	magnitude = (max(principal_radii) - min(principal_radii))/np.mean(principal_radii)

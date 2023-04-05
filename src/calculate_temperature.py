@@ -20,7 +20,7 @@ from util import parse_filtering, print_filtering, Filter, median, quantile
 
 SHOW_PLOTS = True
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
-TIMS = ["2", "4", "5"]
+LOSs = ["tim2", "tim4", "tim5", "srte"]
 NUM_SAMPLES = 100
 
 
@@ -34,20 +34,23 @@ def main():
 	temperatures = []
 	labels = []
 	for shot in SHOTS:
-		for tim in TIMS:
-			print(shot, tim)
-			emissions.append([])
-			energies = []
-			for _, record in reconstruction_table[(reconstruction_table.shot == shot) &
-			                                      (reconstruction_table.tim == tim)].iterrows():
-				if record["particle"] == "xray":
-					emissions[-1].append(record["yield"])
-					energies.append((record["energy min"], record["energy max"]))
-			if len(temperatures) == 0:
-				for energy_min, energy_max in energies:
-					labels.append(f"{energy_min:.0f} – {energy_max:.0f} keV")
+		for los in LOSs:
+			print(shot, los)
+			if los.startswith("tim"):
+				emissions.append([])
+				energies = []
+				for i, record in reconstruction_table[(reconstruction_table.shot == shot) &
+				                                      (reconstruction_table.los == los)].iterrows():
+					if record["particle"] == "xray":
+						emissions[-1].append(record["yield"])
+						energies.append((record["energy min"], record["energy max"]))
+				if len(temperatures) == 0:
+					for energy_min, energy_max in energies:
+						labels.append(f"{energy_min:.0f} – {energy_max:.0f} keV")
+			else:
+				emissions.append([nan]*len(emissions[0]))
 			num_stalks = shot_table.loc[shot]["stalks"]
-			temperature, temperature_error = analyze(shot, tim, num_stalks)
+			temperature, temperature_error = analyze(shot, los, num_stalks)
 			temperatures.append((temperature, temperature_error))
 	emissions = np.array(emissions)
 	temperatures = np.array(temperatures)
@@ -55,7 +58,7 @@ def main():
 	# plot the trends in all of the data hither plotted
 	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(6, 5))
 	x = np.ravel(
-		np.arange(len(SHOTS))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(TIMS))[np.newaxis, :])
+		np.arange(len(SHOTS))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(LOSs))[np.newaxis, :])
 	top_ax.grid(axis="y", which="both")
 	for k, (marker, label) in enumerate(zip("*ovd", labels)):
 		top_ax.scatter(x, emissions[:, k], marker=marker, color=f"C{k}", label=label, zorder=10)
@@ -72,18 +75,18 @@ def main():
 	plt.show()
 
 
-def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
+def analyze(shot: str, los: str, num_stalks: int) -> tuple[float, float]:
 	# set it to work from the base directory regardless of whence we call the file
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir(os.path.dirname(os.getcwd()))
 
 	# load imaging data
-	images, filter_stacks = load_all_xray_images_for(shot, tim)
+	images, filter_stacks = load_all_xray_images_for(shot, los)
 	if len(images) == 0:
-		print(f"can’t find anything for shot {shot} TIM{tim}")
+		print(f"can’t find anything for shot {shot} {los}")
 		return nan, nan
 	elif len(images) == 1:
-		print(f"can’t infer temperatures with only one image on shot {shot} TIM{tim}")
+		print(f"can’t infer temperatures with only one image on shot {shot} {los}")
 		return nan, nan
 
 	# calculate some synthetic lineouts
@@ -100,7 +103,7 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	temperature_integrated, temperature_error_integrated, _, _ = compute_plasma_conditions_with_errorbars(
 		np.array([image.total for image in images]),
 		filter_stacks, error_bars=True, show_plot=True)
-	save_current_figure(f"{shot}-tim{tim}-temperature-fit")
+	save_current_figure(f"{shot}-{los}-temperature-fit")
 	print(f"Te = {temperature_integrated:.3f} ± {temperature_error_integrated:.3f} keV")
 
 	# calculate the spacially resolved temperature
@@ -160,9 +163,9 @@ def analyze(shot: str, tim: str, num_stalks: int) -> tuple[float, float]:
 	plt.tight_layout()
 
 	# plot the temperature
-	tim_coordinates = coordinate.los_coordinates(tim)
-	stalk_direction = coordinate.project(1., *coordinate.TPS_LOCATIONS[2], tim_coordinates)
-	plot_electron_temperature(f"{shot}-tim{tim}", SHOW_PLOTS, basis,
+	tim_coordinates = coordinate.los_coordinates(los)
+	stalk_direction = coordinate.project(1., *coordinate.NAMED_LOS["TPS2"], tim_coordinates)
+	plot_electron_temperature(f"{shot}-{los}", SHOW_PLOTS, basis,
 	                          temperature_map, emission_map, temperature_integrated,
 	                          stalk_direction, num_stalks)
 
@@ -232,7 +235,8 @@ def compute_plasma_conditions_with_errorbars(measured_values: NDArray[float],
 		plt.grid(axis="y")
 		plt.xlabel("Detector #")
 		plt.ylabel("Measured yield (units)")
-		plt.ylim(0, None)
+		# plt.ylim(0, None)
+		plt.yscale("log")
 		plt.title(f"Best fit (Te = {temperature:.3f} ± {temperature_error:.3f})")
 		plt.tight_layout()
 
@@ -330,8 +334,8 @@ def plot_electron_temperature(filename: str, show: bool,
 	plt.figure()
 	plt.gca().set_facecolor("k")
 	plt.imshow(temperature.T, extent=grid.extent,
-	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=5)
-	make_colorbar(vmin=0, vmax=5, label="Te (keV)")
+	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=np.nanquantile(temperature, .999))
+	make_colorbar(vmin=0, vmax=np.nanquantile(temperature, .999), label="Te (keV)")
 	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
 	            colors="#000", linewidths=1,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
@@ -358,7 +362,7 @@ def load_all_xray_images_for(shot: str, tim: str) \
 	last_centroid = (0, 0)
 	images, errors, filter_stacks = [], [], []
 	for filename in os.listdir("results/data"):
-		if shot in filename and f"tim{tim}" in filename and "xray" in filename and "source" in filename:
+		if shot in filename and tim in filename and "xray" in filename and "source" in filename:
 			x, y, source_stack, filtering = load_hdf5(
 				f"results/data/{filename}", keys=["x", "y", "images", "filtering"])
 			source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing

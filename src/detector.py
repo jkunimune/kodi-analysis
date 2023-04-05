@@ -215,7 +215,9 @@ if __name__ == '__main__':
 	# plt.savefig("../dve.eps")
 
 	energies = np.geomspace(1, 1e3, 301)
-	plt.figure()
+	plt.figure(figsize=(8, 4))
+	# front = [(762, "Be"), (25, "kapton")]
+	# for filters in [[*front, (127, "Al")], [*front, (254, "Al")], [*front, (610, "Al")], [*front, (1270, "Al")], ]:
 	front = [(3000, "cr39"), (200, "Al")]
 	back = [*front, (112, "phosphor"), (236, "plastic"), (80, "ferrite"), (200, "Al")]
 	for filters in [[(50, "Al"), *front], [(15, "Ta"), *front], [(50, "Al"), *back], [(15, "Ta"), *back]]:
@@ -227,9 +229,11 @@ if __name__ == '__main__':
 	plt.xlabel("Energy (keV)")
 	plt.ylabel("Sensitivity")
 	# plt.ylim(2e-3, 5e-1)
+	plt.ylim(0, .25)
 	plt.ylim(0, None)
 	plt.xlim(1e+0, 1e+3)
-	plt.legend()
+	plt.grid()
+	# plt.legend()
 	plt.tight_layout()
 	# plt.savefig("../ip_sensitivities.png", dpi=300)
 	# plt.savefig("../ip_sensitivities.eps")
