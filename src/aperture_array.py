@@ -24,7 +24,7 @@ def positions(shape: str, spacing: float, transform: NDArray[float],
 	"""
 	# estimate how many images to yield
 	if shape == "single":
-		yield 0, 0
+		yield x0, y0
 	else:
 		true_spacing = spacing*np.linalg.norm(transform, ord=2)
 		n = ceil(r_max/true_spacing)

@@ -1042,6 +1042,8 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		plt.figure()
 		plt.plot(r_sph, n_sph)
 		plt.xlim(0, quantile(r_sph, .999, n_sph*r_sph**2))
+		plt.ylim(0, None)
+		plt.grid("on")
 		plt.xlabel("Magnified spherical radius (cm)")
 		plt.ylabel("Emission")
 		plt.tight_layout()
