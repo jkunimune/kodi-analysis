@@ -55,7 +55,7 @@ FINE_DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (
 SUPPORTED_FILETYPES = [".cpsa", ".h5"]
 
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
-SNAP_IMAGES_TO_GRID = False  # whether to assume the aperture array is perfect and use that when locating images
+DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
 DEUTERON_RESOLUTION = 5e-4  # resolution of reconstructed KoD sources
 X_RAY_RESOLUTION = 2e-4  # spatial resolution of reconstructed x-ray sources
@@ -514,7 +514,8 @@ def analyze_scan_section(input_filename: str,
 
 		# find the centers and spacings of the penumbral images
 		centers, grid_transform = find_circle_centers(
-			input_filename, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon, show_plots)
+			input_filename, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
+			los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS, show_plots)
 		grid_x0, grid_y0 = centers[0]
 		new_grid_parameters = (grid_transform, grid_x0, grid_y0)
 
@@ -1456,7 +1457,7 @@ def snap_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float
 
 def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
                         grid_shape: str, grid_parameters: Optional[GridParameters],
-                        region: list[Point], show_plots: bool,
+                        region: list[Point], trust_grid: bool, show_plots: bool,
                         ) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: the scanfile containing the data to be analyzed
@@ -1467,6 +1468,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	                      means that there is only one aperture.
 	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
 		:param region: the region in which to care about tracks
+		:param trust_grid: whether to return centers that are exactly on the grid, rather than centers wherever we find them
 	    :param show_plots: if False, overrides SHOW_CENTER_FINDING_CALCULATION
 	    :param grid_parameters: the previusly fit image array parameters, if any (the spacing, rotation, etc.)
 	    :return: the x and y of the centers of the circles, the transformation matrix that
@@ -1570,7 +1572,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	# aline the circles to whatever grid you found
 	x_grid_nodes, y_grid_nodes, _ = snap_to_grid(
 		x_circles_raw, y_circles_raw, grid_shape, s_nominal*grid_transform, grid_x0, grid_y0)
-	if SNAP_IMAGES_TO_GRID and x_circles_raw.size > 0:
+	if trust_grid and x_circles_raw.size > 0:
 		error = np.hypot(x_grid_nodes - x_circles_raw, y_grid_nodes - y_circles_raw)
 		valid = error < max(r_true/2, 2*np.median(error))  # check for misplaced apertures if you do it like this
 		x_circles, y_circles = x_grid_nodes, y_grid_nodes

@@ -18,7 +18,7 @@ from util import fit_ellipse
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 LOS = ["tim2", "tim4", "tim5"]
 
-SHOW_ALIGNED_LINEOUTS = True
+SHOW_ALIGNED_LINEOUTS = False
 SHOW_ELLIPSOIDS = True
 
 
@@ -73,7 +73,6 @@ def show_aligned_lineouts(shot: str, los_0: str, los_1: str) -> None:
 				ax.imshow(rotated_image[:, ::-1].T.T,
 				          extent=mutual_grid.shifted(0, -x_median).extent,
 				          origin="lower", interpolation="bilinear", aspect="auto")
-				print(mutual_grid.x.bin_width)
 				ax.plot(rotated_image.sum(axis=1)*mutual_grid.x.bin_width/rotated_image.sum(axis=1).max()*20,
 				        mutual_grid.shifted(0, -x_median).y.get_bins(), "w")
 				ax.axis("equal")
@@ -99,8 +98,8 @@ def project_image_to_axis(grid: Grid, values: NDArray[float],
 
 
 def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
-	""" fit a 3D ellipsoid to the images and then return the relative magnitude of the P2 and the
-	    angle between the P2 axis and the stalk
+	""" fit a 3D ellipsoid to the images and then return the relative magnitude of the prolateness
+	    and the absolute direction of the prolate axis
 	"""
 	covariance_directions = []
 	covariance_values = []
@@ -172,7 +171,7 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 		plt.tight_layout()
 		plt.show()
 
-	magnitude = (max(principal_radii) - min(principal_radii))/np.mean(principal_radii)
+	magnitude = (principal_radii[0] - principal_radii[1])/principal_radii[1]
 	angle = acos(abs(np.dot(principal_axes[:, 0], stalk_direction)))
 	print(f"the angle between {principal_axes[:, 0]} and {stalk_direction} is {degrees(angle)}")
 	return magnitude, angle
@@ -180,8 +179,8 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 
 def polar_plot_asymmetries(shots: list[str], asymmetries: NDArray[float], num_stalks: NDArray[int]) -> None:
 	fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-	ax.scatter(asymmetries[num_stalks == 1, 1], asymmetries[num_stalks == 1, 0], c="C0", marker="^", label="One stalk")
-	ax.scatter(asymmetries[num_stalks == 2, 1], asymmetries[num_stalks == 2, 0], c="C1", marker="d", label="Two stalks")
+	ax.scatter(asymmetries[num_stalks == 1, 1], asymmetries[num_stalks == 1, 0], c="C0", marker="^", label="One stalk", zorder=10)
+	ax.scatter(asymmetries[num_stalks == 2, 1], asymmetries[num_stalks == 2, 0], c="C1", marker="d", label="Two stalks", zorder=10)
 	ax.legend(loc=(.60, .90))
 	for shot, (magnitude, angle) in zip(shots, asymmetries):
 		plt.text(angle, magnitude, f" {shot}")
