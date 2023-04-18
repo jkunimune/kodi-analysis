@@ -297,7 +297,7 @@ def compute_sensitivity(filter_stacks: list[list[Filter]]) -> tuple[NDArray[floa
 	ref_energies = np.geomspace(1, 1e3, 61)
 	log_sensitivities = []
 	for filter_stack in filter_stacks:
-		log_sensitivities.append(detector.log_xray_sensitivity(ref_energies, filter_stack, 0))
+		log_sensitivities.append(detector.log_xray_sensitivity(ref_energies, filter_stack))
 	log_sensitivities = np.array(log_sensitivities)
 	return ref_energies, log_sensitivities
 

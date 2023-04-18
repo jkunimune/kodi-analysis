@@ -1600,6 +1600,8 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		            np.where(circle_fullness[valid], 30, 5), c="#8ae", marker="x")
 		plt.contour(crop_domain.x.get_bins(), crop_domain.y.get_bins(), N_crop.T,
 		            levels=[haff_density], colors="#fff", linewidths=.6)
+		plt.fill([x for x, y in region], [y for x, y in region],
+		         facecolor="none", edgecolor="k", linewidth=.5)
 		plt.title("Located apertures marked with exes (close to confirm)")
 		plt.xlim(min(np.min(x_circles_raw), crop_domain.x.minimum),
 		         max(np.max(x_circles_raw), crop_domain.x.maximum))

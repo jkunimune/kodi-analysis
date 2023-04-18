@@ -133,40 +133,38 @@ def log_xray_transmission(energy: Numeric, thickness: float, material: str) -> N
 	return -attenuation*thickness
 
 
-def log_xray_sensitivity(energy: Numeric, filter_stack: list[Layer], fade_time: float,
-                         thickness=115., psl_attenuation=1/45., material="phosphor") -> Numeric:
+def log_xray_sensitivity(energy: Numeric, filter_stack: list[Layer],
+                         prefactor=1/2200, thickness=115., psl_attenuation=1/45.) -> Numeric:
 	""" calculate the log of the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
-	    :param fade_time: the delay between the experiment and the image plate scan (min)
-	    :param thickness: the thickness of the image plate (μm)
+	    :param prefactor: a constant scaling factor on the absolute sensitivity
+	    :param thickness: the thickness of the phosphor layer of the image plate (μm)
 	    :param psl_attenuation: the attenuation constant of the image plate's characteristic photostimulated luminescence
-	    :param material: the name of the image plate material (probably just the elemental symbol)
 	    :return: the fraction of photic energy that reaches the scanner
 	"""
-	attenuation = attenuation_curve(energy, material)
+	attenuation = attenuation_curve(energy, "phosphor")
 	self_transparency = 1/(1 + psl_attenuation/attenuation)
 	log_sensitivity = np.log(
-		self_transparency * (1 - np.exp(-attenuation*thickness/self_transparency)) * psl_fade(fade_time))
+		prefactor * self_transparency * (1 - np.exp(-attenuation*thickness/self_transparency)))
 	for thickness, material in filter_stack:
 		log_sensitivity += log_xray_transmission(energy, thickness, material)
 	return log_sensitivity
 
 
-def xray_sensitivity(energy: Numeric, filter_stack: list[Layer], fade_time: float,
-                     thickness=115., psl_attenuation=1/45., material="phosphor") -> Numeric:
+def xray_sensitivity(energy: Numeric, filter_stack: list[Layer],
+                     prefactor=1/2200, thickness=115., psl_attenuation=1/45.) -> Numeric:
 	""" calculate the fraction of x-ray energy at some frequency that is measured by an
 	    image plate of the given characteristics, given some filtering in front of it
 	    :param energy: the photon energies (keV)
 	    :param filter_stack: the list of filter thicknesses and materials in front of the image plate
-	    :param fade_time: the delay between the experiment and the image plate scan (min)
-	    :param thickness: the thickness of the image plate (μm)
+	    :param prefactor: a constant scaling factor on the absolute sensitivity
+	    :param thickness: the thickness of the phosphor layer of the image plate (μm)
 	    :param psl_attenuation: the attenuation constant of the image plate's characteristic photostimulated luminescence
-	    :param material: the name of the image plate material (probably just the elemental symbol)
 	    :return: the fraction of photic energy that reaches the scanner
 	"""
-	return np.exp(log_xray_sensitivity(energy, filter_stack, fade_time, thickness, psl_attenuation, material))
+	return np.exp(log_xray_sensitivity(energy, filter_stack, prefactor, thickness, psl_attenuation))
 
 
 def xray_energy_bounds(filter_stack: list[Layer], level=.10) -> Interval:
@@ -175,7 +173,7 @@ def xray_energy_bounds(filter_stack: list[Layer], level=.10) -> Interval:
 	    :param level: the fraction of the max at which to define the min and the max
 	"""
 	energy = np.geomspace(1e+0, 1e+3, 401)
-	sensitivity = xray_sensitivity(energy, filter_stack, 0)
+	sensitivity = xray_sensitivity(energy, filter_stack)
 	lower = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][0]]
 	upper = energy[np.nonzero(sensitivity > level*np.max(sensitivity))[0][-1]]
 	return lower, upper
@@ -221,7 +219,7 @@ if __name__ == '__main__':
 	front = [(3000, "cr39"), (200, "Al")]
 	back = [*front, (112, "phosphor"), (236, "plastic"), (80, "ferrite"), (200, "Al")]
 	for filters in [[(50, "Al"), *front], [(15, "Ta"), *front], [(50, "Al"), *back], [(15, "Ta"), *back]]:
-		sensitivity = xray_sensitivity(energies, filters, 30)
+		sensitivity = xray_sensitivity(energies, filters)
 		plt.plot(energies, sensitivity,
 		         label=f"{filters[0][0]}μm {filters[0][1]} + {len(filters) - 1}")
 	plt.xscale("log")
