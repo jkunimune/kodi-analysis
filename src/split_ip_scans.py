@@ -34,7 +34,10 @@ def main():
 			not re.search(r"tim[0-9]", filename, re.IGNORECASE):
 			print(filename)
 			shot = re.search(r"s([0-9]+)", filename, re.IGNORECASE).group(1)
-			scan_index = int(re.search(r"_pcis([0-9+])", filename, re.IGNORECASE).group(1)) - 1
+			if re.search(r"_pcis[0-9]", filename):
+				scan_index = int(re.search(r"_pcis([0-9+])", filename, re.IGNORECASE).group(1)) - 1
+			else:
+				scan_index = 0
 
 			with h5py.File(os.path.join(SCAN_DIRECTORY, filename), "r") as f:
 				dataset = f["PSL_per_px"]

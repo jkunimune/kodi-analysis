@@ -272,6 +272,8 @@ def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: Union[str, NDArray[fl
 			raise ValueError("if you give a noise array, it must have the same shape as the data.")
 		mode = "gaussian"
 		D = 2*noise
+		if np.any(np.isnan(D)):
+			raise ValueError("no nan allowed")
 	else:
 		raise ValueError(f"I don't understand the noise parameter you gave ({noise})")
 
@@ -335,7 +337,8 @@ def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: Union[str, NDArray[fl
 		assert np.all(g >= 0), g
 		if np.min(g + h*δg) < 0:
 			h = np.amin(-g/δg, where=δg < 0, initial=h)
-		assert h > 0, h
+		if not h > 0:
+			raise ValueError("how does this keep happening")
 
 		# take the step
 		g += h*δg

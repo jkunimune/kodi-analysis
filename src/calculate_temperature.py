@@ -23,6 +23,7 @@ SHOW_PLOTS = True
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 LOSs = ["tim2", "tim4", "tim5", "srte"]
 NUM_SAMPLES = 100
+PLOT_RADIUS = 50
 
 
 def main():
@@ -109,7 +110,7 @@ def analyze(shot: str, los: str, num_stalks: int) -> tuple[float, float]:
 
 	# calculate the spacially resolved temperature
 	measurement_errors = 0.05*np.array([image.supremum for image in images])  # this isn’t very quantitative, but it captures the character of errors in the reconstructions
-	basis = Grid.from_size(50, 3, True)
+	basis = Grid.from_size(PLOT_RADIUS, PLOT_RADIUS/20, True)
 	temperature_map = np.empty(basis.shape)
 	emission_map = np.empty(basis.shape)
 	for i in range(basis.x.num_bins):

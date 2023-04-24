@@ -48,11 +48,10 @@ SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 
-PROTON_ENERGY_CUTS = [(0, (0, inf))]
-NORMAL_DEUTERON_ENERGY_CUTS = [(2, (9, 12.5)), (0, (0, 6)), (1, (6, 9))] # (MeV) (emitted, not detected)
-FINE_DEUTERON_ENERGY_CUTS = [(6, (11, 13)), (5, (9.5, 11)), (4, (8, 9.5)), (3, (6.5, 8)),
-                             (2, (5, 6.5)), (1, (3.5, 5)), (0, (2, 3.5))] # (MeV) (emitted, not detected)
-SUPPORTED_FILETYPES = [".cpsa", ".h5"]
+PROTON_ENERGY_CUTS = [(0, inf)]
+NORMAL_DEUTERON_ENERGY_CUTS = [(9, 12.5), (0, 6), (6, 9)] # (MeV) (emitted, not detected)
+FINE_DEUTERON_ENERGY_CUTS = [(11, 13), (9.5, 11), (8, 9.5), (6.5, 8), (5, 6.5), (3.5, 5), (2, 3.5)] # (MeV) (emitted, not detected)
+SUPPORTED_FILETYPES = [".h5", ".cpsa"]
 
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
@@ -172,7 +171,7 @@ def analyze(shots_to_reconstruct: list[str],
 		# search for filenames that match each row
 		matching_scans: list[tuple[str, str, str, int, float, str]] = []
 		for filename in os.listdir("input/scans"):
-			if re.search(r"_pcis[0-9]_", filename):  # skip these files because they’re unsplit
+			if re.search(r"_pcis[0-9]?_", filename):  # skip these files because they’re unsplit
 				continue
 			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
 			detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
@@ -274,7 +273,7 @@ def analyze_scan(input_filename: str,
                  etch_time: Optional[float], filtering: str,
                  offset: tuple[float, float, float], velocity: tuple[float, float, float],
                  stalk_position: str, num_stalks: int,
-                 deuteron_energy_cuts: list[tuple[int, Interval]],
+                 deuteron_energy_cuts: list[Interval],
                  skip_reconstruction: bool, show_plots: bool,
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct all of the penumbral images contained in a single scan file.
@@ -336,7 +335,7 @@ def analyze_scan(input_filename: str,
 		if particle == "deuteron":
 			energy_cuts = deuteron_energy_cuts  # these energy bounds are in MeV
 		else:
-			energy_cuts = [(0, detector.xray_energy_bounds(filter_stack, .10))]  # these energy bounds are in keV
+			energy_cuts = [detector.xray_energy_bounds(filter_stack, .10)]  # these energy bounds are in keV
 
 		# perform the analysis on each section
 		try:
@@ -443,7 +442,7 @@ def analyze_scan_section(input_filename: str,
                          section_index: str, section_name: str, filter_stack: list[Filter],
                          grid_parameters: Optional[GridParameters],
                          source_plane: Optional[Grid],
-                         energy_cuts: list[tuple[int, Interval]],
+                         energy_cuts: list[Interval],
                          skip_reconstruction: bool, show_plots: bool,
                          ) -> tuple[GridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
@@ -540,14 +539,15 @@ def analyze_scan_section(input_filename: str,
 		decompose_2x2_into_intuitive_parameters(grid_transform)
 	# update the magnification to be based on this check
 	M = M_gess*grid_mean_scale
-	logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.1f}) and angle of {degrees(grid_angle):.2f}°")
+	logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.2f}) and angle of {degrees(grid_angle):.2f}°")
 	if grid_skew > .01:
 		logging.info(f"detected an aperture array skewness of {grid_skew:.3f}")
 
 	# now go thru each energy cut and compile the results
 	source_stack: list[NDArray[float]] = []
 	results: list[dict[str, Any]] = []
-	for energy_cut_index, (energy_min, energy_max) in energy_cuts:
+	for energy_min, energy_max in energy_cuts:
+		energy_cut_index = sorted(energy_cuts).index((energy_min, energy_max))
 		try:
 			source_plane, source, statblock = analyze_scan_section_cut(
 				input_filename, shot, los, rA, sA, grid_shape, M, L1,
@@ -673,7 +673,7 @@ def analyze_scan_section_cut(input_filename: str,
 			centers, data_polygon, show_plots) # TODO: infer rA, as well?
 
 		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
-			logging.warning(f"the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
+			logging.warning(f"  the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
 			                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
 			r_max = M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution
 

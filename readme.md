@@ -29,8 +29,8 @@ The typical workflow for doing 2D reconstructions looks like this:
    for example if you have different magnifications on different lines of sight.
    - The "shot" column should contain the shot number (or any other identifying filename substring) of each implosion you have data for.
    - The "standoff" is the distance from the aperture(s) to TCC in centimeters.
-   - The "magnification" is the ratio of the TCC-to-detector distance divided by the TCC-to-aperture distance.
-     Note that this is the *radiography magnification* and not the *pinhole magnification*, which would be one less.
+   - The "magnification" is the ratio of the TCC-to-detector distance to the TCC-to-aperture distance
+     Note that this is the *radiography magnification* and not the *pinhole magnification* (shown on the SRF) which is one less.
    - The "aperture radius" is the radius of each circular aperture in micrometers.
    - The "aperture spacing" is the distance from each aperture to its nearest neighbor in micrometers.
      When there is only one aperture, this number doesn’t matter and may be set to 0.
@@ -68,7 +68,12 @@ The typical workflow for doing 2D reconstructions looks like this:
 For 3D reconstruction, run `src/reconstruct_3d.py shot_number [--skip]`,
 and it will automaticly run on the reconstructed 2d images.
 The shot number argument on this one does not support commas.
-I'll get to that later maybe probably
+I'll get to that later maybe probably.
+
+For electron temperature inference, I haven’t made a nice command-line program yet, but you can use the script `src/calculate_temperature.py`.
+Just make sure to edit the list of shots and lines of sight at the top first.
+You may also want to adjust the plot limits.
+The nice thing is it should automatically find and load your previous 2D reconstructions, so you don’t have to worry about pointing it to the right directory.
 
 All output files follow the naming convention `results/subdirectory/shotnumber[-tim]-quantity-coordinates[-operation].file_extension`.
 The shot number is an integer prepended by `synth` if based on synthetic data.
