@@ -50,7 +50,7 @@ SHOW_POINT_SPREAD_FUNCCION = False
 
 PROTON_ENERGY_CUTS = [(0, inf)]
 NORMAL_DEUTERON_ENERGY_CUTS = [(9, 12.5), (0, 6), (6, 9)] # (MeV) (emitted, not detected)
-FINE_DEUTERON_ENERGY_CUTS = [(11, 13), (9.5, 11), (8, 9.5), (6.5, 8), (5, 6.5), (3.5, 5), (2, 3.5)] # (MeV) (emitted, not detected)
+FINE_DEUTERON_ENERGY_CUTS = [(11, 12.5), (2, 3.5), (3.5, 5), (5, 6.5), (6.5, 8), (8, 9.5), (9.5, 11)] # (MeV) (emitted, not detected)
 SUPPORTED_FILETYPES = [".h5", ".cpsa"]
 
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
@@ -385,7 +385,7 @@ def analyze_scan(input_filename: str,
 	for cut_index in range(len(source_stack)):
 		if particle == "deuteron":
 			color_index = int(indices[cut_index][-1])
-			num_colors = max(deuteron_energy_cuts)[0] + 1
+			num_colors = len(deuteron_energy_cuts)
 		else:
 			num_sections = len(filter_stacks)
 			num_missing_sections = num_sections - len(source_stack)

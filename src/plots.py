@@ -15,18 +15,18 @@ from cmap import CMAP
 from coordinate import Grid
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	Point, nearest_value, shape_parameters
+	Interval, nearest_value, shape_parameters
 
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
-plt.rcParams.update({'font.family': 'sans', 'font.size': 14})
+plt.rcParams.update({'font.family': 'sans', 'font.size': 16})
 plt.rcParams["savefig.facecolor"] = 'none'
 
 
 PLOT_THEORETICAL_50c_CONTOUR = True
 PLOT_SOURCE_CONTOUR = True
 PLOT_OFFSET = False
-PLOT_STALK = True
+PLOT_STALK = False
 
 MAX_NUM_PIXELS = 40000
 SQUARE_FIGURE_SIZE = (6.4, 5.4)
@@ -280,7 +280,7 @@ def plot_source(filename: str, show: bool,
 	plt.close('all')
 
 
-def save_and_plot_source_sets(filename: str, energy_bins: list[Union[list[Point], NDArray[float]]],
+def save_and_plot_source_sets(filename: str, energy_bins: list[Union[list[Interval], NDArray[float]]],
                               x: list[NDArray[float]], y: list[NDArray[float]], *image_sets: list[NDArray[float]]) -> None:
 	""" plot a bunch of source images, specificly in comparison (e.g. between data and reconstruction)
 	    :param filename: the filename with which to save them

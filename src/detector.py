@@ -227,7 +227,6 @@ if __name__ == '__main__':
 	plt.xlabel("Energy (keV)")
 	plt.ylabel("Sensitivity")
 	# plt.ylim(2e-3, 5e-1)
-	plt.ylim(0, .25)
 	plt.ylim(0, None)
 	plt.xlim(1e+0, 1e+3)
 	plt.grid()
