@@ -96,7 +96,12 @@ and the operation is up to one of:
 
 # Dependencies
 
-This codebase has some PyPI dependencies you can figure out on your own.
+This codebase has some PyPI dependencies.
+I think they’re all in the requirements.txt, so you should be all set if you do
+~~~~
+ pip install -r requirements.txt
+~~~~
+
 It also requires Peter Heuer’s [cr39py](https://github.com/pheuer/CR39py) library, which is not on PyPI as of writing,
 so for that just install it like
 ~~~~

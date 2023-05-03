@@ -16,7 +16,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.signal as signal
-from cr39py import cr39
+from cr39py.scan import Scan
+from cr39py.cut import Cut
 from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.colors import SymLogNorm
 from numpy.typing import NDArray
@@ -1183,13 +1184,13 @@ def load_cr39_scan_file(filename: str,
 	""" load the track coordinates from a CR-39 scan file
 	    :return: the x coordinates (cm) and the y coordinates (cm)
 	"""
-	file = cr39.CR39(filename)
+	file = Scan.from_cpsa(filename)
 	d_tracks = file.trackdata_subset[:, 2]
 	c_tracks = file.trackdata_subset[:, 3]
-	file.add_cut(cr39.Cut(cmin=max_contrast))
-	file.add_cut(cr39.Cut(emin=max_eccentricity))
-	file.add_cut(cr39.Cut(dmax=min_diameter))
-	file.add_cut(cr39.Cut(dmin=max_diameter))
+	file.add_cut(Cut(cmin=max_contrast))
+	file.add_cut(Cut(emin=max_eccentricity))
+	file.add_cut(Cut(dmax=min_diameter))
+	file.add_cut(Cut(dmin=max_diameter))
 	file.apply_cuts()
 	x_tracks = file.trackdata_subset[:, 0]
 	y_tracks = file.trackdata_subset[:, 1]
