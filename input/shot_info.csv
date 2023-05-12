@@ -11,6 +11,7 @@ shot,         aperture radius, aperture spacing, aperture arrangement, yield,   
 104782,        202,            800,              hex,                  2.50e13, TPS2, 1,         0,           0,          0,      106,      115,      204
 104783,        202,            800,              hex,                  2.30e13, TPS2, 2,         0,           0,          0,      136,      133,      225
 105321,       1000,              0,              single
+105634,          0,              0,              srte
 107129,        150,            600,              hex
 107130,        150,            600,              hex
 107132,        150,            600,              hex

@@ -7,7 +7,7 @@ import re
 import sys
 import time
 import warnings
-from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degrees, atan2, isnan
+from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degrees, atan2
 from typing import Any, Optional, Union
 
 import h5py
@@ -48,6 +48,7 @@ SHOW_DIAMETER_CUTS = True
 SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
+SHOW_GRID_FITTING_DEBUG_PLOTS = False
 
 PROTON_ENERGY_CUTS = [(0, inf)]
 NORMAL_DEUTERON_ENERGY_CUTS = [(9, 12.5), (0, 6), (6, 9)] # (MeV) (emitted, not detected)
@@ -71,21 +72,6 @@ MIN_DETECTABLE_ENERGY = 0.5  # lowest energy deuteron we think we can see on CR-
 
 
 GridParameters = tuple[NDArray[float], float, float]
-
-
-class DataError(ValueError):
-	""" when the data don’t make any sense """
-	pass
-
-
-class RecordNotFoundError(KeyError):
-	""" when an entry is missing from one of the CSV files """
-	pass
-
-
-class FilterError(ValueError):
-	""" when the filtering renders the specified radiation undetectable """
-	pass
 
 
 def analyze(shots_to_reconstruct: list[str],
@@ -112,6 +98,7 @@ def analyze(shots_to_reconstruct: list[str],
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir(os.path.dirname(os.getcwd()))
 
+	# ensure all of the important results directories exist
 	if not os.path.isdir("results"):
 		os.mkdir("results")
 	if not os.path.isdir("results/data"):
@@ -131,12 +118,22 @@ def analyze(shots_to_reconstruct: list[str],
 	)
 	logging.getLogger('matplotlib.font_manager').disabled = True
 
+	# choose energy bins according to the input arguments
+	if energy_cut_mode == "normal":
+		deuteron_energy_cuts = NORMAL_DEUTERON_ENERGY_CUTS
+	elif energy_cut_mode == "fine":
+		deuteron_energy_cuts = FINE_DEUTERON_ENERGY_CUTS
+	elif energy_cut_mode == "proton":
+		deuteron_energy_cuts = PROTON_ENERGY_CUTS
+	else:
+		raise ValueError(f"unrecognized energy cut mode: '{energy_cut_mode}'")
+
 	# read in some of the existing information
 	try:
 		shot_table = pd.read_csv('input/shot_info.csv', index_col="shot",
 		                         dtype={"shot": str}, skipinitialspace=True)
 		los_table = pd.read_csv("input/los_info.csv", index_col=["shot", "los"],
-		                        dtype={"shot": str}, skipinitialspace=True)
+		                        dtype={"shot": str, "los": str}, skipinitialspace=True)
 	except IOError as e:
 		logging.error(e)
 		raise
@@ -149,16 +146,6 @@ def analyze(shots_to_reconstruct: list[str],
 		                             "detector index": pd.Series(dtype=int),
 		                             "energy min":     pd.Series(dtype=float),
 		                             "energy max":     pd.Series(dtype=float)})
-
-	# choose energy bins according to the input arguments
-	if energy_cut_mode == "normal":
-		deuteron_energy_cuts = NORMAL_DEUTERON_ENERGY_CUTS
-	elif energy_cut_mode == "fine":
-		deuteron_energy_cuts = FINE_DEUTERON_ENERGY_CUTS
-	elif energy_cut_mode == "proton":
-		deuteron_energy_cuts = PROTON_ENERGY_CUTS
-	else:
-		raise ValueError(f"unrecognized energy cut mode: '{energy_cut_mode}'")
 
 	# iterate thru the shots we're supposed to analyze and make a list of scan files
 	all_scans_to_analyze: list[tuple[str, str, float, str]] = []
@@ -208,14 +195,17 @@ def analyze(shots_to_reconstruct: list[str],
 	for shot, los, particle, detector_index, etch_time, filename in all_scans_to_analyze:
 		logging.info(f"Beginning reconstruction for {los.upper()} on shot {shot} (detector #{detector_index})")
 
+		# load all necessary information from shot_info.csv and los_info.csv
 		try:
 			shot_info = shot_table.loc[shot]
 		except KeyError:
-			raise RecordNotFoundError(f"please add shot {shot!r} to the input/shot_info.csv file.")
+			logging.error(f"please add shot {shot!r} to the input/shot_info.csv file.")
+			continue
 		try:
 			los_specific_shot_info = los_table.loc[(shot, los)]
 		except KeyError:
-			raise RecordNotFoundError(f"please add shot {shot!r}, LOS {los!r} to the input/los_info.csv file.")
+			logging.error(f"please add shot {shot!r}, LOS {los!r} to the input/los_info.csv file.")
+			continue
 		shot_info = pd.concat([shot_info, los_specific_shot_info])
 
 		# perform the 2d reconstruccion
@@ -229,20 +219,20 @@ def analyze(shots_to_reconstruct: list[str],
 				particle           =particle,
 				detector_index     =detector_index,
 				etch_time          =etch_time,
-				filtering          =shot_info["filtering"],
-				rA                 =shot_info["aperture radius"]*1e-4,
-				sA                 =shot_info["aperture spacing"]*1e-4,
-				grid_shape         =shot_info["aperture arrangement"],
-				L1                 =shot_info["standoff"]*1e-4,
-				M_gess             =shot_info["magnification"],
-				stalk_position     =shot_info["TPS"],
-				num_stalks         =shot_info["stalks"],
-				offset             =(shot_info["offset (r)"]*1e-4,
-				                     radians(shot_info["offset (θ)"]),
-				                     radians(shot_info["offset (ф)"])),
-				velocity           =(shot_info["flow (r)"],
-				                     radians(shot_info["flow (θ)"]),
-				                     radians(shot_info["flow (ф)"])),
+				filtering          =shot_info.get("filtering"),
+				rA                 =shot_info.get("aperture radius")*1e-4,
+				sA                 =shot_info.get("aperture spacing")*1e-4,
+				grid_shape         =shot_info.get("aperture arrangement"),
+				L1                 =shot_info.get("standoff")*1e-4,
+				M_gess             =shot_info.get("magnification"),
+				stalk_position     =shot_info.get("TPS", nan),
+				num_stalks         =shot_info.get("stalks", nan),
+				offset             =(shot_info.get("offset (r)", nan),
+				                     shot_info.get("offset (θ)", nan),
+				                     shot_info.get("offset (ф)", nan)),
+				velocity           =(shot_info.get("flow (r)", nan),
+				                     shot_info.get("flow (θ)", nan),
+				                     shot_info.get("flow (ф)", nan)),
 				deuteron_energy_cuts=deuteron_energy_cuts,
 			)
 		except DataError as e:
@@ -290,8 +280,8 @@ def analyze_scan(input_filename: str,
 	    :param M_gess: the nominal radiography magnification (L1 + L2)/L1
 	    :param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
 	    :param filtering: a string that indicates what filtering was used on this LOS on this shot
-	    :param offset: the initial offset of the capsule from TCC in spherical coordinates (cm, rad, rad)
-	    :param velocity: the measured hot-spot velocity of the capsule in spherical coordinates (km/s, rad, rad)
+	    :param offset: the initial offset of the capsule from TCC in spherical coordinates (μm, °, °)
+	    :param velocity: the measured hot-spot velocity of the capsule in spherical coordinates (km/s, °, °)
 	    :param stalk_position: the name of the port from which the target is held (should be "TPS2")
 	    :param num_stalks: the number of stalks on this target (usually 1)
 	    :param deuteron_energy_cuts: the energy bins to use for reconstructing deuterons
@@ -315,6 +305,20 @@ def analyze_scan(input_filename: str,
 		rA = aperture_array.SRTE_APERTURE_RADIUS
 		sA = aperture_array.SRTE_APERTURE_SPACING
 		grid_shape = "srte"
+
+	# type-check and convert the stalk information
+	try:
+		los_basis = los_coordinates(los)
+	except KeyError:
+		los_basis = np.identity(3)
+	if stalk_position in NAMED_LOS:
+		projected_stalk = project(1, *NAMED_LOS[stalk_position], los_basis)
+	else:
+		projected_stalk = None
+		if isnan(stalk_position):
+			logging.warning(f"I don’t recognize the target positioner {stalk_position!r}.")
+	if isnan(num_stalks):
+		num_stalks = None
 
 	num_detectors = count_detectors(filtering, detector_type)
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
@@ -392,15 +396,11 @@ def analyze_scan(input_filename: str,
 			num_missing_sections = num_sections - len(source_stack)
 			color_index = detector_index*num_sections + cut_index + num_missing_sections
 			num_colors = num_detectors*num_sections
-		try:
-			los_basis = los_coordinates(los)
-		except KeyError:
-			los_basis = np.identity(3)
 		plot_source(f"{shot}-{los}-{particle}-{indices[cut_index]}",
 		            False, source_plane, source_stack[cut_index],
 		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
 		            color_index=color_index, num_colors=num_colors,
-		            projected_stalk_direction=project(1., *NAMED_LOS["tps2"], los_basis),
+		            projected_stalk_direction=projected_stalk,
 		            num_stalks=num_stalks)
 
 	# if can, plot some plots that overlay the sources in the stack
@@ -413,14 +413,17 @@ def analyze_scan(input_filename: str,
 			statblock["separation magnitude"] = hypot(dx, dy)/1e-4
 			statblock["separation angle"] = degrees(atan2(dy, dx))
 
-		los_basis = los_coordinates(los)
-		projected_offset = project(
-			offset[0], offset[1], offset[2], los_basis)
-		projected_flow = project(
-			velocity[0], velocity[1], velocity[2], los_basis)
-		assert stalk_position == "TPS2"
-		projected_stalk = project(
-			1, NAMED_LOS["tps2"][0], NAMED_LOS["tps2"][1], los_basis)
+		# compute the additional lines to be put on the plot (checking in case they’re absent)
+		if not any(isnan(offset[i]) for i in range(3)):
+			projected_offset = project(
+				offset[0], offset[1], offset[2], los_basis)
+		else:
+			projected_offset = None
+		if not any(isnan(velocity[i]) for i in range(3)):
+			projected_flow = project(
+				velocity[0], velocity[1], velocity[2], los_basis)
+		else:
+			projected_flow = None
 
 		plot_overlaid_contores(
 			f"{shot}-{los}-{particle}-{detector_index}", source_plane, source_stack, contour,
@@ -481,11 +484,13 @@ def analyze_scan_section(input_filename: str,
 
 	# prepare the coordinate grids
 	if not skip_reconstruction:
+		# check the statistics, if these are deuterons
 		num_tracks, x_min, x_max, y_min, y_max = count_tracks_in_scan(input_filename, 0, inf, False)
-		logging.info(f"found {num_tracks:.4g} tracks in the file")
-		if num_tracks < 1e+3:
-			logging.warning("  Not enuff tracks to reconstruct")
-			return grid_parameters, source_plane, [], []
+		if particle == "deuteron":
+			logging.info(f"found {num_tracks:.4g} tracks in the file")
+			if num_tracks < 1e+3:
+				logging.warning("  Not enuff tracks to reconstruct")
+				return grid_parameters, source_plane, [], []
 
 		# start by asking the user to highlight the data
 		try:
@@ -660,12 +665,16 @@ def analyze_scan_section_cut(input_filename: str,
 
 	# start by loading the input file and stacking the images
 	if not skip_reconstruction:
-		logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
-		num_tracks, _, _, _, _ = count_tracks_in_scan(input_filename, diameter_min, diameter_max,
-		                                              show_plots and SHOW_DIAMETER_CUTS)
-		logging.info(f"  found {num_tracks:.4g} tracks in the cut")
-		if num_tracks < 1e+3:
-			raise DataError("Not enuff tracks to reconstuct")
+		if particle == "xray":
+			logging.info(f"Reconstructing region with {print_filtering(filter_stack)} filtering")
+		else:
+			logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
+			# check the statistics, if these are deuterons
+			num_tracks, _, _, _, _ = count_tracks_in_scan(input_filename, diameter_min, diameter_max,
+			                                              show_plots and SHOW_DIAMETER_CUTS)
+			logging.info(f"  found {num_tracks:.4g} tracks in the cut")
+			if num_tracks < 1e+3:
+				raise DataError("Not enuff tracks to reconstuct")
 
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
@@ -996,7 +1005,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
 
 	# now compute the relation between spherical radius and image radius
-	r_sph_bins = r_bins[r_bins <= r0][::2]
+	r_sph_bins = r_bins[r_bins <= r_bins[-1] - r0][::2]
 	r_sph = bin_centers(r_sph_bins)  # TODO: this should be reritten to use the Linspace class
 	sphere_to_plane = abel_matrix(r_sph_bins)
 	# do this nested 1d reconstruction
@@ -1335,9 +1344,23 @@ def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],
 		else:
 			raise ValueError
 		matrix = nominal_spacing*transform
-		x0, y0 = fit_grid_alignment(x_points, y_points, grid_shape, matrix)
-		_, _, cost = snap_to_grid(x_points, y_points, grid_shape, matrix, x0, y0)
+		x0, y0 = fit_grid_alignment_to_points(x_points, y_points, grid_shape, matrix)
+		_, _, cost = snap_points_to_grid(x_points, y_points, grid_shape, matrix, x0, y0)
 		s0, s1 = linalg.svdvals(transform)
+
+		if SHOW_GRID_FITTING_DEBUG_PLOTS:
+			print(f"{args} ->\n{transform}")
+			x_grid, y_grid = np.transpose(list(aperture_array.positions(
+				grid_shape, 1, matrix, 0, 10, x0, y0)))
+			plt.figure()
+			plt.plot(x_grid, y_grid, "C1o", markersize=6)
+			plt.plot(x_points, y_points, "o", markersize=12, markerfacecolor="none", markeredgecolor="C0")
+			plt.axline((x0, y0), (x0 + transform[0, 0], y0 + transform[1, 0]), color="C1")
+			plt.axis("equal")
+			plt.axis([np.min(x_points) - nominal_spacing, np.max(x_points) + nominal_spacing,
+			          np.min(y_points) - nominal_spacing, np.max(y_points) + nominal_spacing])
+			plt.show()
+
 		return cost + 1e-2*nominal_spacing**2*log(s0/s1)**2
 
 	# first do a scan thru a few reasonable values
@@ -1366,12 +1389,12 @@ def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],
 		raise DataError(solution.message)
 
 	# either way, return the transform matrix with the best grid alinement
-	x0, y0 = fit_grid_alignment(x_points, y_points, grid_shape, nominal_spacing*transform)
+	x0, y0 = fit_grid_alignment_to_points(x_points, y_points, grid_shape, nominal_spacing*transform)
 	return transform, x0, y0
 
 
-def fit_grid_alignment(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float]
-                       ) -> Point:
+def fit_grid_alignment_to_points(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float]
+                                 ) -> Point:
 	""" take a bunch of points that are supposed to be in a grid structure with some known spacing
 	    and orientation but unknown translational alignment, and return the alignment vector
 	    :param x_points: the x coordinate of each point
@@ -1401,15 +1424,15 @@ def fit_grid_alignment(x_points, y_points, grid_shape: str, grid_matrix: NDArray
 	results = []
 	for ξ_offset in [0, 1/2]:
 		x0, y0 = [naive_x0, naive_y0] + grid_matrix@[ξ_offset, 0]
-		_, _, total_error = snap_to_grid(x_points, y_points, grid_shape, grid_matrix, x0, y0)
+		_, _, total_error = snap_points_to_grid(x_points, y_points, grid_shape, grid_matrix, x0, y0)
 		results.append((total_error, x0, y0))
 	total_error, x0, y0 = min(results)
 
 	return x0, y0
 
 
-def snap_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float], grid_x0: float, grid_y0: float,
-                 ) -> tuple[NDArray[float], NDArray[float], float]:
+def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float], grid_x0: float, grid_y0: float,
+                        ) -> tuple[NDArray[float], NDArray[float], float]:
 	""" take a bunch of points that are supposed to be in a grid structure with some known spacing,
 	    orientation, and translational alignment, and return where you think they really are; the
 	    output points will all be exactly on that grid.
@@ -1441,7 +1464,6 @@ def snap_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float
 	x_fit = np.full(n, nan)
 	y_fit = np.full(n, nan)
 	errors = np.full(n, inf)
-	x_aps, y_aps = [], []
 	for i, (x, y) in enumerate(aperture_array.positions(
 			grid_shape, 1, grid_matrix, 0, image_size, grid_x0, grid_y0)):
 		distances = np.hypot(x - x_points, y - y_points)
@@ -1449,8 +1471,6 @@ def snap_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArray[float
 		errors[point_is_close_to_here] = distances[point_is_close_to_here]
 		x_fit[point_is_close_to_here] = x
 		y_fit[point_is_close_to_here] = y
-		x_aps.append(x)
-		y_aps.append(y)
 	total_error = np.sum(errors**2)
 
 	return x_fit, y_fit, total_error  # type: ignore
@@ -1546,13 +1566,17 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		raise DataError("there were no tracks.  we should have caut that by now.")
 	circles = []
 	for contour in contours:
+		# fit a circle to each contour
 		x_contour = np.interp(contour[:, 0], np.arange(crop_domain.x.num_bins), crop_domain.x.get_bins())
 		y_contour = np.interp(contour[:, 1], np.arange(crop_domain.y.num_bins), crop_domain.y.get_bins())
 		x_apparent, y_apparent, r_apparent = fit_circle(x_contour, y_contour)
-		if 0.7*r_nominal < r_apparent < 1.3*r_nominal:  # check the radius to avoid picking up noise
+		# check the radius to avoid picking up noise
+		if r_apparent >= 0.7*r_nominal:
 			extent = np.max(np.hypot(x_contour - x_contour[0], y_contour - y_contour[0]))
-			if extent > 0.8*r_apparent:  # circle is big enuff to use its data…
-				full = extent > 1.6*r_apparent  # …but is it complete enuff to trust its center
+			# make sure circle is complete enuff to use its data…
+			if extent > 0.8*r_apparent:
+				# …and check if it’s complete enuff to trust its center
+				full = extent > 1.6*r_apparent
 				circles.append((x_apparent, y_apparent, r_apparent, full))
 
 	# convert the found circles into numpy arrays
@@ -1571,7 +1595,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	r_true = np.linalg.norm(grid_transform, ord=2)*r_nominal
 
 	# aline the circles to whatever grid you found
-	x_grid_nodes, y_grid_nodes, _ = snap_to_grid(
+	x_grid_nodes, y_grid_nodes, _ = snap_points_to_grid(
 		x_circles_raw, y_circles_raw, grid_shape, s_nominal*grid_transform, grid_x0, grid_y0)
 	if trust_grid and x_circles_raw.size > 0:
 		error = np.hypot(x_grid_nodes - x_circles_raw, y_grid_nodes - y_circles_raw)
@@ -1615,6 +1639,28 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		raise DataError("I couldn't find any circles in this region")
 
 	return [(x, y) for x, y in zip(x_circles[valid], y_circles[valid])], grid_transform
+
+
+def isnan(value: Any) -> bool:
+	""" because Pandas uses nan as its stand-in for missing values (regardless of type), I need this
+	    special function to check for nan without throwing an error for non-floats.
+	"""
+	return type(value) is float and np.isnan(value)
+
+
+class DataError(ValueError):
+	""" when the data don’t make any sense """
+	pass
+
+
+class RecordNotFoundError(KeyError):
+	""" when an entry is missing from one of the CSV files """
+	pass
+
+
+class FilterError(ValueError):
+	""" when the filtering renders the specified radiation undetectable """
+	pass
 
 
 if __name__ == '__main__':

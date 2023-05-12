@@ -188,7 +188,7 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 def plot_source(filename: str, show: bool,
                 source_plane: Grid, source: NDArray[float], contour_level: float,
                 energy_min: float, energy_max: float, color_index: int, num_colors: int,
-                projected_stalk_direction: tuple[float, float, float], num_stalks: int) -> None:
+                projected_stalk_direction: Optional[tuple[float, float, float]], num_stalks: Optional[int]) -> None:
 	""" plot a single reconstructed deuteron/xray source
 	    :param filename: the name with which to save the resulting files, minus the fluff
 	    :param show: whether to make the user look at it
@@ -210,10 +210,10 @@ def plot_source(filename: str, show: bool,
 
 	# choose the plot limits
 	source_plane = source_plane.scaled(1e+4)  # convert coordinates to μm
-	object_size, (r0, θ), _ = shape_parameters(source_plane, source, contour=.25)
+	object_size, (r1, θ1), _ = shape_parameters(source_plane, source, contour=.25)
 	object_size = nearest_value(2*object_size,
 	                            np.array([100, 250, 800, 2000]))
-	x0, y0 = r0*cos(θ), r0*sin(θ)
+	x0, y0 = r1*cos(θ1), r1*sin(θ1)
 
 	# plot the reconstructed source image
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
@@ -225,7 +225,7 @@ def plot_source(filename: str, show: bool,
 	if PLOT_SOURCE_CONTOUR:
 		plt.contour(source_plane.x.get_bins(), source_plane.y.get_bins(), source.T,
 		            levels=[contour_level*np.max(source)], colors='#ddd', linestyles='solid', linewidths=1)
-	if PLOT_STALK:
+	if PLOT_STALK and projected_stalk_direction is not None and num_stalks is not None:
 		x_stalk, y_stalk, _ = projected_stalk_direction
 		if num_stalks == 1:
 			plt.plot([x0, x0 + x_stalk*60],
@@ -233,7 +233,7 @@ def plot_source(filename: str, show: bool,
 		elif num_stalks == 2:
 			plt.plot([x0 - x_stalk*60, x0 + x_stalk*60],
 			         [y0 - y_stalk*60, y0 + y_stalk*60], '-w', linewidth=2)
-		elif num_stalks > 2:
+		else:
 			raise ValueError(f"what do you mean, \"{num_stalks} stalks\"?")
 
 	plt.gca().set_facecolor("#000")
@@ -388,16 +388,16 @@ def plot_overlaid_contores(filename: str,
                            source_plane: Grid,
                            images: Sequence[NDArray[float]],
                            contour_level: float,
-                           projected_offset: tuple[float, float, float],
-                           projected_flow: tuple[float, float, float],
-                           projected_stalk: tuple[float, float, float],
-                           num_stalks: int) -> None:
+                           projected_offset: Optional[tuple[float, float, float]],
+                           projected_flow: Optional[tuple[float, float, float]],
+                           projected_stalk: Optional[tuple[float, float, float]],
+                           num_stalks: Optional[int]) -> None:
 	""" plot the plot with the multiple energy cuts overlaid
 	    :param filename: the extensionless filename with which to save the figure
 	    :param source_plane: the coordinates of the pixels (cm)
 	    :param images: a 3d array, which is a stack of all the x centers we have
 	    :param contour_level: the contour level in (0, 1) to plot
-	    :param projected_offset: the capsule offset from TCC in cm, given as (x, y, z)
+	    :param projected_offset: the capsule offset from TCC in μm, given as (x, y, z)
 	    :param projected_flow: the measured hot spot velocity in ?, given as (x, y, z)
 	    :param projected_stalk: the stalk direction unit vector, given as (x, y, z)
 	    :param num_stalks: the number of stalks to draw: 0, 1, or 2
@@ -405,10 +405,6 @@ def plot_overlaid_contores(filename: str,
 	# calculate the centroid of the highest energy bin
 	x0, y0 = center_of_mass(source_plane, images[-1])
 	source_plane = source_plane.shifted(-x0, -y0).scaled(1e+4)
-
-	x_off, y_off, z_off = projected_offset
-	x_flo, y_flo, z_flo = projected_flow
-	x_stalk, y_stalk, z_stalk = projected_stalk
 
 	particle = filename.split("-")[-2]
 	colormaps = choose_colormaps(particle, len(images))  # TODO: choose colors, not colormaps
@@ -422,19 +418,21 @@ def plot_overlaid_contores(filename: str,
 		            levels=[contour_level], colors=[color], linewidths=[2])
 
 	if PLOT_OFFSET:
-		plt.plot([0, x_off/1e-4], [0, y_off/1e-4], '-k')
-		plt.scatter([x_off/1e-4], [y_off/1e-4], color='k')
-		plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k',
-		          head_width=5, head_length=5, length_includes_head=True)
-		plt.text(0.05, 0.95, "offset out of page = {:.3f}\nflow out of page = {:.3f}".format(
-			z_off/sqrt(x_off**2 + y_off**2 + z_off**2), z_flo/sqrt(x_flo**2 + y_flo**2 + z_flo**2)),
-		         verticalalignment='top', transform=plt.gca().transAxes)
-	elif PLOT_STALK:
+		if projected_offset is not None:
+			x_off, y_off, z_off = projected_offset
+			plt.plot([0, x_off], [0, y_off], '-k')
+			plt.scatter([x_off], [y_off], color='k')
+		if projected_flow is not None:
+			x_flo, y_flo, z_flo = projected_flow
+			plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k',
+			          head_width=5, head_length=5, length_includes_head=True)
+	elif PLOT_STALK and projected_stalk is not None and num_stalks is not None:
+		x_stalk, y_stalk, z_stalk = projected_stalk
 		if num_stalks == 1:
 			plt.plot([0, x_stalk*60], [0, y_stalk*60], '-k', linewidth=2)
 		elif num_stalks == 2:
 			plt.plot([-x_stalk*60, x_stalk*60], [-y_stalk*60, y_stalk*60], '-k', linewidth=2)
-		elif num_stalks > 2:
+		else:
 			raise ValueError(f"what do you mean, \"{num_stalks} stalks\"?")
 
 	plt.axis('square')

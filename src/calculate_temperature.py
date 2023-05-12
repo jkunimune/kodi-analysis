@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from math import inf, nan
-from typing import Callable
+from typing import Callable, Optional
 
 import numpy as np
 import pandas as pd
@@ -16,14 +16,12 @@ from cmap import CMAP
 from coordinate import Grid
 from hdf5_util import load_hdf5
 from plots import make_colorbar, save_current_figure
-from util import parse_filtering, print_filtering, Filter, median, quantile
-
+from util import parse_filtering, print_filtering, Filter, median, quantile, shape_parameters, nearest_value
 
 SHOW_PLOTS = True
-SHOTS = ["104779", "104780", "104781", "104782", "104783"]
+SHOTS = ["105634"]
 LOSs = ["tim2", "tim4", "tim5", "srte"]
 NUM_SAMPLES = 100
-PLOT_RADIUS = 50
 
 
 def main():
@@ -108,9 +106,13 @@ def analyze(shot: str, los: str, num_stalks: int) -> tuple[float, float]:
 	save_current_figure(f"{shot}-{los}-temperature-fit")
 	print(f"Te = {temperature_integrated:.3f} ± {temperature_error_integrated:.3f} keV")
 
+	# estimate the radius of the source
+	object_size = nearest_value(1.5*images[0].radius,
+	                            np.array([100, 250, 750, 2000]))
+
 	# calculate the spacially resolved temperature
 	measurement_errors = 0.05*np.array([image.supremum for image in images])  # this isn’t very quantitative, but it captures the character of errors in the reconstructions
-	basis = Grid.from_size(PLOT_RADIUS, PLOT_RADIUS/20, True)
+	basis = Grid.from_size(object_size, object_size/20, True)
 	temperature_map = np.empty(basis.shape)
 	emission_map = np.empty(basis.shape)
 	for i in range(basis.x.num_bins):
@@ -319,7 +321,8 @@ def model_emission_derivative(temperature: float, ref_energies: NDArray[float],
 def plot_electron_temperature(filename: str, show: bool,
                               grid: Grid, temperature: NDArray[float], emission: NDArray[float],
                               temperature_integrated: float,
-                              projected_stalk_direction: tuple[float, float, float], num_stalks: int) -> None:
+                              projected_stalk_direction: Optional[tuple[float, float, float]],
+                              num_stalks: Optional[int]) -> None:
 	""" plot the electron temperature as a heatmap, along with some contours to show where the
 	    implosion actually is.
 	"""
@@ -331,12 +334,13 @@ def plot_electron_temperature(filename: str, show: bool,
 	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
 	            colors="#000", linewidths=1,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
-	x_stalk, y_stalk, _ = projected_stalk_direction
-	L = 30  # length of stalk image (μm)
-	if num_stalks == 1:
-		plt.plot([0, x_stalk*L], [0, y_stalk*L], color="#000", linewidth=2)
-	elif num_stalks == 2:
-		plt.plot([-x_stalk*L, x_stalk*L], [-y_stalk*L, y_stalk*L], color="#000", linewidth=2)
+	if num_stalks is not None and projected_stalk_direction is not None:
+		x_stalk, y_stalk, _ = projected_stalk_direction
+		L = grid.x.half_range/2  # length of stalk image (μm)
+		if num_stalks == 1:
+			plt.plot([0, x_stalk*L], [0, y_stalk*L], color="#000", linewidth=2)
+		elif num_stalks == 2:
+			plt.plot([-x_stalk*L, x_stalk*L], [-y_stalk*L, y_stalk*L], color="#000", linewidth=2)
 	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
 	         color="w", ha='left', va='top', transform=plt.gca().transAxes)
 	plt.xlabel("x (μm)")
@@ -345,12 +349,19 @@ def plot_electron_temperature(filename: str, show: bool,
 	plt.tight_layout()
 	save_current_figure(f"{filename}-temperature")
 
+	if projected_stalk_direction is not None:
+		x_lineout, y_lineout, _ = projected_stalk_direction
+		x_direction, y_direction = "Along stalk", "Orthogonal to stalk"
+	else:
+		x_lineout, y_lineout = 1, 0
+		x_direction, y_direction = "Along x-axis", "Along y-axis"
+
 	plt.figure()
 	l = np.linspace(-grid.x.half_range, grid.x.half_range, 101)
 	temperature_interpolator = interpolate.RegularGridInterpolator(
 		(grid.x.get_bins(), grid.y.get_bins()), temperature)
-	plt.plot(l, temperature_interpolator((l*x_stalk, l*y_stalk)), "C0-", label="Along stalk")
-	plt.plot(l, temperature_interpolator((l*y_stalk, -l*x_stalk)), "C1-.", label="Orthogonal to stalk")
+	plt.plot(l, temperature_interpolator((l*x_lineout, l*y_lineout)), "C0-", label=x_direction)
+	plt.plot(l, temperature_interpolator((l*y_lineout, -l*x_lineout)), "C1-.", label=y_direction)
 	plt.xlim(l[0], l[-1])
 	plt.xlabel("Position (μm)")
 	plt.ylabel("Temperature (keV)")
@@ -389,10 +400,14 @@ def load_all_xray_images_for(shot: str, tim: str) \
 					continue
 				if type(filter_str) is bytes:
 					filter_str = filter_str.decode("ascii")
+
+				object_radius, _, _ = shape_parameters(Grid.from_bin_array(x, y), source, contour=.25)
+
 				filter_stacks.append(parse_filtering(filter_str)[0])
 				images.append(Distribution(
 					np.sum(source)*(x[1] - x[0])*(y[1] - y[0]),
 					np.max(source),
+					object_radius,
 					interpolate.RegularGridInterpolator(
 						(x, y), source,
 						bounds_error=False, fill_value=0),
@@ -401,13 +416,17 @@ def load_all_xray_images_for(shot: str, tim: str) \
 
 
 class Distribution:
-	def __init__(self, total: float, supremum: float, interpolator: Callable[[tuple[float, float]], float]):
+	def __init__(self, total: float, supremum: float, radius: float,
+	             interpolator: Callable[[tuple[float, float]], float]):
 		""" a number bundled with an interpolator
 		    :param total: can be either the arithmetic or quadratic total
+		    :param supremum: the max value of the distribution
+		    :param radius: the approximate radius of the 25% contore
 		    :param interpolator: takes a tuple of floats and returns a float scalar
 		"""
 		self.total = total
 		self.supremum = supremum
+		self.radius = radius
 		self.at = interpolator
 
 
