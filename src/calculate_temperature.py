@@ -49,8 +49,9 @@ def main():
 						labels.append(f"{energy_min:.0f} – {energy_max:.0f} keV")
 			else:
 				emissions.append([nan]*len(emissions[0]))
+			stalk_position = shot_table.loc[shot]["TPS"]
 			num_stalks = shot_table.loc[shot]["stalks"]
-			temperature, temperature_error = analyze(shot, los, num_stalks)
+			temperature, temperature_error = analyze(shot, los, stalk_position, num_stalks)
 			temperatures.append((temperature, temperature_error))
 	emissions = np.array(emissions)
 	temperatures = np.array(temperatures)
@@ -75,7 +76,7 @@ def main():
 	plt.show()
 
 
-def analyze(shot: str, los: str, num_stalks: int) -> tuple[float, float]:
+def analyze(shot: str, los: str, stalk_position: str, num_stalks: int) -> tuple[float, float]:
 	# set it to work from the base directory regardless of whence we call the file
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir(os.path.dirname(os.getcwd()))
@@ -158,7 +159,11 @@ def analyze(shot: str, los: str, num_stalks: int) -> tuple[float, float]:
 
 	# plot the temperature
 	tim_coordinates = coordinate.los_coordinates(los)
-	stalk_direction = coordinate.project(1., *coordinate.NAMED_LOS["TPS2"], tim_coordinates)
+	if stalk_position in coordinate.NAMED_LOS:
+		stalk_direction = coordinate.project(
+			1., *coordinate.NAMED_LOS[stalk_position], tim_coordinates)
+	else:
+		stalk_direction = None
 	plot_electron_temperature(f"{shot}-{los}", SHOW_PLOTS, basis,
 	                          temperature_map, emission_map, temperature_integrated,
 	                          stalk_direction, num_stalks)
@@ -359,7 +364,7 @@ def plot_electron_temperature(filename: str, show: bool,
 	plt.figure()
 	l = np.linspace(-grid.x.half_range, grid.x.half_range, 101)
 	temperature_interpolator = interpolate.RegularGridInterpolator(
-		(grid.x.get_bins(), grid.y.get_bins()), temperature)
+		(grid.x.get_bins(), grid.y.get_bins()), temperature, bounds_error=False)
 	plt.plot(l, temperature_interpolator((l*x_lineout, l*y_lineout)), "C0-", label=x_direction)
 	plt.plot(l, temperature_interpolator((l*y_lineout, -l*x_lineout)), "C1-.", label=y_direction)
 	plt.xlim(l[0], l[-1])
