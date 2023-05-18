@@ -115,7 +115,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	if "deuteron" in filename:
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	elif "xray" in filename:
-		plt.title(f"$h\\nu$ = {energy_min:.0f} – {energy_max:.0f} keV")
+		plt.title(f"$h\\nu$ ≥ {energy_min:.0f} keV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	make_colorbar(0, vmax, "Counts")
@@ -241,7 +241,7 @@ def plot_source(filename: str, show: bool,
 	if particle == "deuteron":
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	elif particle == "xray":
-		plt.title(f"$h\\nu$ = {energy_min:.0f} – {energy_max:.0f} keV")
+		plt.title(f"$h\\nu$ ≥ {energy_min:.0f} keV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.axis([x0 - object_size, x0 + object_size,

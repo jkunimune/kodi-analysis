@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -20,7 +22,11 @@ def r2_to_std(r2):
 	return r2/np.sqrt(2*np.log(2))
 
 
-data = pd.read_csv("../images/summary.csv", dtype={'shot': str}) # start by reading the existing data or creating a new file
+# set it to work from the base directory regardless of whence we call the file
+if os.path.basename(os.getcwd()) == "src":
+	os.chdir(os.path.dirname(os.getcwd()))
+
+data = pd.read_csv("images/summary.csv", dtype={'shot': str}) # start by reading the existing data or creating a new file
 good = data.shot.str.contains("9552") & (data.energy_cut != 'xray')
 energy_min_lookup_table = pd.Series(
 	index=['lo', 'hi', 'xray', 'synth'],
@@ -58,7 +64,7 @@ select_columns = ['shot', 'TIM', 'energy (MeV)', 'Er*dz (kV)', 'Meff/M', 'reff/r
 output = pd.DataFrame(data={key: data[key] for key in select_columns})
 print(output)
 
-output.to_csv('../images/charging_info.csv', index=False)
+output.to_csv('images/charging_info.csv', index=False)
 
 plt.scatter(x=data['energy (MeV)'], y=data['Q (C/cm^2)'], c=data['TIM'])
 plt.show()

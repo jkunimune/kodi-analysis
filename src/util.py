@@ -31,9 +31,9 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 	# loop thru the filtering
 	while len(filter_code) > 0:
 		# brackets indicate a piece of CR-39, a pipe indicates an image plate
-		for detector_code, detector_type, thickness in [("[]", "cr39", 1500), ("|", "ip", 1)]:
+		for detector_code, detector_type, thickness in [("[]", "CR39", 1500), ("|", "IP", 1)]:
 			if filter_code.startswith(detector_code):
-				if detector_type == detector.lower():
+				if detector_type == detector.upper():
 					if num_detectors_seen == index:
 						return filter_stacks
 					else:

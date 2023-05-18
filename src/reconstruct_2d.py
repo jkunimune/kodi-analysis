@@ -26,12 +26,13 @@ from skimage import measure
 
 import aperture_array
 import deconvolution
-import detector
 import electric_field
 from cmap import CMAP
 from coordinate import project, los_coordinates, rotation_matrix, Grid, NAMED_LOS, LinSpace
 from hdf5_util import load_hdf5, save_as_hdf5
+from image_plate import xray_energy_limit, fade
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
+from solid_state import track_diameter, particle_E_in, particle_E_out
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
 	line_search, quantile, bin_centers_and_sizes, periodic_mean, parse_filtering, \
@@ -94,10 +95,6 @@ def analyze(shots_to_reconstruct: list[str],
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
 	                       user to close them, rather than only saving them to disc and silently proceeding.
 	"""
-	# set it to work from the base directory regardless of whence we call the file
-	if os.path.basename(os.getcwd()) == "src":
-		os.chdir(os.path.dirname(os.getcwd()))
-
 	# ensure all of the important results directories exist
 	if not os.path.isdir("results"):
 		os.mkdir("results")
@@ -250,7 +247,7 @@ def analyze(shots_to_reconstruct: list[str],
 				result,
 				ignore_index=True)
 
-		summary = summary.sort_values(['shot', 'los', 'particle', 'energy max'])
+		summary = summary.sort_values(['shot', 'los', 'particle', 'energy max', 'energy min'])
 		try:
 			summary.to_csv("results/summary.csv", index=False) # save the results to disk
 		except PermissionError:
@@ -323,7 +320,7 @@ def analyze_scan(input_filename: str,
 	num_detectors = count_detectors(filtering, detector_type)
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
 	filter_section_indices = np.argsort(np.argsort(
-		[detector.xray_energy_bounds(stack, .01)[0] for stack in filter_stacks]))
+		[xray_energy_limit(stack) for stack in filter_stacks]))
 	filter_section_names = name_filter_stacks(filter_stacks)
 	filter_sections = reversed(list(  # the reason we reverse this is that SRTe has its biggest filter section last
 		zip(filter_section_indices, filter_section_names, filter_stacks)))
@@ -340,7 +337,7 @@ def analyze_scan(input_filename: str,
 		if particle == "deuteron":
 			energy_cuts = deuteron_energy_cuts  # these energy bounds are in MeV
 		else:
-			energy_cuts = [detector.xray_energy_bounds(filter_stack, .10)]  # these energy bounds are in keV
+			energy_cuts = [(xray_energy_limit(filter_stack), inf)]  # these energy bounds are in keV
 
 		# perform the analysis on each section
 		try:
@@ -634,19 +631,19 @@ def analyze_scan_section_cut(input_filename: str,
 		resolution = DEUTERON_RESOLUTION
 
 		# convert scattering energies to CR-39 energies
-		incident_energy_min, incident_energy_max = detector.particle_E_out(
+		incident_energy_min, incident_energy_max = particle_E_out(
 			[energy_min, energy_max], 1, 2, filter_stack)
 		# exclude particles to which the CR-39 won’t be sensitive
 		incident_energy_min = max(MIN_DETECTABLE_ENERGY, incident_energy_min)
 		incident_energy_max = min(MAX_DETECTABLE_ENERGY, incident_energy_max)
 		# convert CR-39 energies to track diameters
-		diameter_max, diameter_min = detector.track_diameter(
+		diameter_max, diameter_min = track_diameter(
 			[incident_energy_min, incident_energy_max], etch_time=etch_time, a=2, z=1)
 		# expand make sure we capture max D if we don’t expect anything bigger than this
 		if incident_energy_min <= MIN_DETECTABLE_ENERGY:
 			diameter_max = inf
 		# convert back to exclude particles that are ranged out
-		energy_min, energy_max = detector.particle_E_in(
+		energy_min, energy_max = particle_E_in(
 			[incident_energy_min, incident_energy_max], 1, 2, filter_stack)
 
 		if incident_energy_max <= MIN_DETECTABLE_ENERGY:
@@ -1241,7 +1238,7 @@ def load_ip_scan_file(filename: str) -> tuple[Grid, NDArray[float]]:
 			fade_time = f.attrs["scan_delay"]
 		else:
 			fade_time = f["PSL_per_px"].attrs["scanDelaySeconds"]/60.
-	scan /= detector.psl_fade(fade_time)  # don’t forget to fade correct when you load it
+	scan /= fade(fade_time)  # don’t forget to fade correct when you load it
 	return scan_plane, scan
 
 
@@ -1664,6 +1661,10 @@ class FilterError(ValueError):
 
 
 if __name__ == '__main__':
+	# set it to work from the base directory regardless of whence we call the file
+	if os.path.basename(os.getcwd()) == "src":
+		os.chdir(os.path.dirname(os.getcwd()))
+
 	# read the command-line arguments
 	if len(sys.argv) <= 1:
 		logging.error("please specify the shot number(s) to reconstruct.")

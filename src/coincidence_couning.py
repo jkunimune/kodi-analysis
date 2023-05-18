@@ -2,9 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 
+from solid_state import particle_E_out, track_diameter
+
 plt.rcParams.update({'font.family': 'sans', 'font.size': 14})
 
-import detector
 from cmap import CMAP
 
 
@@ -34,14 +35,14 @@ if __name__ == '__main__':
 
 	e0_d = np.random.choice(energy_d, p=spectrum_d/np.sum(spectrum_d), size=N)
 	e0_t = np.random.choice(energy_t, p=spectrum_t/np.sum(spectrum_t), size=int(N*np.sum(spectrum_t)/np.sum(spectrum_d)))
-	e1_d = detector.particle_E_out(1, 2, e0_d, [(25, 'Al')])
-	e1_t = detector.particle_E_out(1, 3, e0_t, [(25, 'Al')])
-	e2_d = detector.particle_E_out(1, 2, e1_d, [(depth + 2.7*time2, 'cr')])
-	e2_t = detector.particle_E_out(1, 3, e1_t, [(depth + 2.7*time2, 'cr')])
-	d1_d = detector.track_diameter(e1_d, 1, 2, time1)
-	d1_t = detector.track_diameter(e1_t, 1, 3, time1)
-	d2_d = detector.track_diameter(e2_d, 1, 2, time2)
-	d2_t = detector.track_diameter(e2_t, 1, 3, time2)
+	e1_d = particle_E_out(1, 2, e0_d, [(25, 'Al')])
+	e1_t = particle_E_out(1, 3, e0_t, [(25, 'Al')])
+	e2_d = particle_E_out(1, 2, e1_d, [(depth + 2.7*time2, 'cr')])
+	e2_t = particle_E_out(1, 3, e1_t, [(depth + 2.7*time2, 'cr')])
+	d1_d = track_diameter(e1_d, 1, 2, time1)
+	d1_t = track_diameter(e1_t, 1, 3, time1)
+	d2_d = track_diameter(e2_d, 1, 2, time2)
+	d2_t = track_diameter(e2_t, 1, 3, time2)
 	e0 = np.concatenate([e0_d, e0_t])
 	e1 = np.concatenate([e1_d, e1_t])
 	e2 = np.concatenate([e2_d, e2_t])

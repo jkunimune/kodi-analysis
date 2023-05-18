@@ -21,12 +21,12 @@ from util import downsample_2d
 matplotlib.use("Qt5agg")
 
 
-SCAN_DIRECTORY = "../input/scans"
+SCAN_DIRECTORY = "input/scans"
 
 
 def main():
 	# load the general shot info
-	los_table = pd.read_csv("../input/los_info.csv", dtype={"shot": str}, skipinitialspace=True)
+	los_table = pd.read_csv("input/los_info.csv", dtype={"shot": str}, skipinitialspace=True)
 
 	# then search for scan files (most recent first)
 	for filename in reversed(os.listdir(SCAN_DIRECTORY)):
@@ -121,4 +121,8 @@ def main():
 
 
 if __name__ == "__main__":
+	# set it to work from the base directory regardless of whence we call the file
+	if os.path.basename(os.getcwd()) == "src":
+		os.chdir(os.path.dirname(os.getcwd()))
+
 	main()

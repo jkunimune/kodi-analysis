@@ -1,3 +1,4 @@
+import os
 import pickle
 
 import matplotlib.pyplot as plt
@@ -28,7 +29,7 @@ EIN_CUTS = [
 	[10, 15],
 ]
 
-FOLDER = '../scans/'
+FOLDER = 'input/scans/'
 
 short_header = """\
 TABULATION OF TRACKS in SCAN FILE SUPER_ULTIMATE_CR39_MASTER_SHOWDOWN_FINAL_SMASH.cpsa
@@ -270,6 +271,10 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 
 
 if __name__ == '__main__':
+	# set it to work from the base directory regardless of whence we call the file
+	if os.path.basename(os.getcwd()) == "src":
+		os.chdir(os.path.dirname(os.getcwd()))
+
 	# for shot, Y, SNR in [(95520, 1000000, 8), (95521, 1000000, 8), (95522, 300000, 4), (95523, 300000, 4), (95524, 300000, 4)]:
 	# 	construct_data(shot, (1000, .05), Y, SNR)
 	# for shot, Y, SNR in [('ellipse', 200000, 8)]:

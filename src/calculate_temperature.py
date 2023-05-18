@@ -11,10 +11,10 @@ from numpy.typing import NDArray
 from scipy import interpolate, integrate, optimize
 
 import coordinate
-import detector
 from cmap import CMAP
 from coordinate import Grid
 from hdf5_util import load_hdf5
+from image_plate import log_xray_sensitivity
 from plots import make_colorbar, save_current_figure
 from util import parse_filtering, print_filtering, Filter, median, quantile, shape_parameters, nearest_value
 
@@ -305,7 +305,7 @@ def compute_sensitivity(filter_stacks: list[list[Filter]]) -> tuple[NDArray[floa
 	ref_energies = np.geomspace(1, 1e3, 61)
 	log_sensitivities = []
 	for filter_stack in filter_stacks:
-		log_sensitivities.append(detector.log_xray_sensitivity(ref_energies, filter_stack))
+		log_sensitivities.append(log_xray_sensitivity(ref_energies, filter_stack))
 	log_sensitivities = np.array(log_sensitivities)
 	return ref_energies, log_sensitivities
 
