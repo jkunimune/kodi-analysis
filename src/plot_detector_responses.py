@@ -6,7 +6,7 @@ import numpy as np
 import image_plate
 import solid_state
 
-plt.rcParams.update({'font.family': 'sans', 'font.size': 18})
+plt.rcParams.update({'font.family': 'sans-serif', 'font.size': 16})
 
 # set it to work from the base directory regardless of whence we call the file
 if os.path.basename(os.getcwd()) == "src":
@@ -41,6 +41,38 @@ plt.ylabel("Diameter (μm)")
 plt.tight_layout()
 # plt.savefig("dve.png", dpi=300)
 # plt.savefig("dve.eps")
+
+plt.figure(figsize=(8, 4), facecolor="none")
+plt.locator_params(steps=[1, 2, 5, 10])
+energies = np.geomspace(1e0, 1e2, 101)
+sensitivity = image_plate.xray_sensitivity(energies, [])
+plt.plot(energies, sensitivity/np.max(sensitivity))
+plt.grid()
+plt.xlim(energies[0], energies[-1])
+plt.ylim(0, None)
+plt.xscale("log")
+plt.xlabel("Photon energy (keV)")
+plt.ylabel("Sensitivity")
+plt.tight_layout()
+plt.savefig("Image plate sensitivity curve.svg")
+
+plt.figure(figsize=(8, 4), facecolor="none")
+times = np.geomspace(600, 864000, 101)
+plt.plot(times, image_plate.fade(times))  # type: ignore
+plt.grid()
+plt.xscale("log")
+plt.ylim(0, 1)
+plt.xlim(times[0], times[-1])
+plt.xlabel("Time since exposure")
+plt.xticks([600, 3600, 21600, 86400, 864000], ["10 min", "1 hr", "6 hr", "1 d", "10 d"])
+plt.xticks(np.concatenate([600*np.arange(2, 6),
+                           3600*np.arange(2, 6),
+                           21600*np.arange(2, 4),
+                           86400*np.arange(2, 10)]), [], minor=True)
+plt.ylabel("Fade")
+plt.tight_layout()
+plt.savefig("Image plate fade curve.svg")
+plt.show()
 
 energies = np.geomspace(1, 1e3, 301)
 plt.figure(figsize=(8, 4))
@@ -84,21 +116,21 @@ for specific in [False, True]:
 	plt.xlim(1e-3, 1e+0)
 	plt.tight_layout()
 
-# compare my theoretical curve to the experimentally measured IP attenuation
-plt.figure()
-for stack in [[(120, "BaFBr"), (233, "PET"), (80, "ferrite")], [(None, "SRIP")]]:
-	attenuation = np.zeros(energies.shape)
-	for thickness, material in stack:
-		attenuation += image_plate.log_xray_transmission(energies, thickness, material)
-	plt.plot(energies, np.exp(attenuation), label=stack[0][1] if len(stack) == 1 else "model")
-plt.legend()
-plt.grid()
-plt.xscale("log")
-plt.xlabel("Energy (keV)")
-plt.ylabel("Transmission")
-plt.xlim(1e+0, 1e+3)
-plt.yscale("log")
-plt.ylim(5e-5, 2)
-plt.tight_layout()
+# # compare my theoretical curve to the experimentally measured IP attenuation
+# plt.figure()
+# for stack in [[(120, "BaFBr"), (233, "PET"), (80, "ferrite")], [(None, "SRIP")]]:
+# 	attenuation = np.zeros(energies.shape)
+# 	for thickness, material in stack:
+# 		attenuation += image_plate.log_xray_transmission(energies, thickness, material)
+# 	plt.plot(energies, np.exp(attenuation), label=stack[0][1] if len(stack) == 1 else "model")
+# plt.legend()
+# plt.grid()
+# plt.xscale("log")
+# plt.xlabel("Energy (keV)")
+# plt.ylabel("Transmission")
+# plt.xlim(1e+0, 1e+3)
+# plt.yscale("log")
+# plt.ylim(5e-5, 2)
+# plt.tight_layout()
 
 plt.show()

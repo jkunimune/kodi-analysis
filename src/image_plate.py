@@ -77,9 +77,9 @@ def log_xray_transmission(
 	                     file *without* multiplying by the thickness (the thickness is ignored).
 	    :return: the log of the fraction of photons that make it through the filter
 	"""
-	if material == "ip" or material == "srip":
+	if material.lower() == "ip" or material.lower() == "srip":
 		return load_attenuation_curve(energy, "srip")
-	elif material == "msip":
+	elif material.lower() == "msip":
 		return load_attenuation_curve(energy, "msip")
 	attenuation = load_attenuation_curve(energy, material)
 	return -attenuation*thickness
