@@ -107,7 +107,7 @@ def analyze(shots_to_reconstruct: list[str],
 	logging.basicConfig(
 		level=logging.INFO,
 		format="{asctime:s} |{levelname:4.4s}| {message:s}", style='{',
-		datefmt="%m-%d %H:%M",
+		datefmt="%H:%M",
 		handlers=[
 			logging.FileHandler("results/out-2d.log", encoding='utf-8'),
 			logging.StreamHandler(),

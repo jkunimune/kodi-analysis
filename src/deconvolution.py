@@ -155,12 +155,20 @@ def gelfgat(F: NDArray[float], q: NDArray[float],
 			ss = np.sum(s**2/D, where=data_region)
 			dldh = δg0**2/g0 + np.sum(δg**2/g, where=g != 0)
 			h = dldh/(N*(δδ - sδ*sδ/ss) - dldh*sδ/ss)
+			if not (h > 0):
+				raise RuntimeError(f"the calculated step size was {h} for some reason.")
 
 		# limit the step length if necessary to prevent negative values
 		if g0 + h*δg0 < 0:
 			h = -g0/δg0*5/6 # don't let the background pixel even reach zero
 		if np.min(g + h*δg) < 0:
 			h = np.amin(-g/δg, where=δg < 0, initial=h) # stop the other pixels as they reach zero
+		if isnan(h):
+			print(f"{g0} + {δg0}")
+			print(g)
+			print("+")
+			print(δg)
+			raise RuntimeError(f"the step size became nan after limiting the step length.  ")
 		assert h > 0, h
 
 		# take the step
