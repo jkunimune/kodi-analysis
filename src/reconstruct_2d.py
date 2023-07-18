@@ -495,7 +495,7 @@ def analyze_scan_section(input_filename: str,
 			                              ["vertices"])
 		except FileNotFoundError:
 			old_data_polygon = None
-		if show_plots:
+		if show_plots or old_data_polygon is None:
 			try:
 				data_polygon = user_defined_region(input_filename, default=old_data_polygon,
 				                                   title=f"Select the {section_name} region, then close this window.")
