@@ -30,6 +30,9 @@ def main():
 
 	# then search for scan files (most recent first)
 	for filename in reversed(os.listdir(SCAN_DIRECTORY)):
+		if re.match(r".*\.hdf$", filename):
+			print(f"you seem to have a HDF4 file in here: {filename}.  "
+			      f"if you want to analyze it, convert it to HDF5 first.")
 		if re.match(r"^pcis[-_].*s[0-9]+.*\.h5$", filename, re.IGNORECASE) and \
 			not re.search(r"tim[0-9]", filename, re.IGNORECASE):
 			print(filename)
