@@ -15,5 +15,7 @@ shot,         aperture radius, aperture spacing, aperture arrangement, yield,   
 107129,        150,            600,              hex
 107130,        150,            600,              hex
 107132,        150,            600,              hex
+109043,        150,            600,              hex,                  1.0e13,  TPS2, 1,     100.3
+109044,        150,            600,              hex,                  1.7e13,  TPS2, 1,       2.9
 ben,             0,              0,              hex,                  1.413e14
 synth-square, 1000,              0,              single

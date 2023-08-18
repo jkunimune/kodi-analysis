@@ -40,3 +40,13 @@ shot,   los,  standoff, magnification, filtering
 105321, tim6, 4.18,     14.85,         15Ta [] 150Al [] 500Al | 200Al | 200Al |
 105634, srte, 10.95248, 19.51,         762Be 25kapton 127Al/254Al/610Al/1270Al |
 107129, tim0, 4.21,     13,            15Ta[]
+109043, tim1, 3.00,     21,            15Ta/0Ta 50Al |
+109043, tim2, 3.00,     21,            15Ta/0Ta 50Al |
+109043, tim3, 3.00,     21,            15Ta/0Ta 50Al |
+109043, tim4, 3.00,     21,            15Ta/0Ta 50Al |
+109043, tim5, 3.00,     21,            15Ta/0Ta 50Al |
+109044, tim1, 3.00,     21,            15Ta/0Ta 50Al |
+109044, tim2, 3.00,     21,            15Ta/0Ta 50Al |
+109044, tim3, 3.00,     21,            15Ta/0Ta 50Al |
+109044, tim4, 3.00,     21,            15Ta/0Ta 50Al |
+109044, tim5, 3.00,     21,            15Ta/0Ta 50Al |
