@@ -1461,7 +1461,7 @@ def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArra
 
 	# determine the size so you can iterate thru the grid nodes correctly
 	spacing = np.linalg.norm(grid_matrix, ord=2)
-	image_size = np.max(np.hypot(x_points - grid_x0, y_points - grid_y0)) + spacing
+	image_size = np.max(np.hypot(x_points - grid_x0, y_points - grid_y0), initial=-inf) + spacing
 
 	# check each possible grid point and find the best fit
 	x_fit = np.full(n, nan)
@@ -1586,6 +1586,9 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 	x_circles_raw = np.array([x for x, y, r, full in circles], dtype=float)
 	y_circles_raw = np.array([y for x, y, r, full in circles], dtype=float)
 	circle_fullness = np.array([full for x, y, r, full in circles], dtype=bool)
+
+	if np.count_nonzero(circle_fullness) == 0:
+		raise DataError("I didn't find any circles of the expected size.")
 
 	# use a simplex algorithm to fit for scale and angle
 	if grid_parameters is not None:
