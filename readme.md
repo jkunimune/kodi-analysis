@@ -8,7 +8,7 @@ Code for analyzing penumbral imaging, including PCIS, KoDI, SRTe, and XRIS aka P
 The file structure goes like this:
 - `src` – various Python scripts
     - `main` – Java files for some of the more time-consuming operations
-- `input` – input files (including the files `shots.csv` and `los_info.txt`)
+- `input` – input files (including the files `shots.csv` and `los_info.csv`)
   - `scans` – CR-39 and image plate scan files (put your scans here!)
   - `tables` – stopping power and cross section tables
 - `results` – outputs from the analysis (including the file `summary.csv` and varius logs)
@@ -22,9 +22,9 @@ The file structure goes like this:
 The typical workflow for doing 2D reconstructions looks like this:
 1. Drop your `.cpsa` or `.h5` scan files into the `input/scans` directory.
    If you have `.hdf5` files, you’ll need to convert them to `.h5` using NASA’s `h4toh5` tool.
-2. Edit the `shot_info.csv` and `los_info.txt` files in the `input` directory to include the shots and lines of sight you want to analyze.
+2. Edit the `shot_info.csv` and `los_info.csv` files in the `input` directory to include the shots and lines of sight you want to analyze.
    The `shot_info.csv` file should have "shot", "standoff", "magnification", "aperture radius", "aperture spacing", and "aperture arrangement" columns,
-   while `los_info.txt` should have "shot", "tim", and "filtering" columns.
+   while `los_info.csv` should have "shot", "tim", and "filtering" columns.
    You may instead put "standoff", "magnification", "aperture radius", "aperture spacing", and "aperture arrangement" in `los_info.csv`,
    for example if you have different magnifications on different lines of sight.
    - The "shot" column should contain the shot number (or any other identifying filename substring) of each implosion you have data for.
