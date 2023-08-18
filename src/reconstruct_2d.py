@@ -198,10 +198,16 @@ def analyze(shots_to_reconstruct: list[str],
 		except KeyError:
 			logging.error(f"please add shot {shot!r} to the input/shot_info.csv file.")
 			continue
+		if shot_info.ndim != 1:
+			logging.error(f"shot {shot!r} appears more than once in the input/shot_info.csv file!")
+			continue
 		try:
 			los_specific_shot_info = los_table.loc[(shot, los)]
 		except KeyError:
 			logging.error(f"please add shot {shot!r}, LOS {los!r} to the input/los_info.csv file.")
+			continue
+		if los_specific_shot_info.ndim != 1:
+			logging.error(f"shot {shot!r}, LOS {los!r} appears more than once in the input/los_info.csv file!")
 			continue
 		shot_info = pd.concat([shot_info, los_specific_shot_info])
 
