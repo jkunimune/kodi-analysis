@@ -33,11 +33,11 @@ def main():
 		if re.match(r".*\.hdf$", filename):
 			print(f"you seem to have a HDF4 file in here: {filename}.  "
 			      f"if you want to analyze it, convert it to HDF5 first.")
-		if re.match(r"^pcis[-_].*s[0-9]+.*\.h5$", filename, re.IGNORECASE) and \
+		if re.match(r"^(pcis|kodi)[-_].*s[0-9]+.*\.h5$", filename, re.IGNORECASE) and \
 			not re.search(r"tim[0-9]", filename, re.IGNORECASE):
 			print(filename)
 			shot = re.search(r"s([0-9]+)", filename, re.IGNORECASE).group(1)
-			if re.search(r"_pcis[0-9]", filename):
+			if re.search(r"_(pcis|kodi)[0-9]", filename):
 				scan_index = int(re.search(r"_pcis([0-9+])", filename, re.IGNORECASE).group(1)) - 1
 			else:
 				scan_index = 0
