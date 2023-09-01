@@ -96,6 +96,10 @@ def main():
 				start, end = cut_positions[cut_index - 1], cut_positions[cut_index]
 				if end - start >= image.shape[1]/2:
 					cut_intervals.append((start, end))
+			if len(cut_intervals) == 0:
+				raise ValueError(f"none of these cuts look wide enough to be an image.  I use the "
+				                 f"spacing between the cuts to infer which of them have data in "
+				                 f"them, so try giving the data more space.")
 			# sort them from brightest to dimmest
 			cut_intervals = sorted(
 				cut_intervals, reverse=True,
@@ -116,6 +120,7 @@ def main():
 					                 f"image plates in this scan ({filename}).")
 
 				new_filename = f"{shot}_{tim}_ip{ip_position}.h5"
+				print(f"saving to {new_filename}")
 				with h5py.File(os.path.join(SCAN_DIRECTORY, new_filename), "w") as f:
 					f.attrs["scan_delay"] = scan_delay
 					f["x"] = grid.x.get_edges()[start:end + 1]
