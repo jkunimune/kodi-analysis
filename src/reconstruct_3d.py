@@ -118,56 +118,57 @@ if __name__ == '__main__':
 			los_indices = {}
 			lines_of_sight = []
 			num_pixels = 0
-			for filename in os.listdir('results/data'): # search for files that match each row
-				filepath = os.path.join('results/data', filename)
-				filename, extension = os.path.splitext(filename)
+			for directory, _, filenames in os.walk('results/data'): # search for files that match each row
+				for shot_number in filenames:
+					filepath = os.path.join(directory, shot_number)
+					shot_number, extension = os.path.splitext(shot_number)
 
-				metadata = filename.split('_') if '_' in filename else filename.split('-')
-				if extension == '.h5' and name in metadata and "deuteron" in metadata and "source" in metadata: # only take h5 files
-					los = None
-					for metadatum in metadata: # pull out the different peces of information from the filename
-						if re.fullmatch(r"(tim[0-9]|srte)", metadatum):
-							los = metadatum
-					if los in los_indices:
-						print(f"I found multiple images for {los}, so I'm ignoring {filename}")
-						continue
-					else:
-						los_indices[los] = len(lines_of_sight)
+					metadata = shot_number.split('_') if '_' in shot_number else shot_number.split('-')
+					if extension == '.h5' and name in metadata and "deuteron" in metadata and "source" in metadata: # only take h5 files
+						los = None
+						for metadatum in metadata: # pull out the different peces of information from the filename
+							if re.fullmatch(r"(tim[0-9]|srte)", metadatum):
+								los = metadatum
+						if los in los_indices:
+							print(f"I found multiple images for {los}, so I'm ignoring {shot_number}")
+							continue
+						else:
+							los_indices[los] = len(lines_of_sight)
 
-					Э_cuts, ξ_centers, υ_centers, images = load_hdf5(filepath, ["energy", "x", "y", "image"])
-					images = images.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
-					assert images.shape == (Э_cuts.shape[0], ξ_centers.size, υ_centers.size), (images.shape, ξ_centers.shape, υ_centers.shape)
+						Э_cuts, ξ_centers, υ_centers, images = load_hdf5(filepath, ["energy", "x", "y", "image"])
+						images = images.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
+						assert images.shape == (Э_cuts.shape[0], ξ_centers.size, υ_centers.size), (images.shape, ξ_centers.shape, υ_centers.shape)
 
-					# automatically detect and convert the spatial units to (μm)
-					if ξ_centers.max() - ξ_centers.min() < 1e-3:
-						ξ_centers, υ_centers = ξ_centers*1e6, υ_centers*1e6
-					elif ξ_centers.max() - ξ_centers.min() < 1e-1:
-						ξ_centers, υ_centers = ξ_centers*1e4, υ_centers*1e4
+						# automatically detect and convert the spatial units to (μm)
+						if ξ_centers.max() - ξ_centers.min() < 1e-3:
+							ξ_centers, υ_centers = ξ_centers*1e6, υ_centers*1e6
+						elif ξ_centers.max() - ξ_centers.min() < 1e-1:
+							ξ_centers, υ_centers = ξ_centers*1e4, υ_centers*1e4
 
-					μξ = np.average(ξ_centers, weights=np.sum(images, axis=(0, 2)))
-					μυ = np.average(υ_centers, weights=np.sum(images, axis=(0, 1)))
-					ξ_centers -= μξ
-					υ_centers -= μυ
+						μξ = np.average(ξ_centers, weights=np.sum(images, axis=(0, 2)))
+						μυ = np.average(υ_centers, weights=np.sum(images, axis=(0, 1)))
+						ξ_centers -= μξ
+						υ_centers -= μυ
 
-					r_max = min(r_max, -ξ_centers[0], ξ_centers[-1], -υ_centers[0], υ_centers[-1])
+						r_max = min(r_max, -ξ_centers[0], ξ_centers[-1], -υ_centers[0], υ_centers[-1])
 
-					ξ_in_bounds = (ξ_centers >= -r_max) & (ξ_centers <= r_max) # crop out excessive empty space
-					υ_in_bounds = (υ_centers >= -r_max) & (υ_centers <= r_max)
-					ξ_centers, υ_centers = ξ_centers[ξ_in_bounds], υ_centers[υ_in_bounds]
-					images = images[:, ξ_in_bounds][:, :, υ_in_bounds]
+						ξ_in_bounds = (ξ_centers >= -r_max) & (ξ_centers <= r_max) # crop out excessive empty space
+						υ_in_bounds = (υ_centers >= -r_max) & (υ_centers <= r_max)
+						ξ_centers, υ_centers = ξ_centers[ξ_in_bounds], υ_centers[υ_in_bounds]
+						images = images[:, ξ_in_bounds][:, :, υ_in_bounds]
 
-					while ξ_centers[1] - ξ_centers[0] < .7*spatial_resolution or images[0, :, :].size > 10000: # scale it down if it's unnecessarily fine
-						ξ_centers = (ξ_centers[:-1:2] + ξ_centers[1::2])/2
-						υ_centers = (υ_centers[:-1:2] + υ_centers[1::2])/2
-						images = (images[:, :-1:2, :-1:2] + images[:, :-1:2, 1::2] +
-						          images[:, 1::2, :-1:2] + images[:, 1::2, 1::2])/4
+						while ξ_centers[1] - ξ_centers[0] < .7*spatial_resolution or images[0, :, :].size > 10000: # scale it down if it's unnecessarily fine
+							ξ_centers = (ξ_centers[:-1:2] + ξ_centers[1::2])/2
+							υ_centers = (υ_centers[:-1:2] + υ_centers[1::2])/2
+							images = (images[:, :-1:2, :-1:2] + images[:, :-1:2, 1::2] +
+							          images[:, 1::2, :-1:2] + images[:, 1::2, 1::2])/4
 
-					np.savetxt(f"tmp/energy-{los_indices[los]}.csv", Э_cuts, delimiter=',') # (MeV) TODO: save hdf5 files of the results
-					np.savetxt(f"tmp/xye-{los_indices[los]}.csv", ξ_centers) # (μm)
-					np.savetxt(f"tmp/ypsilon-{los_indices[los]}.csv", υ_centers) # (μm)
-					np.savetxt(f"tmp/image-{los_indices[los]}.csv", images.ravel()) # (d/μm^2/srad)
-					lines_of_sight.append(coordinate.los_direction(los))
-					num_pixels += images.size
+						np.savetxt(f"tmp/energy-{los_indices[los]}.csv", Э_cuts, delimiter=',') # (MeV) TODO: save hdf5 files of the results
+						np.savetxt(f"tmp/xye-{los_indices[los]}.csv", ξ_centers) # (μm)
+						np.savetxt(f"tmp/ypsilon-{los_indices[los]}.csv", υ_centers) # (μm)
+						np.savetxt(f"tmp/image-{los_indices[los]}.csv", images.ravel()) # (d/μm^2/srad)
+						lines_of_sight.append(coordinate.los_direction(los))
+						num_pixels += images.size
 
 			n_space_bins = ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
 			x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
@@ -207,16 +208,16 @@ if __name__ == '__main__':
 			(Э_cuts[-1].shape[0], ξ_centers[-1].size, υ_centers[-1].size)))
 
 	# show the results
-	filename = name.replace("--", "")
+	shot_number = name.replace("--", "")
 	if tru_emission is not None:
-		save_and_plot_morphologies(filename, x_model, y_model, z_model,
+		save_and_plot_morphologies(shot_number, x_model, y_model, z_model,
 		                           (tru_emission, tru_density),
 		                           (recon_emission, recon_density))
 	else:
-		save_and_plot_morphologies(filename, x_model, y_model, z_model,
+		save_and_plot_morphologies(shot_number, x_model, y_model, z_model,
 		                           (recon_emission, recon_density))
 
-	save_and_plot_source_sets(filename, Э_cuts, ξ_centers, υ_centers, tru_images, recon_images)
+	save_and_plot_source_sets(shot_number, Э_cuts, ξ_centers, υ_centers, tru_images, recon_images)
 
 	if show_plots:
 		plt.show()

@@ -255,9 +255,9 @@ def construct_data(shot, aperture, yeeld, SNR, name=None, mode='mc'):
 			with open(f'{FOLDER}simulated shot {name if name is not None else shot} TIM{2} {2}h.pkl', 'wb') as f:
 				pickle.dump((xI_bins, yI_bins, NI), f)
 
-			save_and_plot_penumbra(f"{name}-tim0-synth", True,
+			save_and_plot_penumbra(f"{name}/tim0-synth", True,
 			                       xI_bins, yI_bins, NI, 0, 0, 0, np.inf)
-			plot_source(f"{name}-tim0-synth", True, xS, yS, img, .25, 0, np.inf, num_colors=1)
+			plot_source(f"{name}/tim0-synth", True, xS, yS, img, .25, 0, np.inf, num_colors=1)
 			
 		else:
 			raise KeyError(mode)

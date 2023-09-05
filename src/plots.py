@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from math import pi, cos, sin, sqrt, log
 from typing import cast, Optional, Sequence, Union
@@ -42,6 +43,7 @@ COLORMAPS: dict[str, list[tuple[int, str]]] = {
 
 
 def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
+	os.makedirs(os.path.dirname(f"results/plots/{filename}"), exist_ok=True)
 	for filetype in filetypes:
 		extension = filetype[1:] if filetype.startswith('.') else filetype
 		filepath = f"results/plots/{filename}.{extension}"
@@ -94,7 +96,7 @@ def save_and_plot_penumbra(filename: str, show: bool,
                            s0: float, r0: float, grid_shape: str,
                            grid_transform: NDArray[float] = np.identity(2)):
 	""" plot the data along with the initial fit to it, and the reconstructed superaperture. """
-	save_as_hdf5(f'results/data/{filename}-penumbra',
+	save_as_hdf5(f'results/{filename}-penumbra',
 	             x=image_plane.x.get_edges(),
 	             y=image_plane.y.get_edges(),
 	             N=counts.T, A=area.T)  # save it with (y,x) indexing, not (i,j)
@@ -174,8 +176,8 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	save_current_figure(f"{filename}-penumbra-residual")
 
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.plot(image_plane.x.get_bins(), reconstruction[:, reconstruction.shape[1]//2], "--", label="Reconstruction")
 	plt.plot(image_plane.x.get_bins(), measurement[:, measurement.shape[1]//2], "-o", label="Data")
+	plt.plot(image_plane.x.get_bins(), reconstruction[:, reconstruction.shape[1]//2], "--", label="Reconstruction")
 	plt.legend()
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
@@ -280,10 +282,10 @@ def plot_source(filename: str, show: bool,
 	plt.close('all')
 
 
-def save_and_plot_source_sets(filename: str, energy_bins: list[Union[list[Interval], NDArray[float]]],
+def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Interval], NDArray[float]]],
                               x: list[NDArray[float]], y: list[NDArray[float]], *image_sets: list[NDArray[float]]) -> None:
 	""" plot a bunch of source images, specificly in comparison (e.g. between data and reconstruction)
-	    :param filename: the filename with which to save them
+	    :param shot_number: the filename with which to save them
 	    :param energy_bins: the energy bins for each line of site, which must be the same between image sets
 	    :param x: the x coordinates of the pixel centers for each line of site (μm)
 	    :param y: the x coordinates of the pixel centers for each line of site (μm)
@@ -323,11 +325,11 @@ def save_and_plot_source_sets(filename: str, energy_bins: list[Union[list[Interv
 				plt.ylabel("y (μm)")
 				plt.colorbar().set_label("Image (d/μm^2/srad)")
 				plt.tight_layout()
-				save_current_figure(f"{filename}-{i}-{l}-{h}-source")
+				save_current_figure(f"{shot_number}/{i}-{l}-{h}-source")
 			pairs_plotted += 1
 
 
-def save_and_plot_morphologies(filename: str,
+def save_and_plot_morphologies(shot_number: str,
                                x: np.ndarray, y: np.ndarray, z: np.ndarray,
                                *morphologies: tuple[np.ndarray, np.ndarray]) -> None:
 	slices = [[array[array.shape[0]//2, :, :] for array in morphology] for morphology in morphologies]
@@ -381,7 +383,7 @@ def save_and_plot_morphologies(filename: str,
 		plt.axis('square')
 		# plt.axis([-r_max, r_max, -r_max, r_max])
 		plt.tight_layout()
-		save_current_figure(f"{filename}-morphology-section-{i}")
+		save_current_figure(f"{shot_number}/morphology-section-{i}")
 
 
 def plot_overlaid_contores(filename: str,

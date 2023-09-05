@@ -382,7 +382,7 @@ def analyze_scan(input_filename: str,
 	indices = [indices[i] for i in order]
 
 	# finally, save the combined image set
-	save_as_hdf5(f"results/data/{shot}-{los}-{particle}-{detector_index}-source",
+	save_as_hdf5(f"results/data/{shot}/{los}-{particle}-{detector_index}-source",
 	             filtering=filter_strings,
 	             energy=energy_bounds,
 	             x=source_plane.x.get_bins()/1e-4,
@@ -399,7 +399,7 @@ def analyze_scan(input_filename: str,
 			num_missing_sections = num_sections - len(source_stack)
 			color_index = detector_index*num_sections + cut_index + num_missing_sections
 			num_colors = num_detectors*num_sections
-		plot_source(f"{shot}-{los}-{particle}-{indices[cut_index]}",
+		plot_source(f"{shot}/{los}-{particle}-{indices[cut_index]}",
 		            False, source_plane, source_stack[cut_index],
 		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
 		            color_index=color_index, num_colors=num_colors,
@@ -429,7 +429,7 @@ def analyze_scan(input_filename: str,
 			projected_flow = None
 
 		plot_overlaid_contores(
-			f"{shot}-{los}-{particle}-{detector_index}", source_plane, source_stack, contour,
+			f"{shot}/{los}-{particle}-{detector_index}", source_plane, source_stack, contour,
 			projected_offset, projected_flow, projected_stalk, num_stalks)
 
 	for statblock in statistics:
@@ -497,7 +497,7 @@ def analyze_scan_section(input_filename: str,
 
 		# start by asking the user to highlight the data
 		try:
-			old_data_polygon, = load_hdf5(f"results/data/{shot}-{los}-{particle}-{section_index}-region",
+			old_data_polygon, = load_hdf5(f"results/data/{shot}/{los}-{particle}-{section_index}-region",
 			                              ["vertices"])
 		except FileNotFoundError:
 			old_data_polygon = None
@@ -517,7 +517,7 @@ def analyze_scan_section(input_filename: str,
 			else:
 				data_polygon = old_data_polygon
 		else:
-			save_as_hdf5(f"results/data/{shot}-{los}-{particle}-{section_index}-region",
+			save_as_hdf5(f"results/data/{shot}/{los}-{particle}-{section_index}-region",
 			             vertices=data_polygon)
 
 		# find the centers and spacings of the penumbral images
@@ -772,12 +772,12 @@ def analyze_scan_section_cut(input_filename: str,
 		r_psf, r_max, r_object, num_bins_K = 0, 0, 0, 0
 		Q = previus_parameters.Q
 		x, y, image, image_plicity = load_hdf5(
-			f"results/data/{shot}-{los}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
+			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
 		image_plane = Grid.from_edge_array(x, y)
 		image = image.T  # don’t forget to convert from (y,x) to (i,j) indexing
 		image_plicity = image_plicity.T
 
-	save_and_plot_penumbra(f"{shot}-{los}-{particle}-{cut_index}", show_plots,
+	save_and_plot_penumbra(f"{shot}/{los}-{particle}-{cut_index}", show_plots,
 	                       image_plane, image, image_plicity, energy_min, energy_max,
 	                       r0=M*rA, s0=M*sA, grid_shape=grid_shape, grid_transform=grid_transform)
 
@@ -892,7 +892,7 @@ def analyze_scan_section_cut(input_filename: str,
 		output_plane, output = load_source(shot, los, f"{particle}-{cut_index[0]}",
 		                                   filter_stack, energy_min, energy_max)
 		residual, = load_hdf5(
-			f"results/data/{shot}-{los}-{particle}-{cut_index}-penumbra-residual", ["z"])
+			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra-residual", ["z"])
 		residual = residual.T  # remember to convert from (y,x) indexing to (i,j)
 		reconstructed_image = image - residual
 
@@ -909,12 +909,12 @@ def analyze_scan_section_cut(input_filename: str,
 		color_index = int(cut_index[0])  # we’ll redo the colors later, so just use a heuristic here
 	else:
 		color_index = int(cut_index[-1])
-	plot_source(f"{shot}-{los}-{particle}-{cut_index}",
+	plot_source(f"{shot}/{los}-{particle}-{cut_index}",
 	            show_plots,
 	            output_plane, output, contour, energy_min, energy_max,
 	            color_index=color_index, num_colors=num_colors,
 	            projected_stalk_direction=(nan, nan, nan), num_stalks=0)
-	save_and_plot_overlaid_penumbra(f"{shot}-{los}-{particle}-{cut_index}", show_plots,
+	save_and_plot_overlaid_penumbra(f"{shot}/{los}-{particle}-{cut_index}", show_plots,
 	                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
 
 	statblock = {"Q": Q, "dQ": 0.,
@@ -1121,8 +1121,9 @@ def user_defined_region(filename, title, default=None, timeout=None) -> list[Poi
 
 	fig = plt.figure()
 	plt.imshow(image.T, extent=image_plane.extent, origin="lower",
-	           vmin=np.quantile(image, 1 - pi/4), vmax=np.quantile(image, .999),
-	           cmap=CMAP["spiral"])
+	           cmap=CMAP["spiral"],
+	           norm=SymLogNorm(vmin=0, linthresh=np.quantile(image, .999)/1e1,
+	                           vmax=np.quantile(image, .999), linscale=1/log(10)))
 	polygon, = plt.plot([], [], "k-", linewidth=1)
 	cap, = plt.plot([], [], "k:")
 	cursor, = plt.plot([], [], "ko", markersize=2)
@@ -1139,10 +1140,10 @@ def user_defined_region(filename, title, default=None, timeout=None) -> list[Poi
 	last_click_time = time.time()
 	def on_click(event: MouseEvent):
 		nonlocal last_click_time
-		if event.button == MouseButton.LEFT or len(vertices) == 0:
+		if event.button == MouseButton.LEFT:
 			if event.xdata is not None and event.ydata is not None:
 				vertices.append((event.xdata, event.ydata))
-		else:
+		elif event.button == MouseButton.RIGHT and len(vertices) > 0:
 			vertices.pop()
 		last_click_time = time.time()
 		default_polygon.set_visible(False)
@@ -1153,6 +1154,9 @@ def user_defined_region(filename, title, default=None, timeout=None) -> list[Poi
 			cap.set_ydata([vertices[0][1], vertices[-1][1]])
 			cursor.set_xdata([vertices[-1][0]])
 			cursor.set_ydata([vertices[-1][1]])
+			cap.set_visible(True)
+		else:
+			cap.set_visible(False)
 	fig.canvas.mpl_connect('button_press_event', on_click)
 
 	has_closed = False
@@ -1275,7 +1279,7 @@ def load_source(shot: str, los: str, particle_index: str,
 	""" open up a saved HDF5 file and find and read a single source from the stack """
 	# get all the necessary info from the HDF5 file
 	x, y, source_stack, filterings, energy_bounds = load_hdf5(
-		f"results/data/{shot}-{los}-{particle_index}-source",
+		f"results/data/{shot}/{los}-{particle_index}-source",
 		["x", "y", "images", "filtering", "energy"])
 	# fix this weird typing thing that I gess h5py does
 	if type(filterings[0]) is bytes:

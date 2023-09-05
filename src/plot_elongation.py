@@ -201,14 +201,16 @@ def get_num_stalks(shot: str) -> int:
 
 def load_images(shot: str, los: str) -> list[tuple[Grid, NDArray[float]]]:
 	results = []
-	for filename in os.listdir("results/data"):
-		if shot in filename and los in filename and "xray" in filename and "source" in filename:
-			x, y, source_stack, filtering = load_hdf5(
-				f"results/data/{filename}", keys=["x", "y", "images", "filtering"])
-			source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
-			grid = Grid.from_bin_array(x, y)
-			for source in source_stack:
-				results.append((grid, source))
+	for directory, _, filenames in os.walk("results/data"):
+		for filename in filenames:
+			filepath = os.path.join(directory, filename)
+			if shot in filepath and los in filepath and "xray" in filepath and "source" in filepath:
+				x, y, source_stack, filtering = load_hdf5(
+					filepath, keys=["x", "y", "images", "filtering"])
+				source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
+				grid = Grid.from_bin_array(x, y)
+				for source in source_stack:
+					results.append((grid, source))
 	return results
 
 

@@ -104,7 +104,7 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int) -> tuple[
 	temperature_integrated, temperature_error_integrated, _, _ = compute_plasma_conditions_with_errorbars(
 		np.array([image.total for image in images]),
 		filter_stacks, error_bars=True, show_plot=True)
-	save_current_figure(f"{shot}-{los}-temperature-fit")
+	save_current_figure(f"{shot}/{los}-temperature-fit")
 	print(f"Te = {temperature_integrated:.3f} ± {temperature_error_integrated:.3f} keV")
 
 	# estimate the radius of the source
@@ -164,7 +164,7 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int) -> tuple[
 			1., *coordinate.NAMED_LOS[stalk_position], tim_coordinates)
 	else:
 		stalk_direction = None
-	plot_electron_temperature(f"{shot}-{los}", SHOW_PLOTS, basis,
+	plot_electron_temperature(f"{shot}/{los}", SHOW_PLOTS, basis,
 	                          temperature_map, emission_map, temperature_integrated,
 	                          stalk_direction, num_stalks)
 
@@ -385,38 +385,40 @@ def load_all_xray_images_for(shot: str, tim: str) \
 		-> tuple[list[Distribution], list[list[Filter]]]:
 	last_centroid = (0, 0)
 	images, errors, filter_stacks = [], [], []
-	for filename in os.listdir("results/data"):
-		if shot in filename and tim in filename and "xray" in filename and "source" in filename:
-			x, y, source_stack, filtering = load_hdf5(
-				f"results/data/{filename}", keys=["x", "y", "images", "filtering"])
-			source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
+	for directory, _, filenames in os.walk("results/data"):
+		for filename in filenames:
+			filepath = os.path.join(directory, filename)
+			if shot in filepath and tim in filepath and "xray" in filepath and "source" in filepath:
+				x, y, source_stack, filtering = load_hdf5(
+					filepath, keys=["x", "y", "images", "filtering"])
+				source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 
-			# try to aline it to the previus stack
-			next_centroid = (np.average(x, weights=source_stack[0].sum(axis=1)),
-			                 np.average(y, weights=source_stack[0].sum(axis=0)))
-			x += last_centroid[0] - next_centroid[0]
-			y += last_centroid[1] - next_centroid[1]
-			last_centroid = (np.average(x, weights=source_stack[-1].sum(axis=1)),
-			                 np.average(y, weights=source_stack[-1].sum(axis=0)))
+				# try to aline it to the previus stack
+				next_centroid = (np.average(x, weights=source_stack[0].sum(axis=1)),
+				                 np.average(y, weights=source_stack[0].sum(axis=0)))
+				x += last_centroid[0] - next_centroid[0]
+				y += last_centroid[1] - next_centroid[1]
+				last_centroid = (np.average(x, weights=source_stack[-1].sum(axis=1)),
+				                 np.average(y, weights=source_stack[-1].sum(axis=0)))
 
-			# convert the arrays to interpolators
-			for source, filter_str in zip(source_stack, filtering):
-				if np.any(np.isnan(source)):
-					continue
-				if type(filter_str) is bytes:
-					filter_str = filter_str.decode("ascii")
+				# convert the arrays to interpolators
+				for source, filter_str in zip(source_stack, filtering):
+					if np.any(np.isnan(source)):
+						continue
+					if type(filter_str) is bytes:
+						filter_str = filter_str.decode("ascii")
 
-				object_radius, _, _ = shape_parameters(Grid.from_bin_array(x, y), source, contour=.25)
+					object_radius, _, _ = shape_parameters(Grid.from_bin_array(x, y), source, contour=.25)
 
-				filter_stacks.append(parse_filtering(filter_str)[0])
-				images.append(Distribution(
-					np.sum(source)*(x[1] - x[0])*(y[1] - y[0]),
-					np.max(source),
-					object_radius,
-					interpolate.RegularGridInterpolator(
-						(x, y), source,
-						bounds_error=False, fill_value=0),
-					))
+					filter_stacks.append(parse_filtering(filter_str)[0])
+					images.append(Distribution(
+						np.sum(source)*(x[1] - x[0])*(y[1] - y[0]),
+						np.max(source),
+						object_radius,
+						interpolate.RegularGridInterpolator(
+							(x, y), source,
+							bounds_error=False, fill_value=0),
+						))
 	return images, filter_stacks
 
 
