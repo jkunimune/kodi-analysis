@@ -49,7 +49,7 @@ The typical workflow for doing 2D reconstructions looks like this:
      The spaces are optional.
 3. If you are analyzing TIM-based x-ray data, you must run `src/split_ip_scans.py`
    to convert the multiple-scan-files to individual image plate scans.
-4. Run `src/reconstruct_2d.py shot_number [--show] [--skip] [--proton]` with the shots you want to analyze passed as an argument.
+4. Run `python src/reconstruct_2d.py shot_number [--show] [--skip] [--proton]` with the shots you want to analyze passed as an argument.
    This looks for the `.txt` files in the `input/scans/` directory and performs the reconstruction.
    - The first argument should be a comma-separated list of shot numbers.
      You can also specify specific lines of sight to analyze; for example, `95520tim4,95521srte`
@@ -70,10 +70,13 @@ and it will automaticly run on the reconstructed 2d images.
 The shot number argument on this one does not support commas.
 I'll get to that later maybe probably.
 
-For electron temperature inference, I haven’t made a nice command-line program yet, but you can use the script `src/calculate_temperature.py`.
-Just make sure to edit the list of shots and lines of sight at the top first.
-You may also want to adjust the plot limits.
-The nice thing is it should automatically find and load your previous 2D reconstructions, so you don’t have to worry about pointing it to the right directory.
+For electron temperature inference, run `python src/calculate_temperature.py shot_numbers lines_of_sight [--show]`.
+- `shot_numbers` is a comma-separated list of shot numbers.
+- `lines_of_sight` is a comma-separated list of lines of sight; for example, `tim2,tim4,tim5,srte`.
+- The `--show` flag causes it to show each plot and wait for the user before moving on.
+It should automatically find and load your previous 2D reconstructions for each shot and each line of sight.
+It's okay if some of the data is missing (like if one TIM failed on one of the shots).
+The plot limits aren't as smart, so you may want to adjust those manually.
 
 All output files follow the naming convention `results/subdirectory/shotnumber[-tim]-quantity-coordinates[-operation].file_extension`.
 The shot number is an integer prepended by `synth` if based on synthetic data.

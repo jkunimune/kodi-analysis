@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 from math import inf, nan
 from typing import Callable, Optional
@@ -18,24 +19,25 @@ from image_plate import log_xray_sensitivity
 from plots import make_colorbar, save_current_figure
 from util import parse_filtering, print_filtering, Filter, median, quantile, shape_parameters, nearest_value
 
-SHOW_PLOTS = True
-SHOTS = ["105634"]
-LOSs = ["tim2", "tim4", "tim5", "srte"]
 NUM_SAMPLES = 100
 
 
-def main():
+def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plots: bool):
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir("..")
 
 	shot_table = pd.read_csv('input/shot_info.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
 	reconstruction_table = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
+
+	# build a table of emissions on all shots and all LOSs
 	emissions = []
 	temperatures = []
 	labels = []
-	for shot in SHOTS:
-		for los in LOSs:
+	for shot in shots:
+		for los in lines_of_sight:
+			los = los.lower()
 			print(shot, los)
+			# for KoDI, collect all of the emission values from the reconstruction table
 			if los.startswith("tim"):
 				emissions.append([])
 				energies = []
@@ -47,19 +49,28 @@ def main():
 				if len(temperatures) == 0:
 					for energy_min, energy_max in energies:
 						labels.append(f"{energy_min:.0f} – {energy_max:.0f} keV")
+			# for SR-TE, skip that because it probably won't have the same channels
 			else:
-				emissions.append([nan]*len(emissions[0]))
+				emissions.append([])
+
+			while len(emissions[-1]) < len(emissions[0]):
+				emissions[-1].append(nan)  # pad this to force it to be rectangular
 			stalk_position = shot_table.loc[shot]["TPS"]
 			num_stalks = shot_table.loc[shot]["stalks"]
-			temperature, temperature_error = analyze(shot, los, stalk_position, num_stalks)
+
+			# calculate the temperature!
+			temperature, temperature_error = analyze(
+				shot, los, stalk_position, num_stalks, show_plots)
+			# save the space-integrated temperature
 			temperatures.append((temperature, temperature_error))
+
 	emissions = np.array(emissions)
 	temperatures = np.array(temperatures)
 
 	# plot the trends in all of the data hither plotted
 	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(6, 5))
 	x = np.ravel(
-		np.arange(len(SHOTS))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(LOSs))[np.newaxis, :])
+		np.arange(len(shots))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(lines_of_sight))[np.newaxis, :])
 	top_ax.grid(axis="y", which="both")
 	for k, (marker, label) in enumerate(zip("*ovd", labels)):
 		top_ax.scatter(x, emissions[:, k], marker=marker, color=f"C{k}", label=label, zorder=10)
@@ -69,14 +80,14 @@ def main():
 	bottom_ax.grid(axis="y")
 	bottom_ax.errorbar(x, temperatures[:, 0], yerr=temperatures[:, 1], fmt=".C3")
 	bottom_ax.set_ylabel("$T_e$ (keV)")
-	bottom_ax.set_xticks(ticks=np.arange(len(SHOTS)), labels=SHOTS)
+	bottom_ax.set_xticks(ticks=np.arange(len(shots)), labels=shots)
 	plt.tight_layout()
 	plt.subplots_adjust(hspace=0)
 	plt.savefig("results/plots/all_temperatures.png")
 	plt.show()
 
 
-def analyze(shot: str, los: str, stalk_position: str, num_stalks: int) -> tuple[float, float]:
+def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plots: bool) -> tuple[float, float]:
 	# set it to work from the base directory regardless of whence we call the file
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir(os.path.dirname(os.getcwd()))
@@ -164,7 +175,7 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int) -> tuple[
 			1., *coordinate.NAMED_LOS[stalk_position], tim_coordinates)
 	else:
 		stalk_direction = None
-	plot_electron_temperature(f"{shot}/{los}", SHOW_PLOTS, basis,
+	plot_electron_temperature(f"{shot}/{los}", show_plots, basis,
 	                          temperature_map, emission_map, temperature_integrated,
 	                          stalk_direction, num_stalks)
 
@@ -438,4 +449,15 @@ class Distribution:
 
 
 if __name__ == "__main__":
-	main()
+	parser = argparse.ArgumentParser(
+		prog="python calculate_temperature.py",
+		description="Calculate the electron temperature using previously reconstructed 2D x-ray images.")
+	parser.add_argument("shots", type=str,
+	                    help="Comma-separated list of shot numbers")
+	parser.add_argument("lines_of_sight", type=str,
+	                    help="Comma-separated list of lines of sight")
+	parser.add_argument("--show_plots", action="store_true",
+	                    help="Whether to display plots as they are generated")
+	args = parser.parse_args()
+
+	calculate_temperature(args.shots.split(","), args.lines_of_sight.split(","), args.show_plots)
