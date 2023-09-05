@@ -78,7 +78,7 @@ It should automatically find and load your previous 2D reconstructions for each 
 It's okay if some of the data is missing (like if one TIM failed on one of the shots).
 The plot limits aren't as smart, so you may want to adjust those manually.
 
-All output files follow the naming convention `results/subdirectory/shotnumber[-tim]-quantity-coordinates[-operation].file_extension`.
+All output files follow the naming convention `results/subdirectory/shotnumber/[tim-]quantity-coordinates[-operation].file_extension`.
 The shot number is an integer prepended by `synth` if based on synthetic data.
 The quantity is one of:
 - `morphology` for combined mass density and neutron source
