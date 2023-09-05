@@ -26,7 +26,7 @@ plt.rcParams["savefig.facecolor"] = 'none'
 
 PLOT_THEORETICAL_50c_CONTOUR = True
 PLOT_SOURCE_CONTOUR = True
-PLOT_OFFSET = False
+PLOT_OFFSET = True
 PLOT_STALK = False
 
 MAX_NUM_PIXELS = 40000
