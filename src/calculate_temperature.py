@@ -48,7 +48,7 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 						energies.append((record["energy min"], record["energy max"]))
 				if len(temperatures) == 0:
 					for energy_min, energy_max in energies:
-						labels.append(f"{energy_min:.0f} – {energy_max:.0f} keV")
+						labels.append(f"≥ {energy_min:.0f} keV")
 			# for SR-TE, skip that because it probably won't have the same channels
 			else:
 				emissions.append([])
@@ -68,9 +68,9 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 	temperatures = np.array(temperatures)
 
 	# plot the trends in all of the data hither plotted
-	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(6, 5))
+	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(5 + .15*len(temperatures), 5))
 	x = np.ravel(
-		np.arange(len(shots))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(lines_of_sight))[np.newaxis, :])
+		np.arange(1/2, len(shots))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(lines_of_sight))[np.newaxis, :])
 	top_ax.grid(axis="y", which="both")
 	for k, (marker, label) in enumerate(zip("*ovd", labels)):
 		top_ax.scatter(x, emissions[:, k], marker=marker, color=f"C{k}", label=label, zorder=10)
@@ -80,7 +80,8 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 	bottom_ax.grid(axis="y")
 	bottom_ax.errorbar(x, temperatures[:, 0], yerr=temperatures[:, 1], fmt=".C3")
 	bottom_ax.set_ylabel("$T_e$ (keV)")
-	bottom_ax.set_xticks(ticks=np.arange(len(shots)), labels=shots)
+	bottom_ax.set_xticks(ticks=np.arange(1/2, len(shots)), labels=shots)
+	bottom_ax.set_xlim(0, len(shots))
 	plt.tight_layout()
 	plt.subplots_adjust(hspace=0)
 	plt.savefig("results/plots/all_temperatures.png")
