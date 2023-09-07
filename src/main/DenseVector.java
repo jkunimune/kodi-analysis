@@ -100,8 +100,9 @@ public class DenseVector extends Vector {
 	}
 
 	@Override
-	public void set(int i, double value) {
+	public DenseVector set(int i, double value) {
 		this.values[i] = value;
+		return this;
 	}
 
 	@Override

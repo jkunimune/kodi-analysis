@@ -44,9 +44,6 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 	if not os.path.isdir("tmp"):
 		os.mkdir("tmp")
 
-	if mode != "deuteron":
-		raise NotImplementedError("I haven't implemented this, but I will soon!")
-
 	if skip_reconstruction:
 		# load the previous inputs and don't run the reconstruction
 		print(f"using previous reconstruction.")
@@ -114,15 +111,16 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 
 			los_indices = {}
 			lines_of_sight = []
+			energy_range = None
 			num_pixels = 0
 			r_max = 100 # μm
 			for directory, _, filenames in os.walk('results/data'): # search for files that match each row
-				for shot_number in filenames:
-					filepath = os.path.join(directory, shot_number)
-					shot_number, extension = os.path.splitext(shot_number)
+				for filename in filenames:
+					filepath = os.path.join(directory, filename)
+					filename, extension = os.path.splitext(filename)
 
-					metadata = shot_number.split('_') if '_' in shot_number else shot_number.split('-')
-					if extension == '.h5' and name in metadata and "deuteron" in metadata and "source" in metadata: # only take h5 files
+					metadata = re.split(r'[-_/\\]', directory) + re.split(r'[-_/\\]', filename)
+					if extension == '.h5' and name in metadata and mode in metadata and "source" in metadata: # only take h5 files
 						los = None
 						for metadatum in metadata: # pull out the different peces of information from the filename
 							if re.fullmatch(r"(tim[0-9xyz]|srte)", metadatum):
@@ -130,14 +128,28 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 						if los is None:
 							raise ValueError(f"no line of sight was found in {metadata}")
 						if los in los_indices:
-							print(f"I found multiple images for {los}, so I'm ignoring {shot_number}")
+							print(f"I found multiple images for {los}, so I'm ignoring {filename}")
 							continue
 						else:
 							los_indices[los] = len(lines_of_sight)
 
-						Э_cuts, ξ_centers, υ_centers, images = load_hdf5(filepath, ["energy", "x", "y", "image"])
+						# load the HDF file
+						Э_cuts, ξ_centers, υ_centers, images = load_hdf5(filepath, ["energy", "x", "y", "images"])
 						images = images.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 						assert images.shape == (Э_cuts.shape[0], ξ_centers.size, υ_centers.size), (images.shape, ξ_centers.shape, υ_centers.shape)
+
+						# if it's an x-ray image, pick one energy range
+						if mode == "xray":
+							if energy_range is None:
+								energy_range = Э_cuts[0, :]
+							matching_energies = np.all(energy_range == Э_cuts, axis=1)
+							if not np.any(matching_energies):
+								print(f"The images on {los} don't have a {energy_range} bin, so I'm ignoring {filename}")
+								continue
+							else:
+								i = np.nonzero(matching_energies)[0][0]
+								Э_cuts = Э_cuts[i:i + 1, :]
+								images = images[i:i + 1, :]
 
 						# automatically detect and convert the spatial units to (μm)
 						if ξ_centers.max() - ξ_centers.min() < 1e-3:
@@ -145,6 +157,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 						elif ξ_centers.max() - ξ_centers.min() < 1e-1:
 							ξ_centers, υ_centers = ξ_centers*1e4, υ_centers*1e4
 
+						# recenter the images
 						μξ = np.average(ξ_centers, weights=np.sum(images, axis=(0, 2)))
 						μυ = np.average(υ_centers, weights=np.sum(images, axis=(0, 1)))
 						ξ_centers -= μξ
@@ -163,10 +176,10 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 							images = (images[:, :-1:2, :-1:2] + images[:, :-1:2, 1::2] +
 							          images[:, 1::2, :-1:2] + images[:, 1::2, 1::2])/4
 
-						np.savetxt(f"tmp/energy-{los_indices[los]}.csv", Э_cuts, delimiter=',') # (MeV) TODO: save hdf5 files of the results
-						np.savetxt(f"tmp/xye-{los_indices[los]}.csv", ξ_centers) # (μm)
-						np.savetxt(f"tmp/ypsilon-{los_indices[los]}.csv", υ_centers) # (μm)
-						np.savetxt(f"tmp/image-{los_indices[los]}.csv", images.ravel()) # (d/μm^2/srad)
+						np.savetxt(f"tmp/energy-los{los_indices[los]}.csv", Э_cuts, delimiter=',') # (MeV) TODO: save hdf5 files of the results
+						np.savetxt(f"tmp/xye-los{los_indices[los]}.csv", ξ_centers) # (μm)
+						np.savetxt(f"tmp/ypsilon-los{los_indices[los]}.csv", υ_centers) # (μm)
+						np.savetxt(f"tmp/image-los{los_indices[los]}.csv", images.ravel()) # (d/μm^2/srad)
 						lines_of_sight.append(coordinate.los_direction(los))
 						num_pixels += images.size
 
@@ -190,16 +203,20 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 		np.savetxt("tmp/z.csv", z_model) # type: ignore
 
 		# run the reconstruction!
-		execute_java("VoxelFit", str(spatial_resolution*sqrt(2)), name)
+		execute_java("VoxelFit", str(spatial_resolution*sqrt(2)), name, mode)
 
 	# load the results
 	recon_emission = np.loadtxt("tmp/emission-recon.csv").reshape((x_model.size,)*3) # (μm^-3)
-	recon_density = np.loadtxt("tmp/density-recon.csv").reshape((x_model.size,)*3) # (g/cc)
-	recon_temperature = np.loadtxt("tmp/temperature-recon.csv") # (keV)
+	if mode == "deuteron":
+		recon_density = np.loadtxt("tmp/density-recon.csv").reshape((x_model.size,)*3) # (g/cc)
+		recon_temperature = np.loadtxt("tmp/temperature-recon.csv") # (keV)
+	else:
+		recon_density = None
+		recon_temperature = None
 	Э_cuts, ξ_centers, υ_centers = [], [], []
 	tru_images, recon_images = [], []
 	for l in range(lines_of_sight.shape[0]):
-		Э_cuts.append(np.loadtxt(f"tmp/energy-los{l}.csv", delimiter=',')) # (MeV)
+		Э_cuts.append(np.loadtxt(f"tmp/energy-los{l}.csv", delimiter=',', ndmin=2)) # (MeV)
 		ξ_centers.append(np.loadtxt(f"tmp/xye-los{l}.csv")) # (μm)
 		υ_centers.append(np.loadtxt(f"tmp/ypsilon-los{l}.csv")) # (μm)
 		tru_images.append(np.loadtxt(f"tmp/image-los{l}.csv").reshape( # (d/μm^2/srad)

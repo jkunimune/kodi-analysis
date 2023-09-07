@@ -80,10 +80,12 @@ public class CSV {
 				String[] elements = line.split("\\s*" + delimiter + "\\s*");
 				double[] row = new double[elements.length];
 				for (int j = 0; j < elements.length; j++) {
-					if (elements[j].equals("nan"))
-						row[j] = Double.NaN;
-					else
-						row[j] = Double.parseDouble(elements[j]);
+					row[j] = switch (elements[j]) {
+						case "nan" -> Double.NaN;
+						case "inf" -> Double.POSITIVE_INFINITY;
+						case "-inf" -> Double.NEGATIVE_INFINITY;
+						default -> Double.parseDouble(elements[j]);
+					};
 				}
 				list.add(row);
 			}
@@ -138,42 +140,6 @@ public class CSV {
 		return table[0][0];
 	}
 
-	/**
-	 * read a COSY-generated file and return the coefficients as a double matrix along with the
-	 * exponents as an int matrix.
-	 * @param file the COSY file to open
-	 * @param maxOrder the desired order of the polynomial
-	 * @return yep
-	 * @throws IOException if file cannot be found or permission is denied
-	 * @throws NumberFormatException if elements are not parsable as doubles
-	 */
-	public static COSYMapping readCosyCoefficients(File file, int maxOrder)
-			throws NumberFormatException, IOException {
-		List<double[]> coefList;
-		List<int[]> expList;
-		try (BufferedReader in = new BufferedReader(new FileReader(file))) { // start by reading it like a CSV
-			coefList = new ArrayList<>();
-			expList = new ArrayList<>();
-			String line;
-			while ((line = in.readLine()) != null) {
-				line = line.substring(1); // remove this single stupid space in front of the numbers
-				if (line.trim().isEmpty())
-					break;
-				if (line.substring(line.length()/14*14).contains(Integer.toString(maxOrder + 1))) // check for when we see an exponent over the highest order
-					break;
-				double[] row = new double[line.length()/14];
-				for (int i = 0; i < line.length()/14; i ++)
-					row[i] = Double.parseDouble(line.substring(14*i, 14*(i+1)));
-				coefList.add(row);
-				int[] bloc = new int[line.length() - row.length*14-1];
-				for (int i = 0; i < bloc.length; i ++)
-					bloc[i] = Integer.parseInt(String.valueOf(line.charAt(row.length*14+1 + i)));
-				expList.add(bloc);
-			}
-		}
-		return new COSYMapping(coefList.toArray(new double[0][]), expList.toArray(new int[0][]));
-	}
-	
 	/**
 	 * save the given matrix as a simple CSV file, using the given delimiter character.
 	 * @param data the numbers to be written
@@ -242,14 +208,4 @@ public class CSV {
 		writeColumn(new double[] {data}, file);
 	}
 
-
-	public static class COSYMapping {
-		public final double[][] coefficients;
-		public final int[][] exponents;
-		public COSYMapping(double[][] coefficients, int[][] exponents) {
-			this.coefficients = coefficients;
-			this.exponents = exponents;
-		}
-	}
-	
 }

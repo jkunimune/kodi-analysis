@@ -227,7 +227,8 @@ public class Optimize {
 			throw new IllegalArgumentException("there must be the same number of residuals as weights");
 		Matrix initial_jacobian = compute_local_jacobian.apply(initial_input);
 		if (initial_jacobian.m != data_values.length)
-			throw new IllegalArgumentException("there must be the same number of gradients as residuals");
+			throw new IllegalArgumentException(String.format("there must be the same number of gradients as residuals " +
+			                                                 "(not %d and %d)", initial_jacobian.m, data_values.length));
 		if (initial_jacobian.n != initial_input.length)
 			throw new IllegalArgumentException("the jacobian width must match the initial gess");
 		for (double[] constraint: constraints)

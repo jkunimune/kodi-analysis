@@ -332,22 +332,38 @@ def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Int
 def save_and_plot_morphologies(shot_number: str,
                                x: np.ndarray, y: np.ndarray, z: np.ndarray,
                                *morphologies: tuple[np.ndarray, np.ndarray]) -> None:
-	slices = [[array[array.shape[0]//2, :, :] for array in morphology] for morphology in morphologies]
+	slices = []
+	for morphology in morphologies:
+		slices.append([])
+		for array in morphology:
+			if array is not None:
+				slices[-1].append(array[array.shape[0]//2, :, :])
+			else:
+				slices[-1].append(None)
+
+	any_densities = slices[0][1] is not None
+
 	peak_source = np.amax([abs(source) for source, density in slices])
-	peak_density = np.amax([abs(density) for source, density in slices])
+	if any_densities:
+		peak_density = np.amax([abs(density) for source, density in slices])
+	else:
+		peak_density = None
 	for i, ((source, density), (source_slice, density_slice)) in enumerate(zip(morphologies, slices)):
 		r = np.linspace(0, np.sqrt(x[-1]**2 + y[-1]**2 + z[-1]**2))
 		θ = np.arccos(np.linspace(-1, 1, 20))
 		ф = np.linspace(0, 2*pi, 63, endpoint=False)
 		dx, dy, dz, dr = x[1] - x[0], y[1] - y[0], z[1] - z[0], r[1] - r[0]
 		r, θ, ф = np.meshgrid(r, θ, ф, indexing="ij")
-		density_polar = interpolate.RegularGridInterpolator(
-			(x, y, z), density, bounds_error=False, fill_value=0)(
-			(r*np.sin(θ)*np.cos(ф), r*np.sin(θ)*np.sin(ф), r*np.cos(θ)))
-		print(f"Y = {np.sum(source*dx*dy*dz):.4g} neutrons")
-		print(f"ρ ∈ [{np.min(density):.4g}, {np.max(density):.4g}] g/cm^3")
-		print(f"⟨ρR⟩ (harmonic) = {1/np.mean(1/np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
-		print(f"⟨ρR⟩ (arithmetic) = {np.mean(np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
+		if any_densities:
+			density_polar = interpolate.RegularGridInterpolator(
+				(x, y, z), density, bounds_error=False, fill_value=0)(
+				(r*np.sin(θ)*np.cos(ф), r*np.sin(θ)*np.sin(ф), r*np.cos(θ)))
+			print(f"Y = {np.sum(source*dx*dy*dz):.4g} neutrons")
+			print(f"ρ ∈ [{np.min(density):.4g}, {np.max(density):.4g}] g/cm^3")
+			print(f"⟨ρR⟩ (harmonic) = {1/np.mean(1/np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
+			print(f"⟨ρR⟩ (arithmetic) = {np.mean(np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
+		else:
+			print("density not calculable from these datum")
 
 		plt.figure(figsize=LONG_FIGURE_SIZE)
 		num_contours = int(max(9, min(200, 3*peak_source/source_slice.max())))
@@ -364,25 +380,26 @@ def save_and_plot_morphologies(shot_number: str,
 				label="Neutron emission (μm^-3)",
 				# facecolor="#fdce45",
 			)
-		if np.any(density_slice > 0):
-			num_contours = int(max(9, min(200, 3*peak_density/density_slice.max())))
-			plt.contourf(y, z, np.maximum(0, density_slice).T,
-			             vmin=0, vmax=peak_density,
-			             levels=np.linspace(0, peak_density, num_contours),
-			             cmap='Reds',
-			             zorder=0)
-			if np.any(density_slice > peak_density/(num_contours - 1)):  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
-				make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
-		if np.any(density_slice < 0):
-			plt.contourf(y, z, -density_slice.T,
-			             levels=[0, np.max(abs(density_slice))],
-			             cmap=CMAP["cyans"],
-			             zorder=1)
-		plt.xlabel("x (μm)")
-		plt.ylabel("y (μm)")
-		plt.axis('square')
-		# plt.axis([-r_max, r_max, -r_max, r_max])
-		plt.tight_layout()
+		if any_densities:
+			if np.any(density_slice > 0):
+				num_contours = int(max(9, min(200, 3*peak_density/density_slice.max())))
+				plt.contourf(y, z, np.maximum(0, density_slice).T,
+				             vmin=0, vmax=peak_density,
+				             levels=np.linspace(0, peak_density, num_contours),
+				             cmap='Reds',
+				             zorder=0)
+				if np.any(density_slice > peak_density/(num_contours - 1)):  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
+					make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
+			if np.any(density_slice < 0):
+				plt.contourf(y, z, -density_slice.T,
+				             levels=[0, np.max(abs(density_slice))],
+				             cmap=CMAP["cyans"],
+				             zorder=1)
+			plt.xlabel("x (μm)")
+			plt.ylabel("y (μm)")
+			plt.axis('square')
+			# plt.axis([-r_max, r_max, -r_max, r_max])
+			plt.tight_layout()
 		save_current_figure(f"{shot_number}/morphology-section-{i}")
 
 

@@ -127,11 +127,12 @@ public class SparseVector extends Vector {
 	}
 
 	@Override
-	public void set(int i, double value) {
+	public SparseVector set(int i, double value) {
 		if (value == 0)
 			this.values.remove(i);
 		else
 			this.values.put(i, value);
+		return this;
 	}
 
 	@Override

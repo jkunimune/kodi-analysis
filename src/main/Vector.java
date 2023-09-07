@@ -72,7 +72,7 @@ public abstract class Vector {
 
 	public abstract double get(int i);
 
-	public abstract void set(int i, double value);
+	public abstract Vector set(int i, double value);
 
 	public void increment(int i, double value) {
 		this.set(i, this.get(i) + value);

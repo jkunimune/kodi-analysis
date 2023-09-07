@@ -591,20 +591,22 @@ public class Math2 {
 		throw new IllegalArgumentException("I don't know Legendre polynomials that high (_"+l+"^"+m+").");
 	}
 
-	public static boolean containsTheWordTest(String[] arr) {
-		for (String s: arr)
-			if (s.equals("--test"))
-				return true;
-		return false;
-	}
-
 
 	public static class Interval {
 		public float min;
 		public float max;
+
 		public Interval(float min, float max) {
 			this.min = min;
 			this.max = max;
+		}
+
+		public String toString() {
+			return String.format("[%.3f, %.3f)", this.min, this.max);
+		}
+
+		public boolean equals(Interval that) {
+			return this.min == that.min && this.max == that.max;
 		}
 	}
 
