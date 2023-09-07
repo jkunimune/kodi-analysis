@@ -20,9 +20,15 @@ NAMED_LOS = {
 	'x':    [90, 0],
 	'y':    [90, 270],
 	'z':    [0, 0],
+	'timx': [90, 0],
+	'timy': [90, 270],
+	'timz': [0, 0],
 	'xy':   [90, 315],
 	'yz':   [45, 0],
 	'xz':   [45, 270],
+	'timxy': [90, 0],
+	'timyz': [90, 270],
+	'timxz': [0, 0],
 }
 for name in list(NAMED_LOS.keys()):
 	NAMED_LOS[name.lower()] = NAMED_LOS[name]

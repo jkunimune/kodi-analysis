@@ -65,10 +65,10 @@ The typical workflow for doing 2D reconstructions looks like this:
    You may right-click at any time during this process to un-place a point.
 6. It automatically outputs a bunch of plots, HDF5 files, and log messages.
 
-For 3D reconstruction, run `src/reconstruct_3d.py shot_number [--skip]`,
+For 3D reconstruction, run `src/reconstruct_3d.py shot_number (deuteron|xray) [--skip]`,
 and it will automaticly run on the reconstructed 2d images.
+Set the twoth argument to `deuteron` if it's deuteron images and `xray` if it's x-ray images.
 The shot number argument on this one does not support commas.
-I'll get to that later maybe probably.
 
 For electron temperature inference, run `python src/calculate_temperature.py shot_numbers lines_of_sight [--show]`.
 - `shot_numbers` is a comma-separated list of shot numbers.

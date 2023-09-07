@@ -7,9 +7,9 @@
 # ζ^ points toward the detector, υ^ points perpendicular to ζ^ and upward, and ξ^ makes it rite-handed.
 # Э stands for Энергия
 # и is the index of a basis function
+import argparse
 import os
 import re
-import sys
 from math import ceil, sqrt
 from typing import cast
 
@@ -25,21 +25,17 @@ from util import execute_java
 
 Э_min, Э_max = 2, 13 # (MeV)
 
-r_max = 100 # (μm)
-
 energy_resolution = 4 # (MeV)
 spatial_resolution = 7 # (μm)
 
 
-def get_shot_yield(shot: str) -> float:
-	shot_table = pd.read_csv("input/shot_info.csv", dtype={"shot": str}, index_col="shot", skipinitialspace=True)
-	try:
-		return shot_table.loc[shot]["yield"]
-	except KeyError:
-		raise KeyError(f"please add shot {shot!r} to the shot_info.csv table.")
-
-
-if __name__ == '__main__':
+def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: bool):
+	""" find the images for a given shot and put them all together in 3D
+	    :param name: some substring of the filenames to use, or "test" to do the synthetic data test
+	    :param mode: either "deuteron" or "xray"
+	    :param skip_reconstruction: whether to actually not do the 3D reconstruction and reload the last one from disc
+	    :param show_plots: whether to show the plots in addition to saving them
+	"""
 	# set it to work from the base directory regardless of whence we call the file
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir(os.path.dirname(os.getcwd()))
@@ -48,10 +44,10 @@ if __name__ == '__main__':
 	if not os.path.isdir("tmp"):
 		os.mkdir("tmp")
 
-	name = sys.argv[1] if len(sys.argv) > 1 else "--test"
-	show_plots = "--show" in sys.argv
+	if mode != "deuteron":
+		raise NotImplementedError("I haven't implemented this, but I will soon!")
 
-	if "--skip" in sys.argv:
+	if skip_reconstruction:
 		# load the previous inputs and don't run the reconstruction
 		print(f"using previous reconstruction.")
 
@@ -70,7 +66,7 @@ if __name__ == '__main__':
 	# if not skipping, find the necessary inputs and run the algorithm
 	else:
 		# generate or load a new input and run the reconstruction algorithm
-		if name == "--test":
+		if name == "test":
 			# generate a synthetic morphology
 			lines_of_sight = np.array([
 				[1, 0, 0],
@@ -84,6 +80,7 @@ if __name__ == '__main__':
 			Э = np.linspace(Э_min, Э_max, round((Э_max - Э_min)/energy_resolution) + 1) # (MeV)
 			Э_cuts = np.transpose([Э[:-1], Э[1:]]) # (MeV)
 
+			r_max = 100 # μm
 			n_pixels = ceil(2*r_max/spatial_resolution) # image pixel number
 			ξ_centers = υ_centers = np.linspace(-r_max, r_max, n_pixels + 1) # (μm)
 			for l in range(lines_of_sight.shape[0]):
@@ -118,6 +115,7 @@ if __name__ == '__main__':
 			los_indices = {}
 			lines_of_sight = []
 			num_pixels = 0
+			r_max = 100 # μm
 			for directory, _, filenames in os.walk('results/data'): # search for files that match each row
 				for shot_number in filenames:
 					filepath = os.path.join(directory, shot_number)
@@ -127,8 +125,10 @@ if __name__ == '__main__':
 					if extension == '.h5' and name in metadata and "deuteron" in metadata and "source" in metadata: # only take h5 files
 						los = None
 						for metadatum in metadata: # pull out the different peces of information from the filename
-							if re.fullmatch(r"(tim[0-9]|srte)", metadatum):
+							if re.fullmatch(r"(tim[0-9xyz]|srte)", metadatum):
 								los = metadatum
+						if los is None:
+							raise ValueError(f"no line of sight was found in {metadata}")
 						if los in los_indices:
 							print(f"I found multiple images for {los}, so I'm ignoring {shot_number}")
 							continue
@@ -223,3 +223,29 @@ if __name__ == '__main__':
 		plt.show()
 	else:
 		plt.close("all")
+
+
+def get_shot_yield(shot: str) -> float:
+	shot_table = pd.read_csv("input/shot_info.csv", dtype={"shot": str}, index_col="shot", skipinitialspace=True)
+	try:
+		return shot_table.loc[shot]["yield"]
+	except KeyError:
+		raise KeyError(f"please add shot {shot!r} to the shot_info.csv table.")
+
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser(
+		prog="python reconstruct_3d.py",
+		description="Combine images on multiple lines of sight into a 3D morphology.")
+	parser.add_argument("shot", type=str,
+	                    help="The shot number or the name of the simulation to use")
+	parser.add_argument("mode", type=str, default="deuteron",
+	                    help="Either 'deuteron' to combine deuteron images to get a hot-spot and shell morphology, "
+	                         "or 'xray' to use x-ray images and just do the hot-spot.")
+	parser.add_argument("--show", action="store_true",
+	                    help="to show the plots as well as saving them")
+	parser.add_argument("--skip", action="store_true",
+	                    help="to reuse the results from last time rather than doing the math again")
+	args = parser.parse_args()
+
+	reconstruct_3d(args.shot, args.mode, args.show, args.skip)
