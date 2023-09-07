@@ -48,7 +48,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 		# load the previous inputs and don't run the reconstruction
 		print(f"using previous reconstruction.")
 
-		lines_of_sight = np.loadtxt("tmp/lines_of_site.csv", delimiter=',')
+		lines_of_sight = np.loadtxt("tmp/line_of_site_names.csv")
 		x_model = np.loadtxt("tmp/x.csv") # (μm)
 		y_model = np.loadtxt("tmp/y.csv") # (μm)
 		z_model = np.loadtxt("tmp/z.csv") # (μm)
@@ -65,14 +65,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 		# generate or load a new input and run the reconstruction algorithm
 		if name == "test":
 			# generate a synthetic morphology
-			lines_of_sight = np.array([
-				[1, 0, 0],
-				[0, 0, 1],
-				[0, 1, 0],
-				# [-1, 0, 0],
-				[0, -1, 0],
-				# [0, 0, -1],
-			]) # ()
+			lines_of_sight = ["x", "y", "z", "-y"]
 
 			Э = np.linspace(Э_min, Э_max, round((Э_max - Э_min)/energy_resolution) + 1) # (MeV)
 			Э_cuts = np.transpose([Э[:-1], Э[1:]]) # (MeV)
@@ -80,7 +73,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 			r_max = 100 # μm
 			n_pixels = ceil(2*r_max/spatial_resolution) # image pixel number
 			ξ_centers = υ_centers = np.linspace(-r_max, r_max, n_pixels + 1) # (μm)
-			for l in range(lines_of_sight.shape[0]):
+			for l in range(len(lines_of_sight)):
 				np.savetxt(f"tmp/energy-los{l}.csv", Э_cuts, delimiter=',') # type: ignore
 				np.savetxt(f"tmp/xye-los{l}.csv", ξ_centers) # type: ignore
 				np.savetxt(f"tmp/ypsilon-los{l}.csv", υ_centers) # type: ignore
@@ -99,7 +92,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 
 			tru_images = None # we won't have the input images until after the Java runs
 
-			print(f"there are {Э_cuts.shape[0]} synthetic {n_pixels}^2 images on {lines_of_sight.shape[0]} lines of sight")
+			print(f"there are {Э_cuts.shape[0]} synthetic {n_pixels}^2 images on {len(lines_of_sight)} lines of sight")
 
 		else:
 			# load some real images and save them to disk in the correct format
@@ -113,7 +106,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 			lines_of_sight = []
 			energy_range = None
 			num_pixels = 0
-			r_max = 100 # μm
+			r_max = 70 # μm
 			for directory, _, filenames in os.walk('results/data'): # search for files that match each row
 				for filename in filenames:
 					filepath = os.path.join(directory, filename)
@@ -180,7 +173,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 						np.savetxt(f"tmp/xye-los{los_indices[los]}.csv", ξ_centers) # (μm)
 						np.savetxt(f"tmp/ypsilon-los{los_indices[los]}.csv", υ_centers) # (μm)
 						np.savetxt(f"tmp/image-los{los_indices[los]}.csv", images.ravel()) # (d/μm^2/srad)
-						lines_of_sight.append(coordinate.los_direction(los))
+						lines_of_sight.append(los)
 						num_pixels += images.size
 
 			n_space_bins = ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
@@ -190,14 +183,15 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 				raise ValueError("no images were found")
 			else:
 				print(f"{len(lines_of_sight)} images were found totalling up to {num_pixels} pixels")
-			lines_of_sight = np.array(lines_of_sight)
 
 			np.savetxt("tmp/total-yield.csv", [total_yield]) # type: ignore
 
 		print(f"reconstructing a {n_space_bins}^3 morphology with r_max = {r_max} μm")
 
 		# save the parameters that always need to be saved
-		np.savetxt("tmp/lines_of_site.csv", lines_of_sight, delimiter=',') # type: ignore
+		line_of_sight_directions = [coordinate.los_direction(los) for los in lines_of_sight]
+		np.savetxt("tmp/lines_of_site.csv", line_of_sight_directions, delimiter=',') # type: ignore
+		np.savetxt("tmp/line_of_site_names.csv", lines_of_sight, fmt="%s") # type: ignore
 		np.savetxt("tmp/x.csv", x_model) # type: ignore
 		np.savetxt("tmp/y.csv", y_model) # type: ignore
 		np.savetxt("tmp/z.csv", z_model) # type: ignore
@@ -215,7 +209,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 		recon_temperature = None
 	Э_cuts, ξ_centers, υ_centers = [], [], []
 	tru_images, recon_images = [], []
-	for l in range(lines_of_sight.shape[0]):
+	for l in range(len(lines_of_sight)):
 		Э_cuts.append(np.loadtxt(f"tmp/energy-los{l}.csv", delimiter=',', ndmin=2)) # (MeV)
 		ξ_centers.append(np.loadtxt(f"tmp/xye-los{l}.csv")) # (μm)
 		υ_centers.append(np.loadtxt(f"tmp/ypsilon-los{l}.csv")) # (μm)
@@ -234,7 +228,10 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 		save_and_plot_morphologies(shot_number, x_model, y_model, z_model,
 		                           (recon_emission, recon_density))
 
-	save_and_plot_source_sets(shot_number, Э_cuts, ξ_centers, υ_centers, tru_images, recon_images)
+	save_and_plot_source_sets(shot_number, Э_cuts, ξ_centers, υ_centers,
+	                          [tru_images, recon_images],
+	                          ["Ground truth", "Reconstruction"],
+	                          lines_of_sight)
 
 	if show_plots:
 		plt.show()

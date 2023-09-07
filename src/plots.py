@@ -283,7 +283,8 @@ def plot_source(filename: str, show: bool,
 
 
 def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Interval], NDArray[float]]],
-                              x: list[NDArray[float]], y: list[NDArray[float]], *image_sets: list[NDArray[float]]) -> None:
+                              x: list[NDArray[float]], y: list[NDArray[float]], image_sets: list[list[NDArray[float]]],
+                              image_set_names: list[str], line_of_sight_names: list[str]) -> None:
 	""" plot a bunch of source images, specificly in comparison (e.g. between data and reconstruction)
 	    :param shot_number: the filename with which to save them
 	    :param energy_bins: the energy bins for each line of site, which must be the same between image sets
@@ -291,6 +292,8 @@ def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Int
 	    :param y: the x coordinates of the pixel centers for each line of site (μm)
 	    :param image_sets: each image set is a list, where each element of the list is a 3d array, which is
 	                       a stack of all the images in one set on one line of site. (d/μm^2/srad)
+	    :param image_set_names: the strings to identify the different image sets
+	    :param line_of_sight_names: the strings to identify the different lines of sight
 	"""
 	# go thru every line of site
 	pairs_plotted = 0
@@ -307,7 +310,7 @@ def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Int
 			cmaps = [matplotlib.colormaps["plasma"]]*num_cuts
 		assert len(cmaps) == num_cuts
 
-		for h in [0, num_cuts - 1]:
+		for h in [0, num_cuts - 1] if num_cuts > 1 else [0]:
 			maximum = np.amax([image_set[l][h, :, :] for image_set in image_sets])
 			for i, image_set in enumerate(image_sets):
 				minimum = min(0, np.min(image_set[l][h]))
@@ -320,12 +323,12 @@ def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Int
 				plt.gca().set_facecolor(cmaps[h].colors[0])
 				plt.axis('square')
 				# plt.axis([-r_max, r_max, -r_max, r_max])
-				plt.title(f"$E_\\mathrm{{d}}$ = {energy_bins[l][h][0]:.1f} – {energy_bins[l][h][1]:.1f} MeV")
+				plt.title(f"{image_set_names[i]}, {line_of_sight_names[l]}")
 				plt.xlabel("x (μm)")
 				plt.ylabel("y (μm)")
 				plt.colorbar().set_label("Image (d/μm^2/srad)")
 				plt.tight_layout()
-				save_current_figure(f"{shot_number}/{i}-{l}-{h}-source")
+				save_current_figure(f"{shot_number}/{i}-{line_of_sight_names[l]}-{h}-source")
 			pairs_plotted += 1
 
 
