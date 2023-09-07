@@ -363,7 +363,7 @@ def save_and_plot_morphologies(shot_number: str,
 			print(f"⟨ρR⟩ (harmonic) = {1/np.mean(1/np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
 			print(f"⟨ρR⟩ (arithmetic) = {np.mean(np.sum(density_polar*dr, axis=0))*1e1:.4g} mg/cm^2")
 		else:
-			print("density not calculable from these datum")
+			print("density not calculable from these datum, but that's fine")
 
 		plt.figure(figsize=LONG_FIGURE_SIZE)
 		num_contours = int(max(9, min(200, 3*peak_source/source_slice.max())))
@@ -395,11 +395,11 @@ def save_and_plot_morphologies(shot_number: str,
 				             levels=[0, np.max(abs(density_slice))],
 				             cmap=CMAP["cyans"],
 				             zorder=1)
-			plt.xlabel("x (μm)")
-			plt.ylabel("y (μm)")
-			plt.axis('square')
-			# plt.axis([-r_max, r_max, -r_max, r_max])
-			plt.tight_layout()
+		plt.xlabel("x (μm)")
+		plt.ylabel("y (μm)")
+		plt.axis('square')
+		# plt.axis([-r_max, r_max, -r_max, r_max])
+		plt.tight_layout()
 		save_current_figure(f"{shot_number}/morphology-section-{i}")
 
 
