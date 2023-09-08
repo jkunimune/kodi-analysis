@@ -164,7 +164,10 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 						coordinate_bases.append((Э_cuts, ξ_centers, υ_centers))
 						image_stacks.append(images)
 
-			spatial_resolution = r_max/15
+			if mode == "xray":
+				spatial_resolution = r_max/20
+			else:
+				spatial_resolution = r_max/12
 
 			# now resample them all before saving them to disk
 			for l in range(len(lines_of_sight)):
