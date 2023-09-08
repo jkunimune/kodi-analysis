@@ -45,7 +45,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 	if skip_reconstruction:
 		print(f"using previous reconstruction.")
 
-		lines_of_sight = np.loadtxt("tmp/line_of_site_names.csv")
+		lines_of_sight = np.loadtxt("tmp/line_of_site_names.csv", dtype=str)
 		x_model = np.loadtxt("tmp/x.csv") # (μm)
 		y_model = np.loadtxt("tmp/y.csv") # (μm)
 		z_model = np.loadtxt("tmp/z.csv") # (μm)
