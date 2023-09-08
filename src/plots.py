@@ -447,8 +447,10 @@ def save_and_plot_morphologies(shot_number: str,
 		vertex_locations[:, 0] += x[0]
 		vertex_locations[:, 1] += y[0]
 		vertex_locations[:, 2] += z[0]
+		facecolors = apply_shading(vertex_locations, triangles)
 		mesh = Poly3DCollection(vertex_locations[triangles],
-		                        facecolors="#45aeeb", edgecolors="#45aeeb", shade=True)
+		                        facecolors=facecolors,
+		                        edgecolors="w", linewidths=0.05)
 		ax.add_collection3d(mesh)
 		ax.set_xlabel("x (μm)")
 		ax.set_ylabel("y (μm)")
@@ -460,14 +462,24 @@ def save_and_plot_morphologies(shot_number: str,
 		plt.tight_layout()
 
 
-def color_from_normal(x, y, z):
+def apply_shading(vertex_locations, triangles):
 	""" choose a color for a plane based on some arbitrary lighting, given the orientation
 	    of its normal. hypot(x, y, z) should = 1.
 	"""
-	red = (np.maximum(0, x) + (1 + x)/2 + 1)/4
-	green = (np.maximum(0, y) + (1 + y)/2 + 1)/4
-	blue = (np.maximum(0, z) + (1 + z)/2 + 1)/4
-	return np.stack([red, green, blue], axis=-1)
+	ab_edges = vertex_locations[triangles[:, 1]] - vertex_locations[triangles[:, 0]]
+	ac_edges = vertex_locations[triangles[:, 2]] - vertex_locations[triangles[:, 0]]
+	normals = np.cross(ac_edges, ab_edges)
+	normals /= np.linalg.norm(normals, axis=-1, keepdims=True)
+	x, y, z = normals[:, 0], normals[:, 1], normals[:, 2]
+	east_light = (np.maximum(0, x) + (1 + x)/2 + 1)/3
+	north_light = (np.maximum(0, y) + (1 + y)/2 + 1)/3
+	sky_light = (np.maximum(0, z) + (1 + z)/2 + 1)/3
+	light_colors = np.array([
+		[.4, .2, .2],
+		[.2, .4, .2],
+		[.4, .4, .6],
+	])
+	return (light_colors.T@[east_light, north_light, sky_light]).T
 
 
 def plot_overlaid_contores(filename: str,
