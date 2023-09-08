@@ -345,14 +345,15 @@ def save_and_plot_morphologies(shot_number: str,
 			else:
 				slices[-1].append(None)
 
-	any_densities = slices[0][1] is not None
+	any_densities = morphologies[0][1] is not None
 
-	peak_source = np.amax([abs(source) for source, density in slices])
+	peak_source = np.amax([abs(source) for source, density in morphologies])
 	if any_densities:
-		peak_density = np.amax([abs(density) for source, density in slices])
+		peak_density = np.amax([abs(density) for source, density in morphologies])
 	else:
 		peak_density = None
-	for i, ((source, density), (source_slice, density_slice)) in enumerate(zip(morphologies, slices)):
+
+	for i, (source, density) in enumerate(morphologies):
 		r = np.linspace(0, np.sqrt(x[-1]**2 + y[-1]**2 + z[-1]**2))
 		θ = np.arccos(np.linspace(-1, 1, 20))
 		ф = np.linspace(0, 2*pi, 63, endpoint=False)
@@ -369,42 +370,60 @@ def save_and_plot_morphologies(shot_number: str,
 		else:
 			print("density not calculable from these datum, but that's fine")
 
-		plt.figure(figsize=LONG_FIGURE_SIZE)
-		num_contours = int(max(9, min(200, 3*peak_source/source_slice.max())))
-		levels = np.concatenate([np.linspace(-peak_source, 0, num_contours)[1:-1],
-		                         np.linspace(0, peak_source, num_contours)[1:-1]])
-		plt.contour(y, z, source_slice.T,
-		            levels=levels,
-		            negative_linestyles="dotted",
-		            colors="#000",
-		            zorder=2)
-		if np.unique(np.digitize(source_slice, levels)).size > 1:  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
-			make_colorbar(
-				vmin=0, vmax=peak_source,
-				label="Neutron emission (μm^-3)",
-				# facecolor="#fdce45",
-			)
-		if any_densities:
-			if np.any(density_slice > 0):
-				num_contours = int(max(9, min(200, 3*peak_density/density_slice.max())))
-				plt.contourf(y, z, np.maximum(0, density_slice).T,
-				             vmin=0, vmax=peak_density,
-				             levels=np.linspace(0, peak_density, num_contours),
-				             cmap='Reds',
-				             zorder=0)
-				if np.any(density_slice > peak_density/(num_contours - 1)):  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
-					make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
-			if np.any(density_slice < 0):
-				plt.contourf(y, z, -density_slice.T,
-				             levels=[0, np.max(abs(density_slice))],
-				             cmap=CMAP["cyans"],
-				             zorder=1)
-		plt.xlabel("x (μm)")
-		plt.ylabel("y (μm)")
-		plt.axis('square')
-		# plt.axis([-r_max, r_max, -r_max, r_max])
-		plt.tight_layout()
-		save_current_figure(f"{shot_number}/morphology-section-{i}")
+		for x_direction, y_direction, z_direction in [("x", "y", "z"), ("y", "z", "x"), ("z", "x", "y")]:
+			plt.figure(figsize=LONG_FIGURE_SIZE)
+			k_source = np.argmax(np.max(source, axis=(0, 1)))
+			source_slice = source[:, :, k_source]
+			num_contours = int(max(9, min(200, 3*peak_source/source_slice.max())))
+			if any_densities:
+				levels = np.linspace(-peak_source, peak_source, 2*num_contours + 1)[1:-1]
+				levels = np.concatenate([levels[:num_contours - 1], levels[num_contours:]])  # don't put a contour at 0
+				plt.contour(x, x, source_slice.T,
+				            levels=levels,
+				            negative_linestyles="dotted",
+				            colors="#000",
+				            zorder=2)
+			else:
+				levels = np.linspace(0, peak_source, num_contours)
+				plt.contourf(x, x, source_slice.T,
+				             vmin=0, vmax=peak_source,
+				             levels=levels,
+				             cmap=CMAP["blues"])
+				plt.gca().set_facecolor(CMAP["blues"].colors[0])
+			if np.unique(np.digitize(source_slice, levels)).size > 1:  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
+				make_colorbar(
+					vmin=0, vmax=peak_source,
+					label="Neutron emission (μm^-3)",
+					# facecolor="#fdce45",
+				)
+			if any_densities:
+				k_density = np.argmax(np.max(density, axis=(0, 1)))
+				density_slice = source[:, :, k_density]
+				if np.any(density_slice > 0):
+					num_contours = int(max(9, min(200, 3*peak_density/density_slice.max())))
+					plt.contourf(x, x, np.maximum(0, density_slice).T,
+					             vmin=0, vmax=peak_density,
+					             levels=np.linspace(0, peak_density, num_contours),
+					             cmap='Reds',
+					             zorder=0)
+					if np.any(density_slice > peak_density/(num_contours - 1)):  # make sure you don’t add a colorbar unless there are contours or you’ll cause an error
+						make_colorbar(vmin=0, vmax=peak_density, label="Density (g/cc)")
+				if np.any(density_slice < 0):
+					plt.contourf(x, x, -density_slice.T,
+					             levels=[0, np.max(abs(density_slice))],
+					             cmap=CMAP["cyans"],
+					             zorder=1)
+			plt.xlabel(f"{x_direction} (μm)")
+			plt.ylabel(f"{y_direction} (μm)")
+			plt.axis('square')
+			# plt.axis([-r_max, r_max, -r_max, r_max])
+			plt.tight_layout()
+			save_current_figure(f"{shot_number}/morphology-{z_direction}-section-{i}")
+
+			# rotate the cubes so that we can plot the next slice direction
+			source = source.transpose((1, 2, 0))
+			if any_densities:
+				density = density.transpose((1, 2, 0))
 
 
 def plot_overlaid_contores(filename: str,
