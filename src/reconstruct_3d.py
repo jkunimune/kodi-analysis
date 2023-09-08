@@ -25,9 +25,6 @@ from util import execute_java
 
 Э_min, Э_max = 2, 13 # (MeV)
 
-energy_resolution = 4 # (MeV)
-spatial_resolution = 7 # (μm)
-
 
 def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: bool):
 	""" find the images for a given shot and put them all together in 3D
@@ -44,8 +41,8 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 	if not os.path.isdir("tmp"):
 		os.mkdir("tmp")
 
+	# if skipping, load the previous inputs and don't run the reconstruction
 	if skip_reconstruction:
-		# load the previous inputs and don't run the reconstruction
 		print(f"using previous reconstruction.")
 
 		lines_of_sight = np.loadtxt("tmp/line_of_site_names.csv")
@@ -60,12 +57,13 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 		except OSError:
 			tru_emission, tru_density, tru_temperature = None, None, None
 
-	# if not skipping, find the necessary inputs and run the algorithm
+	# if not skipping, generate or lead new inputs and and run the algorithm
 	else:
-		# generate or load a new input and run the reconstruction algorithm
+		# generate a synthetic morphology
 		if name == "test":
-			# generate a synthetic morphology
 			lines_of_sight = ["x", "y", "z", "-y"]
+			energy_resolution = 4 # (MeV)
+			spatial_resolution = 7 # (μm)
 
 			Э = np.linspace(Э_min, Э_max, round((Э_max - Э_min)/energy_resolution) + 1) # (MeV)
 			Э_cuts = np.transpose([Э[:-1], Э[1:]]) # (MeV)
@@ -94,8 +92,8 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 
 			print(f"there are {Э_cuts.shape[0]} synthetic {n_pixels}^2 images on {len(lines_of_sight)} lines of sight")
 
+		# load some real images and save them to disk in the correct format
 		else:
-			# load some real images and save them to disk in the correct format
 			print(f"reconstructing images marked '{name}'")
 
 			total_yield = get_shot_yield(name)
@@ -104,10 +102,13 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 
 			los_indices = {}
 			lines_of_sight = []
+			coordinate_bases = []
+			image_stacks = []
 			energy_range = None
 			num_pixels = 0
 			r_max = 70 # μm
-			for directory, _, filenames in os.walk('results/data'): # search for files that match each row
+			# start by collecting info from relevant files
+			for directory, _, filenames in os.walk('results/data'):
 				for filename in filenames:
 					filepath = os.path.join(directory, filename)
 					filename, extension = os.path.splitext(filename)
@@ -158,23 +159,34 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 
 						r_max = min(r_max, -ξ_centers[0], ξ_centers[-1], -υ_centers[0], υ_centers[-1])
 
-						ξ_in_bounds = (ξ_centers >= -r_max) & (ξ_centers <= r_max) # crop out excessive empty space
-						υ_in_bounds = (υ_centers >= -r_max) & (υ_centers <= r_max)
-						ξ_centers, υ_centers = ξ_centers[ξ_in_bounds], υ_centers[υ_in_bounds]
-						images = images[:, ξ_in_bounds][:, :, υ_in_bounds]
-
-						while ξ_centers[1] - ξ_centers[0] < .7*spatial_resolution or images[0, :, :].size > 10000: # scale it down if it's unnecessarily fine
-							ξ_centers = (ξ_centers[:-1:2] + ξ_centers[1::2])/2
-							υ_centers = (υ_centers[:-1:2] + υ_centers[1::2])/2
-							images = (images[:, :-1:2, :-1:2] + images[:, :-1:2, 1::2] +
-							          images[:, 1::2, :-1:2] + images[:, 1::2, 1::2])/4
-
-						np.savetxt(f"tmp/energy-los{los_indices[los]}.csv", Э_cuts, delimiter=',') # (MeV) TODO: save hdf5 files of the results
-						np.savetxt(f"tmp/xye-los{los_indices[los]}.csv", ξ_centers) # (μm)
-						np.savetxt(f"tmp/ypsilon-los{los_indices[los]}.csv", υ_centers) # (μm)
-						np.savetxt(f"tmp/image-los{los_indices[los]}.csv", images.ravel()) # (d/μm^2/srad)
+						# save the results to the list
 						lines_of_sight.append(los)
-						num_pixels += images.size
+						coordinate_bases.append((Э_cuts, ξ_centers, υ_centers))
+						image_stacks.append(images)
+
+			spatial_resolution = r_max/15
+
+			# now resample them all before saving them to disk
+			for l in range(len(lines_of_sight)):
+				Э_cuts, ξ_centers, υ_centers = coordinate_bases[l]
+				images = image_stacks[l]
+				ξ_in_bounds = (ξ_centers >= -r_max) & (ξ_centers <= r_max) # crop out excessive empty space
+				υ_in_bounds = (υ_centers >= -r_max) & (υ_centers <= r_max)
+				ξ_centers, υ_centers = ξ_centers[ξ_in_bounds], υ_centers[υ_in_bounds]
+				images = images[:, ξ_in_bounds][:, :, υ_in_bounds]
+
+				while ξ_centers[1] - ξ_centers[0] < .7*spatial_resolution or images[0, :, :].size > 10000: # scale it down if it's unnecessarily fine
+					ξ_centers = (ξ_centers[:-1:2] + ξ_centers[1::2])/2
+					υ_centers = (υ_centers[:-1:2] + υ_centers[1::2])/2
+					images = (images[:, :-1:2, :-1:2] + images[:, :-1:2, 1::2] +
+					          images[:, 1::2, :-1:2] + images[:, 1::2, 1::2])/4
+
+				# save the results to disk
+				np.savetxt(f"tmp/energy-los{l}.csv", Э_cuts, delimiter=',') # (MeV) TODO: save hdf5 files of the results
+				np.savetxt(f"tmp/xye-los{l}.csv", ξ_centers) # (μm)
+				np.savetxt(f"tmp/ypsilon-los{l}.csv", υ_centers) # (μm)
+				np.savetxt(f"tmp/image-los{l}.csv", images.ravel()) # (d/μm^2/srad)
+				num_pixels += images.size
 
 			n_space_bins = ceil(2*r_max/(spatial_resolution/5)) # model spatial resolucion
 			x_model = y_model = z_model = np.linspace(-r_max, r_max, n_space_bins + 1) # (μm)
