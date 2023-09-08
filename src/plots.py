@@ -7,9 +7,11 @@ from typing import cast, Optional, Sequence, Union
 import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from numpy.typing import NDArray
 from scipy import optimize, interpolate
 from scipy import special
+from skimage import measure
 
 import aperture_array
 from cmap import CMAP
@@ -424,6 +426,48 @@ def save_and_plot_morphologies(shot_number: str,
 			source = source.transpose((1, 2, 0))
 			if any_densities:
 				density = density.transpose((1, 2, 0))
+
+		# now downsample the cube
+		while x.size > 30 or y.size > 30 or z.size > 30:
+			x = (x[0:-1:2] + x[1::2])/2
+			y = (y[0:-1:2] + y[1::2])/2
+			z = (z[0:-1:2] + z[1::2])/2
+			coarser_source = np.zeros((source.shape[0]//2, source.shape[1]//2, source.shape[2]//2))
+			for i_slice in [slice(0, -1, 2), slice(1, None, 2)]:
+				for j_slice in [slice(0, -1, 2), slice(1, None, 2)]:
+					for k_slice in [slice(0, -1, 2), slice(1, None, 2)]:
+						coarser_source += source[i_slice, j_slice, k_slice]/8
+			source = coarser_source
+
+		# now do the actual 3D contour surface
+		fig = plt.figure(figsize=(5, 5))
+		ax = fig.add_subplot(projection="3d")
+		vertex_locations, triangles, _, _ = measure.marching_cubes(
+			source, np.max(source)/4, spacing=(x[1] - x[0], y[1] - y[0], z[1] - z[0]))
+		vertex_locations[:, 0] += x[0]
+		vertex_locations[:, 1] += y[0]
+		vertex_locations[:, 2] += z[0]
+		mesh = Poly3DCollection(vertex_locations[triangles],
+		                        facecolors="#45aeeb", edgecolors="#45aeeb", shade=True)
+		ax.add_collection3d(mesh)
+		ax.set_xlabel("x (μm)")
+		ax.set_ylabel("y (μm)")
+		ax.set_zlabel("z (μm)")
+		r_max = np.max(x)
+		ax.set_xlim(-r_max, r_max)
+		ax.set_ylim(-r_max, r_max)
+		ax.set_zlim(-r_max*0.7, r_max*0.7)
+		plt.tight_layout()
+
+
+def color_from_normal(x, y, z):
+	""" choose a color for a plane based on some arbitrary lighting, given the orientation
+	    of its normal. hypot(x, y, z) should = 1.
+	"""
+	red = (np.maximum(0, x) + (1 + x)/2 + 1)/4
+	green = (np.maximum(0, y) + (1 + y)/2 + 1)/4
+	blue = (np.maximum(0, z) + (1 + z)/2 + 1)/4
+	return np.stack([red, green, blue], axis=-1)
 
 
 def plot_overlaid_contores(filename: str,
