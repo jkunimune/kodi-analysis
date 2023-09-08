@@ -246,7 +246,7 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 	save_and_plot_source_sets(shot_number, Э_cuts, ξ_centers, υ_centers,
 	                          [tru_images, recon_images],
 	                          ["Ground truth", "Reconstruction"],
-	                          lines_of_sight)
+	                          lines_of_sight, mode)
 
 	if show_plots:
 		plt.show()

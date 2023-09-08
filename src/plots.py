@@ -52,7 +52,10 @@ def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
 
 
 def choose_colormaps(particle: str, num_cuts: int) -> list[colors.ListedColormap]:
-	return [CMAP[cmap_name] for priority, cmap_name in COLORMAPS[particle] if priority < num_cuts]
+	if num_cuts > len(COLORMAPS[particle]):
+		return [matplotlib.colormaps["plasma"]] * num_cuts
+	else:
+		return [CMAP[cmap_name] for priority, cmap_name in COLORMAPS[particle] if priority < num_cuts]
 
 
 def make_colorbar(vmin: float, vmax: float, label: str, facecolor=None) -> None:
@@ -284,7 +287,7 @@ def plot_source(filename: str, show: bool,
 
 def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Interval], NDArray[float]]],
                               x: list[NDArray[float]], y: list[NDArray[float]], image_sets: list[list[NDArray[float]]],
-                              image_set_names: list[str], line_of_sight_names: list[str]) -> None:
+                              image_set_names: list[str], line_of_sight_names: list[str], particle: str) -> None:
 	""" plot a bunch of source images, specificly in comparison (e.g. between data and reconstruction)
 	    :param shot_number: the filename with which to save them
 	    :param energy_bins: the energy bins for each line of site, which must be the same between image sets
@@ -302,12 +305,7 @@ def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Int
 			break  # but stop when you think you're about to plot too many
 
 		num_cuts = len(energy_bins[l])
-		if num_cuts == 1:
-			cmaps = [CMAP["greys"]]
-		elif num_cuts < 7:
-			cmaps = choose_colormaps("deuteron", num_cuts)
-		else:
-			cmaps = [matplotlib.colormaps["plasma"]]*num_cuts
+		cmaps = choose_colormaps(particle, num_cuts)
 		assert len(cmaps) == num_cuts
 
 		for h in [0, num_cuts - 1] if num_cuts > 1 else [0]:
