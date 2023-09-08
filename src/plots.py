@@ -319,12 +319,15 @@ def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Int
 				               cmap=cmaps[h],
 				               shading="gouraud")
 				plt.gca().set_facecolor(cmaps[h].colors[0])
+				plt.colorbar().set_label("Image (d/μm^2/srad)")
+				plt.contour(x[l], y[l], image_set[l][h, :, :].T,
+				            levels=[.17*np.max(image_set[l][h, :, :])],
+				            colors=["w"], linewidths=[0.8])
 				plt.axis('square')
 				# plt.axis([-r_max, r_max, -r_max, r_max])
 				plt.title(f"{image_set_names[i]}, {line_of_sight_names[l]}")
 				plt.xlabel("x (μm)")
 				plt.ylabel("y (μm)")
-				plt.colorbar().set_label("Image (d/μm^2/srad)")
 				plt.tight_layout()
 				save_current_figure(f"{shot_number}/{i}-{line_of_sight_names[l]}-{h}-source")
 			pairs_plotted += 1

@@ -21,7 +21,7 @@ public class VoxelFit {
 	public static final int STOPPING_POWER_RESOLUTION = 126;
 	public static final double SHELL_TEMPERATURE_GESS = 1; // (keV)
 	public static final double SOME_ARBITRARY_LOW_DENSITY = 0.1; // (g/cm^3)
-	public static final double SMOOTHING = 2e-3;
+	public static final double SMOOTHING = 2e-4;
 	public static final double ROUGHENING_RATE = 1.7;
 	public static final double TOLERANCE = 1e-3;
 
