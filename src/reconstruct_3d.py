@@ -121,6 +121,8 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 								los = metadatum
 						if los is None:
 							raise ValueError(f"no line of sight was found in {metadata}")
+						if los == "srte":
+							continue  # don't use SRTE for 3D tomography
 						if los in los_indices:
 							print(f"I found multiple images for {los}, so I'm ignoring {filename}")
 							continue

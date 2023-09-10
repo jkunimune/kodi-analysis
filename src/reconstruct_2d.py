@@ -1154,9 +1154,9 @@ def user_defined_region(filename, title, default=None, timeout=None) -> list[Poi
 			cap.set_ydata([vertices[0][1], vertices[-1][1]])
 			cursor.set_xdata([vertices[-1][0]])
 			cursor.set_ydata([vertices[-1][1]])
-			cap.set_visible(True)
+			cursor.set_visible(True)
 		else:
-			cap.set_visible(False)
+			cursor.set_visible(False)
 	fig.canvas.mpl_connect('button_press_event', on_click)
 
 	has_closed = False
