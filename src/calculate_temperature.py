@@ -20,6 +20,7 @@ from plots import make_colorbar, save_current_figure
 from util import parse_filtering, print_filtering, Filter, median, quantile, shape_parameters, nearest_value
 
 NUM_SAMPLES = 100
+PLOT_STALK = False
 
 
 def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plots: bool):
@@ -354,10 +355,11 @@ def plot_electron_temperature(filename: str, show: bool,
 	if num_stalks is not None and projected_stalk_direction is not None:
 		x_stalk, y_stalk, _ = projected_stalk_direction
 		L = grid.x.half_range/2  # length of stalk image (μm)
-		if num_stalks == 1:
-			plt.plot([0, x_stalk*L], [0, y_stalk*L], color="#000", linewidth=2)
-		elif num_stalks == 2:
-			plt.plot([-x_stalk*L, x_stalk*L], [-y_stalk*L, y_stalk*L], color="#000", linewidth=2)
+		if PLOT_STALK:
+			if num_stalks == 1:
+				plt.plot([0, x_stalk*L], [0, y_stalk*L], color="#000", linewidth=2)
+			elif num_stalks == 2:
+				plt.plot([-x_stalk*L, x_stalk*L], [-y_stalk*L, y_stalk*L], color="#000", linewidth=2)
 	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
 	         color="w", ha='left', va='top', transform=plt.gca().transAxes)
 	plt.xlabel("x (μm)")

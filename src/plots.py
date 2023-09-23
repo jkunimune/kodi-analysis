@@ -28,7 +28,8 @@ plt.rcParams["savefig.facecolor"] = 'none'
 
 PLOT_THEORETICAL_50c_CONTOUR = True
 PLOT_SOURCE_CONTOUR = True
-PLOT_OFFSET = True
+PLOT_OFFSET = False
+PLOT_FLOW = True
 PLOT_STALK = False
 
 MAX_NUM_PIXELS = 40000
@@ -195,7 +196,9 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 def plot_source(filename: str, show: bool,
                 source_plane: Grid, source: NDArray[float], contour_level: float,
                 energy_min: float, energy_max: float, color_index: int, num_colors: int,
-                projected_stalk_direction: Optional[tuple[float, float, float]], num_stalks: Optional[int]) -> None:
+                projected_offset: Optional[tuple[float, float, float]],
+                projected_flow: Optional[tuple[float, float, float]],
+                projected_stalk: Optional[tuple[float, float, float]], num_stalks: Optional[int]) -> None:
 	""" plot a single reconstructed deuteron/xray source
 	    :param filename: the name with which to save the resulting files, minus the fluff
 	    :param show: whether to make the user look at it
@@ -206,7 +209,9 @@ def plot_source(filename: str, show: bool,
 	    :param energy_max: the maximum energy being plotted (for the label)
 	    :param color_index: the index of this image in the set (for choosing the color)
 	    :param num_colors: the total number of images in this set (for choosing the color)
-	    :param projected_stalk_direction: the stalk direction unit vector, given as (x, y, z)
+	    :param projected_offset: the capsule offset from TCC in μm, given as (x, y, z)
+	    :param projected_flow: the hot-spot flow vector in μm/ns, given as (x, y, z)
+	    :param projected_stalk: the stalk direction unit vector, given as (x, y, z)
 	    :param num_stalks: the number of stalks to draw: 0, 1, or 2
 	"""
 	# sometimes this is all nan, but we don't need to plot it
@@ -232,8 +237,18 @@ def plot_source(filename: str, show: bool,
 	if PLOT_SOURCE_CONTOUR:
 		plt.contour(source_plane.x.get_bins(), source_plane.y.get_bins(), source.T,
 		            levels=[contour_level*np.max(source)], colors='#ddd', linestyles='solid', linewidths=1)
-	if PLOT_STALK and projected_stalk_direction is not None and num_stalks is not None:
-		x_stalk, y_stalk, _ = projected_stalk_direction
+	if PLOT_OFFSET:
+		if projected_offset is not None:
+			x_off, y_off, z_off = projected_offset
+			plt.plot([0, x_off], [0, y_off], '-w')
+			plt.scatter([x_off], [y_off], color='w')
+	if PLOT_FLOW:
+		if projected_flow is not None:
+			x_flo, y_flo, z_flo = projected_flow
+			plt.arrow(0, 0, x_flo, y_flo, color='w',
+			          head_width=5, head_length=5, length_includes_head=True)
+	if PLOT_STALK and projected_stalk is not None and num_stalks is not None:
+		x_stalk, y_stalk, _ = projected_stalk
 		if num_stalks == 1:
 			plt.plot([x0, x0 + x_stalk*60],
 			         [y0, y0 + y_stalk*60], '-w', linewidth=2)
@@ -520,11 +535,12 @@ def plot_overlaid_contores(filename: str,
 			x_off, y_off, z_off = projected_offset
 			plt.plot([0, x_off], [0, y_off], '-k')
 			plt.scatter([x_off], [y_off], color='k')
+	if PLOT_FLOW:
 		if projected_flow is not None:
 			x_flo, y_flo, z_flo = projected_flow
 			plt.arrow(0, 0, x_flo/1e-4, y_flo/1e-4, color='k',
 			          head_width=5, head_length=5, length_includes_head=True)
-	elif PLOT_STALK and projected_stalk is not None and num_stalks is not None:
+	if PLOT_STALK and projected_stalk is not None and num_stalks is not None:
 		x_stalk, y_stalk, z_stalk = projected_stalk
 		if num_stalks == 1:
 			plt.plot([0, x_stalk*60], [0, y_stalk*60], '-k', linewidth=2)

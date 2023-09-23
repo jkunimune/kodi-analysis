@@ -389,6 +389,19 @@ def analyze_scan(input_filename: str,
 	             y=source_plane.y.get_bins()/1e-4,
 	             images=np.transpose(source_stack, (0, 2, 1))*1e-4**2,  # save it with (y,x) indexing, not (i,j)
 	             etch_time=etch_time if etch_time is not None else nan)
+
+	# compute the additional lines to be put on the plots (checking in case they’re absent)
+	if not any(isnan(offset[i]) for i in range(3)):
+		projected_offset = project(
+			offset[0], offset[1], offset[2], los_basis)
+	else:
+		projected_offset = None
+	if not any(isnan(velocity[i]) for i in range(3)):
+		projected_flow = project(
+			velocity[0], velocity[1], velocity[2], los_basis)
+	else:
+		projected_flow = None
+
 	# and replot each of the individual sources in the correct color
 	for cut_index in range(len(source_stack)):
 		if particle == "deuteron":
@@ -403,7 +416,9 @@ def analyze_scan(input_filename: str,
 		            False, source_plane, source_stack[cut_index],
 		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
 		            color_index=color_index, num_colors=num_colors,
-		            projected_stalk_direction=projected_stalk,
+		            projected_offset=projected_offset,
+		            projected_flow=projected_flow,
+		            projected_stalk=projected_stalk,
 		            num_stalks=num_stalks)
 
 	# if can, plot some plots that overlay the sources in the stack
@@ -415,18 +430,6 @@ def analyze_scan(input_filename: str,
 		for statblock in statistics:
 			statblock["separation magnitude"] = hypot(dx, dy)/1e-4
 			statblock["separation angle"] = degrees(atan2(dy, dx))
-
-		# compute the additional lines to be put on the plot (checking in case they’re absent)
-		if not any(isnan(offset[i]) for i in range(3)):
-			projected_offset = project(
-				offset[0], offset[1], offset[2], los_basis)
-		else:
-			projected_offset = None
-		if not any(isnan(velocity[i]) for i in range(3)):
-			projected_flow = project(
-				velocity[0], velocity[1], velocity[2], los_basis)
-		else:
-			projected_flow = None
 
 		plot_overlaid_contores(
 			f"{shot}/{los}-{particle}-{detector_index}", source_plane, source_stack, contour,
@@ -913,7 +916,8 @@ def analyze_scan_section_cut(input_filename: str,
 	            show_plots,
 	            output_plane, output, contour, energy_min, energy_max,
 	            color_index=color_index, num_colors=num_colors,
-	            projected_stalk_direction=(nan, nan, nan), num_stalks=0)
+	            projected_flow=None, projected_offset=None,
+	            projected_stalk=None, num_stalks=0)
 	save_and_plot_overlaid_penumbra(f"{shot}/{los}-{particle}-{cut_index}", show_plots,
 	                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
 
