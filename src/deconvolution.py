@@ -297,6 +297,7 @@ def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: Union[str, NDArray[fl
 
 	# normalize the transfer matrix
 	p = P/np.sum(P, axis=0)
+	valid_pixels = ~np.all(p == 0, axis=1)
 
 	s = p @ g
 
@@ -322,13 +323,14 @@ def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: Union[str, NDArray[fl
 			dlds = f/s - 1
 		else:
 			dlds = (F - N*s)/D
+		dlds = np.where(valid_pixels, dlds, 0)
 		δg = g * (p.T @ dlds)
 		δs = p @ δg
 
 		# complete the line search algebraicly
 		if mode == "poisson":
 			dldh = np.sum(δg**2/g, where=g != 0)
-			d2ldh2 = -np.sum(f*δs**2/s**2)
+			d2ldh2 = -np.sum(f*δs**2/s**2, where=valid_pixels)
 			if not (dldh > 0 and d2ldh2 < 0):
 				print(F)
 				print(P)
@@ -358,7 +360,7 @@ def gelfgat1d(F: NDArray[float], P: NDArray[float], noise: Union[str, NDArray[fl
 
 		# and the probability that this step is correct
 		if mode == "poisson":
-			log_L[t] = N*np.sum(f*np.log(s))
+			log_L[t] = N*np.sum(f*np.log(s), where=valid_pixels)
 		else:
 			log_L[t] = -np.sum((N*s - F)**2/D)
 		if isnan(log_L[t]): # TODO: maybe if I'm feeling fancy, roll this with the other one by having a Response class that can be a convolution or a matmul
