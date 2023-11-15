@@ -7,6 +7,7 @@ import re
 import sys
 import time
 import warnings
+from argparse import ArgumentParser
 from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degrees, atan2
 from typing import Any, Optional, Union
 
@@ -54,7 +55,6 @@ SHOW_GRID_FITTING_DEBUG_PLOTS = False
 PROTON_ENERGY_CUTS = [(0, inf)]
 NORMAL_DEUTERON_ENERGY_CUTS = [(9, 12.5), (0, 6), (6, 9)] # (MeV) (emitted, not detected)
 FINE_DEUTERON_ENERGY_CUTS = [(11, 12.5), (2, 3.5), (3.5, 5), (5, 6.5), (6.5, 8), (8, 9.5), (9.5, 11)] # (MeV) (emitted, not detected)
-SUPPORTED_FILETYPES = [".h5", ".cpsa"]
 
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
@@ -77,6 +77,8 @@ GridParameters = tuple[NDArray[float], float, float]
 
 def analyze(shots_to_reconstruct: list[str],
             energy_cut_mode: str,
+            only_IP: bool,
+            only_cr39: bool,
             skip_reconstruction: bool,
             show_plots: bool):
 	""" iterate thru the scan files in the input/scans directory that match the provided shot
@@ -90,6 +92,8 @@ def analyze(shots_to_reconstruct: list[str],
 	                                 (for just the data on one line of sight)
 	    :param energy_cut_mode: one of "normal" for three deuteron energy bins, "fine" for a lot of
 	                            deuteron energy bins, and "proton" for one huge energy bin.
+	    :param only_IP: whether to skip all .cpsa files and only look at .h5
+	    :param only_cr39: whether to skip all .h5 files and only look at .cpsa
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -125,6 +129,18 @@ def analyze(shots_to_reconstruct: list[str],
 	else:
 		raise ValueError(f"unrecognized energy cut mode: '{energy_cut_mode}'")
 
+	# decide which filetypes to consult
+	if only_IP:
+		if only_cr39:
+			raise ValueError("you can't use --only_IP *and* --only_CR39")
+		else:
+			supported_filetypes = [".h5"]
+	else:
+		if only_cr39:
+			supported_filetypes = [".cpsa"]
+		else:
+			supported_filetypes = [".h5", ".cpsa"]
+
 	# read in some of the existing information
 	try:
 		shot_table = pd.read_csv('input/shot_info.csv', index_col="shot",
@@ -155,26 +171,30 @@ def analyze(shots_to_reconstruct: list[str],
 
 		# search for filenames that match each row
 		matching_scans: list[tuple[str, str, str, int, float, str]] = []
-		for filename in os.listdir("input/scans"):
-			if re.search(r"_pcis[0-9]?_", filename):  # skip these files because they’re unsplit
-				continue
-			shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
-			detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
-			etch_match = re.search(r"([0-9]+(\.[0-9]+)?)hr?", filename, re.IGNORECASE)
-			if los is None:
-				los_match = re.search(r"(tim([0-9]+)|srte)", filename, re.IGNORECASE)
-			else:
-				los_match = re.search(rf"({los})", filename, re.IGNORECASE)
+		for path, directories, filenames in os.walk("input/scans"):
+			for filename in filenames:
+				if re.search(r"_pcis[0-9]?_", filename):  # skip these files because they’re unsplit
+					continue
+				shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
+				detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
+				etch_match = re.search(r"([0-9]+(\.[0-9]+)?)hr?", filename, re.IGNORECASE)
+				if los is None:
+					los_match = re.search(r"(tim([0-9]+)|srte)", filename, re.IGNORECASE)
+				else:
+					los_match = re.search(rf"({los})", filename, re.IGNORECASE)
 
-			if os.path.splitext(filename)[-1] in SUPPORTED_FILETYPES and shot_match and (los_match or los is None):
-				if los_match is None:
-					logging.warning(f"the file {filename} doesn’t specify a LOS, so I’m calling it none.")
-				matching_los = los_match.group(1).lower() if los_match is not None else "none"
-				detector_index = int(detector_match.group(1)) if detector_match is not None else 0
-				etch_time = float(etch_match.group(1)) if etch_match is not None else None
-				particle = "xray" if filename.endswith(".h5") else "deuteron"
-				matching_scans.append((shot, matching_los, particle, detector_index, etch_time,
-				                       f"input/scans/{filename}"))
+				if os.path.splitext(filename)[-1] in supported_filetypes and shot_match and (los_match or los is None):
+					if los_match is None:
+						logging.warning(f"the file {filename} doesn’t specify a LOS, so I’m calling it none.")
+					matching_los = los_match.group(1).lower() if los_match is not None else "none"
+					detector_index = int(detector_match.group(1)) if detector_match is not None else 0
+					etch_time = float(etch_match.group(1)) if etch_match is not None else None
+					particle = "xray" if filename.endswith(".h5") else "deuteron"
+					if particle != "xray" and etch_match is None:
+						logging.warning(f"the file {filename} doesn't specify an etch time, so I'm calling it 5.0 hours.")
+						etch_time = 5
+					matching_scans.append((shot, matching_los, particle, detector_index, etch_time,
+					                       f"{path}/{filename}"))
 		if len(matching_scans) == 0:
 			if los is None:
 				logging.info(f"  Could not find any scan files for shot {shot}")
@@ -1059,7 +1079,12 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		ρ_recon = n_recon/A
 		plt.figure()
 		plt.plot(r_sph, n_sph)
-		plt.xlim(0, quantile(r_sph, .999, n_sph*r_sph**2))
+		if not isfinite(quantile(r_sph, .999, weights=n_sph*r_sph**2)):
+			logging.error(r_sph)
+			logging.error(n_sph)
+			logging.error("there is something wrong with these.")
+			raise DataError("there is something wrong with the 1D reconstruction")
+		plt.xlim(0, quantile(r_sph, .999, weights=n_sph*r_sph**2))
 		plt.ylim(0, None)
 		plt.grid("on")
 		plt.xlabel("Magnified spherical radius (cm)")
@@ -1683,11 +1708,37 @@ if __name__ == '__main__':
 		os.chdir(os.path.dirname(os.getcwd()))
 
 	# read the command-line arguments
-	if len(sys.argv) <= 1:
-		logging.error("please specify the shot number(s) to reconstruct.")
-	else:
-		analyze(shots_to_reconstruct=sys.argv[1].split(","),
-		        skip_reconstruction="--skip" in sys.argv,
-		        show_plots="--show" in sys.argv,
-		        energy_cut_mode="proton" if "--proton" in sys.argv else "fine" if "--fine" in sys.argv else "normal"
-		        )
+	parser = ArgumentParser(
+		prog="python reconstruct_2d.py",
+		description="Analyze a bunch of penumbral images to extract sources")
+	parser.add_argument(
+		"shots", type=str,
+		help="the name of the shot to analyze, as given in the first column of shot_info.csv.  you may give multiple "
+		     "shots separated by commas.  you may also put the name of a line of sight after the shot number to just "
+		     "analyze that one line of sight.  so for example you could do '109044tim2,109045'.")
+	parser.add_argument(
+		"--skip", action="store_true",
+		help="whether to just refresh the plots without doing the actual reconstruction")
+	parser.add_argument(
+		"--show", action="store_true",
+		help="whether to show the plots as you go and wait for the user to close them")
+	parser.add_argument(
+		"--proton", action="store_true",
+		help="whether to do everything in a single energy bin rather than splitting it up into high- and low-energy deuterons")
+	parser.add_argument(
+		"--fine", action="store_true",
+		help="whether to divide it up into like a ton of energy bins")
+	parser.add_argument(
+		"--only_CR39", action="store_true",
+		help="whether to ignore all .h5 files and only process the .cpsa files")
+	parser.add_argument(
+		"--only_IP", action="store_true",
+		help="whether to ignore all .cpsa files and only process the .h5 files")
+	args = parser.parse_args()
+
+	analyze(shots_to_reconstruct=args.shots.split(","),
+	        skip_reconstruction=args.skip,
+	        show_plots=args.show,
+	        energy_cut_mode="proton" if args.proton else "fine" if args.fine else "normal",
+	        only_cr39=args.only_CR39,
+	        only_IP=args.only_IP)

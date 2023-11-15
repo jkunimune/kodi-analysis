@@ -24,7 +24,11 @@ Filter = tuple[float, str]
 def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Optional[str] = None) -> list[list[Filter]]:
 	""" read a str that describes a filter/detector stack, and output what filters exactly are
 	    in front of the specified detector.  if it was a split filter, output both potential stacks.
+	    :param filter_code: the str to parse, as described in the readme.md section on "filtering"
+	    :param index: the index of the detector at which to stop paying attention.  None if we're interested in the whole filter stack.
+	    :param detector: the type of detector being indexed ("CR39" or "IP")
 	"""
+	original_filter_code = filter_code
 	filter_code = re.sub(r"μm", "", filter_code)
 	filter_stacks = [[]]
 	num_detectors_seen = 0
@@ -65,7 +69,7 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 	if index is None and detector is None:
 		return filter_stacks
 	else:
-		raise ValueError("the specified detector index >= the number of detectors I found")
+		raise ValueError(f"this scan is marked as {detector} #{index} (index from 0) but I only see {num_detectors_seen} {detector} in '{original_filter_code}'.")
 
 
 def count_detectors(filter_code: str, detector: str) -> int:
