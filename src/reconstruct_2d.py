@@ -32,6 +32,7 @@ from cmap import CMAP
 from coordinate import project, los_coordinates, rotation_matrix, Grid, NAMED_LOS, LinSpace
 from hdf5_util import load_hdf5, save_as_hdf5
 from image_plate import xray_energy_limit, fade
+from linear_operator import Matrix
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
 from solid_state import track_diameter, particle_E_in, particle_E_out
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, \
@@ -1025,8 +1026,8 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		raise DataError("too much of the image is clipd; I need a background region.")
 	ρ_max = np.average(ρ[valid], weights=np.where(inside_umbra, 1/dρ**2, 0)[valid])
 	ρ_min = np.average(ρ[valid], weights=np.where(outside_penumbra, 1/dρ**2, 0)[valid])
-	n_background = np.mean(n, where=r > 1.8*r0)
-	dρ2_background = np.var(ρ, where=r > 1.8*r0)
+	n_inf = np.mean(n, where=r > 1.8*r0)
+	dρ2_inf = np.var(ρ, where=r > 1.8*r0)
 	domain = r > r0/2
 	ρ_01 = ρ_max*.001 + ρ_min*.999
 	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
@@ -1044,9 +1045,10 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		forward_matrix = A[:, np.newaxis] * np.hstack([
 			source_to_image @ sphere_to_plane,
 			np.ones((r.size, 1))])
-		profile = deconvolution.gelfgat1d(
-			n, forward_matrix,
-			noise="poisson" if histogram else n/n_background*dρ2_background/ρ_min**2)
+		profile, ρ_background = deconvolution.gelfgat_solve_with_background_inference(
+			Matrix(forward_matrix), n, pixel_area=A,
+			noise="poisson" if histogram else n/n_inf*dρ2_inf/ρ_min**2,
+			show_plots=True)
 		# def reconstruct_1d_assuming_Q_and_σ(_, σ: float, background: float) -> float:
 		# 	profile = np.concatenate([np.exp(-r_sph**2/(2*σ**2))/σ**3, [background*forward_matrix[-2, :].sum()/forward_matrix[-1, :].sum()]])
 		# 	reconstruction = forward_matrix@profile
@@ -1058,7 +1060,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		# except RuntimeError:
 		# 	source_size, background = r_sph[-1]/36, 0
 		# profile = np.concatenate([np.exp(-r_sph**2/(2*source_size**2)), [background]])
-		reconstruction = forward_matrix@profile
+		reconstruction = forward_matrix @ profile + ρ_background*A
 		if histogram:
 			χ2 = -np.sum(n*np.log(reconstruction))
 		else:
