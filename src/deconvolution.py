@@ -276,7 +276,7 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 				axes[2, 0].set_ylim(min(-dof, log_L[max(0, t - 10)] - log_L[t]), dof/10)
 				axes[2, 1].set_title("χ^2")
 				if mode == "poisson":
-					χ2 = 2*(N*s - F*np.log(s) - (F - F*np.log(np.maximum(1e-20, f))))
+					χ2 = 2*(N*s - F*np.log(np.maximum(1e-20, s)) - (F - F*np.log(np.maximum(1e-20, f))))
 				else:
 					χ2 = (N*s - F)**2/(D/2)
 				χ2 = reshape(where(data_region, χ2, 0), (m, m))

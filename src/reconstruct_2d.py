@@ -296,7 +296,7 @@ def analyze_scan(input_filename: str,
 	    :param shot: the shot number/name
 	    :param los: the name of the line of sight (e.g. "tim2", "srte")
 	    :param particle: the type of radiation being detected ("deuteron" for CR39 or "xray" for an image plate)
-	    :param detector_index: the index of the detector, to identify it out of multiple detectors of the same type
+	    :param detector_index: the index of the detector from 0, to identify it out of multiple detectors of the same type
 	    :param rA: the aperture radius (cm)
 	    :param sA: the aperture spacing (cm), specificly the distance from one aperture to its nearest neighbor.
 	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
@@ -1047,8 +1047,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 			np.ones((r.size, 1))])
 		profile, ρ_background = deconvolution.gelfgat_solve_with_background_inference(
 			Matrix(forward_matrix), n, pixel_area=A,
-			noise="poisson" if histogram else n/n_inf*dρ2_inf/ρ_min**2,
-			show_plots=True)
+			noise="poisson" if histogram else n/n_inf*dρ2_inf/ρ_min**2)
 		# def reconstruct_1d_assuming_Q_and_σ(_, σ: float, background: float) -> float:
 		# 	profile = np.concatenate([np.exp(-r_sph**2/(2*σ**2))/σ**3, [background*forward_matrix[-2, :].sum()/forward_matrix[-1, :].sum()]])
 		# 	reconstruction = forward_matrix@profile
@@ -1405,10 +1404,11 @@ def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],
 	Δθ = aperture_array.ANGULAR_PERIOD[grid_shape]/2
 	scale, angle, cost = None, None, inf
 	for test_scale in np.linspace(0.9, 1.1, 5):
-		for test_angle in np.linspace(-Δθ, Δθ, round(Δθ/radians(5)), endpoint=False):
+		for test_angle in np.linspace(-Δθ, Δθ, max(1, round(Δθ/radians(5))), endpoint=False):
 			test_cost = cost_function((test_scale, test_angle))
 			if test_cost < cost:
 				scale, angle, cost = test_scale, test_angle, test_cost
+	assert scale is not None
 
 	# then use Powell's method
 	if BELIEVE_IN_APERTURE_TILTING and x_points.size >= 3:
@@ -1446,7 +1446,7 @@ def fit_grid_alignment_to_points(x_points, y_points, grid_shape: str, grid_matri
 	    :return: the x and y coordinates of one of the grid nodes
 	"""
 	if np.linalg.det(grid_matrix) == 0:
-		return nan, nan
+		raise ValueError("this grid is degenerate so I cannot fit it")
 
 	Δξ = aperture_array.Ξ_PERIOD[grid_shape]/2
 	Δυ = aperture_array.Υ_PERIOD[grid_shape]/2
@@ -1492,7 +1492,7 @@ def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArra
 	n = x_points.size
 
 	if isnan(grid_x0) or isnan(grid_y0):
-		return np.full(n, nan), np.full(n, nan), inf
+		raise ValueError(f"invalid grid specification: ({grid_x0}, {grid_y0})")
 
 	# determine the size so you can iterate thru the grid nodes correctly
 	spacing = np.linalg.norm(grid_matrix, ord=2)

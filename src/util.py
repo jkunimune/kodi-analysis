@@ -109,9 +109,14 @@ def bin_centers_and_sizes(bin_edges: np.ndarray):
 def periodic_mean(values: np.ndarray, minimum: float, maximum: float):
 	""" find the mean of some values as tho they were angles on a circle
 	"""
-	angles = (values - minimum)/(maximum - minimum)*2*pi
-	mean_angle = np.arctan2(np.mean(np.sin(angles)), np.mean(np.cos(angles)))
-	return mean_angle/(2*pi)*(maximum - minimum) + minimum
+	if minimum > maximum:
+		raise ValueError(f"the bounds are out of order; what kind of domain is [{minimum}, {maximum})?")
+	if np.max(values) - np.min(values) < (maximum - minimum)/10:
+		return np.mean(values)  # for tight sets of values the arctan2 method can be ineffective
+	else:
+		angles = (values - minimum)/(maximum - minimum)*2*pi
+		mean_angle = np.arctan2(np.mean(np.sin(angles)), np.mean(np.cos(angles)))
+		return mean_angle/(2*pi)*(maximum - minimum) + minimum
 
 
 def center_of_mass(grid: Grid, image: NDArray[float]):
