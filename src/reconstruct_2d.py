@@ -177,18 +177,25 @@ def analyze(shots_to_reconstruct: list[str],
 				if re.search(r"_pcis[0-9]?_", filename):  # skip these files because they’re unsplit
 					continue
 				shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
-				detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
-				etch_match = re.search(r"([0-9]+(\.[0-9]+)?)hr?", filename, re.IGNORECASE)
 				if los is None:
 					los_match = re.search(r"(tim([0-9]+)|srte)", filename, re.IGNORECASE)
 				else:
 					los_match = re.search(rf"({los})", filename, re.IGNORECASE)
 
-				if os.path.splitext(filename)[-1] in supported_filetypes and shot_match and (los_match or los is None):
+				if os.path.splitext(filename)[-1] in supported_filetypes and "_alphas" not in filename \
+						and shot_match and (los_match or los is None):
+					# extract important information from the filename
 					if los_match is None:
 						logging.warning(f"the file {filename} doesn’t specify a LOS, so I’m calling it none.")
 					matching_los = los_match.group(1).lower() if los_match is not None else "none"
-					detector_index = int(detector_match.group(1)) if detector_match is not None else 0
+					if re.search(r"bert", filename, re.IGNORECASE):
+						detector_index = 0
+					elif re.search(r"ernie", filename, re.IGNORECASE):
+						detector_index = 1
+					else:
+						detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
+						detector_index = int(detector_match.group(1)) if detector_match is not None else 0
+					etch_match = re.search(r"([0-9]+(\.[0-9]+)?)hr?", filename, re.IGNORECASE)
 					etch_time = float(etch_match.group(1)) if etch_match is not None else None
 					particle = "xray" if filename.endswith(".h5") else "deuteron"
 					if particle != "xray" and etch_match is None:
