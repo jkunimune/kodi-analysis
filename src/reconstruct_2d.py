@@ -1089,7 +1089,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 			return χ2  # type: ignore
 
 	if isfinite(diameter_min):
-		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e-0, 1e-3, 0)
+		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e+1, 1e-3, 0)
 		logging.info(f"  inferred an aperture charge of {Q:.3f} MeV*cm")
 	else:
 		Q = 0

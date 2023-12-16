@@ -126,6 +126,8 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 	d_index = index[1] - index[0]
 	min_bound = min(np.log(energy_min*r0/Q) - d_index/2, np.log(energy_max*r0/Q) - d_index)
 	max_bound = max(np.log(energy_max*r0/Q) + d_index/2, np.log(energy_min*r0/Q) + d_index)
+	if np.all((index < min_bound) | (index >= max_bound)):
+		raise ValueError("the modified point spread function needs to be calculated for a wider range of Qs")
 	weights = np.where( # the briteness will be a weited linear combination of pre-solved profiles
 		index < min_bound, 0, np.where(
 		index < min_bound + d_index, (index - min_bound)/d_index, np.where(
