@@ -68,7 +68,6 @@ MIN_OBJECT_SIZE = 100e-4  # minimum amount of space to allocate in the source pl
 MAX_OBJECT_PIXELS = 250  # maximum size of the source array to use in reconstructions
 MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
 MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
-MAX_CONTRAST = 50.  # contrast cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
 MIN_DETECTABLE_ENERGY = 0.5  # lowest energy deuteron we think we can see on CR-39
 
@@ -515,11 +514,16 @@ def analyze_scan_section(input_filename: str,
 	"""
 	# start by establishing some things that depend on what's being measured
 	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
+	if len(energy_cuts) >= 2:
+		max_contrast = 50.
+	else:
+		max_contrast = 35.
 
 	# prepare the coordinate grids
 	if not skip_reconstruction:
 		# check the statistics, if these are deuterons
-		num_tracks, x_min, x_max, y_min, y_max = count_tracks_in_scan(input_filename, 0, inf, False)
+		num_tracks, x_min, x_max, y_min, y_max = count_tracks_in_scan(
+			input_filename, 0, inf, max_contrast, False)
 		if particle == "deuteron":
 			logging.info(f"found {num_tracks:.4g} tracks in the file")
 			if num_tracks < 1e+3:
@@ -534,8 +538,10 @@ def analyze_scan_section(input_filename: str,
 			old_data_polygon = None
 		if show_plots or old_data_polygon is None:
 			try:
-				data_polygon = user_defined_region(input_filename, default=old_data_polygon,
-				                                   title=f"Select the {section_name} region, then close this window.")
+				data_polygon = user_defined_region(
+					input_filename, default=old_data_polygon,
+					max_contrast=max_contrast,
+					title=f"Select the {section_name} region, then close this window.")
 				if len(data_polygon) < 3:
 					data_polygon = None
 			except TimeoutError:
@@ -553,7 +559,7 @@ def analyze_scan_section(input_filename: str,
 
 		# find the centers and spacings of the penumbral images
 		centers, grid_transform = find_circle_centers(
-			input_filename, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
+			input_filename, max_contrast, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
 			los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS, show_plots)
 		grid_x0, grid_y0 = centers[0]
 		new_grid_parameters = (grid_transform, grid_x0, grid_y0)
@@ -594,7 +600,7 @@ def analyze_scan_section(input_filename: str,
 				etch_time, filter_stack, data_polygon,
 				grid_transform/grid_mean_scale, centers,
 				f"{section_index}{energy_cut_index}", max(3, len(energy_cuts)),
-				energy_min, energy_max,
+				energy_min, energy_max, max_contrast,
 				source_plane, skip_reconstruction, show_plots)
 		except (DataError, FilterError, RecordNotFoundError) as e:
 			logging.warning(f"  {e}")
@@ -624,6 +630,7 @@ def analyze_scan_section_cut(input_filename: str,
                              grid_transform: NDArray[float], centers: list[Point],
                              cut_index: str, num_colors: int,
                              energy_min: float, energy_max: float,
+                             max_contrast: float,
                              output_plane: Optional[Grid],
                              skip_reconstruction: bool, show_plots: bool
                              ) -> tuple[Grid, NDArray[float], dict[str, Any]]:
@@ -651,6 +658,7 @@ def analyze_scan_section_cut(input_filename: str,
         :param num_colors: the approximate total number of cuts of this particle, for the purposes of choosing a plot color
         :param energy_min: the minimum energy at which to look (MeV for deuterons, keV for x-rays)
         :param energy_max: the maximum energy at which to look (MeV for deuterons, keV for x-rays)
+	    :param max_contrast: the maximum track contrast level at which to look if this is CR39 (%)
         :param output_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
@@ -704,15 +712,16 @@ def analyze_scan_section_cut(input_filename: str,
 		else:
 			logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
 			# check the statistics, if these are deuterons
-			num_tracks, _, _, _, _ = count_tracks_in_scan(input_filename, diameter_min, diameter_max,
-			                                              show_plots and SHOW_DIAMETER_CUTS)
+			num_tracks, _, _, _, _ = count_tracks_in_scan(
+				input_filename, diameter_min, diameter_max, max_contrast,
+				show_plots and SHOW_DIAMETER_CUTS)
 			logging.info(f"  found {num_tracks:.4g} tracks in the cut")
 			if num_tracks < 1e+3:
 				raise DataError("Not enuff tracks to reconstuct")
 
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
-			input_filename, diameter_min, diameter_max,
+			input_filename, diameter_min, diameter_max, max_contrast,
 			energy_min, energy_max, M*rA, M*sA,
 			centers, data_polygon, show_plots) # TODO: infer rA, as well?
 
@@ -739,7 +748,8 @@ def analyze_scan_section_cut(input_filename: str,
 
 		# if it's a cpsa file
 		if input_filename.endswith(".cpsa"):
-			x_tracks, y_tracks = load_cr39_scan_file(input_filename, diameter_min, diameter_max)  # load all track coordinates
+			x_tracks, y_tracks = load_cr39_scan_file(
+				input_filename, diameter_min, diameter_max, max_contrast)  # load all track coordinates
 			for k, (x_center, y_center) in enumerate(centers):
 				# center them on the penumbra and rotate them if the aperture grid appears rotated
 				x_relative, y_relative = shift_and_rotate(x_tracks, y_tracks,
@@ -959,13 +969,14 @@ def analyze_scan_section_cut(input_filename: str,
 
 
 def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
-                         energy_min: float, energy_max: float,
+                         energy_min: float, energy_max: float, max_contrast: float,
                          r0: float, s0: float, centers: list[Point], region: list[Point],
                          show_plots: bool) -> Point:
 	""" perform an inverse Abel transformation while fitting for charging
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param diameter_min: the minimum track diameter to consider (μm)
 	    :param diameter_max: the maximum track diameter to consider (μm)
+	    :param max_contrast: the maximum track contrast level to consider (%)
 	    :param energy_min: the minimum particle energy considered, for charging purposes (MeV)
 	    :param energy_max: the maximum particle energy considered, for charging purposes (MeV)
 	    :param centers: the x and y coordinates of the centers of the circles (cm)
@@ -980,7 +991,8 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 
 	# either bin the tracks in radius
 	if filename.endswith(".cpsa"):  # if it's a cpsa file
-		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max)  # load all track coordinates
+		x_tracks, y_tracks = load_cr39_scan_file(
+			filename, diameter_min, diameter_max, max_contrast)  # load all track coordinates
 		valid = inside_polygon(region, x_tracks, y_tracks)
 		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
 		r_tracks = np.full(np.count_nonzero(valid), inf)
@@ -1143,10 +1155,10 @@ def where_is_the_ocean(plane: Grid, image: NDArray[float], title, timeout=None) 
 		raise TimeoutError
 
 
-def user_defined_region(filename, title, default=None, timeout=None) -> list[Point]:
+def user_defined_region(filename, title, max_contrast: float, default=None, timeout=None) -> list[Point]:
 	""" solicit the user's help in circling a region """
 	if filename.endswith(".cpsa"):
-		x_tracks, y_tracks = load_cr39_scan_file(filename)
+		x_tracks, y_tracks = load_cr39_scan_file(filename, 0, inf, max_contrast)
 		image, x, y = np.histogram2d(x_tracks, y_tracks, bins=200)
 		image_plane = Grid.from_edge_array(x, y)
 	elif filename.endswith(".h5"):
@@ -1231,8 +1243,8 @@ def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[fl
 
 
 def load_cr39_scan_file(filename: str,
-                        min_diameter=0., max_diameter=inf,
-                        max_contrast=MAX_CONTRAST, max_eccentricity=MAX_ECCENTRICITY,
+                        min_diameter, max_diameter,
+                        max_contrast, max_eccentricity=MAX_ECCENTRICITY,
                         show_plots=False) -> tuple[NDArray[float], NDArray[float]]:
 	""" load the track coordinates from a CR-39 scan file
 	    :return: the x coordinates (cm) and the y coordinates (cm)
@@ -1289,19 +1301,21 @@ def load_ip_scan_file(filename: str) -> tuple[Grid, NDArray[float]]:
 	return scan_plane, scan
 
 
-def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float, show_plots: bool
+def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float,
+                         max_contrast: float, show_plots: bool
                          ) -> tuple[float, float, float, float, float]:
 	""" open a scan file and simply count the total number of tracks without putting
 	    anything additional in memory.  if the scan file is an image plate scan, return inf
 	    :param filename: the scanfile containing the data to be analyzed
 	    :param diameter_min: the minimum diameter to count (μm)
 	    :param diameter_max: the maximum diameter to count (μm)
+	    :param max_contrast: the maximum track contrast level to consider (%)
 	    :param show_plots: whether to demand that we see the diameter cuts
 	    :return: the number of tracks if it's a CR-39 scan, inf if it's an image plate scan. also the bounding box.
 	"""
 	if filename.endswith(".cpsa"):
-		x_tracks, y_tracks = load_cr39_scan_file(filename, diameter_min, diameter_max,
-		                                         show_plots=show_plots)
+		x_tracks, y_tracks = load_cr39_scan_file(
+			filename, diameter_min, diameter_max, max_contrast, show_plots=show_plots)
 		return x_tracks.size, np.min(x_tracks), np.max(x_tracks), np.min(y_tracks), np.max(y_tracks)
 	elif filename.endswith(".h5"):
 		bounds, _ = load_ip_scan_file(filename)
@@ -1521,12 +1535,13 @@ def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArra
 	return x_fit, y_fit, total_error  # type: ignore
 
 
-def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
+def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_nominal: float,
                         grid_shape: str, grid_parameters: Optional[GridParameters],
                         region: list[Point], trust_grid: bool, show_plots: bool,
                         ) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: the scanfile containing the data to be analyzed
+	    :param max_contrast: the maximum track contrast level to consider (%)
 	    :param r_nominal: the expected radius of the circles
 	    :param s_nominal: the expected spacing between the circles. a positive number means the
 	                      nearest center-to-center distance in a hexagonal array. a negative number
@@ -1544,7 +1559,7 @@ def find_circle_centers(filename: str, r_nominal: float, s_nominal: float,
 		raise NotImplementedError("I haven't accounted for this.")
 
 	if filename.endswith(".cpsa"):  # if it's a cpsa file
-		x_tracks, y_tracks = load_cr39_scan_file(filename)  # load all track coordinates
+		x_tracks, y_tracks = load_cr39_scan_file(filename, 0, inf, max_contrast)  # load all track coordinates
 		n_bins = max(6, int(min(sqrt(x_tracks.size)/10, MAX_NUM_PIXELS)))  # get the image resolution needed to resolve the circle
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
 		x0_data = (np.min(x_tracks) + np.max(x_tracks))/2
