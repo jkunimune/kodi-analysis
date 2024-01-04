@@ -208,8 +208,8 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 				raise RuntimeError(f"the calculated step size was {h} for some reason.")
 
 		# limit the step length if necessary to prevent negative values
-		if np.min(g + h*δg) < 0:
-			h = np.amin(-g/where(δg != 0, δg, inf), where=δg < 0, initial=h) # stop the other pixels as they reach zero
+		if np.min(g + h/0.9*δg) < 0:
+			h = 0.9*np.amin(-g/where(δg != 0, δg, inf), where=δg < 0, initial=h) # stop the pixels as they approach zero
 		if isnan(h):
 			print(g)
 			print("+")
@@ -220,7 +220,7 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 		# take the step
 		g += h*δg
 		if g[-1] <= 0:
-			print("warning: I think the background pixel may have hit zero... idk if that's acceptable.")
+			print(f"warning: I think the background pixel may have hit {g[-1]}... idk if that's acceptable.")
 		g[abs(g) < 1e-15] = 0 # correct for roundoff
 		s += h*δs
 		assert np.all(g >= 0)
