@@ -17,10 +17,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.signal as signal
-from cr39py.scan import Scan
 from cr39py.cut import Cut
+from cr39py.scan import Scan
 from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.colors import SymLogNorm
+from numpy import newaxis
 from numpy.typing import NDArray
 from scipy import interpolate, optimize, linalg
 from skimage import measure
@@ -33,11 +34,12 @@ from coordinate import project, los_coordinates, rotation_matrix, Grid, NAMED_LO
 from hdf5_util import load_hdf5, save_as_hdf5
 from image_plate import xray_energy_limit, fade
 from linear_operator import Matrix
-from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra
+from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra, \
+	save_and_plot_radial_data
 from solid_state import track_diameter, particle_E_in, particle_E_out
 from util import center_of_mass, shape_parameters, find_intercept, fit_circle, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
-	line_search, quantile, bin_centers_and_sizes, periodic_mean, parse_filtering, \
+	line_search, bin_centers_and_sizes, periodic_mean, parse_filtering, \
 	print_filtering, Filter, count_detectors, compose_2x2_from_intuitive_parameters, \
 	decompose_2x2_into_intuitive_parameters, Interval, name_filter_stacks, crop_to_finite, shift_and_rotate, \
 	resample_and_rotate
@@ -721,7 +723,8 @@ def analyze_scan_section_cut(input_filename: str,
 
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
-			input_filename, diameter_min, diameter_max, max_contrast,
+			input_filename, f"{shot}/{los}-{particle}-{cut_index}",
+			diameter_min, diameter_max, max_contrast,
 			energy_min, energy_max, M*rA, M*sA,
 			centers, data_polygon, show_plots) # TODO: infer rA, as well?
 
@@ -851,8 +854,8 @@ def analyze_scan_section_cut(input_filename: str,
 			max_source = np.hypot(*source_plane.get_pixels(sparse=True)) <= source_plane.x.half_range
 			max_source = max_source/np.sum(max_source)
 			reach = signal.fftconvolve(max_source, penumbral_kernel, mode='full')
-			lower_cutoff = .005*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .05)
-			upper_cutoff = .98*np.max(penumbral_kernel) # np.quantile(penumbral_kernel/penumbral_kernel.max(), .70)
+			lower_cutoff = .005*np.max(penumbral_kernel)
+			upper_cutoff = .98*np.max(penumbral_kernel)
 			within_penumbra = reach < lower_cutoff
 			without_penumbra = reach > upper_cutoff
 		else:
@@ -968,12 +971,14 @@ def analyze_scan_section_cut(input_filename: str,
 	return output_plane, output, statblock
 
 
-def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float,
+def do_1d_reconstruction(scan_filename: str, plot_filename: str,
+                         diameter_min: float, diameter_max: float,
                          energy_min: float, energy_max: float, max_contrast: float,
                          r0: float, s0: float, centers: list[Point], region: list[Point],
                          show_plots: bool) -> Point:
 	""" perform an inverse Abel transformation while fitting for charging
-	    :param filename: the scanfile containing the data to be analyzed
+	    :param scan_filename: the scanfile containing the data to be analyzed
+	    :param plot_filename: the filename to pass to the plotting function for the resulting figure
 	    :param diameter_min: the minimum track diameter to consider (μm)
 	    :param diameter_max: the maximum track diameter to consider (μm)
 	    :param max_contrast: the maximum track contrast level to consider (%)
@@ -990,9 +995,9 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 
 	# either bin the tracks in radius
-	if filename.endswith(".cpsa"):  # if it's a cpsa file
+	if scan_filename.endswith(".cpsa"):  # if it's a cpsa file
 		x_tracks, y_tracks = load_cr39_scan_file(
-			filename, diameter_min, diameter_max, max_contrast)  # load all track coordinates
+			scan_filename, diameter_min, diameter_max, max_contrast)  # load all track coordinates
 		valid = inside_polygon(region, x_tracks, y_tracks)
 		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
 		r_tracks = np.full(np.count_nonzero(valid), inf)
@@ -1007,8 +1012,8 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 			raise DataError("Not enuff tracks to reconstuct")
 
 	# or rebin the cartesian bins in radius
-	elif filename.endswith(".h5"):  # if it's an HDF5 file
-		scan_plane, NC = load_ip_scan_file(filename)
+	elif scan_filename.endswith(".h5"):  # if it's an HDF5 file
+		scan_plane, NC = load_ip_scan_file(scan_filename)
 		XC, YC = scan_plane.get_pixels()
 		NC[~inside_polygon(region, XC, YC)] = 0
 		interpolator = interpolate.RegularGridInterpolator(
@@ -1025,7 +1030,7 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 		histogram = False
 
 	else:
-		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
+		raise ValueError(f"I don't know how to read {os.path.splitext(scan_filename)[1]} files")
 
 	A = np.zeros(r.size)
 	for x0, y0 in centers:
@@ -1047,44 +1052,28 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	ρ_min = np.average(ρ[valid], weights=np.where(outside_penumbra, 1/dρ**2, 0)[valid])
 	n_inf = np.mean(n, where=r > 1.8*r0)
 	dρ2_inf = np.var(ρ, where=r > 1.8*r0)
-	domain = r > r0/2
-	ρ_01 = ρ_max*.001 + ρ_min*.999
-	r_01 = find_intercept(r[domain], ρ[domain] - ρ_01)
 
 	# now compute the relation between spherical radius and image radius
-	r_sph_bins = r_bins[r_bins <= r_bins[-1] - r0][::2]
-	r_sph = bin_centers(r_sph_bins)  # TODO: this should be reritten to use the Linspace class
-	sphere_to_plane = abel_matrix(r_sph_bins)
+	r_sphere_bins = r_bins[r_bins <= r_bins[-1] - r0][::2]
+	r_sphere = bin_centers(r_sphere_bins)  # TODO: this should be reritten to use the Linspace class
+	sphere_to_plane = abel_matrix(r_sphere_bins)
 	# do this nested 1d reconstruction
 	def reconstruct_1d_assuming_Q(Q: float, return_other_stuff=False) -> Union[float, tuple]:
-		r_psf, f_psf = electric_field.get_modified_point_spread(
+		r_PSF, f_PSF = electric_field.get_modified_point_spread(
 			r0, Q, energy_min, energy_max)
 		source_to_image = cumul_pointspread_function_matrix(
-			r_sph, r, r_psf, f_psf)
-		forward_matrix = A[:, np.newaxis] * np.hstack([
-			source_to_image @ sphere_to_plane,
-			np.ones((r.size, 1))])
+			r_sphere, r, r_PSF, f_PSF)
+		forward_matrix = A[:, newaxis] * source_to_image @ sphere_to_plane
 		profile, ρ_background = deconvolution.gelfgat_solve_with_background_inference(
 			Matrix(forward_matrix), n, pixel_area=A,
 			noise="poisson" if histogram else n/n_inf*dρ2_inf/ρ_min**2)
-		# def reconstruct_1d_assuming_Q_and_σ(_, σ: float, background: float) -> float:
-		# 	profile = np.concatenate([np.exp(-r_sph**2/(2*σ**2))/σ**3, [background*forward_matrix[-2, :].sum()/forward_matrix[-1, :].sum()]])
-		# 	reconstruction = forward_matrix@profile
-		# 	return reconstruction/np.sum(reconstruction)*np.sum(n)/A
-		# try:
-		# 	(source_size, background), _ = cast(tuple[list, list], optimize.curve_fit(
-		# 		reconstruct_1d_assuming_Q_and_σ, r, ρ, sigma=dρ,
-		# 		p0=[r_sph[-1]/6, 0], bounds=(0, [r_sph[-1], inf])))
-		# except RuntimeError:
-		# 	source_size, background = r_sph[-1]/36, 0
-		# profile = np.concatenate([np.exp(-r_sph**2/(2*source_size**2)), [background]])
 		reconstruction = forward_matrix @ profile + ρ_background*A
 		if histogram:
 			χ2 = -np.sum(n*np.log(reconstruction))
 		else:
 			χ2 = np.sum(((n - reconstruction)/dn)**2)
 		if return_other_stuff:
-			return χ2, profile[:-1], reconstruction
+			return χ2, profile, reconstruction
 		else:
 			return χ2  # type: ignore
 
@@ -1094,40 +1083,19 @@ def do_1d_reconstruction(filename: str, diameter_min: float, diameter_max: float
 	else:
 		Q = 0
 
-	if show_plots and SHOW_ELECTRIC_FIELD_CALCULATION:
-		χ2, n_sph, n_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
+	domain = r > r0/2
+	ρ_cutoff = ρ_max*.001 + ρ_min*.999
+	r_cutoff = find_intercept(r[domain], ρ[domain] - ρ_cutoff)
+	if SHOW_ELECTRIC_FIELD_CALCULATION:
+		χ2, ρ_sphere, n_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
 		ρ_recon = n_recon/A
-		plt.figure()
-		plt.plot(r_sph, n_sph)
-		if not isfinite(quantile(r_sph, .999, weights=n_sph*r_sph**2)):
-			logging.error(r_sph)
-			logging.error(n_sph)
-			logging.error("there is something wrong with these.")
-			raise DataError("there is something wrong with the 1D reconstruction")
-		plt.xlim(0, quantile(r_sph, .999, weights=n_sph*r_sph**2))
-		plt.ylim(0, None)
-		plt.grid("on")
-		plt.xlabel("Magnified spherical radius (cm)")
-		plt.ylabel("Emission")
-		plt.tight_layout()
-		plt.figure()
-		plt.errorbar(x=r, y=ρ, yerr=dρ, fmt='C0-')
-		plt.plot(r, ρ_recon, 'C1-')
-		r_psf, ρ_psf = electric_field.get_modified_point_spread(
-			r0, Q, 5., 12., normalize=True)
-		plt.plot(r_psf, ρ_psf*(np.max(ρ_recon) - np.min(ρ_recon)) + np.min(ρ_recon), 'C1--')
-		plt.axhline(ρ_max, color="C2", linestyle="dashed")
-		plt.axhline(ρ_min, color="C2", linestyle="dashed")
-		plt.axhline(ρ_01, color="C4")
-		plt.axvline(r0, color="C3", linestyle="dashed")
-		plt.axvline(r_01, color="C4")
-		plt.xlim(0, r[-1])
-		plt.ylim(0, 1.15*max(ρ_max, np.max(ρ_recon)))
-		plt.title("Matched this charged PSF to the radial lineout (close to confirm)")
-		plt.tight_layout()
-		plt.show()
+		r_PSF, f_PSF = electric_field.get_modified_point_spread(
+			r0, Q, energy_min, energy_max, normalize=True)
+		save_and_plot_radial_data(
+			plot_filename, show_plots, r_sphere, ρ_sphere,
+			r, ρ, dρ, ρ_recon, r_PSF, f_PSF, r0, r_cutoff, ρ_min, ρ_cutoff, ρ_max)
 
-	return Q, r_01
+	return Q, r_cutoff
 
 
 def where_is_the_ocean(plane: Grid, image: NDArray[float], title, timeout=None) -> Point:

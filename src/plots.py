@@ -1,13 +1,13 @@
 import logging
 import os
 import re
-from math import pi, cos, sin, sqrt, log
 from typing import cast, Optional, Sequence, Union
 
 import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from numpy import isfinite, pi, sin, cos, sqrt, log
 from numpy.typing import NDArray
 from scipy import optimize, interpolate
 from scipy import special
@@ -18,7 +18,7 @@ from cmap import CMAP
 from coordinate import Grid
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	Interval, nearest_value, shape_parameters
+	Interval, nearest_value, shape_parameters, quantile
 
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
@@ -72,20 +72,36 @@ def make_colorbar(vmin: float, vmax: float, label: str, facecolor=None) -> None:
 
 
 def save_and_plot_radial_data(filename: str, show: bool,
-                              rI_bins: np.ndarray, zI: np.ndarray,
-                              r_actual: np.ndarray, z_actual: np.ndarray,
-                              r_uncharged: np.ndarray, z_uncharged: np.ndarray) -> None:
-	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.locator_params(steps=[1, 2, 4, 5, 10])
-	plt.fill_between(np.repeat(rI_bins, 2)[1:-1], 0, np.repeat(zI, 2)/1e3,  label="Data", color='#f9A72E')
-	plt.plot(r_actual, z_actual/1e3, '-', color='#0C6004', linewidth=2, label="Fit with charging")
-	plt.plot(r_uncharged, z_uncharged/1e3, '--', color='#0F71F0', linewidth=2, label="Fit without charging")
-	plt.xlim(0, np.max(rI_bins))
-	plt.ylim(0, min(np.max(zI)*1.05, np.max(z_actual)*1.20)/1e3)
-	plt.xlabel("Radius (cm)")
-	plt.ylabel("Track density (10³/cm²)")
-	plt.legend()
-	# plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+                              r_sphere: NDArray[float], ρ_sphere: NDArray[float],
+                              r_data: NDArray[float], ρ_data: NDArray[float],
+                              dρ_data: NDArray[float], ρ_recon: NDArray[float],
+                              r_PSF: NDArray[float], f_PSF: NDArray[float],
+                              r0: float, r_cutoff: float, ρ_min: float, ρ_cutoff: float, ρ_max: float
+                              ) -> None:
+	plt.figure()
+	plt.plot(r_sphere, ρ_sphere)
+	if not isfinite(quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2)):
+		logging.error(r_sphere)
+		logging.error(ρ_sphere)
+		logging.error("there is something wrong with these.")
+		raise RuntimeError("there is something wrong with the 1D reconstruction")
+	plt.xlim(0, quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2))
+	plt.ylim(0, None)
+	plt.grid("on")
+	plt.xlabel("Magnified spherical radius (cm)")
+	plt.ylabel("Emission")
+	plt.tight_layout()
+	plt.figure()
+	plt.errorbar(x=r_data, y=ρ_data, yerr=dρ_data, fmt='C0-')
+	plt.plot(r_data, ρ_recon, 'C1-')
+	plt.plot(r_PSF, f_PSF*(np.max(ρ_recon) - np.min(ρ_recon)) + np.min(ρ_recon), 'C1--')
+	plt.axhline(ρ_max, color="C2", linestyle="dashed")
+	plt.axhline(ρ_min, color="C2", linestyle="dashed")
+	plt.axhline(ρ_cutoff, color="C4")
+	plt.axvline(r0, color="C3", linestyle="dashed")
+	plt.axvline(r_cutoff, color="C4")
+	plt.xlim(0, r_data[-1])
+	plt.ylim(0, 1.15*max(ρ_max, np.max(ρ_recon)))
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-profile")
 
@@ -314,6 +330,7 @@ def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Int
 	                       a stack of all the images in one set on one line of site. (d/μm^2/srad)
 	    :param image_set_names: the strings to identify the different image sets
 	    :param line_of_sight_names: the strings to identify the different lines of sight
+	    :param particle: one of "deuteron" or "xray" used to determine the color of the plot
 	"""
 	# go thru every line of site
 	pairs_plotted = 0

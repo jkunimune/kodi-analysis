@@ -292,11 +292,11 @@ def cumul_pointspread_function_matrix(r_source, r_image, r_pointspread_ref, f_po
 	    symmetric image given a circularly symmetric point spread function, ignoring
 	    magnification.
 	"""
-	θ = np.linspace(0, pi, 181)
-	r_image, r_source, θ = np.meshgrid(r_image, r_source, θ, indexing="ij", sparse=True)
-	r_pointspread = np.hypot(r_image + r_source*np.cos(θ), r_source*np.sin(θ))
+	θ_source = np.linspace(0, pi, 181)
+	r_image, r_source, θ_source = np.meshgrid(r_image, r_source, θ_source, indexing="ij", sparse=True)
+	r_pointspread = np.hypot(r_image + r_source*np.cos(θ_source), r_source*np.sin(θ_source))
 	f_pointspread = np.interp(r_pointspread, r_pointspread_ref, f_pointspread_ref)
-	res = integrate.trapezoid(f_pointspread, θ, axis=2)  # TODO: this approximation breaks down for non-penumbral images
+	res = integrate.trapezoid(f_pointspread, θ_source, axis=2)*2*r_source[:, :, 0]
 	return res
 
 
