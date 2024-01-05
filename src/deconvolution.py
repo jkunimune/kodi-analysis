@@ -24,7 +24,23 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
                noise: Union[str, NDArray[float]] = None,
                show_plots: bool = False) -> NDArray[float]:
 	""" deconvolve the simple discrete 2d kernel q from a measured image. a background
-	    value will be automatically inferred.
+	    value will be automatically inferred.  options include:
+
+	    - gelfgat:
+	      an iterative scheme that can do gaussian or poisson noise. `noise` must be specified, either the error
+	      sigmas for gaussian noise or the string "poisson" for poisson noise. see *Comput. Phys. Commun.* 74, p. 335.
+	    - richardson-lucy:
+	      an iterative scheme for poisson noise. the same as "gelfgat" with `noise` set to "poisson". see
+	      *Comput. Phys. Commun.* 74, p. 335.
+	    - wiener:
+	      a wiener filter with the smoothing term automaticly chosen.
+	    - seguin:
+	      fredrick's back-projection method. only works when q is a solid disc. `r_psf` must be specified and set to
+	      the radius of that disc. see *Rev. Sci. Instrum.* 75, p. 3520.
+
+	    the parameters `pixel_area`, `source_region`, and `show_plots` can be passed
+	    and will be used for any algorithm.
+
 	    :param method: the algorithm to use (one of "gelfgat", "wiener", "richardson-lucy", or "seguin")
 		:param F: the full convolution (counts/bin)
 		:param q: the point-spread function
@@ -49,8 +65,8 @@ def gelfgat_deconvolve(F: NDArray[float], q: NDArray[float],
                        pixel_area: NDArray[int], source_region: NDArray[bool],
                        noise: Union[str, NDArray[float]], show_plots=False) -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
-			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
-			data…" in *Comput. Phys. Commun.* 74 (1993)
+			V. I. Gelfgat et al., "Programs for signal recovery from noisy data…",
+			*Comput. Phys. Commun.* 74 (1993), 335
 		to deconvolve the simple discrete 2d kernel q from a measured image. a background
 		value will be automatically inferred.
 		:param F: the full convolution (counts/bin)
@@ -79,8 +95,8 @@ def gelfgat_solve_with_background_inference(
 		P: LinearOperator, F: NDArray[float], pixel_area: NDArray[float],
 		noise: Union[str, NDArray[float]], show_plots=False) -> tuple[NDArray[float], float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
-			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
-			data…" in *Comput. Phys. Commun.* 74 (1993)
+			V. I. Gelfgat et al., "Programs for signal recovery from noisy data…",
+			*Comput. Phys. Commun.* 74 (1993), 335
 		to solve the linear equation
 		    P@G = F + F0 + ɛ
 		where F0 is an automaticly inferred background and ɛ is some random noise
@@ -105,8 +121,8 @@ def gelfgat_solve_with_background_inference(
 def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArray[float]], show_plots=False
                   ) -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
-			Gelfgat V.I. et al.'s "Programs for signal recovery from noisy
-			data…" in *Comput. Phys. Commun.* 74 (1993)
+			V. I. Gelfgat et al., "Programs for signal recovery from noisy data…",
+			*Comput. Phys. Commun.* 74 (1993), 335
 		to solve the linear equation
 		    P@G = F + ɛ
 		where ɛ is random noise
@@ -219,9 +235,7 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 
 		# take the step
 		g += h*δg
-		if g[-1] <= 0:
-			print(f"warning: I think the background pixel may have hit {g[-1]}... idk if that's acceptable.")
-		g[abs(g) < 1e-15] = 0 # correct for roundoff
+		g[abs(g) < 1e-15*np.max(g)] = 0 # correct for roundoff
 		s += h*δs
 		assert np.all(g >= 0)
 
@@ -388,8 +402,8 @@ def seguin_deconvolve(F: NDArray[float], r_psf: float, efficiency: float,
                       pixel_area: NDArray[int], source_region: NDArray[bool],
                       smoothing=1.5, show_plots=False) -> NDArray[float]:
 	""" perform the algorithm outlined in
-	        Séguin, F. H. et al.'s "D3He-proton emission imaging for inertial
-	        confinement fusion experiments" in *Rev. Sci. Instrum.* 75 (2004)
+	        F. H. Séguin et al., "D3He-proton emission imaging for ICF…",
+	        *Rev. Sci. Instrum.* 75 (2004), 3520.
 	    to deconvolve a solid disk from a measured image. a uniform background will
 	    be automatically inferred.  watch out; this one fails if the binning is too fine.
 	    :param F: the convolved image (signal/bin)
