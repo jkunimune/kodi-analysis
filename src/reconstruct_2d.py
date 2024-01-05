@@ -1528,7 +1528,7 @@ def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_
 
 	if filename.endswith(".cpsa"):  # if it's a cpsa file
 		x_tracks, y_tracks = load_cr39_scan_file(filename, 0, inf, max_contrast)  # load all track coordinates
-		n_bins = max(6, int(min(sqrt(x_tracks.size)/10, MAX_NUM_PIXELS)))  # get the image resolution needed to resolve the circle
+		n_bins = max(6, int(min(sqrt(x_tracks.size)/5, MAX_NUM_PIXELS)))  # get the image resolution needed to resolve the circle
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
 		x0_data = (np.min(x_tracks) + np.max(x_tracks))/2
 		y0_data = (np.min(y_tracks) + np.max(y_tracks))/2
@@ -1588,7 +1588,7 @@ def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_
 	R_pixels = np.hypot(X_pixels - x0, Y_pixels - y0)
 	max_density = np.nanmean(N_crop, where=R_pixels < .5*r_nominal)
 	min_density = np.nanmean(N_crop, where=R_pixels > 1.5*r_nominal)
-	contour_level = .3*max_density + .7*min_density
+	contour_level = .2*max_density + .8*min_density
 	contours = measure.find_contours(N_crop, contour_level)
 	if len(contours) == 0:
 		raise DataError("there were no tracks.  we should have caut that by now.")
