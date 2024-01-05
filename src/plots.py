@@ -37,6 +37,8 @@ SQUARE_FIGURE_SIZE = (6.4, 5.4)
 RECTANGULAR_FIGURE_SIZE = (6.4, 4.8)
 LONG_FIGURE_SIZE = (8, 5)
 
+FRAME_SIZES = np.array([20, 100, 500, 2000]) # μm
+
 COLORMAPS: dict[str, list[tuple[int, str]]] = {
 	"deuteron": [(4, "pinks"), (1, "reds"), (2, "oranges"), (0, "yellows"), (3, "greens"),
 	             (5, "aquas"), (6, "cyans"), (7, "blues"), (8, "violets")],
@@ -239,8 +241,7 @@ def plot_source(filename: str, show: bool,
 	# choose the plot limits
 	source_plane = source_plane.scaled(1e+4)  # convert coordinates to μm
 	object_size, (r1, θ1), _ = shape_parameters(source_plane, source, contour=.25)
-	object_size = nearest_value(2*object_size,
-	                            np.array([100, 250, 800, 2000]))
+	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.3*object_size, initial=FRAME_SIZES[-1])
 	x0, y0 = r1*cos(θ1), r1*sin(θ1)
 
 	# plot the reconstructed source image
