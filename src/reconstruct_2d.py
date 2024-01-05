@@ -21,7 +21,7 @@ from cr39py.cut import Cut
 from cr39py.scan import Scan
 from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.colors import SymLogNorm
-from numpy import newaxis
+from numpy import newaxis, arccos
 from numpy.typing import NDArray
 from scipy import interpolate, optimize, linalg
 from skimage import measure
@@ -589,7 +589,7 @@ def analyze_scan_section(input_filename: str,
 	M = M_gess*grid_mean_scale
 	logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.2f}) and angle of {degrees(grid_angle):.2f}°")
 	if grid_skew > .01:
-		logging.info(f"detected an aperture array skewness of {grid_skew:.3f}")
+		logging.info(f"detected an aperture array skewness of {degrees(arccos(1/(1 + grid_skew))):.1f}°")
 
 	# now go thru each energy cut and compile the results
 	source_stack: list[NDArray[float]] = []
