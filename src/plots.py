@@ -40,6 +40,7 @@ LONG_FIGURE_SIZE = (8, 5)
 FRAME_SIZES = np.array([20, 100, 500, 2000]) # μm
 
 COLORMAPS: dict[str, list[tuple[int, str]]] = {
+	"proton":   [(1, "reds"), (0, "yellows")],
 	"deuteron": [(4, "pinks"), (1, "reds"), (2, "oranges"), (0, "yellows"), (3, "greens"),
 	             (5, "aquas"), (6, "cyans"), (7, "blues"), (8, "violets")],
 	"xray":     [(8, "pinks"), (7, "reds"), (6, "oranges"), (5, "yellows"), (4, "greens"),
@@ -236,7 +237,7 @@ def plot_source(filename: str, show: bool,
 	if np.all(np.isnan(source)):
 		return
 
-	particle = re.search(r"-(xray|deuteron)", filename, re.IGNORECASE).group(1)
+	particle = re.search(r"-(xray|proton|deuteron)", filename, re.IGNORECASE).group(1)
 
 	# choose the plot limits
 	source_plane = source_plane.scaled(1e+4)  # convert coordinates to μm
@@ -331,7 +332,7 @@ def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Int
 	                       a stack of all the images in one set on one line of site. (d/μm^2/srad)
 	    :param image_set_names: the strings to identify the different image sets
 	    :param line_of_sight_names: the strings to identify the different lines of sight
-	    :param particle: one of "deuteron" or "xray" used to determine the color of the plot
+	    :param particle: one of "proton", "deuteron", or "xray" used to determine the color of the plot
 	"""
 	# go thru every line of site
 	pairs_plotted = 0

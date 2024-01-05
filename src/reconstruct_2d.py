@@ -62,10 +62,10 @@ FINE_DEUTERON_ENERGY_CUTS = [(11, 12.5), (2, 3.5), (3.5, 5), (5, 6.5), (6.5, 8),
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
-DEUTERON_RESOLUTION = 2e-4  # resolution of reconstructed KoD sources
+CHARGED_PARTICLE_RESOLUTION = 2e-4  # resolution of reconstructed KoD sources
 X_RAY_RESOLUTION = 3e-4  # spatial resolution of reconstructed x-ray sources
-DEUTERON_CONTOUR = .17  # contour to use when characterizing KoDI sources
-X_RAY_CONTOUR = .17  # contour to use when characterizing x-ray sources
+CHARGED_PARTICLE_CONTOUR_LEVEL = .17  # contour to use when characterizing KoDI sources
+XRAY_CONTOUR_LEVEL = .17  # contour to use when characterizing x-ray sources
 MIN_OBJECT_SIZE = 100e-4  # minimum amount of space to allocate in the source plane
 MAX_OBJECT_PIXELS = 250  # maximum size of the source array to use in reconstructions
 MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
@@ -199,7 +199,7 @@ def analyze(shots_to_reconstruct: list[str],
 						detector_index = int(detector_match.group(1)) if detector_match is not None else 0
 					etch_match = re.search(r"([0-9]+(\.[0-9]+)?)hr?", filename, re.IGNORECASE)
 					etch_time = float(etch_match.group(1)) if etch_match is not None else None
-					particle = "xray" if filename.endswith(".h5") else "deuteron"
+					particle = "xray" if filename.endswith(".h5") else "proton" if energy_cut_mode == "proton" else "deuteron"
 					if particle != "xray" and etch_match is None:
 						logging.warning(f"the file {filename} doesn't specify an etch time, so I'm calling it 5.0 hours.")
 						etch_time = 5
@@ -266,7 +266,7 @@ def analyze(shots_to_reconstruct: list[str],
 				velocity           =(shot_info.get("flow (r)", nan),
 				                     shot_info.get("flow (θ)", nan),
 				                     shot_info.get("flow (ф)", nan)),
-				deuteron_energy_cuts=deuteron_energy_cuts,
+				charged_particle_energy_cuts=deuteron_energy_cuts,
 			)
 		except DataError as e:
 			logging.warning(e)
@@ -297,14 +297,14 @@ def analyze_scan(input_filename: str,
                  etch_time: Optional[float], filtering: str,
                  offset: tuple[float, float, float], velocity: tuple[float, float, float],
                  stalk_position: str, num_stalks: int,
-                 deuteron_energy_cuts: list[Interval],
+                 charged_particle_energy_cuts: list[Interval],
                  skip_reconstruction: bool, show_plots: bool,
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct all of the penumbral images contained in a single scan file.
 	    :param input_filename: the location of the scan file in input/scans/
 	    :param shot: the shot number/name
 	    :param los: the name of the line of sight (e.g. "tim2", "srte")
-	    :param particle: the type of radiation being detected ("deuteron" for CR39 or "xray" for an image plate)
+	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for an image plate)
 	    :param detector_index: the index of the detector from 0, to identify it out of multiple detectors of the same type
 	    :param rA: the aperture radius (cm)
 	    :param sA: the aperture spacing (cm), specificly the distance from one aperture to its nearest neighbor.
@@ -317,7 +317,7 @@ def analyze_scan(input_filename: str,
 	    :param velocity: the measured hot-spot velocity of the capsule in spherical coordinates (km/s, °, °)
 	    :param stalk_position: the name of the port from which the target is held (should be "TPS2")
 	    :param num_stalks: the number of stalks on this target (usually 1)
-	    :param deuteron_energy_cuts: the energy bins to use for reconstructing deuterons
+	    :param charged_particle_energy_cuts: the energy bins to use for reconstructing charged particles
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -327,12 +327,14 @@ def analyze_scan(input_filename: str,
 	             pictures have been taken and also saved.
 	"""
 	# start by parsing the filter stacks
-	if particle == "deuteron":
-		contour = DEUTERON_CONTOUR
+	if particle == "proton" or particle == "deuteron":
+		contour = CHARGED_PARTICLE_CONTOUR_LEVEL
 		detector_type = "cr39"
-	else:
-		contour = X_RAY_CONTOUR
+	elif particle == "xray":
+		contour = XRAY_CONTOUR_LEVEL
 		detector_type = "ip"
+	else:
+		raise ValueError(f"there's no such thing as '{particle}s'")
 	# overwrite the aperture information if this is SRTe
 	if los == "srte":
 		rA = aperture_array.SRTE_APERTURE_RADIUS
@@ -369,18 +371,12 @@ def analyze_scan(input_filename: str,
 	energy_bounds: list[Interval] = []
 	indices: list[str] = []
 	for filter_section_index, filter_section_name, filter_stack in filter_sections:
-		# choose the energy cuts given the filtering and type of radiation
-		if particle == "deuteron":
-			energy_cuts = deuteron_energy_cuts  # these energy bounds are in MeV
-		else:
-			energy_cuts = [(xray_energy_limit(filter_stack), inf)]  # these energy bounds are in keV
-
 		# perform the analysis on each section
 		try:
 			grid_parameters, source_plane, filter_section_sources, filter_section_statistics =\
 				analyze_scan_section(
 					input_filename,
-					shot, los, rA, sA, grid_shape,
+					shot, los, particle, rA, sA, grid_shape,
 					M_gess, L1,
 					etch_time,
 					f"{detector_index}{filter_section_index}",
@@ -388,7 +384,7 @@ def analyze_scan(input_filename: str,
 					filter_stack,
 					grid_parameters,
 					source_plane,
-					energy_cuts,
+					charged_particle_energy_cuts,
 					skip_reconstruction, show_plots)
 		except DataError as e:
 			logging.warning(e)
@@ -434,9 +430,9 @@ def analyze_scan(input_filename: str,
 
 	# and replot each of the individual sources in the correct color
 	for cut_index in range(len(source_stack)):
-		if particle == "deuteron":
+		if particle == "proton" or particle == "deuteron":
 			color_index = int(indices[cut_index][-1])
-			num_colors = len(deuteron_energy_cuts)
+			num_colors = len(charged_particle_energy_cuts)
 		else:
 			num_sections = len(filter_stacks)
 			num_missing_sections = num_sections - len(source_stack)
@@ -475,20 +471,21 @@ def analyze_scan(input_filename: str,
 
 
 def analyze_scan_section(input_filename: str,
-                         shot: str, los: str,
+                         shot: str, los: str, particle: str,
                          rA: float, sA: float, grid_shape: str,
                          M_gess: float, L1: float,
                          etch_time: Optional[float],
                          section_index: str, section_name: str, filter_stack: list[Filter],
                          grid_parameters: Optional[GridParameters],
                          source_plane: Optional[Grid],
-                         energy_cuts: list[Interval],
+                         charged_particle_energy_cuts: list[Interval],
                          skip_reconstruction: bool, show_plots: bool,
                          ) -> tuple[GridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
 	    :param input_filename: the location of the scan file in input/scans/
 	    :param shot: the shot number/name
 	    :param los: the name of the line of sight (e.g. "tim2", "srte")
+	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for an image plate)
 	    :param rA: the aperture radius (cm)
 	    :param sA: the aperture spacing (cm), specificly the distance from one aperture to its nearest neighbor.
 	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
@@ -505,7 +502,7 @@ def analyze_scan_section(input_filename: str,
         :param source_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
-	    :param energy_cuts: the energy cuts to use when you break this section up into diameter bins
+	    :param charged_particle_energy_cuts: the energy cuts to use when you break this section up into diameter bins
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -515,19 +512,25 @@ def analyze_scan_section(input_filename: str,
 	             2. the list of reconstructed sources, and
 	             3. a list of dictionaries containing various measurables for the reconstruction in each energy bin.
 	"""
-	# start by establishing some things that depend on what's being measured
-	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
-	if len(energy_cuts) >= 2:
-		max_contrast = 50.
-	else:
+	# choose the energy cuts given the filtering and type of radiation
+	if particle == "proton":
 		max_contrast = 35.
+		energy_cuts = charged_particle_energy_cuts  # these energy bounds are in MeV
+	elif particle == "deuteron":
+		max_contrast = 50.
+		energy_cuts = charged_particle_energy_cuts  # these energy bounds are in MeV
+	elif particle == "xray":
+		max_contrast = nan
+		energy_cuts = [(xray_energy_limit(filter_stack), inf)]  # these energy bounds are in keV
+	else:
+		raise ValueError(f"what in davy jones's locker is a {particle}")
 
 	# prepare the coordinate grids
 	if not skip_reconstruction:
 		# check the statistics, if these are deuterons
 		num_tracks, x_min, x_max, y_min, y_max = count_tracks_in_scan(
 			input_filename, 0, inf, max_contrast, False)
-		if particle == "deuteron":
+		if particle == "proton" or particle == "deuteron":
 			logging.info(f"found {num_tracks:.4g} tracks in the file")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
 				logging.warning("Not enuff tracks to reconstruct")
@@ -599,10 +602,11 @@ def analyze_scan_section(input_filename: str,
 		energy_cut_index = sorted(energy_cuts).index((energy_min, energy_max))
 		try:
 			source_plane, source, statblock = analyze_scan_section_cut(
-				input_filename, shot, los, rA, sA, grid_shape, M, L1,
+				input_filename, shot, los, particle,
+				rA, sA, grid_shape, M, L1,
 				etch_time, filter_stack, data_polygon,
 				grid_transform/grid_mean_scale, centers,
-				f"{section_index}{energy_cut_index}", max(3, len(energy_cuts)),
+				f"{section_index}{energy_cut_index}", len(energy_cuts),
 				energy_min, energy_max, max_contrast,
 				source_plane, skip_reconstruction, show_plots)
 		except (DataError, FilterError, RecordNotFoundError) as e:
@@ -627,7 +631,8 @@ def analyze_scan_section(input_filename: str,
 
 
 def analyze_scan_section_cut(input_filename: str,
-                             shot: str, los: str, rA: float, sA: float, grid_shape: str,
+                             shot: str, los: str, particle: str,
+                             rA: float, sA: float, grid_shape: str,
                              M: float, L1: float, etch_time: Optional[float],
                              filter_stack: list[Filter], data_polygon: list[Point],
                              grid_transform: NDArray[float], centers: list[Point],
@@ -642,6 +647,7 @@ def analyze_scan_section_cut(input_filename: str,
 	    :param input_filename: the location of the scan file in input/scans/
 	    :param shot: the shot number/name
 	    :param los: the name of the line of sight (e.g. "tim2", "srte")
+	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for an image plate)
 	    :param rA: the aperture radius in cm
 	    :param sA: the aperture spacing (cm), specificly the distance from one aperture to its nearest neighbor.
 	    :param M: the radiography magnification (L1 + L2)/L1
@@ -673,38 +679,44 @@ def analyze_scan_section_cut(input_filename: str,
 	             some miscellaneus statistics for the source
 	"""
 	# switch out some values depending on whether these are xrays or deuterons
-	particle = "xray" if input_filename.endswith(".h5") else "deuteron"
-	if particle == "deuteron":
-		contour = DEUTERON_CONTOUR
-		resolution = DEUTERON_RESOLUTION
+	if particle == "proton" or particle == "deuteron":
+		contour = CHARGED_PARTICLE_CONTOUR_LEVEL
+		resolution = CHARGED_PARTICLE_RESOLUTION
 
+		if particle == "proton":
+			Z, A = 1, 1
+		else:
+			Z, A = 1, 2
 		# convert scattering energies to CR-39 energies
 		incident_energy_min, incident_energy_max = particle_E_out(
-			[energy_min, energy_max], 1, 2, filter_stack)
+			[energy_min, energy_max], Z, A, filter_stack)
 		# exclude particles to which the CR-39 won’t be sensitive
 		incident_energy_min = max(MIN_DETECTABLE_ENERGY, incident_energy_min)
 		incident_energy_max = min(MAX_DETECTABLE_ENERGY, incident_energy_max)
 		# convert CR-39 energies to track diameters
 		diameter_max, diameter_min = track_diameter(
-			[incident_energy_min, incident_energy_max], etch_time=etch_time, a=2, z=1)
+			[incident_energy_min, incident_energy_max], etch_time=etch_time, z=Z, a=A)
 		# expand make sure we capture max D if we don’t expect anything bigger than this
 		if incident_energy_min <= MIN_DETECTABLE_ENERGY:
 			diameter_max = inf
 		# convert back to exclude particles that are ranged out
 		energy_min, energy_max = particle_E_in(
-			[incident_energy_min, incident_energy_max], 1, 2, filter_stack)
+			[incident_energy_min, incident_energy_max], Z, A, filter_stack)
 
 		if incident_energy_max <= MIN_DETECTABLE_ENERGY:
-			raise FilterError(f"{energy_max:.1f} MeV deuterons will be ranged down to just {incident_energy_max:.1f} "
+			raise FilterError(f"{energy_max:.1f} MeV {particle}s will be ranged down to just {incident_energy_max:.1f} "
 			                  f"by a {print_filtering(filter_stack)} filter")
 		if incident_energy_min >= MAX_DETECTABLE_ENERGY:
-			raise FilterError(f"{energy_min:.1f} MeV deuterons will still be at {incident_energy_min:.1f} "
+			raise FilterError(f"{energy_min:.1f} MeV {particle}s will still be at {incident_energy_min:.1f} "
 			                  f"after a {print_filtering(filter_stack)} filter")
 
-	else:
-		contour = X_RAY_CONTOUR
+	elif particle == "xray":
+		contour = XRAY_CONTOUR_LEVEL
 		resolution = X_RAY_RESOLUTION
 		diameter_max, diameter_min = nan, nan
+
+	else:
+		raise ValueError(f"there are no {particle}s within the walls.")
 
 	filter_str = print_filtering(filter_stack)
 
@@ -741,8 +753,8 @@ def analyze_scan_section_cut(input_filename: str,
 		account_for_overlap = isinf(r_max)
 
 		# rebin and stack the images
-		if particle == "deuteron":
-			resolution = DEUTERON_RESOLUTION
+		if particle == "proton" or particle == "deuteron":
+			resolution = CHARGED_PARTICLE_RESOLUTION
 		else:
 			resolution = X_RAY_RESOLUTION
 		_, angle, _, _ = decompose_2x2_into_intuitive_parameters(grid_transform)
@@ -897,7 +909,7 @@ def analyze_scan_section_cut(input_filename: str,
 
 		# perform the reconstruction
 		logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source")
-		method = "richardson-lucy" if particle == "deuteron" else "gelfgat"
+		method = "gelfgat" if particle == "xray" else "richardson-lucy"
 		source = deconvolution.deconvolve(method,
 		                                  clipd_image,
 		                                  penumbral_kernel,
