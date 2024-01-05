@@ -1588,8 +1588,8 @@ def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_
 	R_pixels = np.hypot(X_pixels - x0, Y_pixels - y0)
 	max_density = np.nanmean(N_crop, where=R_pixels < .5*r_nominal)
 	min_density = np.nanmean(N_crop, where=R_pixels > 1.5*r_nominal)
-	haff_density = (max_density + min_density)*.5
-	contours = measure.find_contours(N_crop, haff_density)
+	contour_level = .3*max_density + .7*min_density
+	contours = measure.find_contours(N_crop, contour_level)
 	if len(contours) == 0:
 		raise DataError("there were no tracks.  we should have caut that by now.")
 	circles = []
@@ -1652,17 +1652,17 @@ def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_
 			         "#063", linestyle="solid", linewidth=1.2)
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
 			         "#3e7", linestyle="dashed", linewidth=1.2)
-		plt.scatter(x_circles_raw[valid], y_circles_raw[valid],
+		plt.scatter(x_circles[valid], y_circles[valid],
 		            np.where(circle_fullness[valid], 30, 5), c="#8ae", marker="x")
 		plt.contour(crop_domain.x.get_bins(), crop_domain.y.get_bins(), N_crop.T,
-		            levels=[haff_density], colors="#fff", linewidths=.6)
+		            levels=[contour_level], colors="#fff", linewidths=.6)
 		plt.fill([x for x, y in region], [y for x, y in region],
 		         facecolor="none", edgecolor="k", linewidth=.5)
 		plt.title("Located apertures marked with exes (close to confirm)")
-		plt.xlim(min(np.min(x_circles_raw), crop_domain.x.minimum),
-		         max(np.max(x_circles_raw), crop_domain.x.maximum))
-		plt.ylim(min(np.min(y_circles_raw), crop_domain.y.minimum),
-		         max(np.max(y_circles_raw), crop_domain.y.maximum))
+		plt.xlim(min(np.min(x_circles), crop_domain.x.minimum),
+		         max(np.max(x_circles), crop_domain.x.maximum))
+		plt.ylim(min(np.min(y_circles), crop_domain.y.minimum),
+		         max(np.max(y_circles), crop_domain.y.maximum))
 		plt.tight_layout()
 		plt.show()
 
