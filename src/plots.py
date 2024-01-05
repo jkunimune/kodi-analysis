@@ -18,7 +18,7 @@ from cmap import CMAP
 from coordinate import Grid
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	Interval, nearest_value, shape_parameters, quantile
+	Interval, shape_parameters, quantile
 
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
