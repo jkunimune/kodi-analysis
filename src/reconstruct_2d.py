@@ -72,6 +72,7 @@ MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many
 MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
 MIN_DETECTABLE_ENERGY = 0.5  # lowest energy deuteron we think we can see on CR-39
+MIN_ACCEPTABLE_NUM_TRACKS = 1000  # minimum statistics needed to even bother with a reconstruction
 
 
 GridParameters = tuple[NDArray[float], float, float]
@@ -528,8 +529,8 @@ def analyze_scan_section(input_filename: str,
 			input_filename, 0, inf, max_contrast, False)
 		if particle == "deuteron":
 			logging.info(f"found {num_tracks:.4g} tracks in the file")
-			if num_tracks < 1e+3:
-				logging.warning("  Not enuff tracks to reconstruct")
+			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
+				logging.warning("Not enuff tracks to reconstruct")
 				return grid_parameters, source_plane, [], []
 
 		# start by asking the user to highlight the data
@@ -718,7 +719,7 @@ def analyze_scan_section_cut(input_filename: str,
 				input_filename, diameter_min, diameter_max, max_contrast,
 				show_plots and SHOW_DIAMETER_CUTS)
 			logging.info(f"  found {num_tracks:.4g} tracks in the cut")
-			if num_tracks < 1e+3:
+			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
 				raise DataError("Not enuff tracks to reconstuct")
 
 		# start with a 1D reconstruction on one of the found images
@@ -788,7 +789,7 @@ def analyze_scan_section_cut(input_filename: str,
 
 		if np.any(np.isnan(image)):
 			raise DataError("it appears that the specified data region extended outside of the image")
-		elif particle == "deuteron" and np.sum(image) < 1e+3:
+		elif particle != "xray" and np.sum(image) < MIN_ACCEPTABLE_NUM_TRACKS:
 			raise DataError("Not enuff tracks to reconstuct")
 
 		# finally, orient the penumbra correctly, so it’s like you’re looking toward TCC
@@ -1008,7 +1009,7 @@ def do_1d_reconstruction(scan_filename: str, plot_filename: str,
 		dn = np.sqrt(n) + 1
 		r, dr = bin_centers_and_sizes(r_bins)
 		histogram = True
-		if np.sum(n) < 1e+3:
+		if np.sum(n) < MIN_ACCEPTABLE_NUM_TRACKS:
 			raise DataError("Not enuff tracks to reconstuct")
 
 	# or rebin the cartesian bins in radius
