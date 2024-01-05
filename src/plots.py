@@ -33,11 +33,11 @@ PLOT_FLOW = True
 PLOT_STALK = False
 
 MAX_NUM_PIXELS = 40000
-SQUARE_FIGURE_SIZE = (6.4, 5.4)
-RECTANGULAR_FIGURE_SIZE = (6.4, 4.8)
+SQUARE_FIGURE_SIZE = (5.5, 4.6)
+RECTANGULAR_FIGURE_SIZE = (5.5, 4.1)
 LONG_FIGURE_SIZE = (8, 5)
 
-FRAME_SIZES = np.array([20, 100, 500, 2000]) # μm
+FRAME_SIZES = np.array([50, 100, 500, 2000]) # μm
 
 COLORMAPS: dict[str, list[tuple[int, str]]] = {
 	"proton":   [(1, "reds"), (0, "yellows")],
@@ -139,7 +139,9 @@ def save_and_plot_penumbra(filename: str, show: bool,
 		for dx, dy in aperture_array.positions(grid_shape, s0, grid_transform, r0, image_plane.x.half_range):
 			plt.plot(dx + r0*np.cos(T), dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
-	if "deuteron" in filename:
+	if "proton" in filename:
+		plt.title("D³He protons")
+	elif "deuteron" in filename:
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	elif "xray" in filename:
 		plt.title(f"$h\\nu$ ≥ {energy_min:.0f} keV")
@@ -278,7 +280,9 @@ def plot_source(filename: str, show: bool,
 
 	plt.gca().set_facecolor("#000")
 	plt.axis('square')
-	if particle == "deuteron":
+	if particle == "proton":
+		plt.title("D³He protons")
+	elif particle == "deuteron":
 		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
 	elif particle == "xray":
 		plt.title(f"$h\\nu$ ≥ {energy_min:.0f} keV")
