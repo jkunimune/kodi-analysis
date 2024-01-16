@@ -59,6 +59,7 @@ PROTON_ENERGY_CUTS = [(0, inf)]
 NORMAL_DEUTERON_ENERGY_CUTS = [(9, 12.5), (0, 6), (6, 9)] # (MeV) (emitted, not detected)
 FINE_DEUTERON_ENERGY_CUTS = [(11, 12.5), (2, 3.5), (3.5, 5), (5, 6.5), (6.5, 8), (8, 9.5), (9.5, 11)] # (MeV) (emitted, not detected)
 
+FORCE_LARGE_SOURCE_DOMAIN = False
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
@@ -1004,7 +1005,7 @@ def do_1d_reconstruction(scan_filename: str, plot_filename: str,
 	    :param show_plots: if False, overrides SHOW_ELECTRIC_FIELD_CALCULATION
 	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
 	"""
-	r_max = s0/2 if s0 != 0 else 2*r0
+	r_max = min(2*r0, s0/sqrt(3))
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 
 	# either bin the tracks in radius
@@ -1062,9 +1063,9 @@ def do_1d_reconstruction(scan_filename: str, plot_filename: str,
 	if not np.any(valid & outside_penumbra):
 		raise DataError("too much of the image is clipd; I need a background region.")
 	ρ_max = np.average(ρ[valid], weights=np.where(inside_umbra, 1/dρ**2, 0)[valid])
-	ρ_min = np.average(ρ[valid], weights=np.where(outside_penumbra, 1/dρ**2, 0)[valid])
-	n_inf = np.mean(n, where=r > 1.8*r0)
-	dρ2_inf = np.var(ρ, where=r > 1.8*r0)
+	ρ_min = np.min(ρ, where=valid & outside_penumbra)
+	n_inf = np.mean(n, where=(r > 1.8*r0) & (r < s0 - 1.8*r0))
+	dρ2_inf = np.var(ρ, where=(r > 1.8*r0) & (r < s0 - 1.8*r0))
 
 	# now compute the relation between spherical radius and image radius
 	r_sphere_bins = r_bins[r_bins <= r_bins[-1] - r0][::2]
@@ -1108,7 +1109,10 @@ def do_1d_reconstruction(scan_filename: str, plot_filename: str,
 			plot_filename, show_plots, r_sphere, ρ_sphere,
 			r, ρ, dρ, ρ_recon, r_PSF, f_PSF, r0, r_cutoff, ρ_min, ρ_cutoff, ρ_max)
 
-	return Q, r_cutoff
+	if FORCE_LARGE_SOURCE_DOMAIN:
+		return Q, 3*r0
+	else:
+		return Q, r_cutoff
 
 
 def where_is_the_ocean(plane: Grid, image: NDArray[float], title, timeout=None) -> Point:
