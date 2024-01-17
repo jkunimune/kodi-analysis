@@ -42,7 +42,7 @@ from util import center_of_mass, shape_parameters, find_intercept, fit_circle, \
 	line_search, bin_centers_and_sizes, periodic_mean, parse_filtering, \
 	print_filtering, Filter, count_detectors, compose_2x2_from_intuitive_parameters, \
 	decompose_2x2_into_intuitive_parameters, Interval, name_filter_stacks, crop_to_finite, shift_and_rotate, \
-	resample_and_rotate
+	resample_and_rotate, case_insensitive_dataframe
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -147,10 +147,12 @@ def analyze(shots_to_reconstruct: list[str],
 
 	# read in some of the existing information
 	try:
-		shot_table = pd.read_csv('input/shot_info.csv', index_col="shot",
-		                         dtype={"shot": str}, skipinitialspace=True)
-		los_table = pd.read_csv("input/los_info.csv", index_col=["shot", "los"],
-		                        dtype={"shot": str, "los": str}, skipinitialspace=True)
+		shot_table = case_insensitive_dataframe(
+			pd.read_csv('input/shot_info.csv', index_col="shot",
+			            dtype={"shot": str}, skipinitialspace=True))
+		los_table = case_insensitive_dataframe(
+			pd.read_csv("input/los_info.csv", index_col=["shot", "los"],
+			            dtype={"shot": str, "los": str}, skipinitialspace=True))
 	except IOError as e:
 		logging.error(e)
 		raise
@@ -241,6 +243,12 @@ def analyze(shots_to_reconstruct: list[str],
 			logging.error(f"shot {shot!r}, LOS {los!r} appears more than once in the input/los_info.csv file!")
 			continue
 		shot_info = pd.concat([shot_info, los_specific_shot_info])
+
+		# make sure we found all the necessary information
+		for necessary_key in ["filtering", "aperture radius", "aperture arrangement", "magnification"]:
+			if necessary_key not in shot_info:
+				logging.error(f"I couldn't find the {necessary_key} of shot {shot!r} LOS {los!r} in either input/shot_info.csv or input/los_info.csv (I only found {shot_info.index.values}).")
+				return
 
 		# perform the 2d reconstruccion
 		try:

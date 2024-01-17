@@ -11,6 +11,7 @@ import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
 from numpy.typing import NDArray
+from pandas import DataFrame
 from scipy import optimize, integrate, interpolate
 from skimage import measure
 
@@ -52,10 +53,10 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 			filter_code = filter_code[1:]
 		# anything else is a filter
 		else:
-			top_filter = re.match(r"^([0-9./]+)([A-Za-z0-9-]+)\b", filter_code)
+			top_filter = re.match(r"^([0-9.]+([uμ]m)?)([A-Za-z0-9-]+)\b", filter_code)
 			if top_filter is None:
 				raise ValueError(f"I can't parse '{filter_code}'")
-			thickness, material = top_filter.group(1, 2)
+			thickness, material = top_filter.group(1, 3)
 			thickness = float(thickness)
 			# etiher add it to the shortest one (if there was a slash recently)
 			if len(filter_stacks[-1]) < len(filter_stacks[0]):
@@ -70,6 +71,21 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 		return filter_stacks
 	else:
 		raise ValueError(f"this scan is marked as {detector} #{index} (index from 0) but I only see {num_detectors_seen} {detector} in '{original_filter_code}'.")
+
+
+def case_insensitive_dataframe(dataframe: DataFrame) -> DataFrame:
+	""" take a pandas dataframe and lowercasen its index, to improve matching.
+	    modify it in-place and also return it.
+	"""
+	def recursively_lower(x):
+		if type(x) is str:
+			return str.lower(x)
+		elif type(x) is tuple:
+			return tuple(recursively_lower(item) for item in x)
+		else:
+			raise TypeError(type(x))
+	dataframe.index = dataframe.index.map(recursively_lower)
+	return dataframe
 
 
 def count_detectors(filter_code: str, detector: str) -> int:
