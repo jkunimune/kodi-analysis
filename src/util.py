@@ -53,7 +53,7 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 			filter_code = filter_code[1:]
 		# anything else is a filter
 		else:
-			top_filter = re.match(r"^([0-9.]+([uμ]m)?)([A-Za-z0-9-]+)\b", filter_code)
+			top_filter = re.match(r"^([0-9.]+)([uμ]m)?([A-Za-z0-9-]+)\b", filter_code)
 			if top_filter is None:
 				raise ValueError(f"I can't parse '{filter_code}'")
 			thickness, material = top_filter.group(1, 3)
