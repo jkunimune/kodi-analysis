@@ -359,7 +359,7 @@ def analyze_scan(input_filename: str,
 		projected_stalk = project(1, *NAMED_LOS[stalk_position], los_basis)
 	else:
 		projected_stalk = None
-		if isnan(stalk_position):
+		if not isnan(stalk_position):
 			logging.warning(f"I don’t recognize the target positioner {stalk_position!r}.")
 	if isnan(num_stalks):
 		num_stalks = None
