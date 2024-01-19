@@ -30,7 +30,7 @@ import aperture_array
 import deconvolution
 import electric_field
 from cmap import CMAP
-from coordinate import project, los_coordinates, rotation_matrix, Grid, NAMED_LOS, LinSpace
+from coordinate import project, los_coordinates, rotation_matrix, Grid, NAMED_LOS, LinSpace, Image
 from hdf5_util import load_hdf5, save_as_hdf5
 from image_plate import xray_energy_limit, fade
 from linear_operator import Matrix
@@ -364,6 +364,7 @@ def analyze_scan(input_filename: str,
 	if isnan(num_stalks):
 		num_stalks = None
 
+	# figure out what the sections should be
 	num_detectors = count_detectors(filtering, detector_type)
 	filter_stacks = parse_filtering(filtering, detector_index, detector_type)
 	filter_section_indices = np.argsort(np.argsort(
@@ -371,6 +372,14 @@ def analyze_scan(input_filename: str,
 	filter_section_names = name_filter_stacks(filter_stacks)
 	filter_sections = reversed(list(  # the reason we reverse this is that SRTe has its biggest filter section last
 		zip(filter_section_indices, filter_section_names, filter_stacks)))
+
+	# load the scan into RAM so that we don't have to repeatedly decompress it
+	if input_filename.endswith(".cpsa"):
+		input_file = Scan.from_cpsa(input_filename)
+	elif input_filename.endswith(".h5") or input_filename.endswith(".hdf5"):
+		input_file = load_ip_scan_file(input_filename)
+	else:
+		raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
 
 	# then iterate thru each filtering section
 	grid_parameters, source_plane = None, None
@@ -384,7 +393,7 @@ def analyze_scan(input_filename: str,
 		try:
 			grid_parameters, source_plane, filter_section_sources, filter_section_statistics =\
 				analyze_scan_section(
-					input_filename,
+					input_file,
 					shot, los, particle, rA, sA, grid_shape,
 					M_gess, L1,
 					etch_time,
@@ -479,7 +488,7 @@ def analyze_scan(input_filename: str,
 	return statistics
 
 
-def analyze_scan_section(input_filename: str,
+def analyze_scan_section(input_file: Union[Scan, Image],
                          shot: str, los: str, particle: str,
                          rA: float, sA: float, grid_shape: str,
                          M_gess: float, L1: float,
@@ -491,7 +500,7 @@ def analyze_scan_section(input_filename: str,
                          skip_reconstruction: bool, show_plots: bool,
                          ) -> tuple[GridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
-	    :param input_filename: the location of the scan file in input/scans/
+	    :param input_file: the CR39 or image plate scan result object to analyze
 	    :param shot: the shot number/name
 	    :param los: the name of the line of sight (e.g. "tim2", "srte")
 	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for an image plate)
@@ -538,7 +547,7 @@ def analyze_scan_section(input_filename: str,
 	if not skip_reconstruction:
 		# check the statistics, if these are deuterons
 		num_tracks, x_min, x_max, y_min, y_max = count_tracks_in_scan(
-			input_filename, 0, inf, max_contrast, False)
+			input_file, 0, inf, max_contrast, False)
 		if particle == "proton" or particle == "deuteron":
 			logging.info(f"found {num_tracks:.4g} tracks in the file")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
@@ -554,7 +563,7 @@ def analyze_scan_section(input_filename: str,
 		if show_plots or old_data_polygon is None:
 			try:
 				data_polygon = user_defined_region(
-					input_filename, default=old_data_polygon,
+					input_file, default=old_data_polygon,
 					max_contrast=max_contrast,
 					title=f"Select the {section_name} region, then close this window.")
 				if len(data_polygon) < 3:
@@ -575,7 +584,7 @@ def analyze_scan_section(input_filename: str,
 		# find the centers and spacings of the penumbral images
 		try:
 			centers, grid_transform = find_circle_centers(
-				input_filename, max_contrast, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
+				input_file, max_contrast, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
 				los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS, show_plots)
 		except DataError as e:
 			raise DataError(f"I couldn't fit the circles to infer the magnification becuase {e}  this might mean that "
@@ -616,7 +625,7 @@ def analyze_scan_section(input_filename: str,
 		energy_cut_index = sorted(energy_cuts).index((energy_min, energy_max))
 		try:
 			source_plane, source, statblock = analyze_scan_section_cut(
-				input_filename, shot, los, particle,
+				input_file, shot, los, particle,
 				rA, sA, grid_shape, M, L1,
 				etch_time, filter_stack, data_polygon,
 				grid_transform/grid_mean_scale, centers,
@@ -644,7 +653,7 @@ def analyze_scan_section(input_filename: str,
 	return grid_parameters, source_plane, source_stack, results
 
 
-def analyze_scan_section_cut(input_filename: str,
+def analyze_scan_section_cut(input_file: Union[Scan, Image],
                              shot: str, los: str, particle: str,
                              rA: float, sA: float, grid_shape: str,
                              M: float, L1: float, etch_time: Optional[float],
@@ -658,7 +667,7 @@ def analyze_scan_section_cut(input_filename: str,
                              ) -> tuple[Grid, NDArray[float], dict[str, Any]]:
 	""" reconstruct the penumbral image contained in a single energy cut in a single filtering
 	    region of a single scan file.
-	    :param input_filename: the location of the scan file in input/scans/
+	    :param input_file: the CR39 or image plate scan result object to analyze
 	    :param shot: the shot number/name
 	    :param los: the name of the line of sight (e.g. "tim2", "srte")
 	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for an image plate)
@@ -742,7 +751,7 @@ def analyze_scan_section_cut(input_filename: str,
 			logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
 			# check the statistics, if these are deuterons
 			num_tracks, _, _, _, _ = count_tracks_in_scan(
-				input_filename, diameter_min, diameter_max, max_contrast,
+				input_file, diameter_min, diameter_max, max_contrast,
 				show_plots and SHOW_DIAMETER_CUTS)
 			logging.info(f"  found {num_tracks:.4g} tracks in the cut")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
@@ -750,7 +759,7 @@ def analyze_scan_section_cut(input_filename: str,
 
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
-			input_filename, f"{shot}/{los}-{particle}-{cut_index}",
+			input_file, f"{shot}/{los}-{particle}-{cut_index}",
 			diameter_min, diameter_max, max_contrast,
 			energy_min, energy_max, M*rA, M*sA,
 			centers, data_polygon, show_plots) # TODO: infer rA, as well?
@@ -777,9 +786,9 @@ def analyze_scan_section_cut(input_filename: str,
 		local_images = np.empty((len(centers),) + image_plane.shape, dtype=float)
 
 		# if it's a cpsa file
-		if input_filename.endswith(".cpsa"):
-			x_tracks, y_tracks = load_cr39_scan_file(
-				input_filename, diameter_min, diameter_max, max_contrast)  # load all track coordinates
+		if type(input_file) is Scan:
+			x_tracks, y_tracks = cut_cr39_scan(
+				input_file, diameter_min, diameter_max, max_contrast)  # load all track coordinates
 			for k, (x_center, y_center) in enumerate(centers):
 				# center them on the penumbra and rotate them if the aperture grid appears rotated
 				x_relative, y_relative = shift_and_rotate(x_tracks, y_tracks,
@@ -788,8 +797,8 @@ def analyze_scan_section_cut(input_filename: str,
 				                                       bins=(image_plane.x.get_edges(),
 				                                             image_plane.y.get_edges()))[0]
 
-		elif input_filename.endswith(".h5"): # if it's a HDF5 file
-			scan_plane, scan = load_ip_scan_file(input_filename)
+		elif type(input_file) is Image: # if it's a HDF5 file
+			scan_plane, scan = input_file.domain, input_file.values
 			if scan_plane.pixel_width > image_plane.pixel_width:
 				logging.warning(f"The scan resolution of this image plate scan ({scan_plane.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
 				                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
@@ -800,7 +809,7 @@ def analyze_scan_section_cut(input_filename: str,
 				local_images[k, :, :] = resample_and_rotate(scan, scan_plane, shifted_image_plane, -angle) # resample to the chosen bin size
 
 		else:
-			raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
+			raise TypeError(f"I don't know how to interpret a {type(input_file)} as a scan result")
 
 		# now you can combine them all
 		image = np.zeros(image_plane.shape, dtype=float)
@@ -819,7 +828,7 @@ def analyze_scan_section_cut(input_filename: str,
 			raise DataError("Not enuff tracks to reconstuct")
 
 		# finally, orient the penumbra correctly, so it’s like you’re looking toward TCC
-		if input_filename.endswith(".cpsa"):
+		if type(input_file) is Scan:
 			# since PCIS CR-39 scans are saved like you’re looking toward TCC, do absolutely noting
 			pass
 		elif los.startswith("tim"):
@@ -998,13 +1007,13 @@ def analyze_scan_section_cut(input_filename: str,
 	return output_plane, output, statblock
 
 
-def do_1d_reconstruction(scan_filename: str, plot_filename: str,
+def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
                          diameter_min: float, diameter_max: float,
                          energy_min: float, energy_max: float, max_contrast: float,
                          r0: float, s0: float, centers: list[Point], region: list[Point],
                          show_plots: bool) -> Point:
 	""" perform an inverse Abel transformation while fitting for charging
-	    :param scan_filename: the scanfile containing the data to be analyzed
+	    :param scan: the scan result object containing the data to be analyzed
 	    :param plot_filename: the filename to pass to the plotting function for the resulting figure
 	    :param diameter_min: the minimum track diameter to consider (μm)
 	    :param diameter_max: the maximum track diameter to consider (μm)
@@ -1022,9 +1031,9 @@ def do_1d_reconstruction(scan_filename: str, plot_filename: str,
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 
 	# either bin the tracks in radius
-	if scan_filename.endswith(".cpsa"):  # if it's a cpsa file
-		x_tracks, y_tracks = load_cr39_scan_file(
-			scan_filename, diameter_min, diameter_max, max_contrast)  # load all track coordinates
+	if type(scan) is Scan:  # if it's a cpsa file
+		x_tracks, y_tracks = cut_cr39_scan(
+			scan, diameter_min, diameter_max, max_contrast)  # load all track coordinates
 		valid = inside_polygon(region, x_tracks, y_tracks)
 		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
 		r_tracks = np.full(np.count_nonzero(valid), inf)
@@ -1039,8 +1048,8 @@ def do_1d_reconstruction(scan_filename: str, plot_filename: str,
 			raise DataError("Not enuff tracks to reconstuct")
 
 	# or rebin the cartesian bins in radius
-	elif scan_filename.endswith(".h5"):  # if it's an HDF5 file
-		scan_plane, NC = load_ip_scan_file(scan_filename)
+	elif type(scan) is Image:  # if it's an HDF5 file
+		scan_plane, NC = scan.domain, scan.values
 		XC, YC = scan_plane.get_pixels()
 		NC[~inside_polygon(region, XC, YC)] = 0
 		interpolator = interpolate.RegularGridInterpolator(
@@ -1057,7 +1066,7 @@ def do_1d_reconstruction(scan_filename: str, plot_filename: str,
 		histogram = False
 
 	else:
-		raise ValueError(f"I don't know how to read {os.path.splitext(scan_filename)[1]} files")
+		raise TypeError(f"I don't know how to interpret a {type(scan)} as a scan result")
 
 	A = np.zeros(r.size)
 	for x0, y0 in centers:
@@ -1153,18 +1162,18 @@ def where_is_the_ocean(plane: Grid, image: NDArray[float], title, timeout=None) 
 		raise TimeoutError
 
 
-def user_defined_region(filename, title, max_contrast: float, default=None, timeout=None) -> list[Point]:
+def user_defined_region(scan, title, max_contrast: float, default=None, timeout=None) -> list[Point]:
 	""" solicit the user's help in circling a region """
-	if filename.endswith(".cpsa"):
-		x_tracks, y_tracks = load_cr39_scan_file(filename, 0, inf, max_contrast)
+	if type(scan) is Scan:
+		x_tracks, y_tracks = cut_cr39_scan(scan, 0, inf, max_contrast)
 		image, x, y = np.histogram2d(x_tracks, y_tracks, bins=200)
 		image_plane = Grid.from_edge_array(x, y)
-	elif filename.endswith(".h5"):
-		image_plane, image = load_ip_scan_file(filename)
+	elif type(scan) is Image:
+		image_plane, image = scan.domain, scan.values
 		while image_plane.num_pixels > 1e6:
 			image_plane, image = downsample_2d(image_plane, image)
 	else:
-		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
+		raise TypeError(f"I don't know how to interpret a {type(scan)} as a scan result")
 
 	fig = plt.figure()
 	plt.imshow(image.T, extent=image_plane.extent, origin="lower",
@@ -1240,23 +1249,22 @@ def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[fl
 	return func
 
 
-def load_cr39_scan_file(filename: str,
-                        min_diameter, max_diameter,
-                        max_contrast, max_eccentricity=MAX_ECCENTRICITY,
-                        show_plots=False) -> tuple[NDArray[float], NDArray[float]]:
-	""" load the track coordinates from a CR-39 scan file
+def cut_cr39_scan(scan: Scan,
+                  min_diameter, max_diameter,
+                  max_contrast, max_eccentricity=MAX_ECCENTRICITY,
+                  show_plots=False) -> tuple[NDArray[float], NDArray[float]]:
+	""" filter the track coordinates by diameter and contrast and pull out the x and y values
 	    :return: the x coordinates (cm) and the y coordinates (cm)
 	"""
-	file = Scan.from_cpsa(filename)
-	d_tracks = file.trackdata_subset[:, 2]
-	c_tracks = file.trackdata_subset[:, 3]
-	file.add_cut(Cut(cmin=max_contrast))
-	file.add_cut(Cut(emin=max_eccentricity))
-	file.add_cut(Cut(dmax=min_diameter))
-	file.add_cut(Cut(dmin=max_diameter))
-	file.apply_cuts()
-	x_tracks = file.trackdata_subset[:, 0]
-	y_tracks = file.trackdata_subset[:, 1]
+	d_tracks = scan.trackdata_subset[:, 2]
+	c_tracks = scan.trackdata_subset[:, 3]
+	scan.add_cut(Cut(cmin=max_contrast))
+	scan.add_cut(Cut(emin=max_eccentricity))
+	scan.add_cut(Cut(dmax=min_diameter))
+	scan.add_cut(Cut(dmin=max_diameter))
+	scan.apply_cuts()
+	x_tracks = scan.trackdata_subset[:, 0]
+	y_tracks = scan.trackdata_subset[:, 1]
 	if show_plots:
 		max_diameter_to_plot = np.quantile(d_tracks, .999)
 		max_contrast_to_plot = c_tracks.max()
@@ -1276,50 +1284,50 @@ def load_cr39_scan_file(filename: str,
 	return x_tracks, y_tracks
 
 
-def load_ip_scan_file(filename: str) -> tuple[Grid, NDArray[float]]:
+def load_ip_scan_file(filename: str) -> Image:
 	""" load a scan file, accounting for the fact that it may be in one of a few formats
 	    :return: the coordinate Grid on which the scan pixels are defined (cm), the values in the scan
 	             pixels (PSL units per pixel).
 	"""
 	with h5py.File(filename, "r") as f:
-		scan = f["PSL_per_px"][:, :].T
+		values = f["PSL_per_px"][:, :].T
 		if "x" in f:
 			x, y = f["x"][:], f["y"][:]
-			scan_plane = Grid.from_edge_array(x, y)
+			grid = Grid.from_edge_array(x, y)
 		else:
 			dx = f["PSL_per_px"].attrs["pixelSizeX"]*1e-4
 			dy = f["PSL_per_px"].attrs["pixelSizeY"]*1e-4
-			scan_plane = Grid(LinSpace(0, scan.shape[0]*dx, scan.shape[0]),
-			                  LinSpace(0, scan.shape[1]*dy, scan.shape[1]))
+			grid = Grid(LinSpace(0, values.shape[0]*dx, values.shape[0]),
+			                  LinSpace(0, values.shape[1]*dy, values.shape[1]))
 		if "scan_delay" in f.attrs:
 			fade_time = f.attrs["scan_delay"]
 		else:
 			fade_time = f["PSL_per_px"].attrs["scanDelaySeconds"]/60.
-	scan /= fade(fade_time)  # don’t forget to fade correct when you load it
-	return scan_plane, scan
+	values /= fade(fade_time)  # don’t forget to fade correct when you load it
+	return Image(grid, values)
 
 
-def count_tracks_in_scan(filename: str, diameter_min: float, diameter_max: float,
+def count_tracks_in_scan(scan: Union[Scan, Image], diameter_min: float, diameter_max: float,
                          max_contrast: float, show_plots: bool
                          ) -> tuple[float, float, float, float, float]:
 	""" open a scan file and simply count the total number of tracks without putting
 	    anything additional in memory.  if the scan file is an image plate scan, return inf
-	    :param filename: the scanfile containing the data to be analyzed
+	    :param scan: the scanfile containing the data to be analyzed
 	    :param diameter_min: the minimum diameter to count (μm)
 	    :param diameter_max: the maximum diameter to count (μm)
 	    :param max_contrast: the maximum track contrast level to consider (%)
 	    :param show_plots: whether to demand that we see the diameter cuts
 	    :return: the number of tracks if it's a CR-39 scan, inf if it's an image plate scan. also the bounding box.
 	"""
-	if filename.endswith(".cpsa"):
-		x_tracks, y_tracks = load_cr39_scan_file(
-			filename, diameter_min, diameter_max, max_contrast, show_plots=show_plots)
+	if type(scan) is Scan:
+		x_tracks, y_tracks = cut_cr39_scan(
+			scan, diameter_min, diameter_max, max_contrast, show_plots=show_plots)
 		return x_tracks.size, np.min(x_tracks), np.max(x_tracks), np.min(y_tracks), np.max(y_tracks)
-	elif filename.endswith(".h5"):
-		bounds, _ = load_ip_scan_file(filename)
+	elif type(scan) is Image:
+		bounds = scan.domain
 		return inf, bounds.x.minimum, bounds.x.maximum, bounds.y.minimum, bounds.y.maximum
 	else:
-		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
+		raise TypeError(f"I don't know how to interpret a {type(scan)} as a scan result")
 
 
 def load_source(shot: str, los: str, particle_index: str,
@@ -1533,12 +1541,12 @@ def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArra
 	return x_fit, y_fit, total_error  # type: ignore
 
 
-def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_nominal: float,
+def find_circle_centers(scan: Union[Scan, Image], max_contrast: float, r_nominal: float, s_nominal: float,
                         grid_shape: str, grid_parameters: Optional[GridParameters],
                         region: list[Point], trust_grid: bool, show_plots: bool,
                         ) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
-	    :param filename: the scanfile containing the data to be analyzed
+	    :param scan: the scanfile containing the data to be analyzed
 	    :param max_contrast: the maximum track contrast level to consider (%)
 	    :param r_nominal: the expected radius of the circles
 	    :param s_nominal: the expected spacing between the circles. a positive number means the
@@ -1556,8 +1564,8 @@ def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_
 	if s_nominal < 0:
 		raise NotImplementedError("I haven't accounted for this.")
 
-	if filename.endswith(".cpsa"):  # if it's a cpsa file
-		x_tracks, y_tracks = load_cr39_scan_file(filename, 0, inf, max_contrast)  # load all track coordinates
+	if type(scan) is Scan:  # if it's a cpsa file
+		x_tracks, y_tracks = cut_cr39_scan(scan, 0, inf, max_contrast)  # load all track coordinates
 		n_bins = max(6, int(min(sqrt(x_tracks.size)/5, MAX_NUM_PIXELS)))  # get the image resolution needed to resolve the circle
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
 		x0_data = (np.min(x_tracks) + np.max(x_tracks))/2
@@ -1573,15 +1581,15 @@ def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_
 		N_full, _, _ = np.histogram2d(
 			x_tracks, y_tracks, bins=(full_domain.x.get_edges(), full_domain.y.get_edges()))
 
-	elif filename.endswith(".h5"):  # if it's an h5 file
-		full_domain, N_full = load_ip_scan_file(filename)
+	elif type(scan) is Image:  # if it's an h5 file
+		full_domain, N_full = scan.domain, scan.values
 		# check that the resolution is fine enuff
 		if r_nominal <= 2*full_domain.pixel_width:
 			raise DataError(f"the scan resolution is {full_domain.pixel_width:.2g} cm, which is insufficient to "
 			                f"resolve an image of radius {r_nominal:.2g} cm.")
 
 	else:
-		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
+		raise TypeError(f"I don't know how to interpret a {type(scan)} as a scan result")
 
 	if full_domain.x.range <= 2*r_nominal or full_domain.y.range <= 2*r_nominal:
 		raise DataError("the scan is smaller than the nominal image size, so a reconstruction is probably not possible.")

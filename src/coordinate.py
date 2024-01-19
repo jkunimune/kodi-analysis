@@ -231,6 +231,21 @@ class Grid:
 		return np.meshgrid(self.x.get_bins(), self.y.get_bins(), sparse=sparse, indexing="ij")
 
 
+class Image:
+	def __init__(self, domain: Grid, values: NDArray[float]):
+		""" package a spacial coordinate system with a 2D array of values to fill it """
+		self.domain = domain
+		self.values = values
+
+	@property
+	def x(self) -> LinSpace:
+		return self.domain.x
+
+	@property
+	def y(self) -> LinSpace:
+		return self.domain.y
+
+
 if __name__ == '__main__':
 	tim2 = los_direction("tim2")
 	tim4 = los_direction("tim4")
