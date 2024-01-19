@@ -1071,7 +1071,7 @@ def do_1d_reconstruction(scan_filename: str, plot_filename: str,
 	if not np.any(valid & outside_penumbra):
 		raise DataError("too much of the image is clipd; I need a background region.")
 	ρ_max = np.average(ρ[valid], weights=np.where(inside_umbra, 1/dρ**2, 0)[valid])
-	ρ_min = np.min(ρ, where=valid & outside_penumbra)
+	ρ_min = np.min(ρ, where=valid & outside_penumbra, initial=inf)
 	n_inf = np.mean(n, where=(r > 1.8*r0) & (r < s0 - 1.8*r0))
 	dρ2_inf = np.var(ρ, where=(r > 1.8*r0) & (r < s0 - 1.8*r0))
 
