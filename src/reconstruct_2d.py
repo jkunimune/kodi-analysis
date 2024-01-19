@@ -1322,7 +1322,11 @@ def count_tracks_in_scan(scan: Union[Scan, Image], diameter_min: float, diameter
 	if type(scan) is Scan:
 		x_tracks, y_tracks = cut_cr39_scan(
 			scan, diameter_min, diameter_max, max_contrast, show_plots=show_plots)
-		return x_tracks.size, np.min(x_tracks), np.max(x_tracks), np.min(y_tracks), np.max(y_tracks)
+		if x_tracks.size == 0:
+			return 0, nan, nan, nan, nan
+		else:
+			return x_tracks.size, np.min(x_tracks), np.max(x_tracks),\
+			       np.min(y_tracks), np.max(y_tracks)
 	elif type(scan) is Image:
 		bounds = scan.domain
 		return inf, bounds.x.minimum, bounds.x.maximum, bounds.y.minimum, bounds.y.maximum
