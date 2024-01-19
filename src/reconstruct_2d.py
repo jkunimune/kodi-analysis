@@ -573,9 +573,14 @@ def analyze_scan_section(input_filename: str,
 			             vertices=data_polygon)
 
 		# find the centers and spacings of the penumbral images
-		centers, grid_transform = find_circle_centers(
-			input_filename, max_contrast, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
-			los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS, show_plots)
+		try:
+			centers, grid_transform = find_circle_centers(
+				input_filename, max_contrast, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
+				los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS, show_plots)
+		except DataError as e:
+			raise DataError(f"I couldn't fit the circles to infer the magnification becuase {e}  this might mean that "
+			                f"the aperture radius or magnification are wrong.  does {rA/1e-4:.3g} μm × {M_gess:.1f} "
+			                f"= {M_gess*rA:.3g} cm sound right?")
 		grid_x0, grid_y0 = centers[0]
 		new_grid_parameters = (grid_transform, grid_x0, grid_y0)
 
@@ -1559,12 +1564,21 @@ def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_
 		y0_data = (np.min(y_tracks) + np.max(y_tracks))/2
 		full_domain = Grid.from_num_bins(r_data, n_bins).shifted(x0_data, y0_data)
 
+		# check that the resolution is fine enuff
+		if r_nominal <= 2*full_domain.pixel_width:
+			raise DataError(f"with this track density ({x_tracks.size:.2g} tracks across {r_data:.2g} cm) we can't "
+			                f"hope to resolve an image of radius {r_nominal:.2g} cm.")
+
 		# make a histogram
 		N_full, _, _ = np.histogram2d(
 			x_tracks, y_tracks, bins=(full_domain.x.get_edges(), full_domain.y.get_edges()))
 
 	elif filename.endswith(".h5"):  # if it's an h5 file
 		full_domain, N_full = load_ip_scan_file(filename)
+		# check that the resolution is fine enuff
+		if r_nominal <= 2*full_domain.pixel_width:
+			raise DataError(f"the scan resolution is {full_domain.pixel_width:.2g} cm, which is insufficient to "
+			                f"resolve an image of radius {r_nominal:.2g} cm.")
 
 	else:
 		raise ValueError(f"I don't know how to read {os.path.splitext(filename)[1]} files")
@@ -1614,9 +1628,10 @@ def find_circle_centers(filename: str, max_contrast: float, r_nominal: float, s_
 	max_density = np.nanmean(N_crop, where=R_pixels < .5*r_nominal)
 	min_density = np.nanmean(N_crop, where=R_pixels > 1.5*r_nominal)
 	contour_level = .2*max_density + .8*min_density
+	assert isfinite(contour_level)
 	contours = measure.find_contours(N_crop, contour_level)
 	if len(contours) == 0:
-		raise DataError("there were no tracks.  we should have caut that by now.")
+		raise DataError("there were no contours found for some reason.")
 	circles = []
 	for contour in contours:
 		# fit a circle to each contour
