@@ -56,7 +56,8 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 		else:
 			top_filter = re.match(r"^([0-9.]+)([uμ]m)?([A-Za-z0-9-]+)\b", filter_code)
 			if top_filter is None:
-				raise ValueError(f"I can't parse '{filter_code}'")
+				raise ValueError(f"I can't parse '{filter_code}' in '{original_filter_code}' (make sure there's no "
+				                 f"spaces between each thickness and its corresponding material name).")
 			thickness, material = top_filter.group(1, 3)
 			thickness = float(thickness)
 			# etiher add it to the shortest one (if there was a slash recently)
@@ -72,7 +73,7 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 	if index is None and detector is None:
 		return filter_stacks
 	# if no detector is in the string, assume there's supposed to be one at the end and return the whole thing
-	elif index == 0 and num_detectors_seen == 0:
+	elif index == 0 and "[]" not in filter_code and "|" not in filter_code:
 		return filter_stacks
 	else:
 		raise ValueError(f"this scan is marked as {detector} #{index} (index from 0) but I only see {num_detectors_seen} {detector} in '{original_filter_code}'.")
@@ -94,9 +95,13 @@ def case_insensitive_dataframe(dataframe: DataFrame) -> DataFrame:
 
 
 def count_detectors(filter_code: str, detector: str) -> int:
-	""" return the number of detectors of a certain type are specified in a filtering string """
-	if detector.lower() == "cr39":
-		return filter_code.count(":")
+	""" return the number of detectors of a certain type are specified in a filtering string.
+	    if no detectors are in the string at all, assume they're supposed to go at the end.
+	"""
+	if "[]" not in filter_code and "|" not in filter_code:
+		return 1
+	elif detector.lower() == "cr39":
+		return filter_code.count("[]")
 	elif detector.lower() == "ip":
 		return filter_code.count("|")
 	else:
