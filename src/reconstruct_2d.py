@@ -1182,23 +1182,23 @@ def user_defined_region(filename, title, max_contrast: float, default=None, time
 	last_click_time = time.time()
 	def on_click(event: MouseEvent):
 		nonlocal last_click_time
-		if event.button == MouseButton.LEFT:
-			if event.xdata is not None and event.ydata is not None:
+		if event.xdata is not None and event.ydata is not None:
+			if event.button == MouseButton.LEFT:
 				vertices.append((event.xdata, event.ydata))
-		elif event.button == MouseButton.RIGHT and len(vertices) > 0:
-			vertices.pop()
-		last_click_time = time.time()
-		default_polygon.set_visible(False)
-		polygon.set_xdata([x for x, y in vertices])
-		polygon.set_ydata([y for x, y in vertices])
-		if len(vertices) > 0:
-			cap.set_xdata([vertices[0][0], vertices[-1][0]])
-			cap.set_ydata([vertices[0][1], vertices[-1][1]])
-			cursor.set_xdata([vertices[-1][0]])
-			cursor.set_ydata([vertices[-1][1]])
-			cursor.set_visible(True)
-		else:
-			cursor.set_visible(False)
+			elif event.button == MouseButton.RIGHT and len(vertices) > 0:
+				vertices.pop()
+			last_click_time = time.time()
+			default_polygon.set_visible(len(vertices) < 3)
+			polygon.set_xdata([x for x, y in vertices])
+			polygon.set_ydata([y for x, y in vertices])
+			if len(vertices) > 0:
+				cap.set_xdata([vertices[0][0], vertices[-1][0]])
+				cap.set_ydata([vertices[0][1], vertices[-1][1]])
+				cursor.set_xdata([vertices[-1][0]])
+				cursor.set_ydata([vertices[-1][1]])
+				cursor.set_visible(True)
+			else:
+				cursor.set_visible(False)
 	fig.canvas.mpl_connect('button_press_event', on_click)
 
 	has_closed = False
