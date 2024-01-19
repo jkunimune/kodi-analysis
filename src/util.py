@@ -39,6 +39,7 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 		for detector_code, detector_type, thickness in [("[]", "CR39", 1500), ("|", "IP", 1)]:
 			if filter_code.startswith(detector_code):
 				if detector_type == detector.upper():
+					# when you hit the detector with the desired index, return the filters up to that point
 					if num_detectors_seen == index:
 						return filter_stacks
 					else:
@@ -67,7 +68,11 @@ def parse_filtering(filter_code: str, index: Optional[int] = None, detector: Opt
 					filter_stack.append((thickness, material))
 			filter_code = filter_code[top_filter.end():]
 
+	# if index and detector are both omitted, return the whole filter stack
 	if index is None and detector is None:
+		return filter_stacks
+	# if no detector is in the string, assume there's supposed to be one at the end and return the whole thing
+	elif index == 0 and num_detectors_seen == 0:
 		return filter_stacks
 	else:
 		raise ValueError(f"this scan is marked as {detector} #{index} (index from 0) but I only see {num_detectors_seen} {detector} in '{original_filter_code}'.")
