@@ -236,7 +236,10 @@ def analyze(shots_to_reconstruct: list[str],
 
 	# then iterate thru that list and do the analysis
 	for shot, los, particle, detector_index, etch_time, filename in all_scans_to_analyze:
-		logging.info(f"Beginning reconstruction for {los.upper()} on shot {shot} (detector #{detector_index})")
+		if particle == "xray":
+			logging.info(f"Beginning reconstruction for {los.upper()} on shot {shot} (IP #{detector_index})")
+		else:
+			logging.info(f"Beginning reconstruction for {los.upper()} on shot {shot} (piece #{detector_index}, {etch_time:.1f} hour etch)")
 
 		# load all necessary information from shot_info.csv and los_info.csv
 		try:
