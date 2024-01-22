@@ -230,7 +230,7 @@ def analyze(shots_to_reconstruct: list[str],
 
 	# report the full list of filenames
 	if len(all_scans_to_analyze) > 0:
-		logging.info(f"Planning to reconstruct {', '.join(scan[-1] for scan in all_scans_to_analyze)}")
+		logging.info(f"Planning to reconstruct {', '.join(repr(scan[-1]) for scan in all_scans_to_analyze)}")
 	else:
 		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the input folder.")
 
@@ -885,7 +885,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 			source_plane = Grid.from_pixels(num_bins=image_plane.x.num_bins - kernel_plane.x.num_bins + 1,
 			                                pixel_width=kernel_plane.pixel_width/(M - 1))
 
-		logging.info(f"  generating a {kernel_plane.shape} point spread function with Q={Q}")
+		logging.info(f"  generating a {kernel_plane.shape} point spread function with Q={Q:.3g} MeV*cm")
 
 		# calculate the point-spread function
 		penumbral_kernel = point_spread_function(kernel_plane, Q, M*rA, grid_transform,
@@ -1243,7 +1243,9 @@ def user_defined_region(scan, title, max_contrast: float, default=None, timeout=
 
 def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[float],
                           з_min: float, з_max: float) -> NDArray[float]:
-	""" build the dimensionless point spread function """
+	""" build the dimensionless point spread function by calling electric_field.get_modified_point_spread, skewing it
+	    according to the grid's transform matrix, and antialiasing the edges.
+	"""
 	# calculate the profile using the electric field model
 	r_interp, n_interp = electric_field.get_modified_point_spread(
 		r0, Q, energy_min=з_min, energy_max=з_max)
