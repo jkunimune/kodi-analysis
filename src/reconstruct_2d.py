@@ -760,8 +760,8 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
 			input_file, f"{shot}/{los}-{particle}-{cut_index}",
-			diameter_min, diameter_max, max_contrast,
-			energy_min, energy_max, M*rA, M*sA,
+			diameter_min, diameter_max,
+			energy_min, energy_max, max_contrast, M*rA, M*sA,
 			centers, data_polygon, show_plots) # TODO: infer rA, as well?
 
 		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
