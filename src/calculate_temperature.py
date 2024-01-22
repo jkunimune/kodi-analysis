@@ -422,7 +422,7 @@ def load_all_xray_images_for(shot: str, tim: str) \
 					if type(filter_str) is bytes:
 						filter_str = filter_str.decode("ascii")
 
-					object_radius, _, _ = shape_parameters(Grid.from_bin_array(x, y), source, contour=.25)
+					object_radius, _, _ = shape_parameters(Grid.from_bin_array(x, y), source, contour_level=.25)
 
 					filter_stacks.append(parse_filtering(filter_str)[0])
 					images.append(Distribution(

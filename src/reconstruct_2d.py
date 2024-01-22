@@ -992,7 +992,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 	# calculate and print the main shape parameters
 	yeeld = np.sum(output*output_plane.pixel_area)*4*pi
 	p0, (_, _), (p2, θ2) = shape_parameters(
-		output_plane, output, contour=contour)
+		output_plane, output, contour_level=contour)
 	logging.info(f"  ∫B dA dσ = {yeeld :.4g} deuterons")
 	logging.info(f"  P0       = {p0/1e-4:.2f} μm")
 	logging.info(f"  P2       = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")

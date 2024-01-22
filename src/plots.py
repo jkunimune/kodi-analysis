@@ -243,7 +243,7 @@ def plot_source(filename: str, show: bool,
 
 	# choose the plot limits
 	source_plane = source_plane.scaled(1e+4)  # convert coordinates to μm
-	object_size, (r1, θ1), _ = shape_parameters(source_plane, source, contour=.25)
+	object_size, (r1, θ1), _ = shape_parameters(source_plane, source, contour_level=.25)
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.3*object_size, initial=FRAME_SIZES[-1])
 	x0, y0 = r1*cos(θ1), r1*sin(θ1)
 

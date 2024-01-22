@@ -406,11 +406,11 @@ def harmonics_from_covariance(Σ, μ):
 	return p0, (p1, θ1), (p2, θ2)
 
 
-def fit_ellipse(grid: Grid, f: NDArray[float], contour: Optional[float] = None):
+def fit_ellipse(grid: Grid, f: NDArray[float], contour_level: Optional[float] = None):  # TODO: use Image
 	""" fit an ellipse to the given image, and represent that ellipse as a symmetric matrix """
 	X, Y = grid.get_pixels() # f should be indexd in the ij convencion
 
-	if contour is None:
+	if contour_level is None:
 		μ0 = np.sum(f) # image sum
 		if μ0 == 0:
 			return np.full((2, 2), np.nan)
@@ -422,12 +422,28 @@ def fit_ellipse(grid: Grid, f: NDArray[float], contour: Optional[float] = None):
 		return np.array([[μxx, μxy], [μxy, μyy]]), np.array([μx, μy])
 
 	else:
-		contour_paths = measure.find_contours(f, contour*np.max(f))
+		# calculate the contour(s)
+		contour_paths = measure.find_contours(f, contour_level*np.max(f))
+		# make sure we found at least one
 		if len(contour_paths) == 0:
 			return np.full((2, 2), np.nan), np.full(2, np.nan)
-		contour_path = max(contour_paths, key=len)
+		# choose which contour most likely represents the source
+		contour_quality = []
+		for i, path in enumerate(contour_paths):
+			r_contour = np.hypot(path[:, 0] - f.shape[0]/2, path[:, 1] - f.shape[1]/2)
+			R_domain = min(f.shape[0]/2, f.shape[1]/2)
+			if np.all(r_contour > R_domain - 2):  # avoid contours that are close to the edge of the domain
+				sussiness = 2
+			elif np.any(r_contour > R_domain - 2):
+				sussiness = 1
+			else:
+				sussiness = 0
+			contour_quality.append((-sussiness, len(path), i, path))  # also avoid ones with few vertices
+		contour_path = max(contour_quality)[-1]
+		# convert the contour from index space to space space
 		x_contour = np.interp(contour_path[:, 0], np.arange(grid.x.num_bins), grid.x.get_bins())
 		y_contour = np.interp(contour_path[:, 1], np.arange(grid.y.num_bins), grid.y.get_bins())
+		# convert to polar coordinates
 		x0 = np.average(X, weights=f)
 		y0 = np.average(Y, weights=f)
 		r = np.hypot(x_contour - x0, y_contour - y0)
@@ -435,6 +451,7 @@ def fit_ellipse(grid: Grid, f: NDArray[float], contour: Optional[float] = None):
 		θL, θR = np.concatenate([θ[1:], θ[:1]]), np.concatenate([θ[-1:], θ[:-1]])
 		dθ = abs(np.arcsin(np.sin(θL)*np.cos(θR) - np.cos(θL)*np.sin(θR)))/2
 
+		# use analytic formulas to fit to a sinusoidal basis
 		p0 = np.sum(r*dθ)/pi/2
 
 		p1x = np.sum(r*np.cos(θ)*dθ)/pi + x0
@@ -450,9 +467,9 @@ def fit_ellipse(grid: Grid, f: NDArray[float], contour: Optional[float] = None):
 		return covariance_from_harmonics(p0, p1, θ1, p2, θ2)
 
 
-def shape_parameters(grid: Grid, f: NDArray[float], contour=None):
+def shape_parameters(grid: Grid, f: NDArray[float], contour_level=None):  # TODO: use Image
 	""" get some scalar parameters that describe the shape of this distribution. """
-	return harmonics_from_covariance(*fit_ellipse(grid, f, contour))
+	return harmonics_from_covariance(*fit_ellipse(grid, f, contour_level))
 
 
 def line_search(func: Callable[[float], float], lower_bound: float, upper_bound: float,
