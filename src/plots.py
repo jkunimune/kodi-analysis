@@ -215,7 +215,7 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 
 
 def plot_source(filename: str, show: bool,
-                source_plane: Grid, source: NDArray[float], contour_level: float,
+                source_plane: Grid, source: NDArray[float],
                 energy_min: float, energy_max: float, color_index: int, num_colors: int,
                 projected_offset: Optional[tuple[float, float, float]],
                 projected_flow: Optional[tuple[float, float, float]],
@@ -225,7 +225,6 @@ def plot_source(filename: str, show: bool,
 	    :param show: whether to make the user look at it
 	    :param source_plane: the coordinates that go with the brightness array (cm)
 	    :param source: the brightness of each pixel (d/cm^2/srad)
-	    :param contour_level: the value of the contour, relative to the peak, to draw around the source
 	    :param energy_min: the minimum energy being plotted (for the label)
 	    :param energy_max: the maximum energy being plotted (for the label)
 	    :param color_index: the index of this image in the set (for choosing the color)
@@ -243,8 +242,8 @@ def plot_source(filename: str, show: bool,
 
 	# choose the plot limits
 	source_plane = source_plane.scaled(1e+4)  # convert coordinates to μm
-	object_size, (r1, θ1), _ = shape_parameters(source_plane, source, contour_level=.25)
-	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.3*object_size, initial=FRAME_SIZES[-1])
+	object_size, (r1, θ1), _ = shape_parameters(source_plane, source, contour_level=.17)
+	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
 	x0, y0 = r1*cos(θ1), r1*sin(θ1)
 
 	# plot the reconstructed source image
@@ -256,7 +255,8 @@ def plot_source(filename: str, show: bool,
 
 	if PLOT_SOURCE_CONTOUR:
 		plt.contour(source_plane.x.get_bins(), source_plane.y.get_bins(), source.T,
-		            levels=[contour_level*np.max(source)], colors='#ddd', linestyles='solid', linewidths=1)
+		            levels=np.linspace(0, np.max(source), 6, endpoint=False),
+		            colors='#eee', linestyles='solid', linewidths=1)
 	if PLOT_OFFSET:
 		if projected_offset is not None:
 			x_off, y_off, z_off = projected_offset

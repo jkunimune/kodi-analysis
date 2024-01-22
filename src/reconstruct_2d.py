@@ -471,7 +471,7 @@ def analyze_scan(input_filename: str,
 			num_colors = num_detectors*num_sections
 		plot_source(f"{shot}/{los}-{particle}-{indices[cut_index]}",
 		            False, source_plane, source_stack[cut_index],
-		            contour, energy_bounds[cut_index][0], energy_bounds[cut_index][1],
+		            energy_bounds[cut_index][0], energy_bounds[cut_index][1],
 		            color_index=color_index, num_colors=num_colors,
 		            projected_offset=projected_offset,
 		            projected_flow=projected_flow,
@@ -994,8 +994,8 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 	p0, (_, _), (p2, θ2) = shape_parameters(
 		output_plane, output, contour_level=contour)
 	logging.info(f"  ∫B dA dσ = {yeeld :.4g} deuterons")
-	logging.info(f"  P0       = {p0/1e-4:.2f} μm")
-	logging.info(f"  P2       = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
+	logging.info(f"  {contour:.0%} P0   = {p0/1e-4:.2f} μm")
+	logging.info(f"  {contour:.0%} P2   = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 	# save and plot the results
 	if particle == "xray":
@@ -1004,7 +1004,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		color_index = int(cut_index[-1])
 	plot_source(f"{shot}/{los}-{particle}-{cut_index}",
 	            show_plots,
-	            output_plane, output, contour, energy_min, energy_max,
+	            output_plane, output, energy_min, energy_max,
 	            color_index=color_index, num_colors=num_colors,
 	            projected_flow=None, projected_offset=None,
 	            projected_stalk=None, num_stalks=0)
