@@ -1707,7 +1707,7 @@ def find_circle_centers(scan: Union[Scan, Image], max_contrast: float, r_nominal
 		plt.scatter(x_circles[valid], y_circles[valid],
 		            np.where(circle_fullness[valid], 30, 5), c="#8ae", marker="x")
 		plt.contour(crop_domain.x.get_bins(), crop_domain.y.get_bins(), N_crop.T,
-		            levels=[contour_level], colors="#fff", linewidths=.6)
+		            levels=[contour_level], colors="k", linewidths=.5)
 		plt.fill([x for x, y in region], [y for x, y in region],
 		         facecolor="none", edgecolor="k", linewidth=.5)
 		plt.title("Located apertures marked with exes (close to confirm)")
