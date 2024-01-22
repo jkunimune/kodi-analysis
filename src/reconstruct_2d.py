@@ -189,10 +189,11 @@ def analyze(shots_to_reconstruct: list[str],
 
 				if os.path.splitext(filename)[-1] in supported_filetypes and "_alphas" not in filename \
 						and shot_match and (los_match or los is None):
-					# extract important information from the filename
+					# extract the line of sight from the filename
 					if los_match is None:
 						logging.warning(f"the file {filename} doesn’t specify a LOS, so I’m calling it none.")
 					matching_los = los_match.group(1).lower() if los_match is not None else "none"
+					# extract the index of this detector
 					if re.search(r"bert", filename, re.IGNORECASE):
 						detector_index = 0
 					elif re.search(r"ernie", filename, re.IGNORECASE):
@@ -200,14 +201,25 @@ def analyze(shots_to_reconstruct: list[str],
 					else:
 						detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
 						detector_index = int(detector_match.group(1)) if detector_match is not None else 0
-					etch_match = re.search(r"([0-9]+(\.[0-9]+)?)hr?", filename, re.IGNORECASE)
-					etch_time = float(etch_match.group(1)) if etch_match is not None else None
+					# infer the type of particle
 					particle = "xray" if filename.endswith(".h5") else "proton" if energy_cut_mode == "proton" else "deuteron"
-					if particle != "xray" and etch_match is None:
-						logging.warning(f"the file {filename} doesn't specify an etch time, so I'm calling it 5.0 hours.")
-						etch_time = 5
+					# extract the etch length in hours
+					etch_match = re.search(r"([0-9]+(\.[0-9]+)?)hr?", filename, re.IGNORECASE)
+					if etch_match is not None:
+						etch_time = float(etch_match.group(1))
+					else:
+						etch_match = re.search(r"etchtime([0-9]+(\.[0-9]+)?)", filename, re.IGNORECASE)
+						if etch_match is not None:
+							etch_time = float(etch_match.group(1))/60
+						elif particle == "xray":
+							etch_time = None
+						else:
+							logging.warning(f"the file {filename} doesn't specify an etch time, so I'm calling it 5.0 hours.")
+							etch_time = 5
+					# add all that information to matching_scans
 					matching_scans.append((shot, matching_los, particle, detector_index, etch_time,
 					                       f"{path}/{filename}"))
+		# make sure we found something
 		if len(matching_scans) == 0:
 			if los is None:
 				logging.info(f"  Could not find any scan files for shot {shot}")
@@ -216,6 +228,7 @@ def analyze(shots_to_reconstruct: list[str],
 		else:
 			all_scans_to_analyze += matching_scans
 
+	# report the full list of filenames
 	if len(all_scans_to_analyze) > 0:
 		logging.info(f"Planning to reconstruct {', '.join(scan[-1] for scan in all_scans_to_analyze)}")
 	else:
