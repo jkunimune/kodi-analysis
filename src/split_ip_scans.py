@@ -124,7 +124,7 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 			tim = tim_set[cut_index]
 			ip_position = scan_index
 		else:
-			raise ValueError(f"I expected {len(tim_set)} LOSs with {num_ip_positions} IPs "
+			raise ValueError(f"I expected {len(tim_set)} LOSs with {num_ip_positions[scan_index]} IPs "
 			                 f"each, so I don't understand why there are {len(cut_intervals)} "
 			                 f"image plates in this scan ({filepath}).")
 
