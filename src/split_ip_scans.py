@@ -94,7 +94,7 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 	for _, tim in los_table[los_table.shot == shot].iterrows():
 		if tim.LOS != "srte":
 			tim_set.append(tim.LOS)
-			num_ip_positions.append(tim.filtering.count("|"))
+			num_ip_positions.append(max(1, tim.filtering.count("|")))
 	if len(tim_set) == 0:
 		raise KeyError(f"please add shot {shot} to the input/scans/LOS_info.csv file.")
 
