@@ -39,7 +39,7 @@ energy_max = energy_max_lookup_table[data.energy_cut]
 energy_min.index = energy_max.index = data.index
 data['energy (MeV)'] = (energy_min + energy_max)/2
 MLeσdz4πɛ0 = data.Q*cm*MeV # in SI
-data['TIM'] = [int(los[-1]) for los in data["los"]]
+data['TIM'] = [int(los[-1]) for los in data["LOS"]]
 data['energy (J)'] = data['energy (MeV)']*MeV
 data['time (s)'] = L/np.sqrt(2*data['energy (J)']/(2.014*Da))
 data['time (ns)'] = data['time (s)']/ns

@@ -151,8 +151,8 @@ def analyze(shots_to_reconstruct: list[str],
 			pd.read_csv('input/shot_info.csv', index_col="shot",
 			            dtype={"shot": str}, skipinitialspace=True))
 		los_table = case_insensitive_dataframe(
-			pd.read_csv("input/los_info.csv", index_col=["shot", "los"],
-			            dtype={"shot": str, "los": str}, skipinitialspace=True))
+			pd.read_csv("input/LOS_info.csv", index_col=["shot", "LOS"],
+			            dtype={"shot": str, "LOS": str}, skipinitialspace=True))
 	except IOError as e:
 		logging.error(e)
 		raise
@@ -160,7 +160,7 @@ def analyze(shots_to_reconstruct: list[str],
 		summary = pd.read_csv("results/summary.csv", dtype={"shot": str})
 	except IOError:
 		summary = pd.DataFrame(data={"shot":           pd.Series(dtype=str),
-		                             "los":            pd.Series(dtype=str),
+		                             "LOS":            pd.Series(dtype=str),
 		                             "particle":       pd.Series(dtype=str),
 		                             "detector index": pd.Series(dtype=int),
 		                             "energy min":     pd.Series(dtype=float),
@@ -183,7 +183,7 @@ def analyze(shots_to_reconstruct: list[str],
 					continue
 				shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
 				if los is None:
-					los_match = re.search(r"(tim([0-9]+)|srte)", filename, re.IGNORECASE)
+					los_match = re.search(r"(TIM([0-9]+)|SRTE)", filename, re.IGNORECASE)
 				else:
 					los_match = re.search(rf"({los})", filename, re.IGNORECASE)
 
@@ -199,7 +199,7 @@ def analyze(shots_to_reconstruct: list[str],
 					elif re.search(r"ernie", filename, re.IGNORECASE):
 						detector_index = 1
 					else:
-						detector_match = re.search(r"ip([0-9]+)", filename, re.IGNORECASE)
+						detector_match = re.search(r"IP([0-9]+)", filename, re.IGNORECASE)
 						detector_index = int(detector_match.group(1)) if detector_match is not None else 0
 					# infer the type of particle
 					particle = "xray" if filename.endswith(".h5") else "proton" if energy_cut_mode == "proton" else "deuteron"
@@ -241,7 +241,7 @@ def analyze(shots_to_reconstruct: list[str],
 		else:
 			logging.info(f"Beginning reconstruction for {los.upper()} on shot {shot} (piece #{detector_index}, {etch_time:.1f} hour etch)")
 
-		# load all necessary information from shot_info.csv and los_info.csv
+		# load all necessary information from shot_info.csv and LOS_info.csv
 		try:
 			shot_info = shot_table.loc[shot]
 		except KeyError:
@@ -253,17 +253,17 @@ def analyze(shots_to_reconstruct: list[str],
 		try:
 			los_specific_shot_info = los_table.loc[(shot, los)]
 		except KeyError:
-			logging.error(f"please add shot {shot!r}, LOS {los!r} to the input/los_info.csv file.")
+			logging.error(f"please add shot {shot!r}, LOS {los!r} to the input/LOS_info.csv file.")
 			continue
 		if los_specific_shot_info.ndim != 1:
-			logging.error(f"shot {shot!r}, LOS {los!r} appears more than once in the input/los_info.csv file!")
+			logging.error(f"shot {shot!r}, LOS {los!r} appears more than once in the input/LOS_info.csv file!")
 			continue
 		shot_info = pd.concat([shot_info, los_specific_shot_info])
 
 		# make sure we found all the necessary information
 		for necessary_key in ["filtering", "aperture radius", "aperture arrangement", "magnification"]:
 			if necessary_key not in shot_info:
-				logging.error(f"I couldn't find the {necessary_key} of shot {shot!r} LOS {los!r} in either input/shot_info.csv or input/los_info.csv (I only found {shot_info.index.values}).")
+				logging.error(f"I couldn't find the {necessary_key} of shot {shot!r} LOS {los!r} in either input/shot_info.csv or input/LOS_info.csv (I only found {shot_info.index.values}).")
 				return
 
 		# perform the 2d reconstruccion
@@ -298,7 +298,7 @@ def analyze(shots_to_reconstruct: list[str],
 			continue
 
 		# clear any previous versions of this reconstruccion
-		matching = (summary["shot"] == shot) & (summary["los"] == los) & \
+		matching = (summary["shot"] == shot) & (summary["LOS"] == los) & \
 		           (summary["particle"] == particle) & (summary["detector index"] == detector_index)
 		summary = summary[~matching]
 
@@ -308,7 +308,7 @@ def analyze(shots_to_reconstruct: list[str],
 				result,
 				ignore_index=True)
 
-		summary = summary.sort_values(['shot', 'los', 'particle', 'energy max', 'energy min'])
+		summary = summary.sort_values(['shot', 'LOS', 'particle', 'energy max', 'energy min', 'detector index'])
 		try:
 			summary.to_csv("results/summary.csv", index=False) # save the results to disk
 		except PermissionError:
@@ -497,7 +497,7 @@ def analyze_scan(input_filename: str,
 
 	for statblock in statistics:
 		statblock["shot"] = shot
-		statblock["los"] = los
+		statblock["LOS"] = los.upper()
 		statblock["particle"] = particle
 		statblock["detector index"] = detector_index
 
@@ -1379,8 +1379,8 @@ def load_shot_info(shot: str, los: str,
                    energy_max: Optional[float] = None,
                    filter_str: Optional[str] = None) -> pd.Series:
 	""" load the summary.csv file and look for a row that matches the given criteria """
-	old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'los': str})
-	matching_record = (old_summary["shot"] == shot) & (old_summary["los"] == los)
+	old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'LOS': str})
+	matching_record = (old_summary["shot"] == shot) & (old_summary["LOS"] == los)
 	if energy_min is not None:
 		matching_record &= np.isclose(old_summary["energy min"], energy_min)
 	if energy_max is not None:
@@ -1394,9 +1394,9 @@ def load_shot_info(shot: str, los: str,
 
 
 def load_filtering_info(shot: str, los: str) -> str:
-	""" load the los_info.csv file and grab and parse the filtering for the given LOS on the given shot """
+	""" load the LOS_info.csv file and grab and parse the filtering for the given LOS on the given shot """
 	current_shot = None
-	with open("input/los_info.csv", "r") as f:
+	with open("input/LOS_info.csv", "r") as f:
 		for line in f:
 			header_match = re.fullmatch(r"^([0-9]{5,6}):\s*", line)
 			item_match = re.fullmatch(r"^\s+([0-9]+):\s*([0-9A-Za-z\[\]|/ ]+)\s*", line)
@@ -1406,7 +1406,7 @@ def load_filtering_info(shot: str, los: str) -> str:
 				current_tim, filtering = item_match.groups()
 				if current_shot == shot and current_tim == los:
 					return filtering
-	raise RecordNotFoundError(f"couldn’t find {shot} {los} filtering information in los_info.csv")
+	raise RecordNotFoundError(f"couldn’t find {shot} {los} filtering information in LOS_info.csv")
 
 
 def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],

@@ -35,15 +35,15 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 	temperatures = []
 	labels = []
 	for shot in shots:
-		for los in lines_of_sight:
-			los = los.lower()
-			print(shot, los)
+		for line_of_sight in lines_of_sight:
+			line_of_sight = line_of_sight.lower()
+			print(shot, line_of_sight)
 			# for KoDI, collect all of the emission values from the reconstruction table
-			if los.startswith("tim"):
+			if line_of_sight.startswith("tim"):
 				emissions.append([])
 				energies = []
 				for i, record in reconstruction_table[(reconstruction_table.shot == shot) &
-				                                      (reconstruction_table.los == los)].iterrows():
+				                                      (reconstruction_table.LOS == line_of_sight)].iterrows():
 					if record["particle"] == "xray":
 						emissions[-1].append(record["yield"])
 						energies.append((record["energy min"], record["energy max"]))
@@ -61,7 +61,7 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 
 			# calculate the temperature!
 			temperature, temperature_error = analyze(
-				shot, los, stalk_position, num_stalks, show_plots)
+				shot, line_of_sight, stalk_position, num_stalks, show_plots)
 			# save the space-integrated temperature
 			temperatures.append((temperature, temperature_error))
 

@@ -8,7 +8,7 @@ Code for analyzing penumbral imaging, including PCIS, KoDI, SRTe, and XRIS aka P
 The file structure goes like this:
 - `src` – various Python scripts
     - `main` – Java files for some of the more time-consuming operations
-- `input` – input files (including the files `shots.csv` and `los_info.csv`)
+- `input` – input files (including the files `shot_info.csv` and `LOS_info.csv`)
   - `scans` – CR-39 and image plate scan files (put your scans here!)
   - `tables` – stopping power and cross section tables
 - `results` – outputs from the analysis (including the file `summary.csv` and varius logs)
@@ -22,10 +22,10 @@ The file structure goes like this:
 The typical workflow for doing 2D reconstructions looks like this:
 1. Drop your `.cpsa` or `.h5` scan files into the `input/scans` directory.
    If you have `.hdf5` files, you’ll need to convert them to `.h5` using NASA’s `h4toh5` tool.
-2. Edit the `shot_info.csv` and `los_info.csv` files in the `input` directory to include the shots and lines of sight you want to analyze.
+2. Edit the `shot_info.csv` and `LOS_info.csv` files in the `input` directory to include the shots and lines of sight you want to analyze.
    The `shot_info.csv` file should have "shot", "standoff", "magnification", "aperture radius", "aperture spacing", and "aperture arrangement" columns,
-   while `los_info.csv` should have "shot", "tim", and "filtering" columns.
-   You may instead put "standoff", "magnification", "aperture radius", "aperture spacing", and "aperture arrangement" in `los_info.csv`,
+   while `LOS_info.csv` should have "shot", "tim", and "filtering" columns.
+   You may instead put "standoff", "magnification", "aperture radius", "aperture spacing", and "aperture arrangement" in `LOS_info.csv`,
    for example if you have different magnifications on different lines of sight.
    - The "shot" column should contain the shot number (or any other identifying filename substring) of each implosion you have data for.
    - The "standoff" is the distance from the aperture(s) to TCC in centimeters.
@@ -37,10 +37,10 @@ The typical workflow for doing 2D reconstructions looks like this:
    - The "aperture arrangement" is the name of the shape of the aperture array.
      Supported options are "single" for a single aperture, "hex" for an equilateral hexagonal grid like KoDI uses,
      "srte" for the particular skew hexagonal grid that SRTe has, and "square" for a square grid like DIXI has.
-   - The "los" is the name of the line of sight on which the image was taken.
-     Supported options include "tim1", "tim2", "tim3", "tim4", "tim5", "tim6", and "srte".
-     When the TIM is "srte", the "aperture radius", "aperture spacing" and "aperture arrangement" are all overwritten with SRTe’s fixed aperture array specifications
-     (so you can put those three in "shot_info.csv" even when a shot uses both KoDI and SRTe).
+   - The "LOS" is the name of the line of sight on which the image was taken.
+     Supported options include "TIM1", "TIM2", "TIM3", "TIM4", "TIM5", "TIM6", and "SRTE".
+     When the TIM is "SRTE", the "aperture radius", "aperture spacing" and "aperture arrangement" are all overwritten with SR-TE’s fixed aperture array specifications
+     (so you can put those three in "shot_info.csv" even when a shot uses both KoDI and SR-TE).
    - The "filtering" is a string specifying the makeup of the detector stack.
      It should be given as a list of thicknesses (in micrometers) and materials, from TCC outward.
      CR39 is denoted "[]" and image plates are denoted "|".

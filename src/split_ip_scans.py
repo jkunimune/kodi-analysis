@@ -28,7 +28,7 @@ SCAN_DIRECTORY = "input/scans"
 
 def main():
 	# load the general shot info
-	los_table = pd.read_csv("input/los_info.csv", dtype={"shot": str}, skipinitialspace=True)
+	los_table = pd.read_csv("input/LOS_info.csv", dtype={"shot": str}, skipinitialspace=True)
 
 	# then search for scan files (most recent first)
 	for subdirectory, foldernames, filenames in os.walk(SCAN_DIRECTORY):
@@ -92,11 +92,11 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 	tim_set: list[str] = []
 	num_ip_positions: list[int] = []
 	for _, tim in los_table[los_table.shot == shot].iterrows():
-		if tim.los != "srte":
-			tim_set.append(tim.los)
+		if tim.LOS != "srte":
+			tim_set.append(tim.LOS)
 			num_ip_positions.append(tim.filtering.count("|"))
 	if len(tim_set) == 0:
-		raise KeyError(f"please add shot {shot} to the input/scans/los_info.csv file.")
+		raise KeyError(f"please add shot {shot} to the input/scans/LOS_info.csv file.")
 
 	# then split the image along those lines
 	cut_positions = np.round(grid.x.get_index(sorted(cut_positions))).astype(int)
