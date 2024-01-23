@@ -47,7 +47,7 @@ def main():
 def split_ip_scan(filepath: str, los_table: DataFrame):
 	shot = re.search(r"s([0-9]+)", filepath, re.IGNORECASE).group(1)
 	if re.search(r"_(pcis|kodi)[0-9]", filepath):
-		scan_index = int(re.search(r"_pcis([0-9+])", filepath, re.IGNORECASE).group(1)) - 1
+		scan_index = int(re.search(r"_(pcis|kodi)([0-9+])", filepath, re.IGNORECASE).group(2)) - 1
 	else:
 		scan_index = 0
 
