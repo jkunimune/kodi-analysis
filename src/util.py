@@ -115,11 +115,18 @@ def print_filtering(filter_stack: list[Filter]) -> str:
 
 def name_filter_stacks(filter_stacks: list[list[Filter]]) -> list[str]:
 	""" find a human-readable way to uniquely identify each of a set of filter stacks to a human """
-	for i in range(min(len(filter_stack) for filter_stack in filter_stacks)):
-		filters = [filter_stack[i] for filter_stack in filter_stacks]
-		if all(filtre != filters[-1] for filtre in filters[:-1]):
-			return [f"{thickness:.0f}μm {material}" for thickness, material in filters]
-	raise ValueError("I can’t find a way to succinctly describe these filter stacks because they’re too similar.")
+	if len(filter_stacks) == 0:
+		return []
+	# if there's only one, no label is necessary
+	elif len(filter_stacks) == 1:
+		return ["data"]
+	else:
+		# look thru the stacks from top to bottom for a layer where they all differ
+		for i in range(min(len(filter_stack) for filter_stack in filter_stacks)):
+			filters = [filter_stack[i] for filter_stack in filter_stacks]
+			if all(filtre != filters[-1] for filtre in filters[:-1]):
+				return [f"{thickness:.0f}μm {material}" for thickness, material in filters]
+		raise ValueError("I can’t find a way to succinctly describe these filter stacks because they’re too similar.")
 
 
 def bin_centers(bin_edges: np.ndarray):
