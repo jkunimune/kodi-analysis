@@ -583,7 +583,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 			try:
 				data_polygon = user_defined_region(
 					input_file, default=old_data_polygon,
-					max_contrast=max_contrast,
+					max_contrast=35.,
 					title=f"Select the {section_name} region, then close this window.")
 				if len(data_polygon) < 3:
 					data_polygon = None
@@ -603,7 +603,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 		# find the centers and spacings of the penumbral images
 		try:
 			centers, grid_transform = find_circle_centers(
-				input_file, particle, max_contrast,
+				input_file, particle, 35.,
 				M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
 				los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS, show_plots)
 		except DataError as e:
