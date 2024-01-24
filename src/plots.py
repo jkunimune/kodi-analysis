@@ -234,6 +234,9 @@ def plot_source(filename: str, show: bool,
 	    :param projected_stalk: the stalk direction unit vector, given as (x, y, z)
 	    :param num_stalks: the number of stalks to draw: 0, 1, or 2
 	"""
+	if color_index >= num_colors:
+		raise ValueError(f"I was only expecting to have to color-code {num_colors} sources, so why am I being told "
+		                 f"this is source[{color_index}] (indexing from zero)?")
 	# sometimes this is all nan, but we don't need to plot it
 	if np.all(np.isnan(source)):
 		return
@@ -250,12 +253,12 @@ def plot_source(filename: str, show: bool,
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
 	plt.imshow(source.T, extent=source_plane.extent, origin="lower",
-	           cmap=choose_colormaps(particle, num_colors)[int(color_index)],
+	           cmap=choose_colormaps(particle, num_colors)[color_index],
 	           vmin=0, interpolation="bilinear")
 
 	if PLOT_SOURCE_CONTOUR:
 		plt.contour(source_plane.x.get_bins(), source_plane.y.get_bins(), source.T,
-		            levels=np.linspace(0, np.max(source), 6, endpoint=False),
+		            levels=np.linspace(0, np.max(source), 6, endpoint=False)[1:],
 		            colors='#eee', linestyles='solid', linewidths=1)
 	if PLOT_OFFSET:
 		if projected_offset is not None:
