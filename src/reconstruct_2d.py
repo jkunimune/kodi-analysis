@@ -1072,7 +1072,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 
 	# or rebin the cartesian bins in radius
 	elif type(scan) is Image:  # if it's an HDF5 file
-		scan_plane, NC = scan.domain, scan.values
+		scan_plane, NC = scan.domain, np.copy(scan.values)
 		XC, YC = scan_plane.get_pixels()
 		NC[~inside_polygon(region, XC, YC)] = 0
 		interpolator = interpolate.RegularGridInterpolator(
