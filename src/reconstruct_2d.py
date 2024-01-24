@@ -1734,15 +1734,16 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 		for x0, y0 in aperture_array.positions(grid_shape, s_nominal, grid_transform,
 		                                       r_true, full_domain.diagonal, grid_x0, grid_y0):
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-			         "#063", linestyle="solid", linewidth=1.2)
+			         "#063", linestyle="solid", linewidth=1.2, zorder=20)
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-			         "#3e7", linestyle="dashed", linewidth=1.2)
+			         "#3e7", linestyle="dashed", linewidth=1.2, zorder=20)
 		plt.scatter(x_circles[valid], y_circles[valid],
-		            np.where(circle_fullness[valid], 30, 5), c="#8ae", marker="x")
+		            np.where(circle_fullness[valid], 30, 5),
+		            c="#8ae", marker="x", zorder=30)
 		plt.contour(crop_domain.x.get_bins(), crop_domain.y.get_bins(), N_crop.T,
-		            levels=[contour_level], colors="k", linewidths=.5)
+		            levels=[contour_level], colors="k", linewidths=.5, zorder=10)
 		plt.fill([x for x, y in region], [y for x, y in region],
-		         facecolor="none", edgecolor="k", linewidth=.5)
+		         facecolor="none", edgecolor="k", linewidth=.5, zorder=10)
 		plt.title("Located apertures marked with exes (close to confirm)")
 		plt.xlim(min(np.min(x_circles), crop_domain.x.minimum),
 		         max(np.max(x_circles), crop_domain.x.maximum))
