@@ -603,7 +603,8 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 		# find the centers and spacings of the penumbral images
 		try:
 			centers, grid_transform = find_circle_centers(
-				input_file, max_contrast, M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
+				input_file, particle, max_contrast,
+				M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
 				los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS, show_plots)
 		except DataError as e:
 			raise DataError(f"I couldn't fit the circles to infer the magnification becuase {e}  this might mean that "
@@ -1569,12 +1570,15 @@ def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArra
 	return x_fit, y_fit, total_error  # type: ignore
 
 
-def find_circle_centers(scan: Union[Scan, Image], max_contrast: float, r_nominal: float, s_nominal: float,
+def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: float,
+                        r_nominal: float, s_nominal: float,
                         grid_shape: str, grid_parameters: Optional[GridParameters],
                         region: list[Point], trust_grid: bool, show_plots: bool,
                         ) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param scan: the scanfile containing the data to be analyzed
+	    :param particle: the type of radiation being detected, for the purposes of statistics: "xray" for Gaussian
+	                     error and "proton" or "deuteron" for Poisson error
 	    :param max_contrast: the maximum track contrast level to consider (%)
 	    :param r_nominal: the expected radius of the circles
 	    :param s_nominal: the expected spacing between the circles. a positive number means the
@@ -1659,11 +1663,16 @@ def find_circle_centers(scan: Union[Scan, Image], max_contrast: float, r_nominal
 						x0, y0 = x, y
 			scan_scale /= 6
 
-	# now that's squared away, find the largest 50% contures
+	# now that's squared away, find the largest contures
 	R_pixels = np.hypot(X_pixels - x0, Y_pixels - y0)
 	max_density = np.nanmean(N_crop, where=R_pixels < .5*r_nominal)
 	min_density = np.nanmean(N_crop, where=R_pixels > 1.5*r_nominal)
-	contour_level = .2*max_density + .8*min_density
+	if particle == "xray":
+		# for x-rays, the 50% conture is the cleanest
+		contour_level = .5*max_density + .5*min_density
+	else:
+		# for particles, the 20% conture is better since there's more noise at higher densities
+		contour_level = .2*max_density + .8*min_density
 	assert isfinite(contour_level)
 	contours = measure.find_contours(N_crop, contour_level)
 	if len(contours) == 0:
