@@ -413,6 +413,7 @@ def analyze_scan(input_filename: str,
 					shot, los, particle, rA, sA, grid_shape,
 					M_gess, L1,
 					etch_time,
+					num_detectors,
 					f"{detector_index}{filter_section_index}",
 					filter_section_name,
 					filter_stack,
@@ -509,7 +510,8 @@ def analyze_scan_section(input_file: Union[Scan, Image],
                          rA: float, sA: float, grid_shape: str,
                          M_gess: float, L1: float,
                          etch_time: Optional[float],
-                         section_index: str, section_name: str, filter_stack: list[Filter],
+                         num_detectors: int, section_index: str,
+                         section_name: str, filter_stack: list[Filter],
                          grid_parameters: Optional[GridParameters],
                          source_plane: Optional[Grid],
                          charged_particle_energy_cuts: list[Interval],
@@ -526,6 +528,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 	    :param L1: the distance between the aperture and the implosion (cm)
 	    :param M_gess: the nominal radiography magnification (L1 + L2)/L1
 	    :param etch_time: the length of time the CR39 was etched in hours, or None if it's not CR39
+	    :param num_detectors: the total number of detectors, for color-selection purposes
 	    :param section_index: a string that uniquely identifies this detector and filtering section, for a line-of-sight
 	                          that has multiple detectors of the same type
 	    :param section_name: a human-readable string that uniquely identifies this filtering section to a human
@@ -645,7 +648,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 				rA, sA, grid_shape, M, L1,
 				etch_time, filter_stack, data_polygon,
 				grid_transform/grid_mean_scale, centers,
-				f"{section_index}{energy_cut_index}", len(energy_cuts),
+				f"{section_index}{energy_cut_index}", num_detectors, len(energy_cuts),
 				energy_min, energy_max, max_contrast,
 				source_plane, skip_reconstruction, show_plots)
 		except (DataError, FilterError, RecordNotFoundError) as e:
@@ -675,7 +678,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
                              M: float, L1: float, etch_time: Optional[float],
                              filter_stack: list[Filter], data_polygon: list[Point],
                              grid_transform: NDArray[float], centers: list[Point],
-                             cut_index: str, num_colors: int,
+                             cut_index: str, num_detectors: int, num_energy_cuts: int,
                              energy_min: float, energy_max: float,
                              max_contrast: float,
                              output_plane: Optional[Grid],
@@ -703,7 +706,8 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
         :param centers: the list of center locations of penumbra that have been identified as good
         :param cut_index: a string that uniquely identifies this detector, filtering section, and energy cut, for a
                           line-of-sight that has multiple detectors of the same type
-        :param num_colors: the approximate total number of cuts of this particle, for the purposes of choosing a plot color
+        :param num_detectors: the number of detectors for this particle, for the purposes of choosing a plot color
+        :param num_energy_cuts: the number of cuts of this particle, for the purposes of choosing a plot color
         :param energy_min: the minimum energy at which to look (MeV for deuterons, keV for x-rays)
         :param energy_max: the maximum energy at which to look (MeV for deuterons, keV for x-rays)
 	    :param max_contrast: the maximum track contrast level at which to look if this is CR39 (%)
@@ -1003,8 +1007,10 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 	# save and plot the results
 	if particle == "xray":
 		color_index = int(cut_index[0])  # we’ll redo the colors later, so just use a heuristic here
+		num_colors = num_detectors
 	else:
-		color_index = int(cut_index[-1])
+		color_index = int(cut_index[2])
+		num_colors = num_energy_cuts
 	plot_source(f"{shot}/{los}-{particle}-{cut_index}",
 	            show_plots,
 	            output_plane, output, energy_min, energy_max,
