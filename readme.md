@@ -21,7 +21,7 @@ The file structure goes like this:
 
 The typical workflow for doing 2D reconstructions looks like this:
 1. Drop your `.cpsa` or `.h5` scan files into the `input/scans` directory.
-   If you have `.hdf5` files, you’ll need to convert them to `.h5` using NASA’s `h4toh5` tool.
+   If you have `.hdf` files, you’ll need to convert them to `.h5` using NASA’s `h4toh5` tool.
 2. Edit the `shot_info.csv` and `LOS_info.csv` files in the `input` directory to include the shots and lines of sight you want to analyze.
    The `shot_info.csv` file should have "shot", "standoff", "magnification", "aperture radius", "aperture spacing", and "aperture arrangement" columns,
    while `LOS_info.csv` should have "shot", "tim", and "filtering" columns.
