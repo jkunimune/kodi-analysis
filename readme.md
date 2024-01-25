@@ -1,7 +1,7 @@
 KoDI analysis
 =============
 
-Code for analyzing penumbral imaging, including PCIS, KoDI, SRTe, and XRIS aka PIX aka x-ray KoDI.
+Code for analyzing penumbral imaging, including PCIS, KoDI, SRTE, and XRIS aka PIX aka x-ray KoDI.
 
 # File structure
 
@@ -36,7 +36,7 @@ The typical workflow for doing 2D reconstructions looks like this:
      When there is only one aperture, this number doesn’t matter and may be set to 0.
    - The "aperture arrangement" is the name of the shape of the aperture array.
      Supported options are "single" for a single aperture, "hex" for an equilateral hexagonal grid like KoDI uses,
-     "srte" for the particular skew hexagonal grid that SRTe has, and "square" for a square grid like DIXI has.
+     "srte" for the particular skew hexagonal grid that SR-TE has, and "square" for a square grid like DIXI has.
    - The "LOS" is the name of the line of sight on which the image was taken.
      Supported options include "TIM1", "TIM2", "TIM3", "TIM4", "TIM5", "TIM6", and "SRTE".
      When the TIM is "SRTE", the "aperture radius", "aperture spacing" and "aperture arrangement" are all overwritten with SR-TE’s fixed aperture array specifications
