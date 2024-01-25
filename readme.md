@@ -1,7 +1,7 @@
 KoDI analysis
 =============
 
-Code for analyzing penumbral imaging, including PCIS, KoDI, SRTe, and XRIS aka PIX aka x-ray KoDI.
+Code for analyzing penumbral imaging, including PCIS, KoDI, SRTE, and XRIS aka PIX aka x-ray KoDI.
 
 # File structure
 
@@ -21,11 +21,11 @@ The file structure goes like this:
 
 The typical workflow for doing 2D reconstructions looks like this:
 1. Drop your `.cpsa` or `.h5` scan files into the `input/scans` directory.
-   If you have `.hdf5` files, you’ll need to convert them to `.h5` using NASA’s `h4toh5` tool.
+   If you have `.hdf` files, you’ll need to convert them to `.h5` using NASA’s `h4toh5` tool.
 2. Edit the `shot_info.csv` and `LOS_info.csv` files in the `input` directory to include the shots and lines of sight you want to analyze.
    The `shot_info.csv` file should have "shot", "standoff", "magnification", "aperture radius", "aperture spacing", and "aperture arrangement" columns,
-   while `LOS_info.csv` should have "shot", "tim", and "filtering" columns.
-   You may instead put "standoff", "magnification", "aperture radius", "aperture spacing", and "aperture arrangement" in `LOS_info.csv`,
+   while `LOS_info.csv` should have "shot", "LOS", and "filtering" columns.
+   You may instead put "standoff", "magnification", "aperture radius", "aperture spacing", and "aperture arrangement" in `LOS_info.csv` if it varies from LOS to LOS,
    for example if you have different magnifications on different lines of sight.
    - The "shot" column should contain the shot number (or any other identifying filename substring) of each implosion you have data for.
    - The "standoff" is the distance from the aperture(s) to TCC in centimeters.
@@ -36,7 +36,7 @@ The typical workflow for doing 2D reconstructions looks like this:
      When there is only one aperture, this number doesn’t matter and may be set to 0.
    - The "aperture arrangement" is the name of the shape of the aperture array.
      Supported options are "single" for a single aperture, "hex" for an equilateral hexagonal grid like KoDI uses,
-     "srte" for the particular skew hexagonal grid that SRTe has, and "square" for a square grid like DIXI has.
+     "srte" for the particular skew hexagonal grid that SR-TE has, and "square" for a square grid like DIXI has.
    - The "LOS" is the name of the line of sight on which the image was taken.
      Supported options include "TIM1", "TIM2", "TIM3", "TIM4", "TIM5", "TIM6", and "SRTE".
      When the TIM is "SRTE", the "aperture radius", "aperture spacing" and "aperture arrangement" are all overwritten with SR-TE’s fixed aperture array specifications
