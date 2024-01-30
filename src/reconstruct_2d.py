@@ -298,7 +298,7 @@ def analyze(shots_to_reconstruct: list[str],
 			continue
 
 		# clear any previous versions of this reconstruccion
-		matching = (summary["shot"] == shot) & (summary["LOS"] == los) & \
+		matching = (summary["shot"] == shot) & (summary["LOS"] == los.upper()) & \
 		           (summary["particle"] == particle) & (summary["detector index"] == detector_index)
 		summary = summary[~matching]
 
@@ -1394,10 +1394,12 @@ def load_shot_info(shot: str, los: str,
 		matching_record &= np.isclose(old_summary["energy max"], energy_max)
 	if filter_str is not None:
 		matching_record &= (old_summary["filtering"] == filter_str)
-	if np.any(matching_record):
+	if np.count_nonzero(matching_record) == 1:
 		return old_summary[matching_record].iloc[-1]
-	else:
+	elif np.count_nonzero(matching_record) == 0:
 		raise RecordNotFoundError(f"couldn’t find {shot} {los} \"{filter_str}\" {energy_min}–{energy_max} cut in summary.csv")
+	else:
+		raise DataError(f"there were multiple entries in summary.csv for {shot} {los} \"{filter_str}\" {energy_min}–{energy_max}.  how did that happen‽")
 
 
 def load_filtering_info(shot: str, los: str) -> str:
