@@ -1021,9 +1021,28 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 	save_and_plot_overlaid_penumbra(f"{shot}/{los}-{particle}-{cut_index}", show_plots,
 	                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
 
+	# estimate a P0 error bar
+	r_source, (_, _), (_, _) = shape_parameters(
+		output_plane, output, contour_level=.5)
+	if particle == "xray":
+		δ_PSF = 0
+		statistics = inf
+	else:
+		if Q == 0:
+			δ_PSF = 0
+			r_PSF = M*rA
+		else:
+			r_test, f_test = electric_field.get_modified_point_spread(
+				M*rA, Q, energy_min=energy_min, energy_max=energy_max)
+			δ_PSF = -np.max(f_test)/np.min(np.gradient(f_test, r_test))/2
+			r_PSF = r_test[np.argmin(np.gradient(f_test, r_test))]
+		r_image = np.hypot(*image_plane.get_pixels())
+		δ_image = sqrt(((M - 1)*r_source)**2 + δ_PSF**2)
+		statistics = np.sum(reconstructed_image, where=(r_image > r_PSF - δ_image) & (r_image < r_PSF + δ_image))
+
 	statblock = {"Q": Q, "dQ": 0.,
 	             "yield": yeeld, "dyield": 0.,
-	             "P0 magnitude": p0/1e-4, "dP0 magnitude": 0.,
+	             "P0 magnitude": p0/1e-4, "dP0 magnitude": (r_source**2 + (δ_PSF/(M - 1))**2)/r_source*statistics**(-1/2)*p0/r_source/1e-4,
 	             "P2 magnitude": p2/1e-4, "dP2 magnitude": 0.,
 	             "P2 angle": degrees(θ2)}
 
