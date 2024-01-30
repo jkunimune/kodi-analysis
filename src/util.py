@@ -439,9 +439,9 @@ def fit_ellipse(grid: Grid, f: NDArray[float], contour_level: Optional[float] = 
 		for i, path in enumerate(contour_paths):
 			r_contour = np.hypot(path[:, 0] - f.shape[0]/2, path[:, 1] - f.shape[1]/2)
 			R_domain = min(f.shape[0]/2, f.shape[1]/2)
-			if np.all(r_contour > R_domain - 5):  # avoid contours that are close to the edge of the domain
+			if np.all(r_contour > R_domain - 10):  # avoid contours that are close to the edge of the domain
 				sussiness = 2
-			elif np.any(r_contour > R_domain - 5):
+			elif np.any(r_contour > R_domain - 10):
 				sussiness = 1
 			else:
 				sussiness = 0
