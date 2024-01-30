@@ -248,6 +248,7 @@ def plot_source(filename: str, show: bool,
 	object_size, (r1, θ1), _ = shape_parameters(source_plane, source, contour_level=.17)
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
 	x0, y0 = r1*cos(θ1), r1*sin(θ1)
+	assert isfinite(x0) and isfinite(y0), f"{r1}, {θ1}"
 
 	# plot the reconstructed source image
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
