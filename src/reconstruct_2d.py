@@ -1290,6 +1290,8 @@ def cut_cr39_scan(scan: Scan,
 	scan.apply_cuts()
 	x_tracks = scan.trackdata_subset[:, 0]
 	y_tracks = scan.trackdata_subset[:, 1]
+	for i in range(4):
+		scan.remove_cut(0)
 	if show_plots:
 		max_diameter_to_plot = np.quantile(d_tracks, .999)
 		max_contrast_to_plot = c_tracks.max()
