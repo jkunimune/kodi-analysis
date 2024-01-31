@@ -187,7 +187,7 @@ def analyze(shots_to_reconstruct: list[str],
 				else:
 					los_match = re.search(rf"({los})", filename, re.IGNORECASE)
 
-				if os.path.splitext(filename)[-1] in supported_filetypes and "_alphas" not in filename \
+				if os.path.splitext(filename)[-1] in supported_filetypes and "_alphas" not in filename.lower() \
 						and shot_match and (los_match or los is None):
 					# extract the line of sight from the filename
 					if los_match is None:
