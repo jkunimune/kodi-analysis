@@ -913,8 +913,8 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 			reach = signal.fftconvolve(max_source, penumbral_kernel, mode='full')
 			lower_cutoff = .005*np.max(penumbral_kernel)
 			upper_cutoff = .98*np.max(penumbral_kernel)
-			within_penumbra = reach < lower_cutoff
-			without_penumbra = reach > upper_cutoff
+			within_penumbra = reach > upper_cutoff
+			without_penumbra = reach < lower_cutoff
 		else:
 			logging.warning(f"it would be computationally inefficient to compute the reach of these "
 			                f"{source_plane.shape*penumbral_kernel.size} data, so I'm setting the data region to"
