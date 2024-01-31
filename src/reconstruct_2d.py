@@ -56,7 +56,7 @@ SHOW_POINT_SPREAD_FUNCCION = False
 SHOW_GRID_FITTING_DEBUG_PLOTS = False
 
 PROTON_ENERGY_CUTS = [(0, inf)]
-NORMAL_DEUTERON_ENERGY_CUTS = [(9, 12.5), (0, 6), (6, 9)] # (MeV) (emitted, not detected)
+NORMAL_DEUTERON_ENERGY_CUTS = [(10, 12.5), (0, 6), (6, 10)] # (MeV) (emitted, not detected)
 FINE_DEUTERON_ENERGY_CUTS = [(11, 12.5), (2, 3.5), (3.5, 5), (5, 6.5), (6.5, 8), (8, 9.5), (9.5, 11)] # (MeV) (emitted, not detected)
 
 FORCE_LARGE_SOURCE_DOMAIN = True  # whether to enable a source domain larger than the aperture (experimental)
