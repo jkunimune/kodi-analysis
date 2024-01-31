@@ -8,6 +8,7 @@ import sys
 import time
 import warnings
 from argparse import ArgumentParser
+from copy import copy
 from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degrees, atan2
 from typing import Any, Optional, Union
 
@@ -398,8 +399,8 @@ def analyze_scan(input_filename: str,
 		raise ValueError(f"I don't know how to read {os.path.splitext(input_filename)[1]} files")
 
 	# then iterate thru each filtering section
-	grid_parameters, source_plane = None, None
-	source_stack: list[NDArray[float]] = []
+	grid_parameters, source_domain = None, None
+	sources: list[NDArray[float]] = []
 	statistics: list[dict[str, Any]] = []
 	filter_strings: list[str] = []
 	energy_bounds: list[Interval] = []
@@ -407,7 +408,7 @@ def analyze_scan(input_filename: str,
 	for filter_section_index, filter_section_name, filter_stack in filter_sections:
 		# perform the analysis on each section
 		try:
-			grid_parameters, source_plane, filter_section_sources, filter_section_statistics =\
+			grid_parameters, source_domain, filter_section_sources, filter_section_statistics =\
 				analyze_scan_section(
 					input_file,
 					shot, los, particle, rA, sA, grid_shape,
@@ -418,37 +419,40 @@ def analyze_scan(input_filename: str,
 					filter_section_name,
 					filter_stack,
 					grid_parameters,
-					source_plane,
+					source_domain,
 					charged_particle_energy_cuts,
 					skip_reconstruction, show_plots)
 		except DataError as e:
 			logging.warning(e)
 		else:
-			source_stack += filter_section_sources
+			sources += filter_section_sources
 			statistics += filter_section_statistics
 			for energy_cut_index, statblock in enumerate(filter_section_statistics):
 				filter_strings.append(print_filtering(filter_stack))
 				energy_bounds.append((statblock["energy min"], statblock["energy max"]))
 				indices.append(f"{detector_index}{filter_section_index}{energy_cut_index}")
 
-	if len(source_stack) == 0:
+	if len(sources):
 		raise DataError("well, that was pointless")
 
 	# sort the results by energy if you can
 	order = np.argsort([bound[0] for bound in energy_bounds])
-	source_stack = [source_stack[i] for i in order]
+	sources = [sources[i] for i in order]
 	statistics = [statistics[i] for i in order]
 	filter_strings = [filter_strings[i] for i in order]
 	energy_bounds = [energy_bounds[i] for i in order]
 	indices = [indices[i] for i in order]
 
+	# collate the sources into a single multi-channel image
+	source_stack = Image(source_domain, np.array(sources))
+
 	# finally, save the combined image set
 	save_as_hdf5(f"results/data/{shot}/{los}-{particle}-{detector_index}-source",
 	             filtering=filter_strings,
 	             energy=energy_bounds,
-	             x=source_plane.x.get_bins()/1e-4,
-	             y=source_plane.y.get_bins()/1e-4,
-	             images=np.transpose(source_stack, (0, 2, 1))*1e-4**2,  # save it with (y,x) indexing, not (i,j)
+	             x=source_stack.x.get_bins()/1e-4,
+	             y=source_stack.y.get_bins()/1e-4,
+	             images=np.transpose(source_stack.values, (0, 2, 1))*1e-4**2,  # save it with (y,x) indexing, not (i,j)
 	             etch_time=etch_time if etch_time is not None else nan)
 
 	# compute the additional lines to be put on the plots (checking in case they’re absent)
@@ -464,17 +468,17 @@ def analyze_scan(input_filename: str,
 		projected_flow = None
 
 	# and replot each of the individual sources in the correct color
-	for cut_index in range(len(source_stack)):
+	for cut_index in range(source_stack.num_channels):
 		if particle == "proton" or particle == "deuteron":
 			color_index = int(indices[cut_index][-1])
 			num_colors = len(charged_particle_energy_cuts)
 		else:
 			num_sections = len(filter_stacks)
-			num_missing_sections = num_sections - len(source_stack)
+			num_missing_sections = num_sections - source_stack.num_channels
 			color_index = detector_index*num_sections + cut_index + num_missing_sections
 			num_colors = num_detectors*num_sections
 		plot_source(f"{shot}/{los}-{particle}-{indices[cut_index]}",
-		            source_plane, source_stack[cut_index],
+		            source_stack[cut_index],
 		            energy_bounds[cut_index][0], energy_bounds[cut_index][1],
 		            color_index=color_index, num_colors=num_colors,
 		            projected_offset=projected_offset,
@@ -484,9 +488,9 @@ def analyze_scan(input_filename: str,
 		plt.close("all")
 
 	# if can, plot some plots that overlay the sources in the stack
-	if len(source_stack) > 1:
-		dxL, dyL = center_of_mass(source_plane, source_stack[0])
-		dxH, dyH = center_of_mass(source_plane, source_stack[-1])
+	if source_stack.num_channels > 1:
+		dxL, dyL = center_of_mass(source_stack[0])
+		dxH, dyH = center_of_mass(source_stack[-1])
 		dx, dy = dxH - dxL, dyH - dyL
 		logging.info(f"Δ = {hypot(dx, dy)/1e-4:.1f} μm, θ = {degrees(atan2(dx, dy)):.1f}")
 		for statblock in statistics:
@@ -494,7 +498,7 @@ def analyze_scan(input_filename: str,
 			statblock["separation angle"] = degrees(atan2(dy, dx))
 
 		plot_overlaid_contores(
-			f"{shot}/{los}-{particle}-{detector_index}", source_plane, source_stack, contour,
+			f"{shot}/{los}-{particle}-{detector_index}", source_stack, contour,
 			projected_offset, projected_flow, projected_stalk, num_stalks)
 
 	for statblock in statistics:
@@ -546,7 +550,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
 	                       user to close them, rather than only saving them to disc and silently proceeding.
 	    :return: 0. the image array parameters that we fit to the centers,
-	             1. the Grid that ended up being used for the output,
+	             1. the Grid that ended up being used for the output if any,
 	             2. the list of reconstructed sources, and
 	             3. a list of dictionaries containing various measurables for the reconstruction in each energy bin.
 	"""
@@ -640,12 +644,12 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 		logging.info(f"detected an aperture array skewness of {degrees(arccos(1/(1 + grid_skew))):.1f}°")
 
 	# now go thru each energy cut and compile the results
-	source_stack: list[NDArray[float]] = []
+	sources: list[NDArray[float]] = []
 	results: list[dict[str, Any]] = []
 	for energy_min, energy_max in energy_cuts:
 		energy_cut_index = sorted(energy_cuts).index((energy_min, energy_max))
 		try:
-			source_plane, source, statblock = analyze_scan_section_cut(
+			source, statblock = analyze_scan_section_cut(
 				input_file, shot, los, particle,
 				rA, sA, grid_shape, M, L1,
 				etch_time, filter_stack, data_polygon,
@@ -665,16 +669,16 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 			statblock["grid angle"] = degrees(grid_angle)
 			statblock["grid skew"] = grid_skew
 			statblock["grid skew angle"] = degrees(grid_skew_angle)
-			source_stack.append(source)
+			sources.append(source.values)
 			results.append(statblock)
 
 	if len(results) > 0:  # update the grid iff any of these analyses worked
 		grid_parameters = new_grid_parameters
 
-	return grid_parameters, source_plane, source_stack, results
+	return grid_parameters, source_plane, sources, results
 
 
-def analyze_scan_section_cut(input_file: Union[Scan, Image],
+def analyze_scan_section_cut(scan: Union[Scan, Image],
                              shot: str, los: str, particle: str,
                              rA: float, sA: float, grid_shape: str,
                              M: float, L1: float, etch_time: Optional[float],
@@ -685,10 +689,10 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
                              max_contrast: float,
                              output_plane: Optional[Grid],
                              skip_reconstruction: bool, show_plots: bool
-                             ) -> tuple[Grid, NDArray[float], dict[str, Any]]:
+                             ) -> tuple[Image, dict[str, Any]]:
 	""" reconstruct the penumbral image contained in a single energy cut in a single filtering
 	    region of a single scan file.
-	    :param input_file: the CR39 or image plate scan result object to analyze
+	    :param scan: the CR39 or image plate scan result object to analyze
 	    :param shot: the shot number/name
 	    :param los: the name of the line of sight (e.g. "tim2", "srte")
 	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for an image plate)
@@ -720,8 +724,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
 	                       user to close them, rather than only saving them to disc and silently proceeding.
-	    :return: the coordinate basis we ended up using for the source map, the source map, and a dict that contains
-	             some miscellaneus statistics for the source
+	    :return: the source map, and a dict that contains some miscellaneus statistics for the source
 	"""
 	# switch out some values depending on whether these are xrays or deuterons
 	if particle == "proton" or particle == "deuteron":
@@ -773,7 +776,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 			logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
 			# check the statistics, if these are deuterons
 			num_tracks, _, _, _, _ = count_tracks_in_scan(
-				input_file, diameter_min, diameter_max, max_contrast,
+				scan, diameter_min, diameter_max, max_contrast,
 				SHOW_DIAMETER_CUTS)
 			logging.info(f"  found {num_tracks:.4g} tracks in the cut")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
@@ -781,7 +784,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
-			input_file, f"{shot}/{los}-{particle}-{cut_index}",
+			scan, f"{shot}/{los}-{particle}-{cut_index}",
 			diameter_min, diameter_max,
 			energy_min, energy_max, max_contrast, M*rA, M*sA,
 			centers, data_polygon) # TODO: infer rA, as well?
@@ -803,66 +806,67 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		else:
 			resolution = X_RAY_RESOLUTION
 		_, angle, _, _ = decompose_2x2_into_intuitive_parameters(grid_transform)
-		image_plane = Grid.from_size(radius=r_max, max_bin_width=(M - 1)*resolution, odd=True)
 
-		local_images = np.empty((len(centers),) + image_plane.shape, dtype=float)
+		local_image_domain = Grid.from_size(
+			radius=r_max, max_bin_width=(M - 1)*resolution, odd=True)
+		local_images = Image(
+			local_image_domain, np.empty((len(centers),) + local_image_domain.shape))
 
 		# if it's a cpsa file
-		if type(input_file) is Scan:
+		if type(scan) is Scan:
 			x_tracks, y_tracks = cut_cr39_scan(
-				input_file, diameter_min, diameter_max, max_contrast)  # load all track coordinates
+				scan, diameter_min, diameter_max, max_contrast)  # load all track coordinates
 			for k, (x_center, y_center) in enumerate(centers):
 				# center them on the penumbra and rotate them if the aperture grid appears rotated
 				x_relative, y_relative = shift_and_rotate(x_tracks, y_tracks,
 				                                          -x_center, -y_center, -angle)
-				local_images[k, :, :] = np.histogram2d(x_relative, y_relative,
-				                                       bins=(image_plane.x.get_edges(),
-				                                             image_plane.y.get_edges()))[0]
+				local_images.values[k, :, :] = np.histogram2d(x_relative, y_relative,
+				                                              bins=(local_images.x.get_edges(),
+				                                                    local_images.y.get_edges()))[0]
 
-		elif type(input_file) is Image: # if it's a HDF5 file
-			scan_plane, scan = input_file.domain, input_file.values
-			if scan_plane.pixel_width > image_plane.pixel_width:
-				logging.warning(f"The scan resolution of this image plate scan ({scan_plane.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
+		elif type(scan) is Image: # if it's a HDF5 file
+			if scan.domain.pixel_width > local_images.domain.pixel_width:
+				logging.warning(f"The scan resolution of this image plate scan ({scan.domain.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
 				                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
 				                f"be zoomed and enhanced.")
 			for k, (x_center, y_center) in enumerate(centers):
 				# center them on the penumbra and rotate them if the aperture grid appears rotated
-				shifted_image_plane = image_plane.shifted(x_center, y_center)
-				local_images[k, :, :] = resample_and_rotate(scan, scan_plane, shifted_image_plane, -angle) # resample to the chosen bin size
+				local_images.values[k, :, :] = resample_and_rotate(
+					scan,
+					local_image_domain.shifted(x_center, y_center),
+					-angle).values # resample to the chosen bin size
 
 		else:
-			raise TypeError(f"I don't know how to interpret a {type(input_file)} as a scan result")
+			raise TypeError(f"I don't know how to interpret a {type(scan)} as a scan result")
 
 		# now you can combine them all
-		image = np.zeros(image_plane.shape, dtype=float)
-		image_plicity = np.zeros(image_plane.shape, dtype=int)
+		image = Image(local_images.domain, np.zeros(local_images.shape))
+		image_plicity = Image(local_images.domain, np.zeros(local_images.shape))
 		for k, (x_center, y_center) in enumerate(centers):
 			relative_polygon_x, relative_polygon_y = zip(*data_polygon)
 			relative_data_polygon = list(zip(*shift_and_rotate(
 				relative_polygon_x, relative_polygon_y, -x_center, -y_center, -angle)))
-			area = inside_polygon(relative_data_polygon, *image_plane.get_pixels())
-			image[area] += local_images[k, area]
-			image_plicity += area
+			area = inside_polygon(relative_data_polygon, *image.domain.get_pixels())
+			image.values[area] += local_images.values[k, area]
+			image_plicity.values += area
 
-		if np.any(np.isnan(image)):
+		if np.any(np.isnan(image.values)):
 			raise DataError("it appears that the specified data region extended outside of the image")
-		elif particle != "xray" and np.sum(image) < MIN_ACCEPTABLE_NUM_TRACKS:
+		elif particle != "xray" and np.sum(image.values) < MIN_ACCEPTABLE_NUM_TRACKS:
 			raise DataError("Not enuff tracks to reconstuct")
 
 		# finally, orient the penumbra correctly, so it’s like you’re looking toward TCC
-		if type(input_file) is Scan:
+		if type(scan) is Scan:
 			# since PCIS CR-39 scans are saved like you’re looking toward TCC, do absolutely noting
 			pass
 		elif los.startswith("tim"):
 			# since XRIS image plates are flipped vertically before scanning, flip vertically
-			image_plane = image_plane.flipped_vertically()
-			image = image[:, ::-1]
-			image_plicity = image_plicity[:, ::-1]
+			image = image.flipped_vertically()
+			image_plicity = image_plicity.flipped_vertically()
 		elif los == "srte":
 			# since SRTe image plates are flipped horizontally before scanning, flip horizontally
-			image_plane = image_plane.flipped_horizontally()
-			image = image[::-1, :]
-			image_plicity = image_plicity[::-1, :]
+			image = image.flipped_horizontally()
+			image_plicity = image_plicity.flipped_horizontally()
 		else:
 			raise ValueError(f"please specify how image plates are oriented on {los}")
 
@@ -871,66 +875,68 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		if account_for_overlap:
 			raise NotImplementedError("not implemented")
 		else:
-			kernel_plane = Grid.from_resolution(min_radius=r_psf,
-			                                    pixel_width=image_plane.pixel_width, odd=True)
-			source_plane = Grid.from_pixels(num_bins=image_plane.x.num_bins - kernel_plane.x.num_bins + 1,
-			                                pixel_width=kernel_plane.pixel_width/(M - 1))
+			kernel_domain = Grid.from_resolution(min_radius=r_psf,
+			                                     pixel_width=image.domain.pixel_width, odd=True)
+			source_domain = Grid.from_pixels(num_bins=image.x.num_bins - kernel_domain.x.num_bins + 1,
+			                                 pixel_width=kernel_domain.pixel_width/(M - 1))
 
-		logging.info(f"  generating a {kernel_plane.shape} point spread function with Q={Q:.3g} MeV*cm")
+		logging.info(f"  generating a {kernel_domain.shape} point spread function with Q={Q:.3g} MeV*cm")
 
 		# calculate the point-spread function
-		penumbral_kernel = point_spread_function(kernel_plane, Q, M*rA, grid_transform,
-		                                         energy_min, energy_max) # get the dimensionless shape of the penumbra
+		kernel = point_spread_function(kernel_domain, Q, M*rA, grid_transform,
+		                               energy_min, energy_max) # get the dimensionless shape of the penumbra
 		if account_for_overlap:
 			raise NotImplementedError("I also will need to add more things to the kernel")
-		penumbral_kernel *= source_plane.pixel_area*image_plane.pixel_area/(M*L1)**2 # scale by the solid angle subtended by each image pixel
+		kernel.values *= source_domain.pixel_area*image.domain.pixel_area/(M*L1)**2 # scale by the solid angle subtended by each image pixel
 
 		# mark pixels that are tuchd by all or none of the source pixels (and are therefore useless)
-		image_plane_pixel_distances = np.hypot(*image_plane.get_pixels(sparse=True))
+		r_image_pixels = np.hypot(*image.domain.get_pixels(sparse=True))
 		if Q == 0:
-			within_penumbra = image_plane_pixel_distances < 2*M*rA - r_max
-			without_penumbra = image_plane_pixel_distances > r_max
-		elif source_plane.num_pixels*kernel_plane.num_pixels <= MAX_CONVOLUTION:
-			max_source = np.hypot(*source_plane.get_pixels(sparse=True)) <= source_plane.x.half_range
+			within_penumbra = r_image_pixels < 2*M*rA - r_max
+			without_penumbra = r_image_pixels > r_max
+		elif source_domain.num_pixels*kernel.domain.num_pixels <= MAX_CONVOLUTION:
+			max_source = np.hypot(*source_domain.get_pixels(sparse=True)) <= source_domain.x.half_range
 			max_source = max_source/np.sum(max_source)
-			reach = signal.fftconvolve(max_source, penumbral_kernel, mode='full')
-			lower_cutoff = .005*np.max(penumbral_kernel)
-			upper_cutoff = .98*np.max(penumbral_kernel)
+			reach = signal.fftconvolve(max_source, kernel.values, mode='full')
+			lower_cutoff = .005*np.max(kernel.values)
+			upper_cutoff = .98*np.max(kernel.values)
 			within_penumbra = reach > upper_cutoff
 			without_penumbra = reach < lower_cutoff
 		else:
 			logging.warning(f"it would be computationally inefficient to compute the reach of these "
-			                f"{source_plane.shape*penumbral_kernel.size} data, so I'm setting the data region to"
-			                f"be everywhere")
-			within_penumbra, without_penumbra = False, False
+			                f"{source_domain.num_pixels*kernel.num_pixels} data, so I'm setting the "
+			                f"data region to be everywhere")
+			within_penumbra, without_penumbra = np.full(False, image.shape), np.full(False, image.shape)
 
 		# apply the user-defined mask and smooth the invalid regions
 		without_penumbra |= (image_plicity == 0)
 		on_penumbra = ~(within_penumbra | without_penumbra)
-		clipd_image = image
+		clipd_image = copy(image)
 		if np.any(within_penumbra):
-			inner_value = np.mean(image/image_plicity, where=dilate(within_penumbra) & on_penumbra)
-			clipd_image = np.where(within_penumbra, inner_value, clipd_image)
+			inner_value = np.mean((image/image_plicity).values,
+			                      where=dilate(within_penumbra) & on_penumbra)
+			clipd_image.values = np.where(within_penumbra, inner_value, clipd_image.values)
 		if np.any(without_penumbra):
-			outer_value = np.mean(image/image_plicity, where=dilate(without_penumbra) & on_penumbra)
-			clipd_image = np.where(without_penumbra, outer_value, clipd_image)
-		clipd_plicity = np.where(on_penumbra, image_plicity, 0)
-		source_region = np.hypot(*source_plane.get_pixels()) <= source_plane.x.half_range
+			outer_value = np.mean((image/image_plicity).values,
+			                      where=dilate(without_penumbra) & on_penumbra)
+			clipd_image.values = np.where(without_penumbra, outer_value, clipd_image.values)
+		clipd_image_plicity = Image(image.domain, np.where(on_penumbra, image_plicity.values, 0))
+		source_region = np.hypot(*source_domain.get_pixels()) <= source_domain.x.half_range
 
 		if SHOW_POINT_SPREAD_FUNCCION:
 			plt.figure()
-			plt.pcolormesh(kernel_plane.x.get_edges(), kernel_plane.y.get_edges(), penumbral_kernel)
-			plt.contour(image_plane.x.get_bins(), image_plane.y.get_bins(), clipd_plicity,
+			plt.pcolormesh(kernel.x.get_edges(), kernel.y.get_edges(), kernel.values)
+			plt.contour(image.x.get_bins(), image.y.get_bins(), clipd_image_plicity.values,
 			            levels=[0.5], colors="k")
 			plt.axis('square')
 			plt.title("Point spread function")
 			plt.tight_layout()
 
 		# estimate the noise level, in case that's helpful
-		umbra = (image_plicity > 0) & (image_plane_pixel_distances < max(M*rA/2, M*rA - (r_max - r_psf)))
-		umbra_value = np.mean(image/image_plicity, where=umbra)
-		umbra_variance = np.mean((image - umbra_value*image_plicity)**2/image_plicity, where=umbra)
-		estimated_data_variance = image/umbra_value*umbra_variance
+		umbra = (image_plicity.values > 0) & (r_image_pixels < max(M*rA/2, M*rA - (r_max - r_psf)))
+		umbra_value = np.mean((image/image_plicity).values, where=umbra)
+		umbra_variance = np.mean((image.values - umbra_value*image_plicity.values)**2/image_plicity.values, where=umbra)
+		estimated_data_variance = image.values/umbra_value*umbra_variance
 
 		if sqrt(umbra_variance) < umbra_value/500:
 			raise DataError("I think this image is saturated. I'm not going to try to reconstruct it. :(")
@@ -938,68 +944,71 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		# perform the reconstruction
 		logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source")
 		method = "gelfgat" if particle == "xray" else "richardson-lucy"
-		source = deconvolution.deconvolve(method,
-		                                  clipd_image,
-		                                  penumbral_kernel,
-		                                  r_psf=M*rA/image_plane.pixel_width,
-		                                  pixel_area=clipd_plicity,
-		                                  source_region=source_region,
-		                                  noise=estimated_data_variance)
+		source = Image(
+			source_domain,
+			deconvolution.deconvolve(
+				method,
+				clipd_image.values,
+				kernel.values,
+				r_psf=M*rA/image.domain.pixel_width,
+				pixel_area=clipd_image_plicity.values,
+				source_region=source_region,
+				noise=estimated_data_variance))
 		logging.info("  done!")
 
 		# since the true problem is not one of deconvolution, but inverted deconvolution, rotate 180°
-		source_plane = source_plane.rotated_180()
-		source = source[::-1, ::-1]
-		source = np.maximum(0, source) # we know this must be nonnegative (counts/cm^2/srad)
+		source = source.rotated_180()
+		source.values = np.maximum(0, source.values) # we know this must be nonnegative (counts/cm^2/srad)
 
-		if source.size*penumbral_kernel.size <= MAX_CONVOLUTION:
+		if source.num_pixels*kernel.num_pixels <= MAX_CONVOLUTION:
 			# back-calculate the reconstructed penumbral image
-			reconstructed_image = signal.fftconvolve(source[::-1, ::-1], penumbral_kernel, mode="full")*image_plicity
+			reconstructed_image = Image(
+				image.domain,
+				signal.fftconvolve(source.values[::-1, ::-1], kernel.values, mode="full")*image_plicity.values)
 			# and estimate background as whatever makes it fit best
-			reconstructed_image += np.nanmean((image - reconstructed_image)/image_plicity,
-			                                  where=on_penumbra)*image_plicity
+			reconstructed_image.values += np.nanmean(((image - reconstructed_image)/image_plicity).values,
+			                                         where=on_penumbra)*image_plicity.values
 		else:
 			logging.warning("the reconstruction would take too long to reproduce so I’m skipping the residual plot")
-			reconstructed_image = np.full(image.shape, nan)
+			reconstructed_image = Image(image.domain, np.full(image.shape, nan))
 
 		# after reproducing the input, we must make some adjustments to the source
 		if output_plane is None:
-			output_plane = Grid.from_size(source_plane.x.half_range, source_plane.pixel_width/2, True)
+			output_plane = Grid.from_size(source.x.half_range, source.domain.pixel_width/2, True)
 		# specificly, we must rebin it to a unified Grid for the stack
-		output = interpolate.RegularGridInterpolator(
-			(source_plane.x.get_bins(), source_plane.x.get_bins()), source,
-			bounds_error=False, fill_value=0)(
-			np.stack(output_plane.get_pixels(), axis=-1))
+		output = Image(
+			output_plane,
+			interpolate.RegularGridInterpolator(
+				(source.x.get_bins(), source.x.get_bins()), source.values,
+				bounds_error=False, fill_value=0)(
+				np.stack(output_plane.get_pixels(), axis=-1)))
 
 	# if we’re skipping the reconstruction, just load the previus stacked penumbra and reconstructed source
 	else:
 		logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
 		previus_parameters = load_shot_info(shot, los, energy_min, energy_max, filter_str)
 		Q = previus_parameters.Q
-		x, y, image, image_plicity = load_hdf5(
+		x, y, image_values, image_plicity_values = load_hdf5(
 			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
-		image_plane = Grid.from_edge_array(x, y)
-		image = image.T  # don’t forget to convert from (y,x) to (i,j) indexing
-		image_plicity = image_plicity.T
+		image = Image(Grid.from_edge_array(x, y), image_values.T)  # don’t forget to convert from (y,x) to (i,j) indexing
+		image_plicity = Image(image.domain, image_plicity_values.T)
 
-		output_plane, output = load_source(shot, los, f"{particle}-{cut_index[0]}",
-		                                   filter_stack, energy_min, energy_max)
+		output = load_source(shot, los, f"{particle}-{cut_index[0]}",
+		                     filter_stack, energy_min, energy_max)
 		residual, = load_hdf5(
 			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra-residual", ["z"])
-		residual = residual.T  # remember to convert from (y,x) indexing to (i,j)
-		reconstructed_image = image - residual
+		reconstructed_image = Image(image.domain, image.values - residual.T)  # remember to convert from (y,x) indexing to (i,j)
 
 	# calculate and print the main shape parameters
-	yeeld = np.sum(output*output_plane.pixel_area)*4*pi
-	p0, (_, _), (p2, θ2) = shape_parameters(
-		output_plane, output, contour_level=contour)
+	yeeld = np.sum(output.values*output.domain.pixel_area)*4*pi
+	p0, (_, _), (p2, θ2) = shape_parameters(output, contour_level=contour)
 	logging.info(f"  ∫B dA dσ = {yeeld :.4g} deuterons")
 	logging.info(f"  {contour:.0%} P0   = {p0/1e-4:.2f} μm")
 	logging.info(f"  {contour:.0%} P2   = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 	# save and plot the results
 	save_and_plot_penumbra(f"{shot}/{los}-{particle}-{cut_index}",
-	                       image_plane, image, image_plicity, energy_min, energy_max,
+	                       image, image_plicity, energy_min, energy_max,
 	                       r0=M*rA, s0=M*sA, grid_shape=grid_shape, grid_transform=grid_transform)
 	if particle == "xray":
 		color_index = int(cut_index[0])  # we’ll redo the colors later, so just use a heuristic here
@@ -1008,20 +1017,19 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		color_index = int(cut_index[2])
 		num_colors = num_energy_cuts
 	plot_source(f"{shot}/{los}-{particle}-{cut_index}",
-	            output_plane, output, energy_min, energy_max,
+	            output, energy_min, energy_max,
 	            color_index=color_index, num_colors=num_colors,
 	            projected_flow=None, projected_offset=None,
 	            projected_stalk=None, num_stalks=0)
 	save_and_plot_overlaid_penumbra(f"{shot}/{los}-{particle}-{cut_index}",
-	                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
+	                                reconstructed_image/image_plicity, image/image_plicity)
 	if show_plots:
 		plt.show()
 	else:
 		plt.close("all")
 
 	# estimate a P0 error bar
-	r_source, (_, _), (_, _) = shape_parameters(
-		output_plane, output, contour_level=.5)
+	r_source, (_, _), (_, _) = shape_parameters(output, contour_level=.5)
 	if particle == "xray":
 		δ_PSF = 0
 		statistics = inf
@@ -1034,9 +1042,10 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 				M*rA, Q, energy_min=energy_min, energy_max=energy_max)
 			δ_PSF = -np.max(f_test)/np.min(np.gradient(f_test, r_test))/2
 			r_PSF = r_test[np.argmin(np.gradient(f_test, r_test))]
-		r_image = np.hypot(*image_plane.get_pixels())
+		r_image = np.hypot(*image.domain.get_pixels())
 		δ_image = sqrt(((M - 1)*r_source)**2 + δ_PSF**2)
-		statistics = np.sum(reconstructed_image, where=(r_image > r_PSF - δ_image) & (r_image < r_PSF + δ_image))
+		statistics = np.sum(reconstructed_image.values,
+		                    where=(r_image > r_PSF - δ_image) & (r_image < r_PSF + δ_image))
 
 	statblock = {"Q": Q, "dQ": 0.,
 	             "yield": yeeld, "dyield": 0.,
@@ -1044,7 +1053,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 	             "P2 magnitude": p2/1e-4, "dP2 magnitude": 0.,
 	             "P2 angle": degrees(θ2)}
 
-	return output_plane, output, statblock
+	return output, statblock
 
 
 def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
@@ -1175,11 +1184,11 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		return Q, r_cutoff
 
 
-def where_is_the_ocean(plane: Grid, image: NDArray[float], title, timeout=None) -> Point:
+def where_is_the_ocean(image: Image, title, timeout=None) -> Point:
 	""" solicit the user's help in locating something """
 	fig = plt.figure()
-	plt.imshow(image.T, vmax=np.quantile(image, .999), cmap=CMAP["spiral"],
-	           extent=plane.extent, origin="lower")
+	plt.imshow(image.values.T, vmax=np.quantile(image, .999), cmap=CMAP["spiral"],
+	           extent=image.domain.extent, origin="lower")
 	plt.axis("equal")
 	plt.colorbar()
 	plt.title(title)
@@ -1204,20 +1213,20 @@ def user_defined_region(scan, title, max_contrast: float, default=None, timeout=
 	""" solicit the user's help in circling a region """
 	if type(scan) is Scan:
 		x_tracks, y_tracks = cut_cr39_scan(scan, 0, inf, max_contrast)
-		image, x, y = np.histogram2d(x_tracks, y_tracks, bins=200)
-		image_plane = Grid.from_edge_array(x, y)
+		counts, x, y = np.histogram2d(x_tracks, y_tracks, bins=200)
+		image = Image(Grid.from_edge_array(x, y), counts)
 	elif type(scan) is Image:
-		image_plane, image = scan.domain, scan.values
-		while image_plane.num_pixels > 1e6:
-			image_plane, image = downsample_2d(image_plane, image)
+		image = scan
+		while image.domain.num_pixels > 1e6:
+			image = downsample_2d(image)
 	else:
 		raise TypeError(f"I don't know how to interpret a {type(scan)} as a scan result")
 
 	fig = plt.figure()
-	plt.imshow(image.T, extent=image_plane.extent, origin="lower",
+	plt.imshow(image.values.T, extent=image.domain.extent, origin="lower",
 	           cmap=CMAP["spiral"],
-	           norm=SymLogNorm(vmin=0, linthresh=np.quantile(image, .999)/1e1,
-	                           vmax=np.quantile(image, .999), linscale=1/log(10)))
+	           norm=SymLogNorm(vmin=0, linthresh=np.quantile(image.values, .999)/1e1,
+	                           vmax=np.quantile(image.values, .999), linscale=1/log(10)))
 	polygon, = plt.plot([], [], "k-", linewidth=1)
 	cap, = plt.plot([], [], "k:")
 	cursor, = plt.plot([], [], "ko", markersize=2)
@@ -1267,7 +1276,7 @@ def user_defined_region(scan, title, max_contrast: float, default=None, timeout=
 
 
 def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[float],
-                          з_min: float, з_max: float) -> NDArray[float]:
+                          з_min: float, з_max: float) -> Image:
 	""" build the dimensionless point spread function by calling electric_field.get_modified_point_spread, skewing it
 	    according to the grid's transform matrix, and antialiasing the edges.
 	"""
@@ -1286,7 +1295,7 @@ def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[fl
 			func += np.interp(np.hypot(X_prime, Y_prime),
 			                  r_interp, n_interp, right=0)
 	func /= offsets.size**2  # divide by the number of samples
-	return func
+	return Image(grid, func)
 
 
 def cut_cr39_scan(scan: Scan,
@@ -1378,7 +1387,7 @@ def count_tracks_in_scan(scan: Union[Scan, Image], diameter_min: float, diameter
 
 def load_source(shot: str, los: str, particle_index: str,
                 filter_stack: list[Filter], energy_min: float, energy_max: float,
-                ) -> tuple[Grid, NDArray[float]]:
+                ) -> Image:
 	""" open up a saved HDF5 file and find and read a single source from the stack """
 	# get all the necessary info from the HDF5 file
 	x, y, source_stack, filterings, energy_bounds = load_hdf5(
@@ -1393,7 +1402,7 @@ def load_source(shot: str, los: str, particle_index: str,
 	for i in range(source_stack.shape[0]):
 		if parse_filtering(filterings[i])[0] == filter_stack and \
 			np.array_equal(energy_bounds[i], [energy_min, energy_max]):
-			return source_plane, source_stack[i, :, :]
+			return Image(source_plane, source_stack[i, :, :])
 	raise RecordNotFoundError(f"couldn’t find a {print_filtering(filter_stack)}, [{energy_min}, "
 	                          f"{energy_max}] k/MeV source for {shot}, {los}, {particle_index}")
 
@@ -1627,44 +1636,46 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 			                f"hope to resolve an image of radius {r_nominal:.2g} cm.")
 
 		# make a histogram
-		N_full, _, _ = np.histogram2d(
+		full_counts, _, _ = np.histogram2d(
 			x_tracks, y_tracks, bins=(full_domain.x.get_edges(), full_domain.y.get_edges()))
+		full_image = Image(full_domain, full_counts)
 
 	elif type(scan) is Image:  # if it's an h5 file
-		full_domain, N_full = scan.domain, scan.values
+		full_image = scan
 		# check that the resolution is fine enuff
-		if r_nominal <= 2*full_domain.pixel_width:
-			raise DataError(f"the scan resolution is {full_domain.pixel_width:.2g} cm, which is insufficient to "
+		if r_nominal <= 2*full_image.domain.pixel_width:
+			raise DataError(f"the scan resolution is {full_image.domain.pixel_width:.2g} cm, which is insufficient to "
 			                f"resolve an image of radius {r_nominal:.2g} cm.")
 
 	else:
 		raise TypeError(f"I don't know how to interpret a {type(scan)} as a scan result")
 
-	if full_domain.x.range <= 2*r_nominal or full_domain.y.range <= 2*r_nominal:
+	if full_image.x.range <= 2*r_nominal or full_image.y.range <= 2*r_nominal:
 		raise DataError("the scan is smaller than the nominal image size, so a reconstruction is probably not possible.")
 
 	# ask the user for help finding the center
 	if ASK_FOR_HELP:
 		try:
-			x0, y0 = where_is_the_ocean(full_domain, N_full, "Please click on the center of a penumbrum.", timeout=8.64)
+			x0, y0 = where_is_the_ocean(full_image, "Please click on the center of a penumbrum.", timeout=8.64)
 		except TimeoutError:
 			x0, y0 = None, None
 	else:
 		x0, y0 = None, None
 
-	X_pixels, Y_pixels = full_domain.get_pixels()
-	crop_domain, N_crop = crop_to_finite(
-		full_domain, np.where(inside_polygon(region, X_pixels, Y_pixels), N_full, nan))
-	X_pixels, Y_pixels = crop_domain.get_pixels()
-	if np.all(np.isnan(N_crop)):
+	X_pixels, Y_pixels = full_image.domain.get_pixels()
+	crop_image = crop_to_finite(Image(
+		full_image.domain,
+		np.where(inside_polygon(region, X_pixels, Y_pixels), full_image.values, nan)))
+	X_pixels, Y_pixels = crop_image.domain.get_pixels()
+	if np.all(np.isnan(crop_image.values)):
 		raise DataError("this polygon had no area inside it.")
-	elif np.sum(N_crop, where=np.isfinite(N_crop)) == 0:
+	elif np.nansum(crop_image.values) == 0:
 		raise DataError("there are no tracks in this region.")
 
 	# if we don't have a good center gess, do a recursively narrowing scan
 	if x0 is None or y0 is None:
-		x0, y0 = crop_domain.x.center, crop_domain.y.center
-		scan_scale = max(crop_domain.x.range, crop_domain.y.range)/2
+		x0, y0 = crop_image.x.center, crop_image.y.center
+		scan_scale = max(crop_image.x.range, crop_image.y.range)/2
 		while scan_scale > .5*r_nominal:
 			net_radius = max(r_nominal, scan_scale*sqrt(2)/6)
 			best_umbra_at_this_scale = -inf
@@ -1674,7 +1685,7 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 				for y in y_scan:
 					# we’re looking for the brightest umbra on the map
 					umbra_counts = np.nansum(
-						N_crop, where=np.hypot(X_pixels - x, Y_pixels - y) < net_radius)
+						crop_image.values, where=np.hypot(X_pixels - x, Y_pixels - y) < net_radius)
 					if umbra_counts > best_umbra_at_this_scale:
 						best_umbra_at_this_scale = umbra_counts
 						x0, y0 = x, y
@@ -1682,8 +1693,8 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 
 	# now that's squared away, find the largest contures
 	R_pixels = np.hypot(X_pixels - x0, Y_pixels - y0)
-	max_density = np.nanmean(N_crop, where=R_pixels < .5*r_nominal)
-	min_density = np.nanmean(N_crop, where=R_pixels > 1.5*r_nominal)
+	max_density = np.nanmean(crop_image.values, where=R_pixels < .5*r_nominal)
+	min_density = np.nanmean(crop_image.values, where=R_pixels > 1.5*r_nominal)
 	if particle == "xray":
 		# for x-rays, the 50% conture is the cleanest
 		contour_level = .5*max_density + .5*min_density
@@ -1691,14 +1702,14 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 		# for particles, the 20% conture is better since there's more noise at higher densities
 		contour_level = .2*max_density + .8*min_density
 	assert isfinite(contour_level)
-	contours = measure.find_contours(N_crop, contour_level)
+	contours = measure.find_contours(crop_image.values, contour_level)
 	if len(contours) == 0:
 		raise DataError("there were no contours found for some reason.")
 	circles = []
 	for contour in contours:
 		# fit a circle to each contour
-		x_contour = np.interp(contour[:, 0], np.arange(crop_domain.x.num_bins), crop_domain.x.get_bins())
-		y_contour = np.interp(contour[:, 1], np.arange(crop_domain.y.num_bins), crop_domain.y.get_bins())
+		x_contour = np.interp(contour[:, 0], np.arange(crop_image.x.num_bins), crop_image.x.get_bins())
+		y_contour = np.interp(contour[:, 1], np.arange(crop_image.y.num_bins), crop_image.y.get_bins())
 		x_apparent, y_apparent, r_apparent = fit_circle(x_contour, y_contour)
 		# check the radius to avoid picking up noise
 		if r_apparent >= 0.7*r_nominal:
@@ -1745,11 +1756,11 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 
 	if SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
-		plt.imshow(N_full.T, extent=full_domain.extent, origin="lower",
-		           vmin=0, vmax=np.nanquantile(N_crop, .999), cmap=CMAP["coffee"])
+		plt.imshow(full_image.values.T, extent=full_image.domain.extent, origin="lower",
+		           vmin=0, vmax=np.nanquantile(crop_image.values, .999), cmap=CMAP["coffee"])
 		θ = np.linspace(0, 2*pi, 145)
 		for x0, y0 in aperture_array.positions(grid_shape, s_nominal, grid_transform,
-		                                       r_true, full_domain.diagonal, grid_x0, grid_y0):
+		                                       r_true, full_image.domain.diagonal, grid_x0, grid_y0):
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
 			         "#063", linestyle="solid", linewidth=1.2, zorder=20)
 			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
@@ -1757,15 +1768,15 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 		plt.scatter(x_circles[valid], y_circles[valid],
 		            np.where(circle_fullness[valid], 30, 5),
 		            c="#8ae", marker="x", zorder=30)
-		plt.contour(crop_domain.x.get_bins(), crop_domain.y.get_bins(), N_crop.T,
+		plt.contour(crop_image.x.get_bins(), crop_image.y.get_bins(), crop_image.values.T,
 		            levels=[contour_level], colors="k", linewidths=.5, zorder=10)
 		plt.fill([x for x, y in region], [y for x, y in region],
 		         facecolor="none", edgecolor="k", linewidth=.5, zorder=10)
 		plt.title("Located apertures marked with exes")
-		plt.xlim(min(np.min(x_circles), crop_domain.x.minimum),
-		         max(np.max(x_circles), crop_domain.x.maximum))
-		plt.ylim(min(np.min(y_circles), crop_domain.y.minimum),
-		         max(np.max(y_circles), crop_domain.y.maximum))
+		plt.xlim(min(np.min(x_circles), crop_image.x.minimum),
+		         max(np.max(x_circles), crop_image.x.maximum))
+		plt.ylim(min(np.min(y_circles), crop_image.y.minimum),
+		         max(np.max(y_circles), crop_image.y.maximum))
 		plt.tight_layout()
 
 	if len(circles) == 0:  # TODO: check for duplicate centers (tho I think they should be rare and not too big a problem)

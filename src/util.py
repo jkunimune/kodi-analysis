@@ -15,7 +15,7 @@ from pandas import DataFrame
 from scipy import optimize, integrate, interpolate
 from skimage import measure
 
-from coordinate import Grid, LinSpace, rotation_matrix
+from coordinate import Grid, LinSpace, rotation_matrix, Image
 
 Point = tuple[float, float]
 Interval = tuple[float, float]
@@ -152,11 +152,11 @@ def periodic_mean(values: np.ndarray, minimum: float, maximum: float):
 		return mean_angle/(2*pi)*(maximum - minimum) + minimum
 
 
-def center_of_mass(grid: Grid, image: NDArray[float]):
+def center_of_mass(image: Image) -> NDArray[float]:
 	""" get the center of mass of a 2d function """
 	return np.array([
-		np.average(grid.x.get_bins(), weights=image.sum(axis=1)),
-		np.average(grid.y.get_bins(), weights=image.sum(axis=0))])
+		np.average(image.x.get_bins(), weights=image.values.sum(axis=1)),
+		np.average(image.y.get_bins(), weights=image.values.sum(axis=0))])
 
 
 def normalize(x):
@@ -226,37 +226,36 @@ def downsample_1d(x_bins, N):
 	return x_bins, Np
 
 
-def downsample_2d(grid: Grid, image: NDArray[float]) -> tuple[Grid, NDArray[float]]:
+def downsample_2d(image: Image) -> Image:
 	""" double the bin size of this 2d histogram """
-	assert grid.shape == image.shape, (grid.shape, image.shape)
-	n = grid.x.num_bins//2
-	m = grid.y.num_bins//2
-	reduced = np.zeros((n, m))
+	n = image.x.num_bins//2
+	m = image.y.num_bins//2
+	reduced_values = np.zeros((n, m))
 	for i in range(0, 2):
 		for j in range(0, 2):
-			reduced += image[i:2*n:2, j:2*m:2]
-	grid = Grid(LinSpace(grid.x.minimum, grid.x.minimum + 2*n*grid.x.bin_width, n),
-	            LinSpace(grid.y.minimum, grid.y.minimum + 2*m*grid.y.bin_width, m))
-	return grid, reduced
+			reduced_values += image.values[i:2*n:2, j:2*m:2]
+	reduced_domain = Grid(LinSpace(image.x.minimum, image.x.minimum + 2*n*image.x.bin_width, n),
+	                      LinSpace(image.y.minimum, image.y.minimum + 2*m*image.y.bin_width, m))
+	return Image(reduced_domain, reduced_values)
 
 
-def resample_and_rotate(image_old: NDArray[float], grid_old: Grid, grid_new: Grid, angle: float):
+def resample_and_rotate(old: Image, new_domain: Grid, angle: float) -> Image:
 	""" apply new bins to a 2d function, preserving quality and accuraccy as much as possible, and
 	    also rotate it about the new grid’s center by some number of radians. the result will sum
 	    to the same number as the old one.
 	"""
-	# convert to densities
-	ρ_old = image_old/grid_old.pixel_area
+	# convert to a density array
+	ρ_old = old.values/old.domain.pixel_area
 	# make an interpolator
-	f_old = interpolate.RegularGridInterpolator((grid_old.x.get_bins(), grid_old.y.get_bins()), ρ_old,
+	f_old = interpolate.RegularGridInterpolator((old.x.get_bins(), old.y.get_bins()), ρ_old,
 	                                            method="nearest", bounds_error=False)
 	# decide what points to sample
-	sampling = max(3, ceil(2*grid_new.pixel_width/grid_old.pixel_width))
-	dx = grid_new.x.bin_width*np.linspace(-1/2, 1/2, 2*sampling + 1)[1:-1:2]
-	dy = grid_new.y.bin_width*np.linspace(-1/2, 1/2, 2*sampling + 1)[1:-1:2]
+	sampling = max(3, ceil(2*new_domain.pixel_width/old.domain.pixel_width))
+	dx = new_domain.x.bin_width*np.linspace(-1/2, 1/2, 2*sampling + 1)[1:-1:2]
+	dy = new_domain.y.bin_width*np.linspace(-1/2, 1/2, 2*sampling + 1)[1:-1:2]
 	dx, dy = np.meshgrid(dx, dy, indexing="ij")
-	x0, y0 = grid_new.x.center, grid_new.y.center
-	x_new, y_new = grid_new.get_pixels(sparse=True)
+	x0, y0 = new_domain.x.center, new_domain.y.center
+	x_new, y_new = new_domain.get_pixels(sparse=True)
 	x_new = x_new[:, :, np.newaxis, np.newaxis] + dx[np.newaxis, np.newaxis, :, :]
 	y_new = y_new[:, :, np.newaxis, np.newaxis] + dy[np.newaxis, np.newaxis, :, :]
 	x_old =  cos(angle)*(x_new - x0) + sin(angle)*(y_new - y0) + x0
@@ -264,8 +263,8 @@ def resample_and_rotate(image_old: NDArray[float], grid_old: Grid, grid_new: Gri
 	# interpolate and sum along the sampling axes
 	ρ_new = np.mean(f_old((x_old, y_old)), axis=(2, 3))
 	# convert back to counts
-	image_new = ρ_new*grid_new.pixel_area
-	return image_new
+	new_values = ρ_new*new_domain.pixel_area
+	return Image(new_domain, new_values)
 
 
 def saturate(r, g, b, factor=2.0):
@@ -296,16 +295,16 @@ def inside_polygon(polygon: list[Point], x: np.ndarray, y: np.ndarray):
 	return num_crossings%2 == 1
 
 
-def crop_to_finite(domain: Grid, values: NDArray[float]) -> tuple[Grid, NDArray[float]]:
+def crop_to_finite(image: Image) -> Image:
 	""" crop an image to the smallest rectangular region containing all finite pixels """
-	i_min = np.min(np.nonzero(np.any(np.isfinite(values), axis=1)))
-	i_max = np.max(np.nonzero(np.any(np.isfinite(values), axis=1))) + 1
-	j_min = np.min(np.nonzero(np.any(np.isfinite(values), axis=0)))
-	j_max = np.max(np.nonzero(np.any(np.isfinite(values), axis=0))) + 1
-	new_domain = Grid(LinSpace(domain.x.get_edge(i_min), domain.x.get_edge(i_max), i_max - i_min),
-	                  LinSpace(domain.y.get_edge(j_min), domain.y.get_edge(j_max), j_max - j_min))
-	new_values = values[i_min:i_max, j_min:j_max]
-	return new_domain, new_values
+	i_min = np.min(np.nonzero(np.any(np.isfinite(image.values), axis=1)))
+	i_max = np.max(np.nonzero(np.any(np.isfinite(image.values), axis=1))) + 1
+	j_min = np.min(np.nonzero(np.any(np.isfinite(image.values), axis=0)))
+	j_max = np.max(np.nonzero(np.any(np.isfinite(image.values), axis=0))) + 1
+	new_domain = Grid(LinSpace(image.x.get_edge(i_min), image.x.get_edge(i_max), i_max - i_min),
+	                  LinSpace(image.y.get_edge(j_min), image.y.get_edge(j_max), j_max - j_min))
+	new_values = image.values[i_min:i_max, j_min:j_max]
+	return Image(new_domain, new_values)
 
 
 def abel_matrix(r_bins):
@@ -388,7 +387,7 @@ def compose_2x2_from_intuitive_parameters(scale: float, angle: float, skew: floa
 	return U @ Σ @ V
 
 
-def covariance_from_harmonics(p0, p1, θ1, p2, θ2):
+def covariance_from_harmonics(p0, p1, θ1, p2, θ2) -> tuple[NDArray[float], NDArray[float]]:
 	""" convert a circular harmonic representation of a conture to a covariance matrix """
 	Σ = np.matmul(np.matmul(
 			np.array([[cos(θ2), -sin(θ2)], [sin(θ2), cos(θ2)]]),
@@ -403,7 +402,7 @@ def harmonics_from_covariance(Σ, μ):
 	try:
 		eigval, eigvec = np.linalg.eig(Σ)
 	except np.linalg.LinAlgError:
-		return np.nan, (np.nan, np.nan), (np.nan, np.nan)
+		return nan, (nan, nan), (nan, nan)
 	i1, i2 = np.argmax(eigval), np.argmin(eigval)
 	a, b = np.sqrt(eigval[i1]), np.sqrt(eigval[i2])
 	p0 = (a + b)/2
@@ -414,32 +413,32 @@ def harmonics_from_covariance(Σ, μ):
 	return p0, (p1, θ1), (p2, θ2)
 
 
-def fit_ellipse(grid: Grid, f: NDArray[float], contour_level: Optional[float] = None):  # TODO: use Image
+def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[NDArray[float], NDArray[float]]:
 	""" fit an ellipse to the given image, and represent that ellipse as a symmetric matrix """
-	X, Y = grid.get_pixels() # f should be indexd in the ij convencion
+	X, Y = image.domain.get_pixels() # f should be indexd in the ij convencion
 
 	if contour_level is None:
-		μ0 = np.sum(f) # image sum
+		μ0 = np.sum(image.values) # image sum
 		if μ0 == 0:
-			return np.full((2, 2), np.nan)
-		μx = np.sum(X*f)/μ0 # image centroid
-		μy = np.sum(Y*f)/μ0
-		μxx = np.sum(X**2*f)/μ0 - μx**2 # image rotational inertia
-		μxy = np.sum(X*Y*f)/μ0 - μx*μy
-		μyy = np.sum(Y**2*f)/μ0 - μy**2
+			return np.full((2, 2), nan), np.full(2, nan)
+		μx = np.sum(X*image.values)/μ0 # image centroid
+		μy = np.sum(Y*image.values)/μ0
+		μxx = np.sum(X**2*image.values)/μ0 - μx**2 # image rotational inertia
+		μxy = np.sum(X*Y*image.values)/μ0 - μx*μy
+		μyy = np.sum(Y**2*image.values)/μ0 - μy**2
 		return np.array([[μxx, μxy], [μxy, μyy]]), np.array([μx, μy])
 
 	else:
 		# calculate the contour(s)
-		contour_paths = measure.find_contours(f, contour_level*np.max(f))
+		contour_paths = measure.find_contours(image.values, contour_level*np.max(image.values))
 		# make sure we found at least one
 		if len(contour_paths) == 0:
-			return np.full((2, 2), np.nan), np.full(2, np.nan)
+			return np.full((2, 2), nan), np.full(2, nan)
 		# choose which contour most likely represents the source
 		contour_quality = []
 		for i, path in enumerate(contour_paths):
-			r_contour = np.hypot(path[:, 0] - f.shape[0]/2, path[:, 1] - f.shape[1]/2)
-			R_domain = min(f.shape[0]/2, f.shape[1]/2)
+			r_contour = np.hypot(path[:, 0] - image.x.num_edges/2, path[:, 1] - image.y.num_edges/2)
+			R_domain = min(image.x.num_edges/2, image.y.num_edges/2)
 			if np.all(r_contour > R_domain - 10):  # avoid contours that are close to the edge of the domain
 				sussiness = 2
 			elif np.any(r_contour > R_domain - 10):
@@ -449,11 +448,11 @@ def fit_ellipse(grid: Grid, f: NDArray[float], contour_level: Optional[float] = 
 			contour_quality.append((-sussiness, len(path), i, path))  # also avoid ones with few vertices
 		contour_path = max(contour_quality)[-1]
 		# convert the contour from index space to space space
-		x_contour = np.interp(contour_path[:, 0], np.arange(grid.x.num_bins), grid.x.get_bins())
-		y_contour = np.interp(contour_path[:, 1], np.arange(grid.y.num_bins), grid.y.get_bins())
+		x_contour = np.interp(contour_path[:, 0], np.arange(image.x.num_bins), image.x.get_bins())
+		y_contour = np.interp(contour_path[:, 1], np.arange(image.y.num_bins), image.y.get_bins())
 		# convert to polar coordinates
-		x0 = np.average(X, weights=f)
-		y0 = np.average(Y, weights=f)
+		x0 = np.average(X, weights=image.values)
+		y0 = np.average(Y, weights=image.values)
 		r = np.hypot(x_contour - x0, y_contour - y0)
 		θ = np.arctan2(y_contour - y0, x_contour - x0)
 		θL, θR = np.concatenate([θ[1:], θ[:1]]), np.concatenate([θ[-1:], θ[:-1]])
@@ -475,9 +474,9 @@ def fit_ellipse(grid: Grid, f: NDArray[float], contour_level: Optional[float] = 
 		return covariance_from_harmonics(p0, p1, θ1, p2, θ2)
 
 
-def shape_parameters(grid: Grid, f: NDArray[float], contour_level=None):  # TODO: use Image
+def shape_parameters(image: Image, contour_level=None):
 	""" get some scalar parameters that describe the shape of this distribution. """
-	return harmonics_from_covariance(*fit_ellipse(grid, f, contour_level))
+	return harmonics_from_covariance(*fit_ellipse(image, contour_level))
 
 
 def line_search(func: Callable[[float], float], lower_bound: float, upper_bound: float,

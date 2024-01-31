@@ -1,8 +1,11 @@
 # coordinate.py - varius coordinate system math type stuff
+from __future__ import annotations
+
 from math import cos, sin, ceil, hypot
 from typing import Sequence, Union
 
 import numpy as np
+from numpy import ScalarType
 from numpy.typing import NDArray
 
 NAMED_LOS = {
@@ -98,16 +101,21 @@ class LinSpace:
 		self.maximum = maximum
 		self.num_bins = num_bins
 
-	def __add__(self, shift: float) -> "LinSpace":
+	def __eq__(self, other: LinSpace) -> bool:
+		return self.minimum == other.minimum and \
+		       self.maximum == other.maximum and \
+		       self.num_bins == other.num_bins
+
+	def __add__(self, shift: float) -> LinSpace:
 		return LinSpace(self.minimum + shift, self.maximum + shift, self.num_bins)
 
-	def __mul__(self, factor: float) -> "LinSpace":
+	def __mul__(self, factor: float) -> LinSpace:
 		if factor < 0:
 			return LinSpace(factor*self.maximum, factor*self.minimum, self.num_bins)
 		else:
 			return LinSpace(factor*self.minimum, factor*self.maximum, self.num_bins)
 
-	def __neg__(self) -> "LinSpace":
+	def __neg__(self) -> LinSpace:
 		return self*(-1)
 
 	@property
@@ -153,47 +161,50 @@ class Grid:
 		self.x = x
 		self.y = y if y is not None else x
 
+	def __eq__(self, other: Grid) -> bool:
+		return self.x == other.x and self.y == other.y
+
 	@classmethod
-	def from_edge_array(cls, x_edges: NDArray[float], y_edges: NDArray[float]) -> "Grid":
+	def from_edge_array(cls, x_edges: NDArray[float], y_edges: NDArray[float]) -> Grid:
 		return Grid(LinSpace(x_edges[0], x_edges[-1], x_edges.size - 1),
 		            LinSpace(y_edges[0], y_edges[-1], y_edges.size - 1))
 
 	@classmethod
-	def from_bin_array(cls, x_bins: NDArray[float], y_bins: NDArray[float]) -> "Grid":
+	def from_bin_array(cls, x_bins: NDArray[float], y_bins: NDArray[float]) -> Grid:
 		return Grid(LinSpace(1.5*x_bins[0] - 0.5*x_bins[1], 1.5*x_bins[-1] - 0.5*x_bins[-2], x_bins.size),
 		            LinSpace(1.5*y_bins[0] - 0.5*y_bins[1], 1.5*y_bins[-1] - 0.5*y_bins[-2], y_bins.size))
 
 	@classmethod
-	def from_resolution(cls, min_radius: float, pixel_width: float, odd: bool) -> "Grid":
+	def from_resolution(cls, min_radius: float, pixel_width: float, odd: bool) -> Grid:
 		num_bins = ceil(min_radius/pixel_width + 1)*2 + (1 if odd else 0)
 		return Grid(LinSpace(-pixel_width*num_bins/2, pixel_width*num_bins/2, num_bins))
 
 	@classmethod
-	def from_size(cls, radius: float, max_bin_width: float, odd: bool) -> "Grid":
+	def from_size(cls, radius: float, max_bin_width: float, odd: bool) -> Grid:
 		num_bins = ceil(radius/max_bin_width)*2 + (1 if odd else 0)
 		return Grid(LinSpace(-radius, radius, num_bins))
 
 	@classmethod
-	def from_num_bins(cls, radius: float, num_bins: int) -> "Grid":
+	def from_num_bins(cls, radius: float, num_bins: int) -> Grid:
 		return Grid(LinSpace(-radius, radius, num_bins))
 
 	@classmethod
-	def from_pixels(cls, num_bins: int, pixel_width: float) -> "Grid":
+	def from_pixels(cls, num_bins: int, pixel_width: float) -> Grid:
 		return Grid(LinSpace(-pixel_width*num_bins/2, pixel_width*num_bins/2, num_bins))
 
-	def shifted(self, dx: float, dy: float) -> "Grid":
+	def shifted(self, dx: float, dy: float) -> Grid:
 		return Grid(self.x + dx, self.y + dy)
 
-	def scaled(self, factor: float) -> "Grid":
+	def scaled(self, factor: float) -> Grid:
 		return Grid(self.x*factor, self.y*factor)
 
-	def flipped_horizontally(self) -> "Grid":
+	def flipped_horizontally(self) -> Grid:
 		return Grid(-self.x, self.y)
 
-	def flipped_vertically(self) -> "Grid":
+	def flipped_vertically(self) -> Grid:
 		return Grid(self.x, -self.y)
 
-	def rotated_180(self) -> "Grid":
+	def rotated_180(self) -> Grid:
 		return Grid(-self.x, -self.y)
 
 	@property
@@ -232,10 +243,18 @@ class Grid:
 
 
 class Image:
-	def __init__(self, domain: Grid, values: NDArray[float]):
+	def __init__(self, domain: Grid, values: NDArray[ScalarType]):
 		""" package a spacial coordinate system with a 2D array of values to fill it """
+		if values.ndim != 2 and values.ndim != 3:
+			raise ValueError("an Image's values must be either a 2D array or a 3D array (if multiple channels)")
+		if domain.shape != values.shape[-2:]:
+			raise ValueError(f"this domain {domain.shape} doesn't match these values {values.shape}!")
 		self.domain = domain
 		self.values = values
+
+	@staticmethod
+	def empty(domain: Grid) -> Image:
+		return Image(domain, np.empty((0,) + domain.shape))
 
 	@property
 	def x(self) -> LinSpace:
@@ -244,6 +263,56 @@ class Image:
 	@property
 	def y(self) -> LinSpace:
 		return self.domain.y
+
+	@property
+	def shape(self) -> tuple[int, ...]:
+		return self.domain.shape
+
+	@property
+	def num_pixels(self) -> int:
+		return self.domain.num_pixels
+
+	@property
+	def num_channels(self) -> int:
+		if self.values.ndim == 3:
+			return self.values.shape[0]
+		else:
+			raise ValueError("this image does not have channels")
+
+	def __getitem__(self, index: int) -> Image:
+		if self.values.ndim == 3:
+			return Image(self.domain, self.values[index, :, :])
+		else:
+			raise ValueError("this image does not have channels")
+
+	def __add__(self, other: Image) -> Image:
+		if self.domain != other.domain:
+			raise ValueError("these two images cannot be added because they have different domains")
+		return Image(self.domain, self.values + other.values)
+
+	def __sub__(self, other: Image) -> Image:
+		if self.domain != other.domain:
+			raise ValueError("these two images cannot be subtracted because they have different domains")
+		return Image(self.domain, self.values - other.values)
+
+	def __mul__(self, other: Image) -> Image:
+		if self.domain != other.domain:
+			raise ValueError("these two images cannot be multiplied because they have different domains")
+		return Image(self.domain, self.values * other.values)
+
+	def __truediv__(self, other: Image) -> Image:
+		if self.domain != other.domain:
+			raise ValueError("these two images cannot be divided because they have different domains")
+		return Image(self.domain, self.values / other.values)
+
+	def flipped_vertically(self) -> Image:
+		return Image(self.domain.flipped_vertically(), self.values[..., :, ::-1])
+
+	def flipped_horizontally(self) -> Image:
+		return Image(self.domain.flipped_horizontally(), self.values[..., ::-1, :])
+
+	def rotated_180(self) -> Image:
+		return Image(self.domain.rotated_180(), self.values[..., ::-1, ::-1])
 
 
 if __name__ == '__main__':

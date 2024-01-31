@@ -55,17 +55,19 @@ def show_aligned_lineouts(shot: str, los_0: str, los_1: str) -> None:
 	for i, (los, images) in enumerate([(los_0, images_0), (los_1, images_1)]):
 		basis = coordinate.los_coordinates(los)
 		axis = np.linalg.inv(basis)@mutual_axis
-		for j, (grid, image) in enumerate(images):
+		for j, image in enumerate(images):
 			# normalize the image, because we can’t garantee the filterings of the images we’re comparing match exactly
-			reference_grid, reference_image = images_0[j] if j < len(images_0) else images_0[-1]
-			image = image/(np.sum(image)*grid.pixel_area)*(np.sum(reference_image)*reference_grid.pixel_area)
-			rotated_image = project_image_to_axis(grid, image, mutual_grid.x.get_bins(), axis[:2])
+			reference_image = images_0[j] if j < len(images_0) else images_0[-1]
+			image.values = image.values/\
+			               (np.sum(image.values)*image.domain.pixel_area)*\
+			               (np.sum(reference_image.values)*reference_image.domain.pixel_area)
+			rotated_image = project_image_to_axis(image, mutual_grid.x.get_bins(), axis[:2])
 			lineouts[i, j, :] = np.sum(rotated_image, axis=1)*mutual_grid.y.bin_width
 			x_median = np.interp(1/2, np.cumsum(lineouts[i, j, :])/np.sum(lineouts[i, j, :]),
 			                     mutual_grid.x.get_bins())
 			if j == 0:
 				_, ax = plt.subplots()
-				ax.imshow(image.T, extent=grid.extent, origin="lower")
+				ax.imshow(image.values.T, extent=image.domain.extent, origin="lower")
 				ax.axis("square")
 				ax.axline(xy1=[0, 0], xy2=axis[:2], color="w")
 				ax.set_title(los)
@@ -86,15 +88,16 @@ def show_aligned_lineouts(shot: str, los_0: str, los_1: str) -> None:
 	plt.show()
 
 
-def project_image_to_axis(grid: Grid, values: NDArray[float],
+def project_image_to_axis(image: coordinate.Image,
                           t_mutual: NDArray[float], axis: NDArray[float]) -> NDArray[float]:
 	θ = atan2(axis[1], axis[0])
 	t_pixels, s_pixels = t_mutual[:, np.newaxis], t_mutual[np.newaxis, :]
 	x_pixels = t_pixels*cos(θ) - s_pixels*sin(θ)
 	y_pixels = t_pixels*sin(θ) + s_pixels*cos(θ)
-	image = interpolate.RegularGridInterpolator((grid.x.get_bins(), grid.y.get_bins()), values,
-	                                            bounds_error=False, fill_value=0)
-	return image((x_pixels, y_pixels))
+	interpolator = interpolate.RegularGridInterpolator(
+		(image.x.get_bins(), image.y.get_bins()), image.values,
+		bounds_error=False, fill_value=0)
+	return interpolator((x_pixels, y_pixels))
 
 
 def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
@@ -110,11 +113,11 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 	for los in tims:
 		# grab the 2d covariance matrix and our axes’ coordinates in 3d
 		try:
-			grid, image = load_images(shot, los)[0]
+			image = load_images(shot, los)[0]
 		except IndexError:
 			continue
 		basis = coordinate.los_coordinates(los)
-		cov, μ = fit_ellipse(grid, image)
+		cov, μ = fit_ellipse(image)
 
 		# enumerate the four measurable covariances and the 3×3 that defines each one’s weighting
 		for j in range(2):
@@ -199,7 +202,7 @@ def get_num_stalks(shot: str) -> int:
 	return shot_table.loc[shot]["stalks"]
 
 
-def load_images(shot: str, los: str) -> list[tuple[Grid, NDArray[float]]]:
+def load_images(shot: str, los: str) -> list[coordinate.Image]:
 	results = []
 	for directory, _, filenames in os.walk("results/data"):
 		for filename in filenames:
@@ -210,7 +213,7 @@ def load_images(shot: str, los: str) -> list[tuple[Grid, NDArray[float]]]:
 				source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 				grid = Grid.from_bin_array(x, y)
 				for source in source_stack:
-					results.append((grid, source))
+					results.append(coordinate.Image(grid, source))
 	return results
 
 

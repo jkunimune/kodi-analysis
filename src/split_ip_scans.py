@@ -17,7 +17,7 @@ from matplotlib import colors
 from pandas import DataFrame
 
 from cmap import CMAP
-from coordinate import LinSpace, Grid
+from coordinate import LinSpace, Grid, Image
 from util import downsample_2d
 
 matplotlib.use("Qt5agg")
@@ -53,25 +53,26 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 
 	with h5py.File(filepath, "r") as f:
 		dataset = f["PSL_per_px"]
-		image = dataset[:, :].transpose()  # (PSL/pixel) (don’t forget to switch from i,j to x,y
+		pixels = dataset[:, :].transpose()  # (PSL/pixel) (don’t forget to switch from i,j to x,y
 		scan_delay = dataset.attrs["scanDelaySeconds"]/60. # (min)
 		dx = dataset.attrs["pixelSizeX"]*1e-4 # (cm)
 		dy = dataset.attrs["pixelSizeY"]*1e-4 # (cm)
 		if dx != dy:
 			raise ValueError("I don't want to deal with rectangular pixels")
-	grid = Grid(LinSpace(0, dx*image.shape[0], image.shape[0]),
-	            LinSpace(0, dy*image.shape[1], image.shape[1]))
+	grid = Grid(LinSpace(0, dx*pixels.shape[0], pixels.shape[0]),
+	            LinSpace(0, dy*pixels.shape[1], pixels.shape[1]))
+	image = Image(grid, pixels)
 
-	grid_reduc, image_reduc = grid, image
-	while image_reduc.size > 100000:
-		grid_reduc, image_reduc = downsample_2d(grid_reduc, image_reduc)
+	image_reduc = image
+	while image_reduc.domain.num_pixels > 100000:
+		image_reduc = downsample_2d(image_reduc)
 
 	# show the data on a plot
 	fig = plt.figure(figsize=(9, 5))
-	plt.imshow(image_reduc.T, extent=grid.extent,
+	plt.imshow(image_reduc.values.T, extent=image_reduc.domain.extent,
 	           norm=colors.LogNorm(
-		           vmin=np.quantile(image_reduc[image_reduc != 0], .20),
-		           vmax=np.quantile(image_reduc, .99)),
+		           vmin=np.quantile(image_reduc.values[image_reduc.values != 0], .20),
+		           vmax=np.quantile(image_reduc.values, .99)),
 	           cmap=CMAP["spiral"], origin="lower")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
@@ -79,7 +80,7 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 	plt.title("click on the spaces between the image plates, then close the figure")
 
 	# and let the user draw the vertical lines between the plates
-	cut_positions = [grid.x.minimum, grid.x.maximum]
+	cut_positions = [image.x.minimum, image.x.maximum]
 	def on_click(event):
 		cut_positions.append(event.xdata)
 		plt.axvline(event.xdata, color="w")
@@ -99,7 +100,7 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 		raise KeyError(f"please add shot {shot} to the input/scans/LOS_info.csv file.")
 
 	# then split the image along those lines
-	cut_positions = np.round(grid.x.get_index(sorted(cut_positions))).astype(int)
+	cut_positions = np.round(image.x.get_index(sorted(cut_positions))).astype(int)
 	cut_intervals = []
 	for cut_index in range(1, len(cut_positions)):
 		start, end = cut_positions[cut_index - 1], cut_positions[cut_index]
@@ -112,7 +113,7 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 	# sort them from brightest to dimmest
 	cut_intervals = sorted(
 		cut_intervals, reverse=True,
-		key=lambda bounds: np.quantile(image[bounds[0]:bounds[1], :], .96))
+		key=lambda bounds: np.quantile(image.values[bounds[0]:bounds[1], :], .96))
 
 	# and save each section with the correct filename
 	for cut_index, (start, end) in enumerate(cut_intervals):
@@ -132,9 +133,9 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 		print(f"saving to {new_filepath}")
 		with h5py.File(new_filepath, "w") as f:
 			f.attrs["scan_delay"] = scan_delay
-			f["x"] = grid.x.get_edges()[start:end + 1]
-			f["y"] = grid.y.get_edges()
-			f["PSL_per_px"] = image[start:end, :].T  # save it as i,j rather than x,y
+			f["x"] = image.x.get_edges()[start:end + 1]
+			f["y"] = image.y.get_edges()
+			f["PSL_per_px"] = image.values[start:end, :].T  # save it as i,j rather than x,y
 
 
 if __name__ == "__main__":
