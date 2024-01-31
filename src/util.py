@@ -315,9 +315,10 @@ def abel_matrix(r_bins):
 	"""
 	R_o, R_i = r_bins[np.newaxis, 1:], r_bins[np.newaxis, :-1]
 	r_bins = r_bins[:, np.newaxis]
-	def floor_sqrt(x): return np.sqrt(np.maximum(0, x))
+	def floor_sqrt(x):
+		return np.sqrt(np.maximum(0, x))
 	edge_matrix = 2*(floor_sqrt(R_o**2 - r_bins**2) - floor_sqrt(R_i**2 - r_bins**2))
-	return (edge_matrix[:-1, :] + edge_matrix[1:, :])/2 # TODO: check this; I think it may be rong
+	return (edge_matrix[:-1, :] + edge_matrix[1:, :])/2
 
 
 def cumul_pointspread_function_matrix(r_source, r_image, r_pointspread_ref, f_pointspread_ref):
