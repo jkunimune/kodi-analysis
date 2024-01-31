@@ -130,10 +130,11 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	# 	x_bins, y_bins, N = resample_2d(x_bins, y_bins, N)
 
 	A_circle, A_square = pi*r0**2, image_plane.total_area
-	vmax = max(np.nanquantile(counts/area, (counts.size - 6)/counts.size),
-	           np.nanquantile(counts/area, 1 - A_circle/A_square/2)*1.25)
+	density = counts/np.where(area > 0, area, 1)
+	vmax = max(np.nanquantile(density, (density.size - 6)/density.size),
+	           np.nanquantile(density, 1 - A_circle/A_square/2)*1.25)
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	plt.imshow((counts/area).T, extent=image_plane.extent, origin="lower", cmap=CMAP["coffee"], vmax=vmax)
+	plt.imshow(density.T, extent=image_plane.extent, origin="lower", cmap=CMAP["coffee"], vmax=vmax)
 	T = np.linspace(0, 2*pi)
 	if PLOT_THEORETICAL_50c_CONTOUR:
 		for dx, dy in aperture_array.positions(grid_shape, s0, grid_transform, r0, image_plane.x.half_range):

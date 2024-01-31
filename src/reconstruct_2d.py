@@ -924,11 +924,13 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		# apply the user-defined mask and smooth the invalid regions
 		without_penumbra |= (image_plicity == 0)
 		on_penumbra = ~(within_penumbra | without_penumbra)
-		inner_value = np.mean(image/image_plicity, where=dilate(within_penumbra) & on_penumbra)
-		outer_value = np.mean(image/image_plicity, where=dilate(without_penumbra) & on_penumbra)
-		clipd_image = np.where(within_penumbra, inner_value,
-		                       np.where(without_penumbra, outer_value,
-		                                image))
+		clipd_image = image
+		if np.any(within_penumbra):
+			inner_value = np.mean(image/image_plicity, where=dilate(within_penumbra) & on_penumbra)
+			clipd_image = np.where(within_penumbra, inner_value, clipd_image)
+		if np.any(without_penumbra):
+			outer_value = np.mean(image/image_plicity, where=dilate(without_penumbra) & on_penumbra)
+			clipd_image = np.where(without_penumbra, outer_value, clipd_image)
 		clipd_plicity = np.where(on_penumbra, image_plicity, 0)
 		source_region = np.hypot(*source_plane.get_pixels()) <= source_plane.x.half_range
 
