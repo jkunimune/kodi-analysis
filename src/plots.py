@@ -74,7 +74,7 @@ def make_colorbar(vmin: float, vmax: float, label: str, facecolor=None) -> None:
 		colorbar.ax.set_facecolor(facecolor)
 
 
-def save_and_plot_radial_data(filename: str, show: bool,
+def save_and_plot_radial_data(filename: str,
                               r_sphere: NDArray[float], ρ_sphere: NDArray[float],
                               r_data: NDArray[float], ρ_data: NDArray[float],
                               dρ_data: NDArray[float], ρ_recon: NDArray[float],
@@ -108,12 +108,8 @@ def save_and_plot_radial_data(filename: str, show: bool,
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-profile")
 
-	if show:
-		plt.show()
-	plt.close('all')
 
-
-def save_and_plot_penumbra(filename: str, show: bool,
+def save_and_plot_penumbra(filename: str,
                            image_plane: Optional[Grid],
                            counts: Optional[NDArray[float]],
                            area: Optional[NDArray[int]],
@@ -171,12 +167,8 @@ def save_and_plot_penumbra(filename: str, show: bool,
 	# plt.tight_layout()
 	# save_current_figure(f"{filename}-penumbra-lineout")
 
-	if show:
-		plt.show()
-	plt.close('all')
 
-
-def save_and_plot_overlaid_penumbra(filename: str, show: bool,
+def save_and_plot_overlaid_penumbra(filename: str,
                                     image_plane: Grid, reconstruction: NDArray[float], measurement: NDArray[float]) -> None:
 	save_as_hdf5(f'results/data/{filename}-penumbra-residual',
 	             x=image_plane.x.get_edges(),
@@ -210,12 +202,8 @@ def save_and_plot_overlaid_penumbra(filename: str, show: bool,
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
 
-	if show:
-		plt.show()
-	plt.close('all')
 
-
-def plot_source(filename: str, show: bool,
+def plot_source(filename: str,
                 source_plane: Grid, source: NDArray[float],
                 energy_min: float, energy_max: float, color_index: int, num_colors: int,
                 projected_offset: Optional[tuple[float, float, float]],
@@ -223,7 +211,6 @@ def plot_source(filename: str, show: bool,
                 projected_stalk: Optional[tuple[float, float, float]], num_stalks: Optional[int]) -> None:
 	""" plot a single reconstructed deuteron/xray source
 	    :param filename: the name with which to save the resulting files, minus the fluff
-	    :param show: whether to make the user look at it
 	    :param source_plane: the coordinates that go with the brightness array (cm)
 	    :param source: the brightness of each pixel (d/cm^2/srad)
 	    :param energy_min: the minimum energy being plotted (for the label)
@@ -323,10 +310,6 @@ def plot_source(filename: str, show: bool,
 	plt.yscale("symlog", linthresh=1e-2, linscale=1/log(10))
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source-lineout")
-
-	if show:
-		plt.show()
-	plt.close('all')
 
 
 def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Interval], NDArray[float]]],
@@ -583,5 +566,3 @@ def plot_overlaid_contores(filename: str,
 	plt.ylabel("y (μm)")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source")
-
-	plt.close('all')

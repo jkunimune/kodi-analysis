@@ -2,17 +2,14 @@
 from __future__ import annotations
 
 import logging
-from math import nan, isnan, sqrt, pi, inf, log
+from math import nan, isnan, sqrt, pi, inf
 from typing import cast, Union
 
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import SymLogNorm
-from numpy import fft, where, size, reshape, expand_dims, ravel
+from numpy import fft, where, reshape, expand_dims, ravel
 from numpy.typing import NDArray
 from scipy import ndimage, interpolate, signal, stats
 
-from cmap import CMAP
 from linear_operator import LinearOperator, ConvolutionKernel, CompoundLinearOperator, Matrix
 
 MAX_ARRAY_SIZE = 1.5e9/4 # an upper limit on the number of elements in a float32 array
@@ -56,9 +53,9 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
 	elif method == "richardson-lucy":
 		return gelfgat_deconvolve(F, q, pixel_area, source_region, "poisson", show_plots)
 	elif method == "wiener":
-		return wiener_deconvolve(F, q, source_region, show_plots)
+		return wiener_deconvolve(F, q, source_region)
 	elif method == "seguin":
-		return seguin_deconvolve(F/np.maximum(1, pixel_area), r_psf, cast(float, np.sum(q)), pixel_area, source_region, show_plots=show_plots)
+		return seguin_deconvolve(F/np.maximum(1, pixel_area), r_psf, cast(float, np.sum(q)), pixel_area, source_region)
 
 
 def gelfgat_deconvolve(F: NDArray[float], q: NDArray[float],
@@ -113,12 +110,12 @@ def gelfgat_solve_with_background_inference(
 	# solve it with that added to the end of the P matrix as a full collum
 	g = gelfgat_solve(
 		CompoundLinearOperator([[P, Matrix(uniform_column)]]),
-		F, noise, show_plots)
+		F, noise)
 	# remove the extraneus element from the result before returning
 	return g[:-1], g[-1]
 
 
-def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArray[float]], show_plots=False
+def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArray[float]]
                   ) -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
 			V. I. Gelfgat et al., "Programs for signal recovery from noisy data…",
@@ -129,7 +126,6 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 		:param P: the linear transformation to be inverted
 		:param F: the observed data to match
 		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
-		:param show_plots: whether to do the status report plot thing
 		:return: the reconstructed solution G such that P@G ~= F
 	"""
 	np.seterr("raise", under="ignore")
@@ -174,11 +170,6 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 	#       g0 is, analagusly, "given that I saw a deuteron, what's the probability it's just background?"
 
 	s = p @ g
-
-	if show_plots:
-		fig = plt.figure(figsize=(5.0, 7.0))
-	else:
-		fig = None
 
 	# set up to keep track of the termination condition
 	num_iterations = 800
@@ -256,63 +247,6 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 			break
 
 		logging.debug(f"    {t: 3d}/{num_iterations}: log(L) = {log_L[t] - log_L[0] - dof:.2f}")
-		# plot things
-		if show_plots and t%20 == 0:
-			# either plot a bunch of images
-			if type(P) is CompoundLinearOperator and type(cast(CompoundLinearOperator, P).operators[0][0]) is ConvolutionKernel:
-				m = int(sqrt(size(F)))
-				n = int(sqrt(size(g) - 1))
-				if size(F) != m**2 or size(g) - 1 != n**2:
-					raise ValueError("I can only show plots if F and G are shapable into a square image.")
-				measured_image = reshape(where(data_region, F, nan), (m, m,))
-				synthetic_image = reshape(where(data_region, N*s, nan), (m, m))
-				source = reshape((N*g/where(source_region, η, inf))[:-1], (n, n))
-
-				fig.clear()
-				axes = fig.subplots(nrows=3, ncols=2)
-				fig.subplots_adjust(top=.95, bottom=.04, left=.09, right=.99, hspace=.00)
-				axes[0, 0].set_title("Source")
-				axes[0, 0].imshow(source.T, vmin=0, cmap=CMAP["greys"], origin="lower")
-				axes[0, 1].set_title("Floor")
-				axes[0, 1].imshow(source.T, norm=SymLogNorm(vmin=0, linthresh=np.min(source, where=source > 0, initial=inf)*6, linscale=1/log(10)), cmap=CMAP["greys"], origin="lower")
-				axes[1, 0].set_title("Data")
-				axes[1, 0].imshow(measured_image.T, vmin=0, vmax=np.nanquantile(measured_image, .99), cmap=CMAP["coffee"], origin="lower")
-				axes[1, 1].set_title("Synthetic")
-				axes[1, 1].imshow(synthetic_image.T, vmin=0, vmax=np.nanquantile(measured_image, .99), cmap=CMAP["coffee"], origin="lower")
-				axes[2, 0].set_title("Log-likelihood")
-				g_t = G[t]/np.sum(G[t])
-				dof_effective = np.sum(g_t/(g_t + 1/dof), where=source_region)
-				axes[2, 0].axhline(-dof_effective/2 - sqrt(2*dof_effective), color="#bbb", linewidth=.6)
-				axes[2, 0].axhline(-dof_effective/2, color="#bbb", linewidth=.6)
-				axes[2, 0].axhline(-dof_effective/2 + sqrt(2*dof_effective), color="#bbb", linewidth=.6)
-				axes[2, 0].plot(log_L[:t + 1] - log_L[t])
-				axes[2, 0].set_xlim(0, t)
-				axes[2, 0].set_ylim(min(-dof, log_L[max(0, t - 10)] - log_L[t]), dof/10)
-				axes[2, 1].set_title("χ^2")
-				if mode == "poisson":
-					χ2 = 2*(N*s - F*np.log(np.maximum(1e-20, s)) - (F - F*np.log(np.maximum(1e-20, f))))
-				else:
-					χ2 = (N*s - F)**2/(D/2)
-				χ2 = reshape(where(data_region, χ2, 0), (m, m))
-				axes[2, 1].imshow(χ2.T, vmin=0, vmax=12, cmap='inferno', origin="lower")
-				for row in axes:
-					for axis in row:
-						if axis != axes[2, 0]:
-							axis.axis('square')
-							axis.set_xticks([])
-							axis.set_yticks([])
-
-			# or do a simple line plot comparison
-			else:
-				fig.clear()
-				axes = fig.subplots(nrows=1, ncols=1)
-				axes.plot(N*s)
-				axes.plot(F)
-
-			plt.pause(1e-3)
-
-	np.seterr('warn')
-	plt.close(fig)
 
 	# identify the iteration with the most plausible solution
 	t = num_iterations - 1
@@ -327,13 +261,12 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 
 
 def wiener_deconvolve(F: NDArray[float], q: NDArray[float],
-                      source_region: NDArray[bool], show_plots=False) -> NDArray[float]:
+                      source_region: NDArray[bool]) -> NDArray[float]:
 	""" apply a Wiener filter to a convolved image. a uniform background will be
 	    automatically inferred
 		:param F: the convolved image (counts/bin)
 		:param q: the point-spread function
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
-		:param show_plots: whether to do the status report plot thing
 		:return: the reconstructed source G such that convolve2d(G, q) \\approx F
 	"""
 	max_iterations = 50
@@ -352,11 +285,6 @@ def wiener_deconvolve(F: NDArray[float], q: NDArray[float],
 	i, j = np.meshgrid(np.arange(F.shape[0]), np.arange(F.shape[1]),
 	                   indexing="ij", sparse=True)
 
-	if show_plots:
-		fig, ax = plt.subplots()
-	else:
-		fig, ax = None, None
-
 	G, signal_to_noise = [], []
 	for t in range(max_iterations):
 		noise_reduction = np.sum(q)**2 * 1e9**(t/max_iterations - 1)
@@ -365,12 +293,6 @@ def wiener_deconvolve(F: NDArray[float], q: NDArray[float],
 		f_G = f_F/f_q * f_q**2/(f_q**2 + noise_reduction)
 		# bring it back to the real world
 		G.append(np.real(fft.ifft2(f_G)))
-
-		if show_plots:
-			ax.clear()
-			ax.imshow(G[t], origin="lower")
-			ax.axis("square")
-			plt.pause(.2)
 
 		# estimate the signal/noise ratio in the reconstructed source
 		rim = (i < height) & (j < width) & \
@@ -391,16 +313,13 @@ def wiener_deconvolve(F: NDArray[float], q: NDArray[float],
 	background[:height, :width] |= ~source_region
 	G -= np.mean(G, where=background)
 
-	if show_plots:
-		plt.close(fig)
-
 	# cut it back to the correct size, which should then remove that upper-right region
 	return G[:height, :width]
 
 
 def seguin_deconvolve(F: NDArray[float], r_psf: float, efficiency: float,
                       pixel_area: NDArray[int], source_region: NDArray[bool],
-                      smoothing=1.5, show_plots=False) -> NDArray[float]:
+                      smoothing=1.5) -> NDArray[float]:
 	""" perform the algorithm outlined in
 	        F. H. Séguin et al., "D3He-proton emission imaging for ICF…",
 	        *Rev. Sci. Instrum.* 75 (2004), 3520.
@@ -412,7 +331,6 @@ def seguin_deconvolve(F: NDArray[float], r_psf: float, efficiency: float,
 	    :param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
 		:param smoothing: the σ at which to smooth the input image (pixels)
-	    :param show_plots: whether to do the status report plot thing
 	    :return the reconstructed image G such that convolve2d(G, q) \\approx F
 	"""
 	if F.ndim != 2:
@@ -454,12 +372,6 @@ def seguin_deconvolve(F: NDArray[float], r_psf: float, efficiency: float,
 	dFdr_weited = dFdr_1*weit[:, np.newaxis]
 	# also pad the outer rim with zeros
 	dFdr_weited[-1, :] = 0
-
-	if show_plots:
-		fig, axes = plt.subplots(nrows=2, ncols=2)
-		for ax, image in zip(axes.flatten(), [F, F_polar, dFdr, dFdr_weited]):
-			ax.imshow(image, origin="lower")
-		plt.show()
 
 	# finally, do the integral (memory management is kind of tricky here)
 	x = np.arange(source_region.shape[0]) - (source_region.shape[0] - 1)/2.
@@ -513,6 +425,8 @@ def stingy_interpolate(i: NDArray[np.float32], j: NDArray[int], z: NDArray[np.fl
 
 
 if __name__ == '__main__':
+	import matplotlib.pyplot as plt
+
 	source = np.array([
 		[ 0,  0,  0,  0,  0],
 		[ 0,  0,  0, 20, 20],

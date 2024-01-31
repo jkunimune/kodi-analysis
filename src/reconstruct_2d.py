@@ -474,13 +474,14 @@ def analyze_scan(input_filename: str,
 			color_index = detector_index*num_sections + cut_index + num_missing_sections
 			num_colors = num_detectors*num_sections
 		plot_source(f"{shot}/{los}-{particle}-{indices[cut_index]}",
-		            False, source_plane, source_stack[cut_index],
+		            source_plane, source_stack[cut_index],
 		            energy_bounds[cut_index][0], energy_bounds[cut_index][1],
 		            color_index=color_index, num_colors=num_colors,
 		            projected_offset=projected_offset,
 		            projected_flow=projected_flow,
 		            projected_stalk=projected_stalk,
 		            num_stalks=num_stalks)
+		plt.close("all")
 
 	# if can, plot some plots that overlay the sources in the stack
 	if len(source_stack) > 1:
@@ -605,7 +606,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 			centers, grid_transform = find_circle_centers(
 				input_file, particle, 35.,
 				M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
-				los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS, show_plots)
+				los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS)
 		except DataError as e:
 			raise DataError(f"I couldn't fit the circles to infer the magnification becuase {e}  this might mean that "
 			                f"the aperture radius or magnification are wrong.  does {rA/1e-4:.3g} μm × {M_gess:.1f} "
@@ -773,7 +774,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 			# check the statistics, if these are deuterons
 			num_tracks, _, _, _, _ = count_tracks_in_scan(
 				input_file, diameter_min, diameter_max, max_contrast,
-				show_plots and SHOW_DIAMETER_CUTS)
+				SHOW_DIAMETER_CUTS)
 			logging.info(f"  found {num_tracks:.4g} tracks in the cut")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
 				raise DataError("Not enuff tracks to reconstuct")
@@ -783,7 +784,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 			input_file, f"{shot}/{los}-{particle}-{cut_index}",
 			diameter_min, diameter_max,
 			energy_min, energy_max, max_contrast, M*rA, M*sA,
-			centers, data_polygon, show_plots) # TODO: infer rA, as well?
+			centers, data_polygon) # TODO: infer rA, as well?
 
 		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
 			logging.warning(f"  the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
@@ -865,25 +866,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		else:
 			raise ValueError(f"please specify how image plates are oriented on {los}")
 
-	# if we’re skipping the reconstruction, just load the previus stacked penumbra
-	else:
-		logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
-		previus_parameters = load_shot_info(shot, los, energy_min, energy_max, filter_str)
-		account_for_overlap = False
-		r_psf, r_max, r_object, num_bins_K = 0, 0, 0, 0
-		Q = previus_parameters.Q
-		x, y, image, image_plicity = load_hdf5(
-			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
-		image_plane = Grid.from_edge_array(x, y)
-		image = image.T  # don’t forget to convert from (y,x) to (i,j) indexing
-		image_plicity = image_plicity.T
-
-	save_and_plot_penumbra(f"{shot}/{los}-{particle}-{cut_index}", show_plots,
-	                       image_plane, image, image_plicity, energy_min, energy_max,
-	                       r0=M*rA, s0=M*sA, grid_shape=grid_shape, grid_transform=grid_transform)
-
-	# now to apply the reconstruction algorithm!
-	if not skip_reconstruction:
+		# now to apply the reconstruction algorithm!
 		# set up some coordinate systems
 		if account_for_overlap:
 			raise NotImplementedError("not implemented")
@@ -934,15 +917,14 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		clipd_plicity = np.where(on_penumbra, image_plicity, 0)
 		source_region = np.hypot(*source_plane.get_pixels()) <= source_plane.x.half_range
 
-		if show_plots and SHOW_POINT_SPREAD_FUNCCION:
+		if SHOW_POINT_SPREAD_FUNCCION:
 			plt.figure()
 			plt.pcolormesh(kernel_plane.x.get_edges(), kernel_plane.y.get_edges(), penumbral_kernel)
 			plt.contour(image_plane.x.get_bins(), image_plane.y.get_bins(), clipd_plicity,
 			            levels=[0.5], colors="k")
 			plt.axis('square')
-			plt.title("Point spread function (close to confirm)")
+			plt.title("Point spread function")
 			plt.tight_layout()
-			plt.show()
 
 		# estimate the noise level, in case that's helpful
 		umbra = (image_plicity > 0) & (image_plane_pixel_distances < max(M*rA/2, M*rA - (r_max - r_psf)))
@@ -990,8 +972,17 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 			bounds_error=False, fill_value=0)(
 			np.stack(output_plane.get_pixels(), axis=-1))
 
-	# if we’re skipping the reconstruction, just load the previusly reconstructed source
+	# if we’re skipping the reconstruction, just load the previus stacked penumbra and reconstructed source
 	else:
+		logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
+		previus_parameters = load_shot_info(shot, los, energy_min, energy_max, filter_str)
+		Q = previus_parameters.Q
+		x, y, image, image_plicity = load_hdf5(
+			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
+		image_plane = Grid.from_edge_array(x, y)
+		image = image.T  # don’t forget to convert from (y,x) to (i,j) indexing
+		image_plicity = image_plicity.T
+
 		output_plane, output = load_source(shot, los, f"{particle}-{cut_index[0]}",
 		                                   filter_stack, energy_min, energy_max)
 		residual, = load_hdf5(
@@ -1008,6 +999,9 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 	logging.info(f"  {contour:.0%} P2   = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
 
 	# save and plot the results
+	save_and_plot_penumbra(f"{shot}/{los}-{particle}-{cut_index}",
+	                       image_plane, image, image_plicity, energy_min, energy_max,
+	                       r0=M*rA, s0=M*sA, grid_shape=grid_shape, grid_transform=grid_transform)
 	if particle == "xray":
 		color_index = int(cut_index[0])  # we’ll redo the colors later, so just use a heuristic here
 		num_colors = num_detectors
@@ -1015,13 +1009,16 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		color_index = int(cut_index[2])
 		num_colors = num_energy_cuts
 	plot_source(f"{shot}/{los}-{particle}-{cut_index}",
-	            show_plots,
 	            output_plane, output, energy_min, energy_max,
 	            color_index=color_index, num_colors=num_colors,
 	            projected_flow=None, projected_offset=None,
 	            projected_stalk=None, num_stalks=0)
-	save_and_plot_overlaid_penumbra(f"{shot}/{los}-{particle}-{cut_index}", show_plots,
+	save_and_plot_overlaid_penumbra(f"{shot}/{los}-{particle}-{cut_index}",
 	                                image_plane, reconstructed_image/image_plicity, image/image_plicity)
+	if show_plots:
+		plt.show()
+	else:
+		plt.close("all")
 
 	# estimate a P0 error bar
 	r_source, (_, _), (_, _) = shape_parameters(
@@ -1054,8 +1051,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
                          diameter_min: float, diameter_max: float,
                          energy_min: float, energy_max: float, max_contrast: float,
-                         r0: float, s0: float, centers: list[Point], region: list[Point],
-                         show_plots: bool) -> Point:
+                         r0: float, s0: float, centers: list[Point], region: list[Point]) -> Point:
 	""" perform an inverse Abel transformation while fitting for charging
 	    :param scan: the scan result object containing the data to be analyzed
 	    :param plot_filename: the filename to pass to the plotting function for the resulting figure
@@ -1068,7 +1064,6 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 	    :param r0: the radius of the aperture in the imaging plane (cm)
 	    :param s0: the distance to the center of the next aperture in the imaging plane (cm)
 	    :param region: the polygon inside which we care about the data
-	    :param show_plots: if False, overrides SHOW_ELECTRIC_FIELD_CALCULATION
 	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
 	"""
 	r_max = min(2*r0, s0/sqrt(3))
@@ -1172,7 +1167,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		r_PSF, f_PSF = electric_field.get_modified_point_spread(
 			r0, Q, energy_min, energy_max, normalize=True)
 		save_and_plot_radial_data(
-			plot_filename, show_plots, r_sphere, ρ_sphere,
+			plot_filename, r_sphere, ρ_sphere,
 			r, ρ, dρ, ρ_recon, r_PSF, f_PSF, r0, r_cutoff, ρ_min, ρ_cutoff, ρ_max)
 
 	if FORCE_LARGE_SOURCE_DOMAIN:
@@ -1199,7 +1194,7 @@ def where_is_the_ocean(plane: Grid, image: NDArray[float], title, timeout=None) 
 	start = time.time()
 	while center_guess is None and (timeout is None or time.time() - start < timeout):
 		plt.pause(.01)
-	plt.close('all')
+	plt.close(fig)
 	if center_guess is not None:
 		return center_guess
 	else:
@@ -1267,7 +1262,7 @@ def user_defined_region(scan, title, max_contrast: float, default=None, timeout=
 
 	while not has_closed and (timeout is None or time.time() - last_click_time < timeout):
 		plt.pause(.01)
-	plt.close("all")
+	plt.close(fig)
 
 	return vertices
 
@@ -1316,6 +1311,7 @@ def cut_cr39_scan(scan: Scan,
 	if show_plots:
 		max_diameter_to_plot = np.quantile(d_tracks, .999)
 		max_contrast_to_plot = c_tracks.max()
+		plt.figure()
 		plt.hist2d(d_tracks, c_tracks,
 		           bins=(np.linspace(0, max_diameter_to_plot + 5, 100),
 		                 np.arange(0.5, max_contrast_to_plot + 1)),
@@ -1325,9 +1321,8 @@ def cut_cr39_scan(scan: Scan,
 		x1 = min(max_diameter, max_diameter_to_plot)
 		y1 = min(max_contrast, max_contrast_to_plot)
 		plt.plot([x0, x0, x1, x1], [0, y1, y1, 0], "k--")
-		plt.title("Making these cuts in contrast-diameter space (close to confirm)")
+		plt.title("Making these cuts in contrast-diameter space")
 		plt.tight_layout()
-		plt.show()
 
 	return x_tracks, y_tracks
 
@@ -1598,8 +1593,7 @@ def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArra
 def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: float,
                         r_nominal: float, s_nominal: float,
                         grid_shape: str, grid_parameters: Optional[GridParameters],
-                        region: list[Point], trust_grid: bool, show_plots: bool,
-                        ) -> tuple[list[Point], NDArray[float]]:
+                        region: list[Point], trust_grid: bool) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param scan: the scanfile containing the data to be analyzed
 	    :param particle: the type of radiation being detected, for the purposes of statistics: "xray" for Gaussian
@@ -1613,7 +1607,6 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
 		:param region: the region in which to care about tracks
 		:param trust_grid: whether to return centers that are exactly on the grid, rather than centers wherever we find them
-	    :param show_plots: if False, overrides SHOW_CENTER_FINDING_CALCULATION
 	    :param grid_parameters: the previusly fit image array parameters, if any (the spacing, rotation, etc.)
 	    :return: the x and y of the centers of the circles, the transformation matrix that
 	             converts apertures locations from their nominal ones
@@ -1751,7 +1744,7 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 		if np.any((x_grid_nodes[:i] == x_grid_nodes[i]) & (y_grid_nodes[:i] == y_grid_nodes[i])):
 			valid[i] = False
 
-	if show_plots and SHOW_CENTER_FINDING_CALCULATION:
+	if SHOW_CENTER_FINDING_CALCULATION:
 		plt.figure()
 		plt.imshow(N_full.T, extent=full_domain.extent, origin="lower",
 		           vmin=0, vmax=np.nanquantile(N_crop, .999), cmap=CMAP["coffee"])
@@ -1769,13 +1762,12 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 		            levels=[contour_level], colors="k", linewidths=.5, zorder=10)
 		plt.fill([x for x, y in region], [y for x, y in region],
 		         facecolor="none", edgecolor="k", linewidth=.5, zorder=10)
-		plt.title("Located apertures marked with exes (close to confirm)")
+		plt.title("Located apertures marked with exes")
 		plt.xlim(min(np.min(x_circles), crop_domain.x.minimum),
 		         max(np.max(x_circles), crop_domain.x.maximum))
 		plt.ylim(min(np.min(y_circles), crop_domain.y.minimum),
 		         max(np.max(y_circles), crop_domain.y.maximum))
 		plt.tight_layout()
-		plt.show()
 
 	if len(circles) == 0:  # TODO: check for duplicate centers (tho I think they should be rare and not too big a problem)
 		raise DataError("I couldn't find any circles in this region")
