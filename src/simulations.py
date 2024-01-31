@@ -30,11 +30,13 @@ def load_shot(shot_num):
 
 	return np.array(time), [np.array(profile) for profile in profiles]
 
+
 def nonunimodal_interp(x, x_ref, y_ref):
 	for i in range(1, len(x_ref)):
 		if (x >= x_ref[i-1] and x < x_ref[i]) or (x >= x_ref[i] and x < x_ref[i-1]):
 			return np.interp(x, x_ref[i-1:i+1], y_ref[i-1:i+1])
 	return np.nan
+
 
 def make_image(t, R, ρ, Ti, e_bounds):
 	R = R*1e-6 # convert to meters
@@ -71,7 +73,7 @@ def make_image(t, R, ρ, Ti, e_bounds):
 	E = 8/9*14.1*(zX - zS)**2/((xX - xS)**2 + (yX - yS)**2 + (zX - zS)**2) # note that this reflects any deuterons going the wrong way in the z direction because symmetry
 	dσdΩ = np.interp(E, σD[:,0], σD[:,1]) # [m^2/sr]
 
-		# plt.figure()
+	# plt.figure()
 	# for i in list(range(R.shape[1]//2, R.shape[1]))+[iBT]:
 	# 	plt.clf()
 	# 	plt.plot(R[i,:]/1e-6, Yn[i,:])

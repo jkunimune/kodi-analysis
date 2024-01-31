@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def perlin_generator(x_min, x_max, y_min, y_max, wavelength, amplitude):
 	""" return random values with the same shapes as x and y """
 	node_x = np.arange(x_min - wavelength/2, x_max + wavelength, wavelength)

@@ -4,9 +4,9 @@ import matplotlib.colors as colors
 
 from solid_state import particle_E_out, track_diameter
 
-plt.rcParams.update({'font.family': 'sans', 'font.size': 14})
-
 from cmap import CMAP
+
+plt.rcParams.update({'font.family': 'sans', 'font.size': 14})
 
 
 N = 10000
