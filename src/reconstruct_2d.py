@@ -944,8 +944,7 @@ def analyze_scan_section_cut(input_file: Union[Scan, Image],
 		                                  r_psf=M*rA/image_plane.pixel_width,
 		                                  pixel_area=clipd_plicity,
 		                                  source_region=source_region,
-		                                  noise=estimated_data_variance,
-		                                  show_plots=show_plots)
+		                                  noise=estimated_data_variance)
 		logging.info("  done!")
 
 		# since the true problem is not one of deconvolution, but inverted deconvolution, rotate 180°

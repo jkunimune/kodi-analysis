@@ -18,8 +18,7 @@ MAX_ARRAY_SIZE = 1.5e9/4 # an upper limit on the number of elements in a float32
 def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
                pixel_area: NDArray[int], source_region: NDArray[bool],
                r_psf: float = None,
-               noise: Union[str, NDArray[float]] = None,
-               show_plots: bool = False) -> NDArray[float]:
+               noise: Union[str, NDArray[float]] = None) -> NDArray[float]:
 	""" deconvolve the simple discrete 2d kernel q from a measured image. a background
 	    value will be automatically inferred.  options include:
 
@@ -45,13 +44,12 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
 	    :param r_psf: the radius of the point-spread function (pixels)
 		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
-		:param show_plots: whether to do the status report plot thing
 		:return: the reconstructed source G such that convolve2d(G, q)*pixel_area \\approx F
 	"""
 	if method == "gelfgat":
-		return gelfgat_deconvolve(F, q, pixel_area, source_region, noise, show_plots)
+		return gelfgat_deconvolve(F, q, pixel_area, source_region, noise)
 	elif method == "richardson-lucy":
-		return gelfgat_deconvolve(F, q, pixel_area, source_region, "poisson", show_plots)
+		return gelfgat_deconvolve(F, q, pixel_area, source_region, "poisson")
 	elif method == "wiener":
 		return wiener_deconvolve(F, q, source_region)
 	elif method == "seguin":
@@ -60,7 +58,7 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
 
 def gelfgat_deconvolve(F: NDArray[float], q: NDArray[float],
                        pixel_area: NDArray[int], source_region: NDArray[bool],
-                       noise: Union[str, NDArray[float]], show_plots=False) -> NDArray[float]:
+                       noise: Union[str, NDArray[float]]) -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
 			V. I. Gelfgat et al., "Programs for signal recovery from noisy data…",
 			*Comput. Phys. Commun.* 74 (1993), 335
@@ -71,7 +69,6 @@ def gelfgat_deconvolve(F: NDArray[float], q: NDArray[float],
 		:param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
 		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
-		:param show_plots: whether to do the status report plot thing
 		:return: the reconstructed source G such that convolve2d(G, q) ~= F
 	"""
 	G, _ = gelfgat_solve_with_background_inference(
@@ -82,15 +79,14 @@ def gelfgat_deconvolve(F: NDArray[float], q: NDArray[float],
 		),
 		ravel(F),
 		ravel(pixel_area),
-		"poisson" if noise == "poisson" else ravel(noise),
-		show_plots
+		"poisson" if noise == "poisson" else ravel(noise)
 	)
 	return reshape(G, source_region.shape)
 
 
 def gelfgat_solve_with_background_inference(
 		P: LinearOperator, F: NDArray[float], pixel_area: NDArray[float],
-		noise: Union[str, NDArray[float]], show_plots=False) -> tuple[NDArray[float], float]:
+		noise: Union[str, NDArray[float]]) -> tuple[NDArray[float], float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
 			V. I. Gelfgat et al., "Programs for signal recovery from noisy data…",
 			*Comput. Phys. Commun.* 74 (1993), 335
@@ -101,7 +97,6 @@ def gelfgat_solve_with_background_inference(
 		:param F: the observed data to match
 		:param pixel_area: the scaling on the background for each pixel
 		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
-		:param show_plots: whether to do the status report plot thing
 		:return: the reconstructed solution (G, F0) such that P@G ~= F + F0
 	"""
 	# determine the "point-spread-function" for the background "pixel"
@@ -447,8 +442,7 @@ if __name__ == '__main__':
 	                            np.full(image.shape, True),
 	                            np.full(source.shape, True),
 	                            r_psf=nan,
-	                            noise="poisson",
-	                            show_plots=True)
+	                            noise="poisson")
 
 	plt.figure()
 	plt.imshow(source, vmin=0, vmax=np.max(source))
