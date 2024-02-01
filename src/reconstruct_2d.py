@@ -432,7 +432,7 @@ def analyze_scan(input_filename: str,
 				energy_bounds.append((statblock["energy min"], statblock["energy max"]))
 				indices.append(f"{detector_index}{filter_section_index}{energy_cut_index}")
 
-	if len(sources):
+	if len(sources) == 0:
 		raise DataError("well, that was pointless")
 
 	# sort the results by energy if you can
