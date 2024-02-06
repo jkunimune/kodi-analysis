@@ -1135,8 +1135,8 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		raise DataError("too much of the image is clipd; I need a background region.")
 	ρ_max = np.average(ρ[valid], weights=np.where(inside_umbra, 1/dρ**2, 0)[valid])
 	ρ_min = np.min(ρ, where=valid & outside_penumbra, initial=inf)
-	n_inf = np.mean(n, where=(r > 1.8*r0) & (r < s0 - 1.8*r0))
-	dρ2_inf = np.var(ρ, where=(r > 1.8*r0) & (r < s0 - 1.8*r0))
+	n_inf = np.mean(n, where=(r > min(1.8*r0, 0.45*s0)) & (r < max(s0 - 1.8*r0, 0.55*s0)))
+	dρ2_inf = np.var(ρ, where=(r > min(1.8*r0, 0.45*s0)) & (r < max(s0 - 1.8*r0, 0.55*s0)))
 
 	# now compute the relation between spherical radius and image radius
 	r_sphere_bins = r_bins[r_bins <= r_bins[-1] - r0][::2]
@@ -1665,13 +1665,13 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 		x0, y0 = None, None
 
 	X_pixels, Y_pixels = full_image.domain.get_pixels()
+	if not np.any(inside_polygon(region, X_pixels, Y_pixels)):
+		raise DataError("this polygon did not contain any pixels in the image.")
 	crop_image = crop_to_finite(Image(
 		full_image.domain,
 		np.where(inside_polygon(region, X_pixels, Y_pixels), full_image.values, nan)))
 	X_pixels, Y_pixels = crop_image.domain.get_pixels()
-	if np.all(np.isnan(crop_image.values)):
-		raise DataError("this polygon had no area inside it.")
-	elif np.nansum(crop_image.values) == 0:
+	if np.nansum(crop_image.values) == 0:
 		raise DataError("there are no tracks in this region.")
 
 	# if we don't have a good center gess, do a recursively narrowing scan
