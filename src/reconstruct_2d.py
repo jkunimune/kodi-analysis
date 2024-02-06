@@ -518,7 +518,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
                          num_detectors: int, section_index: str,
                          section_name: str, filter_stack: list[Filter],
                          grid_parameters: Optional[GridParameters],
-                         source_plane: Optional[Grid],
+                         source_domain: Optional[Grid],
                          charged_particle_energy_cuts: list[Interval],
                          skip_reconstruction: bool, show_plots: bool,
                          ) -> tuple[GridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
@@ -541,7 +541,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 	                         thickness in micrometers and its material. they should be ordered from TCC to detector.
 	    :param grid_parameters: the transformation array and x and y offsets that define the hexagonal grid on which
 	                             the images all fall
-        :param source_plane: the coordinate system onto which to interpolate the result before returning.  if None is
+        :param source_domain: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
 	    :param charged_particle_energy_cuts: the energy cuts to use when you break this section up into diameter bins
@@ -576,7 +576,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 			logging.info(f"found {num_tracks:.4g} tracks in the file")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
 				logging.warning("Not enuff tracks to reconstruct")
-				return grid_parameters, source_plane, [], []
+				return grid_parameters, source_domain, [], []
 
 		# start by asking the user to highlight the data
 		try:
@@ -625,7 +625,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 			previus_parameters = load_shot_info(shot, los, filter_str=print_filtering(filter_stack))
 		except RecordNotFoundError as e:
 			logging.warning(e)
-			return grid_parameters, source_plane, [], []
+			return grid_parameters, source_domain, [], []
 		data_polygon = None
 		centers = None
 		grid_x0, grid_y0 = previus_parameters["x0"], previus_parameters["y0"]
@@ -656,7 +656,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 				grid_transform/grid_mean_scale, centers,
 				f"{section_index}{energy_cut_index}", num_detectors, len(energy_cuts),
 				energy_min, energy_max, max_contrast,
-				source_plane, skip_reconstruction, show_plots)
+				source_domain, skip_reconstruction, show_plots)
 		except (DataError, FilterError, RecordNotFoundError) as e:
 			logging.warning(f"  {e}")
 		else:
@@ -669,13 +669,14 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 			statblock["grid angle"] = degrees(grid_angle)
 			statblock["grid skew"] = grid_skew
 			statblock["grid skew angle"] = degrees(grid_skew_angle)
-			sources.append(source.values)
 			results.append(statblock)
+			sources.append(source.values)
+			source_domain = source.domain
 
 	if len(results) > 0:  # update the grid iff any of these analyses worked
 		grid_parameters = new_grid_parameters
 
-	return grid_parameters, source_plane, sources, results
+	return grid_parameters, source_domain, sources, results
 
 
 def analyze_scan_section_cut(scan: Union[Scan, Image],
@@ -913,11 +914,11 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		on_penumbra = ~(within_penumbra | without_penumbra)
 		clipd_image = copy(image)
 		if np.any(within_penumbra):
-			inner_value = np.mean((image/image_plicity).values,
+			inner_value = np.mean(image.values/np.maximum(1, image_plicity.values),
 			                      where=dilate(within_penumbra) & on_penumbra)
 			clipd_image.values = np.where(within_penumbra, inner_value, clipd_image.values)
 		if np.any(without_penumbra):
-			outer_value = np.mean((image/image_plicity).values,
+			outer_value = np.mean(image.values/np.maximum(1, image_plicity.values),
 			                      where=dilate(without_penumbra) & on_penumbra)
 			clipd_image.values = np.where(without_penumbra, outer_value, clipd_image.values)
 		clipd_image_plicity = Image(image.domain, np.where(on_penumbra, image_plicity.values, 0))
@@ -933,9 +934,10 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			plt.tight_layout()
 
 		# estimate the noise level, in case that's helpful
+		positive_image_plicity = np.maximum(1, image_plicity.values)
 		umbra = (image_plicity.values > 0) & (r_image_pixels < max(M*rA/2, M*rA - (r_max - r_psf)))
-		umbra_value = np.mean((image/image_plicity).values, where=umbra)
-		umbra_variance = np.mean((image.values - umbra_value*image_plicity.values)**2/image_plicity.values, where=umbra)
+		umbra_value = np.mean(image.values/positive_image_plicity, where=umbra)
+		umbra_variance = np.mean((image.values - umbra_value*positive_image_plicity)**2/positive_image_plicity, where=umbra)
 		estimated_data_variance = image.values/umbra_value*umbra_variance
 
 		if sqrt(umbra_variance) < umbra_value/500:
@@ -966,7 +968,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 				image.domain,
 				signal.fftconvolve(source.values[::-1, ::-1], kernel.values, mode="full")*image_plicity.values)
 			# and estimate background as whatever makes it fit best
-			reconstructed_image.values += np.nanmean(((image - reconstructed_image)/image_plicity).values,
+			reconstructed_image.values += np.nanmean((image - reconstructed_image).values/positive_image_plicity,
 			                                         where=on_penumbra)*image_plicity.values
 		else:
 			logging.warning("the reconstruction would take too long to reproduce so I’m skipping the residual plot")
@@ -1022,7 +1024,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	            projected_flow=None, projected_offset=None,
 	            projected_stalk=None, num_stalks=0)
 	save_and_plot_overlaid_penumbra(f"{shot}/{los}-{particle}-{cut_index}",
-	                                reconstructed_image/image_plicity, image/image_plicity)
+	                                reconstructed_image, image, image_plicity)
 	if show_plots:
 		plt.show()
 	else:

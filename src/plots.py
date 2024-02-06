@@ -7,7 +7,7 @@ import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from numpy import isfinite, pi, sin, cos, sqrt, log
+from numpy import isfinite, pi, sin, cos, sqrt, log, inf
 from numpy.typing import NDArray
 from scipy import optimize, interpolate
 from scipy import special
@@ -166,24 +166,35 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 
 
 def save_and_plot_overlaid_penumbra(filename: str,
-                                    reconstruction: Image, measurement: Image) -> None:
+                                    reconstruction: Image, measurement: Image,
+                                    image_plicity: Image) -> None:
 	assert reconstruction.domain == measurement.domain
 	save_as_hdf5(f'results/data/{filename}-penumbra-residual',
 	             x=reconstruction.x.get_edges(),
 	             y=reconstruction.y.get_edges(),
-	             z=(reconstruction - measurement).values.T)  # save it with (y,x) indexing, not (i,j)
+	             N=(reconstruction - measurement).values.T,
+	             A=image_plicity.values.T)  # save it with (y,x) indexing, not (i,j)
 
 	# sometimes this is all nan, but we don't need to plot it
-	if np.all(np.isnan((reconstruction - measurement).values)):
+	if np.all(np.isnan((reconstruction - measurement).values) | (image_plicity.values == 0)):
 		return
 
 	# resample the penumbral images to increase the bin size
 	while reconstruction.num_pixels > MAX_NUM_PIXELS:
 		reconstruction = downsample_2d(reconstruction)
 		measurement = downsample_2d(measurement)
+		image_plicity = downsample_2d(image_plicity)
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	plt.imshow(((reconstruction - measurement)/reconstruction).values.T,
+	# calculating (x-y)/x is a little tricky since I'm trying hard to avoid dividing by zero
+	relative_error = np.empty(reconstruction.shape)
+	valid = (reconstruction.values != 0)
+	irrelevant = (reconstruction.values == 0) & (measurement.values == 0)
+	terrible = (reconstruction.values == 0) & (measurement.values != 0)
+	relative_error[valid] = (reconstruction - measurement).values[valid]/reconstruction.values[valid]
+	relative_error[irrelevant] = 0
+	relative_error[terrible] = inf
+	plt.imshow(relative_error.T,
 	           extent=reconstruction.domain.extent, origin="lower",
 	           cmap='RdBu', vmin=-.3, vmax=.3)
 	plt.axis('square')
@@ -194,13 +205,17 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	save_current_figure(f"{filename}-penumbra-residual")
 
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.plot(measurement.x.get_bins(), measurement.values[:, measurement.shape[1]//2],
+	normalization = np.where(image_plicity.values > 0, image_plicity.values, inf)
+	plt.plot(measurement.x.get_bins(),
+	         (measurement.values/normalization)[:, measurement.shape[1]//2],
 	         "-o", label="Data")
-	plt.plot(reconstruction.x.get_bins(), reconstruction.values[:, reconstruction.shape[1]//2],
+	plt.plot(reconstruction.x.get_bins(),
+	         (reconstruction.values/normalization)[:, reconstruction.shape[1]//2],
 	         "--", label="Reconstruction")
 	plt.legend()
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
+	save_current_figure(f"{filename}-penumbra-residual-lineout")
 
 
 def plot_source(filename: str, source: Image,
