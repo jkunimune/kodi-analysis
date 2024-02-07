@@ -1698,10 +1698,10 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 	max_density = np.nanmean(crop_image.values, where=R_pixels < .5*r_nominal)
 	min_density = np.nanmean(crop_image.values, where=R_pixels > 1.5*r_nominal)
 	if particle == "xray":
-		# for x-rays, the 50% conture is the cleanest
-		contour_level = .5*max_density + .5*min_density
+		# for x-rays, you want to stick close to 50%
+		contour_level = .3*max_density + .7*min_density
 	else:
-		# for particles, the 20% conture is better since there's more noise at higher densities
+		# for particles, a lower one is better since there's more noise at higher densities
 		contour_level = .2*max_density + .8*min_density
 	assert isfinite(contour_level)
 	contours = measure.find_contours(crop_image.values, contour_level)
