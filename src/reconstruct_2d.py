@@ -1032,6 +1032,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 
 	# estimate a P0 error bar
 	r_source, (_, _), (_, _) = shape_parameters(output, contour_level=.5)
+	r_source *= 1e-4
 	if particle == "xray":
 		δ_PSF = 0
 		statistics = inf
@@ -1046,7 +1047,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			r_PSF = r_test[np.argmin(np.gradient(f_test, r_test))]
 		r_image = np.hypot(*image.domain.get_pixels())
 		δ_image = sqrt(((M - 1)*r_source)**2 + δ_PSF**2)
-		statistics = np.sum(reconstructed_image.values,
+		statistics = np.sum(image.values,
 		                    where=(r_image > r_PSF - δ_image) & (r_image < r_PSF + δ_image))
 
 	statblock = {"Q": Q, "dQ": 0.,
