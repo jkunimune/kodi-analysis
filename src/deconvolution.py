@@ -136,12 +136,16 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 		mode = "poisson"
 		D = np.full(F.shape, nan)
 		if not np.array_equal(np.floor(F[data_region]), F[data_region]):
-			raise ValueError("the poisson noise model gelfgat reconstruction (aka richardson-lucy) is only available for integer data (otherwise I don't know when to stop)")
+			raise ValueError("the poisson noise model gelfgat reconstruction (aka richardson-lucy) is only available "
+			                 "for integer data (otherwise I don't know when to stop)")
 	elif type(noise) is np.ndarray:
 		if noise.shape != F.shape:
 			raise ValueError("if you give a noise array, it must have the same shape as the data.")
 		mode = "gaussian"
 		D = 2*noise
+		if np.any(~(D > 0) & data_region):
+			raise ValueError(f"if you pass noise values, they must all be positive, but I found a "
+			                 f"{np.min(D, where=data_region, initial=inf)}.")
 	else:
 		raise ValueError(f"I don't understand the noise parameter you gave ({noise})")
 
@@ -180,7 +184,8 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 
 		# recalculate the scaling term N (for gaussian only)
 		if mode == "gaussian":
-			N = np.sum(F*s/D, where=data_region)/np.sum(s**2/D, where=data_region)
+			N = np.sum(F*s/where(data_region, D, inf), where=data_region)/\
+			    np.sum(s**2/where(data_region, D, inf), where=data_region)
 
 		# then get the step direction for this iteration
 		if mode == "poisson":
@@ -201,9 +206,9 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 				raise RuntimeError(f"{dldh} > 0; {d2ldh2} < 0")
 			h = -dldh/d2ldh2 # compute step length
 		else:
-			δδ = np.sum(δs**2/D, where=data_region)
-			sδ = np.sum(s*δs/D, where=data_region)
-			ss = np.sum(s**2/D, where=data_region)
+			δδ = np.sum(δs**2/where(data_region, D, inf))
+			sδ = np.sum(s*δs/where(data_region, D, inf))
+			ss = np.sum(s**2/where(data_region, D, inf))
 			dldh = np.sum(δg**2/where(g != 0, g, inf))
 			h = dldh/(N*(δδ - sδ*sδ/ss) - dldh*sδ/ss)
 			if not (h > 0):
