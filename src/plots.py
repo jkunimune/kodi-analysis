@@ -7,7 +7,7 @@ import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from numpy import isfinite, pi, sin, cos, sqrt, log
+from numpy import isfinite, pi, sin, cos, sqrt, log, mean
 from numpy.typing import NDArray
 from scipy import optimize, interpolate
 from scipy import special
@@ -15,10 +15,10 @@ from skimage import measure
 
 import aperture_array
 from cmap import CMAP
-from coordinate import Image
+from coordinate import Image, Interval
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	Interval, shape_parameters, quantile
+	shape_parameters, quantile
 
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
@@ -110,8 +110,7 @@ def save_and_plot_radial_data(filename: str,
 
 
 def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
-                           energy_min: float, energy_max: float,
-                           s0: float, r0: float, grid_shape: str,
+                           energies: Interval, s0: float, r0: float, grid_shape: str,
                            grid_transform: NDArray[float] = np.identity(2)):
 	""" plot the data along with the initial fit to it, and the reconstructed superaperture. """
 	save_as_hdf5(f'results/data/{filename}-penumbra',
@@ -136,9 +135,9 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 	if "proton" in filename:
 		plt.title("D³He protons")
 	elif "deuteron" in filename:
-		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+		plt.title(f"$E_\\mathrm{{d}}$ = {energies.minimum:.1f} – {min(12.5, energies.maximum):.1f} MeV")
 	elif "xray" in filename:
-		plt.title(f"$h\\nu$ ≥ {energy_min:.0f} keV")
+		plt.title(f"$h\\nu$ ≥ {energies.minimum:.0f} keV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	make_colorbar(0, vmax, "Counts")
@@ -203,16 +202,15 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	plt.tight_layout()
 
 
-def plot_source(filename: str, source: Image,
-                energy_min: float, energy_max: float, color_index: int, num_colors: int,
+def plot_source(filename: str, source_chain: Image,
+                energies: Interval, color_index: int, num_colors: int,
                 projected_offset: Optional[tuple[float, float, float]],
                 projected_flow: Optional[tuple[float, float, float]],
                 projected_stalk: Optional[tuple[float, float, float]], num_stalks: Optional[int]) -> None:
 	""" plot a single reconstructed deuteron/xray source
 	    :param filename: the name with which to save the resulting files, minus the fluff
-	    :param source: the brightness of each pixel (d/cm^2/srad)
-	    :param energy_min: the minimum energy being plotted (for the label)
-	    :param energy_max: the maximum energy being plotted (for the label)
+	    :param source_chain: a Markov chain of images, each containing the brightness of each pixel (d/cm^2/srad)
+	    :param energies: the energy range being plotted (for the label)
 	    :param color_index: the index of this image in the set (for choosing the color)
 	    :param num_colors: the total number of images in this set (for choosing the color)
 	    :param projected_offset: the capsule offset from TCC in μm, given as (x, y, z)
@@ -223,6 +221,10 @@ def plot_source(filename: str, source: Image,
 	if color_index >= num_colors:
 		raise ValueError(f"I was only expecting to have to color-code {num_colors} sources, so why am I being told "
 		                 f"this is source[{color_index}] (indexing from zero)?")
+
+	# for now, just plot the mean of the MCMC distribution
+	source = Image(source_chain.domain, mean(source_chain.values, axis=0))
+
 	# sometimes this is all nan, but we don't need to plot it
 	if np.all(np.isnan(source.values)):
 		return
@@ -273,9 +275,9 @@ def plot_source(filename: str, source: Image,
 	if particle == "proton":
 		plt.title("D³He protons")
 	elif particle == "deuteron":
-		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+		plt.title(f"$E_\\mathrm{{d}}$ = {energies.minimum:.1f} – {min(12.5, energies.maximum):.1f} MeV")
 	elif particle == "xray":
-		plt.title(f"$h\\nu$ ≥ {energy_min:.0f} keV")
+		plt.title(f"$h\\nu$ ≥ {energies.minimum:.0f} keV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.axis([x0 - object_size, x0 + object_size,
@@ -506,31 +508,34 @@ def apply_shading(vertex_locations, triangles):
 	return (light_colors.T@[east_light, north_light, sky_light]).T
 
 
-def plot_overlaid_contores(filename: str, sources: Image, contour_level: float,
+def plot_overlaid_contores(filename: str, source_chains: Image, contour_level: float,
                            projected_offset: Optional[tuple[float, float, float]],
                            projected_flow: Optional[tuple[float, float, float]],
                            projected_stalk: Optional[tuple[float, float, float]],
                            num_stalks: Optional[int]) -> None:
 	""" plot the plot with the multiple energy cuts overlaid
 	    :param filename: the extensionless filename with which to save the figure
-	    :param sources: a stack of all the reconstructed sources we have (x and y in cm)
+	    :param source_chains: an array of all the reconstructed source Markov chains we have (x and y in cm)
 	    :param contour_level: the contour level in (0, 1) to plot
 	    :param projected_offset: the capsule offset from TCC in μm, given as (x, y, z)
 	    :param projected_flow: the measured hot spot velocity in ?, given as (x, y, z)
 	    :param projected_stalk: the stalk direction unit vector, given as (x, y, z)
 	    :param num_stalks: the number of stalks to draw: 0, 1, or 2
 	"""
+	# for now, just plot the mean of each source chain
+	sources = Image(source_chains.domain, mean(source_chains.values, axis=1))
+
 	# calculate the centroid of the highest energy bin
 	x0, y0 = center_of_mass(sources[-1])
 	# center on that centroid and convert the domain to μm
 	sources.domain = sources.domain.shifted(-x0, -y0).scaled(1e+4)
 
 	particle = filename.split("-")[-2]
-	colormaps = choose_colormaps(particle, sources.num_channels)  # TODO: choose colors, not colormaps
+	colormaps = choose_colormaps(particle, sources.shape[0])  # TODO: choose colors, not colormaps
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
-	for i in range(sources.num_channels):
+	for i, source in enumerate(sources):
 		color = saturate(*colormaps[i].colors[-1], factor=2.0)
 		plt.contour(sources.x.get_bins(), sources.y.get_bins(),
 		            sources.values[i].T/np.max(sources.values[i]),
