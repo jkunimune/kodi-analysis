@@ -453,7 +453,7 @@ def analyze_scan(input_filename: str,
 	# finally, save the combined image set
 	save_as_hdf5(f"results/data/{shot}/{los}-{particle}-{detector_index}-source",
 	             filtering=filter_strings,
-	             energy=energy_bounds,
+	             energy=[[interval.minimum, interval.maximum] for interval in energy_bounds],
 	             x=source_stack.x.get_bins()/1e-4,
 	             y=source_stack.y.get_bins()/1e-4,
 	             images=np.transpose(source_stack.values, (0, 1, 3, 2))*1e-4**2,  # save it with (y,x) indexing, not (i,j)
