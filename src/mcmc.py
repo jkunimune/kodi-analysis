@@ -1,7 +1,8 @@
 from typing import Union
 
-from numpy import where, ravel, reshape, expand_dims, concatenate, mean, random
+from numpy import where, ravel, reshape, expand_dims, concatenate, mean, random, sqrt, ones
 from numpy.typing import NDArray
+from scipy import ndimage
 
 from linear_operator import LinearOperator, ConvolutionKernel, CompoundLinearOperator, Matrix
 
@@ -71,4 +72,16 @@ def solve(P: LinearOperator, F: NDArray[float], G_init: NDArray[float],
 		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
 		:return: the reconstructed solution G such that P@G ~= F
 	"""
-	return expand_dims(G_init, axis=0)*random.gamma(1/2, 1, size=(1000, G_init.size))
+	return expand_dims(G_init, axis=0)*concatenate(
+		[
+			reshape(
+				ndimage.gaussian_filter(
+					random.gamma(2, 1/2, size=(1000, round(sqrt(G_init.size - 1)), round(sqrt(G_init.size - 1)))),
+					1,
+				),
+				(1000, -1),
+			),
+			ones(1000)[:, None],
+		],
+		axis=1,
+	)
