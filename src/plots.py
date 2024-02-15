@@ -603,10 +603,24 @@ def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], lev
 	    :param credibility: the probability that a true contour falls within the corresponding
 	                        shaded region at any given point
 	"""
-	# first, normalize each image in the chain
-	for level in levels:
-		probability_within_contour = np.count_nonzero(z > level, axis=0)/z.shape[0]
+	# first, decide whether we can fit all these contours
+	probability_within_contour = []
+	contour_regions = []
+	any_overlap = False
+	for i, level in enumerate(levels):
+		probability_within_contour.append(np.count_nonzero(z > level, axis=0)/z.shape[0])
+		contour_regions.append(
+			(probability_within_contour[-1] > 1/2 - credibility/2) &
+			(probability_within_contour[-1] > 1/2 + credibility/2))
+		if i > 0:
+			if np.any(contour_regions[i - 1] & contour_regions[i]):
+				any_overlap = True
+	# if not, thin them out
+	if any_overlap:
+		probability_within_contour = probability_within_contour[0::2]
+	# then plot them
+	for i in range(len(probability_within_contour)):
 		plt.contourf(
-			x, y, probability_within_contour.T,
+			x, y, probability_within_contour[i].T,
 			levels=[1/2 - credibility/2, 1/2 + credibility/2],
 			colors=[f"{color}{round(opacity*255):02x}"])
