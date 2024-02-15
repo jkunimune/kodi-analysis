@@ -33,7 +33,7 @@ PLOT_STALK = False
 
 MAX_NUM_PIXELS = 40000
 SQUARE_FIGURE_SIZE = (5.5, 4.6)
-RECTANGULAR_FIGURE_SIZE = (5.5, 4.1)
+RECTANGULAR_FIGURE_SIZE = (6.5, 3.7)
 LONG_FIGURE_SIZE = (8, 5)
 
 FRAME_SIZES = np.array([50, 100, 500, 2000]) # μm
@@ -210,6 +210,7 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	plt.plot(reconstruction.x.get_bins(),
 	         (reconstruction.values/normalization)[:, reconstruction.shape[1]//2],
 	         "--", label="Reconstruction")
+	plt.grid()
 	plt.legend()
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
@@ -307,6 +308,7 @@ def plot_source(filename: str, source_chain: Image,
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
 	plot_chained(source_chain.x.get_bins(), line_chain)
 
+	plt.grid()
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
 	plt.xlim(x0 - object_size, x0 + object_size)
