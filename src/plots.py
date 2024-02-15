@@ -1,16 +1,15 @@
 import logging
 import os
 import re
-from typing import cast, Optional, Union
+from typing import Optional, Union, Iterable
 
 import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from numpy import isfinite, pi, sin, cos, sqrt, log, mean, inf
+from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin
 from numpy.typing import NDArray
-from scipy import optimize, interpolate
-from scipy import special
+from scipy import interpolate
 from skimage import measure
 
 import aperture_array
@@ -18,7 +17,7 @@ from cmap import CMAP
 from coordinate import Image, Interval
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	shape_parameters, quantile
+	shape_parameters_chained, quantile, credibility_interval
 
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
@@ -27,7 +26,7 @@ plt.rcParams["savefig.facecolor"] = 'none'
 
 
 PLOT_THEORETICAL_50c_CONTOUR = True
-PLOT_SOURCE_CONTOUR = True
+PLOT_SOURCE_CONTOURS = True
 PLOT_OFFSET = False
 PLOT_FLOW = True
 PLOT_STALK = False
@@ -237,33 +236,34 @@ def plot_source(filename: str, source_chain: Image,
 		raise ValueError(f"I was only expecting to have to color-code {num_colors} sources, so why am I being told "
 		                 f"this is source[{color_index}] (indexing from zero)?")
 
-	# for now, just plot the mean of the MCMC distribution
-	source = Image(source_chain.domain, mean(source_chain.values, axis=0))
-
 	# sometimes this is all nan, but we don't need to plot it
-	if np.all(np.isnan(source.values)):
+	if np.all(np.isnan(source_chain.values)):
 		return
 
 	particle = re.search(r"-(xray|proton|deuteron)", filename, re.IGNORECASE).group(1)
 
 	# choose the plot limits
-	source.domain = source.domain.scaled(1e+4)  # convert coordinates to μm
-	object_size, (r1, θ1), _ = shape_parameters(source, contour_level=.17)
+	source_chain.domain = source_chain.domain.scaled(1e+4)  # convert coordinates to μm
+	object_sizes, (r1s, θ1s), _ = shape_parameters_chained(source_chain, contour_level=.17)
+	object_size = quantile(object_sizes, .95)
+	r1, θ1 = median(r1s), median(θ1s)
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
 	x0, y0 = r1*cos(θ1), r1*sin(θ1)
 	assert isfinite(x0) and isfinite(y0), f"{r1}, {θ1}"
 
-	# plot the reconstructed source image
+	# plot the mean source as a pseudocolor
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
-	plt.imshow(source.values.T, extent=source.domain.extent, origin="lower",
+	plt.imshow(mean(source_chain.values, axis=0).T, extent=source_chain.domain.extent, origin="lower",
 	           cmap=choose_colormaps(particle, num_colors)[color_index],
 	           vmin=0, interpolation="bilinear")
 
-	if PLOT_SOURCE_CONTOUR:
-		plt.contour(source.x.get_bins(), source.y.get_bins(), source.values.T,
-		            levels=np.linspace(0, np.max(source.values), 6, endpoint=False)[1:],
-		            colors='#eee', linestyles='solid', linewidths=1)
+	# plot the contours with some Bayesian width to them
+	if PLOT_SOURCE_CONTOURS:
+		contour_chained(source_chain.x.get_bins(), source_chain.y.get_bins(),
+		                source_chain.values/np.max(source_chain.values, axis=(1, 2), keepdims=True),
+		                levels=np.linspace(0, 1, 6, endpoint=False)[1:],
+		                color="#ffffff")
 	if PLOT_OFFSET:
 		if projected_offset is not None:
 			x_off, y_off, z_off = projected_offset
@@ -301,22 +301,11 @@ def plot_source(filename: str, source_chain: Image,
 	save_current_figure(f"{filename}-source")
 
 	# plot a lineout
-	j_lineout = np.argmax(np.sum(source.values, axis=0))
-	scale = 1/np.max(source.values[:, j_lineout])
+	j_lineout = np.argmax(np.sum(source_chain.values, axis=(0, 1)))
+	line_chain = source_chain.values[:, :, j_lineout]
+	line_chain = line_chain/np.max(line_chain, axis=1, keepdims=True)
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.plot(source.x.get_bins(), source.values[:, j_lineout]*scale)
-
-	# and fit a curve to it if it's a "disc"
-	if "disc" in filename:
-		def blurred_boxcar(x, A, d):
-			return A*special.erfc((x - 100)/d/sqrt(2))*special.erfc(-(x + 100)/d/sqrt(2))/4
-		r_centers = np.hypot(*source.domain.get_pixels())
-		popt, pcov = cast(tuple[list, list], optimize.curve_fit(
-			blurred_boxcar,
-			r_centers.ravel(), source.values.ravel(),
-			[np.max(source.values), 10]))
-		logging.info(f"  1σ resolution = {popt[1]} μm")
-		plt.plot(source.x.get_bins(), blurred_boxcar(source.x.get_bins(), *popt)*scale, '--')
+	plot_chained(source_chain.x.get_bins(), line_chain)
 
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
@@ -537,24 +526,22 @@ def plot_overlaid_contores(filename: str, source_chains: Image, contour_level: f
 	    :param projected_stalk: the stalk direction unit vector, given as (x, y, z)
 	    :param num_stalks: the number of stalks to draw: 0, 1, or 2
 	"""
-	# for now, just plot the mean of each source chain
-	sources = Image(source_chains.domain, mean(source_chains.values, axis=1))
-
 	# calculate the centroid of the highest energy bin
-	x0, y0 = center_of_mass(sources[-1])
+	x0, y0 = center_of_mass(Image(source_chains.domain, mean(source_chains.values[-1], axis=0)))
 	# center on that centroid and convert the domain to μm
-	sources.domain = sources.domain.shifted(-x0, -y0).scaled(1e+4)
+	source_chains.domain = source_chains.domain.shifted(-x0, -y0).scaled(1e+4)
 
 	particle = filename.split("-")[-2]
-	colormaps = choose_colormaps(particle, sources.shape[0])  # TODO: choose colors, not colormaps
+	colormaps = choose_colormaps(particle, source_chains.shape[0])  # TODO: choose colors, not colormaps
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
-	for i, source in enumerate(sources):
+	for i, source_chain in enumerate(source_chains):
 		color = saturate(*colormaps[i].colors[-1], factor=2.0)
-		plt.contour(sources.x.get_bins(), sources.y.get_bins(),
-		            sources.values[i].T/np.max(sources.values[i]),
-		            levels=[contour_level], colors=[color], linewidths=[2])
+		contour_chained(
+			source_chain.x.get_bins(), source_chain.y.get_bins(),
+			source_chain.values[i]/np.max(source_chain.values[i], axis=(1, 2), keepdims=True),
+			levels=[contour_level], color=color)
 
 	if PLOT_OFFSET:
 		if projected_offset is not None:
@@ -581,3 +568,45 @@ def plot_overlaid_contores(filename: str, source_chains: Image, contour_level: f
 	plt.ylabel("y (μm)")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source")
+
+
+def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90, color=None) -> None:
+	""" plot a line that has width because instead of just an image it's actually a chain of images
+	    :param x: the 1D array of x values
+	    :param y: the 2D array where each row is a potential set of y values
+	    :param credibility: the probability that a true y value falls within the shaded region at any given x value
+	    :param color: the color of the line and shaded region, expressed however you like
+	"""
+	# we'll be using a maximum-density interval today, even tho it's slower than an equal-tailed one
+	lower_bounds, upper_bounds = empty(x.size), empty(x.size)
+	for j in range(x.size):
+		interval = credibility_interval(y[:, j], credibility)
+		lower_bounds[j] = interval.minimum
+		upper_bounds[j] = interval.maximum
+	# plot the shaded region
+	plt.fill_between(x, lower_bounds, upper_bounds, color=color, alpha=.30)
+	# plot a representative line in the middle
+	i_best = argmin(np.sum((y - ((lower_bounds + upper_bounds)/2)[newaxis, :])**2))
+	plt.plot(x, y[i_best, :], color=color)
+
+
+def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], levels: Iterable[float],
+                    color: str, opacity=.5, credibility=.90) -> None:
+	""" do a contour plot where the contours have width because instead of just an image z is
+	    actually a chain of images stacked on dimension 0.
+	    :param x: the 1D array of x values
+	    :param y: the 1D array of y values
+	    :param z: the 3D array where the chain goes along axis 0, x varies along axis 1, and y varies along axis 2
+	    :param levels: the levels at which to draw each thicc contour
+	    :param color: the six-digit hex string describing the contour color
+	    :param opacity: the opacity of the contours
+	    :param credibility: the probability that a true contour falls within the corresponding
+	                        shaded region at any given point
+	"""
+	# first, normalize each image in the chain
+	for level in levels:
+		probability_within_contour = np.count_nonzero(z > level, axis=0)/z.shape[0]
+		plt.contourf(
+			x, y, probability_within_contour.T,
+			levels=[1/2 - credibility/2, 1/2 + credibility/2],
+			colors=[f"{color}{round(opacity*255):02x}"])

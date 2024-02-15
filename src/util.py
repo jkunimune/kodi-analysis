@@ -10,7 +10,7 @@ from typing import Callable, Optional, Union
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
-from numpy import argmin, newaxis, moveaxis
+from numpy import argmin, newaxis, moveaxis, empty
 from numpy.typing import NDArray
 from pandas import DataFrame
 from scipy import optimize, integrate, interpolate
@@ -501,6 +501,21 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 def shape_parameters(image: Image, contour_level=None) -> tuple[float, tuple[float, float], tuple[float, float]]:
 	""" get some scalar parameters that describe the shape of this distribution. """
 	return harmonics_from_covariance(*fit_ellipse(image, contour_level))
+
+
+def shape_parameters_chained(image_chain: Image, contour_level=None) -> tuple[NDArray[float], tuple[NDArray[float], NDArray[float]], tuple[NDArray[float], NDArray[float]]]:
+	""" get some scalar parameters that describe the shape of each distribution in this chain """
+	p0_array = empty(image_chain.shape[0])
+	p1_array, θ1_array = empty(image_chain.shape[0]), empty(image_chain.shape[0])
+	p2_array, θ2_array = empty(image_chain.shape[0]), empty(image_chain.shape[0])
+	for i, image in enumerate(image_chain):  # TODO: wait, how does this work? I didn't make Image iterable.
+		p0, (p1, θ1), (p2, θ2) = shape_parameters(image, contour_level=contour_level)
+		p0_array[i] = p0
+		p1_array[i] = p1
+		θ1_array[i] = θ1
+		p2_array[i] = p2
+		θ2_array[i] = θ2
+	return p0_array, (p1_array, θ1_array), (p2_array, θ2_array)
 
 
 def line_search(func: Callable[[float], float], lower_bound: float, upper_bound: float,

@@ -22,7 +22,7 @@ from cr39py.cut import Cut
 from cr39py.scan import Scan
 from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.colors import SymLogNorm
-from numpy import newaxis, arccos, empty
+from numpy import newaxis, arccos
 from numpy.typing import NDArray
 from scipy import interpolate, optimize, linalg
 from skimage import measure
@@ -44,7 +44,8 @@ from util import center_of_mass, find_intercept, fit_circle, \
 	line_search, bin_centers_and_sizes, periodic_mean, parse_filtering, \
 	print_filtering, Filter, count_detectors, compose_2x2_from_intuitive_parameters, \
 	decompose_2x2_into_intuitive_parameters, Interval, name_filter_stacks, crop_to_finite, shift_and_rotate, \
-	resample_and_rotate_2d, case_insensitive_dataframe, credibility_interval, shape_parameters, resample_2d
+	resample_and_rotate_2d, case_insensitive_dataframe, credibility_interval, resample_2d, \
+	shape_parameters_chained
 
 matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
@@ -1019,13 +1020,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	# calculate and print the main shape parameters
 	yeeld = credibility_interval(
 		np.sum(output.values, axis=(1, 2))*output.domain.pixel_area*4*pi, .9)
-	p0_array = empty(output.shape[0])
-	p2_array, θ2_array = empty(output.shape[0]), empty(output.shape[0])
-	for i, output_sample in enumerate(output):
-		p0_i, (_, _), (p2_i, θ2_i) = shape_parameters(output_sample, contour_level=contour)
-		p0_array[i] = p0_i
-		p2_array[i] = p2_i
-		θ2_array[i] = θ2_i
+	p0_array, (_, _), (p2_array, θ2_array) = shape_parameters_chained(output, contour_level=contour)
 	p0 = credibility_interval(p0_array/1e-4, .9)
 	p2 = credibility_interval(p2_array/p0_array, .9)
 	θ2 = credibility_interval(θ2_array, .9)
