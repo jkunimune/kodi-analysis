@@ -303,6 +303,8 @@ class Image:
 		return self.domain.num_pixels
 
 	def __getitem__(self, index: int | tuple[int, ...]) -> Image:
+		if self.values.ndim <= 2:
+			raise IndexError("this image has no channels and therefore cannot be indexed")
 		return Image(self.domain, self.values[index])
 
 	def __add__(self, other: Image) -> Image:

@@ -964,16 +964,13 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		)
 		source.values = np.maximum(0, source.values) # we know this must be nonnegative (counts/cm^2/srad)
 		logging.info(f"  sampling the posterior distribution...")
-		source = Image(
-			source.domain,
-			mcmc.deconvolve(
-				data=clipd_image.values,
-				kernel=kernel.values,
-				guess=source.values,
-				pixel_area=clipd_image_plicity.values,
-				source_region=source_region,
-				noise=estimated_data_variance,
-			)
+		source = mcmc.deconvolve(
+			data=clipd_image,
+			kernel=kernel.values,
+			guess=source,
+			pixel_area=clipd_image_plicity,
+			source_region=source_region,
+			noise=estimated_data_variance,
 		)
 		logging.info("  postprocessing the results...")
 

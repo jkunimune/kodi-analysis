@@ -159,6 +159,14 @@ def center_of_mass(image: Image) -> NDArray[float]:
 		np.average(image.y.get_bins(), weights=image.values.sum(axis=0))])
 
 
+def standard_deviation(image: Image) -> float:
+	""" get the radius of this distribution """
+	x0, y0 = center_of_mass(image)
+	x_bins, y_bins = image.domain.get_pixels()
+	mean_r2 = np.average((x_bins - x0)**2 + (y_bins - y0)**2, weights=image.values)
+	return sqrt(mean_r2/2)
+
+
 def normalize(x):
 	""" reduce a vector so it sums to 1 """
 	return np.divide(x, np.sum(x))
