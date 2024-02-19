@@ -65,12 +65,12 @@ FINE_DEUTERON_ENERGY_CUTS = [
 	Interval(6.5, 8), Interval(8, 9.5), Interval(9.5, 11)
 ] # (MeV) (emitted, not detected)
 
-FORCE_LARGE_SOURCE_DOMAIN = True  # whether to enable a source domain larger than the aperture (experimental)
+FORCE_LARGE_SOURCE_DOMAIN = False  # whether to enable a source domain larger than the aperture (experimental)
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
 CHARGED_PARTICLE_RESOLUTION = 5e-4  # resolution of reconstructed KoD sources
-X_RAY_RESOLUTION = 3e-4  # spatial resolution of reconstructed x-ray sources
+X_RAY_RESOLUTION = 5e-4  # spatial resolution of reconstructed x-ray sources
 CHARGED_PARTICLE_CONTOUR_LEVEL = .17  # contour to use when characterizing KoDI sources
 XRAY_CONTOUR_LEVEL = .17  # contour to use when characterizing x-ray sources
 MIN_OBJECT_SIZE = 100e-4  # minimum amount of space to allocate in the source plane
