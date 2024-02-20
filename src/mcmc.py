@@ -31,17 +31,14 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		raise ValueError("these arrays don't have the right sizes")
 
 	with Model():
-		size = standard_deviation(guess)
-		# size = Gamma("size", alpha=1, beta=20, initval=standard_deviation(guess))
-		intensity_gess = 1/2*np.sum(data.values)/np.sum(kernel)*guess.domain.pixel_area/(2*pi*size)
-		# intensity = Gamma("intensity", alpha=1/2, beta=intensity_gess)
+		size = Gamma("size", mu=30, sigma=20, initval=standard_deviation(guess))
+		intensity_gess = np.sum(guess.values)*guess.domain.pixel_area/(2*pi*size**2)
+		intensity = Gamma("intensity", mu=intensity_gess, sigma=sqrt(2)*intensity_gess)
 		smoothness = 1#LogNormal("smoothness", mu=log(.1), sigma=2)
-		x0 = 0#Uniform("x0", lower=0, upper=shape(source_region)[0])
-		y0 = 0#Uniform("y0", lower=0, upper=shape(source_region)[1])
-		gaussian = intensity_gess*exp(
-			-((guess.x.get_bins() - x0)**2 + (guess.y.get_bins() - y0)**2)/
-			(2*size**2)
-		)
+		x0 = Uniform("x0", lower=0, upper=shape(source_region)[0])
+		y0 = Uniform("y0", lower=0, upper=shape(source_region)[1])
+		X, Y = guess.domain.get_pixels(sparse=True)
+		gaussian = intensity*exp(-((X - x0)**2 + (Y - y0)**2)/(2*size**2))
 		source = TruncatedNormal("source",
 			mu=1, sigma=1/2,
 			# mu=gaussian,
@@ -53,12 +50,12 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		)*gaussian
 		print(draw(source))
 
-		inference = sample(100)
+		inference = sample(1000)
 
 	arviz.plot_trace(inference, var_names=["size", "x0", "y0"])
 	plt.show()
 
 	return Image(
 		guess.domain,
-		reshape(inference.posterior["source"], (-1, guess.shape[0], guess.shape[1]))
+		reshape(inference.posterior["source"].to_numpy(), (-1, guess.shape[0], guess.shape[1]))
 	)
