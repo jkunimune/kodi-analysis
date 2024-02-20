@@ -255,12 +255,14 @@ def plot_source(filename: str, source_chain: Image,
 	x0, y0 = r1*cos(θ1), r1*sin(θ1)
 	assert isfinite(x0) and isfinite(y0), f"{r1}, {θ1}"
 
+	# choose the colormap
+	cmap = choose_colormaps(particle, num_colors)[color_index]
+
 	# plot the mean source as a pseudocolor
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
 	plt.imshow(mean(source_chain.values, axis=0).T, extent=source_chain.domain.extent, origin="lower",
-	           cmap=choose_colormaps(particle, num_colors)[color_index],
-	           vmin=0, interpolation="bilinear")
+	           cmap=cmap, vmin=0, interpolation="bilinear")
 
 	# plot the contours with some Bayesian width to them
 	if PLOT_SOURCE_CONTOURS:
@@ -304,6 +306,21 @@ def plot_source(filename: str, source_chain: Image,
 	          y0 - object_size, y0 + object_size])
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source")
+
+	# plot a few random samples
+	fig, ax_grid = plt.subplots(3, 3, sharex="all", sharey="all", facecolor="none",
+	                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.5, 5))
+	k = 0
+	for ax_row in ax_grid:
+		for ax in ax_row:
+			ax.imshow(
+				source_chain[k].values, extent=source_chain[k].domain.extent, origin="lower",
+				vmin=0, vmax=np.max(source_chain.values[:size(ax), :, :]), cmap=cmap)
+			ax.set_facecolor("black")
+			ax.axis([x0 - object_size, x0 + object_size,
+			         y0 - object_size, y0 + object_size])
+			k += 1
+	plt.tight_layout()
 
 	# plot a lineout
 	j_lineout = np.argmax(np.sum(source_chain.values, axis=(0, 1)))
