@@ -249,11 +249,10 @@ def plot_source(filename: str, source_chain: Image,
 	object_sizes[isnan(object_sizes)] = source_chain.domain.x.half_range
 	object_size = quantile(
 		where(isfinite(object_sizes), object_sizes, source_chain.domain.x.half_range), .95)
-	r1 = median(where(isfinite(r1s), r1s, 0))
-	θ1 = median(where(isfinite(θ1s), θ1s, 0))
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
-	x0, y0 = r1*cos(θ1), r1*sin(θ1)
-	assert isfinite(x0) and isfinite(y0), f"{r1}, {θ1}"
+	x0s, y0s = r1s*cos(θ1s), r1s*sin(θ1s)
+	x0 = median(x0s[isfinite(x0s)])
+	y0 = median(y0s[isfinite(y0s)])
 
 	# choose the colormap
 	cmap = choose_colormaps(particle, num_colors)[color_index]
@@ -309,13 +308,13 @@ def plot_source(filename: str, source_chain: Image,
 
 	# plot a few random samples
 	fig, ax_grid = plt.subplots(3, 3, sharex="all", sharey="all", facecolor="none",
-	                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.5, 5))
+	                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.3, 5))
 	k = 0
 	for ax_row in ax_grid:
 		for ax in ax_row:
 			ax.imshow(
 				source_chain[k].values, extent=source_chain[k].domain.extent, origin="lower",
-				vmin=0, vmax=np.max(source_chain.values[:size(ax), :, :]), cmap=cmap)
+				vmin=0, vmax=np.max(source_chain.values[:size(ax_grid), :, :]), cmap=cmap)
 			ax.set_facecolor("black")
 			ax.axis([x0 - object_size, x0 + object_size,
 			         y0 - object_size, y0 + object_size])
