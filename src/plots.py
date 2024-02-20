@@ -7,7 +7,7 @@ import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin
+from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin, size, isnan, where
 from numpy.typing import NDArray
 from scipy import interpolate
 from skimage import measure
@@ -246,8 +246,11 @@ def plot_source(filename: str, source_chain: Image,
 	# choose the plot limits
 	source_chain.domain = source_chain.domain.scaled(1e+4)  # convert coordinates to μm
 	object_sizes, (r1s, θ1s), _ = shape_parameters_chained(source_chain, contour_level=.17)
-	object_size = quantile(object_sizes, .95)
-	r1, θ1 = median(r1s), median(θ1s)
+	object_sizes[isnan(object_sizes)] = source_chain.domain.x.half_range
+	object_size = quantile(
+		where(isfinite(object_sizes), object_sizes, source_chain.domain.x.half_range), .95)
+	r1 = median(where(isfinite(r1s), r1s, 0))
+	θ1 = median(where(isfinite(θ1s), θ1s, 0))
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
 	x0, y0 = r1*cos(θ1), r1*sin(θ1)
 	assert isfinite(x0) and isfinite(y0), f"{r1}, {θ1}"
@@ -261,8 +264,9 @@ def plot_source(filename: str, source_chain: Image,
 
 	# plot the contours with some Bayesian width to them
 	if PLOT_SOURCE_CONTOURS:
+		peak_chain = np.max(source_chain.values, axis=(1, 2), keepdims=True)
 		contour_chained(source_chain.x.get_bins(), source_chain.y.get_bins(),
-		                source_chain.values/np.max(source_chain.values, axis=(1, 2), keepdims=True),
+		                source_chain.values/where(peak_chain != 0, peak_chain, 1),
 		                levels=np.linspace(0, 1, 6, endpoint=False)[1:],
 		                color="#ffffff")
 	if PLOT_OFFSET:
@@ -304,7 +308,8 @@ def plot_source(filename: str, source_chain: Image,
 	# plot a lineout
 	j_lineout = np.argmax(np.sum(source_chain.values, axis=(0, 1)))
 	line_chain = source_chain.values[:, :, j_lineout]
-	line_chain = line_chain/np.max(line_chain, axis=1, keepdims=True)
+	peak_chain = np.max(line_chain, axis=1, keepdims=True)
+	line_chain = line_chain/where(peak_chain != 0, peak_chain, 1)
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
 	plot_chained(source_chain.x.get_bins(), line_chain)
 

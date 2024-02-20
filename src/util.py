@@ -10,7 +10,7 @@ from typing import Callable, Optional, Union
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
-from numpy import argmin, newaxis, moveaxis, empty
+from numpy import argmin, newaxis, moveaxis, empty, isnan
 from numpy.typing import NDArray
 from pandas import DataFrame
 from scipy import optimize, integrate, interpolate
@@ -593,6 +593,9 @@ def credibility_interval(samples: NDArray[float], credibility: float) -> Interva
 	elif interval_width == 0:
 		return Interval(median(samples), median(samples))
 	else:
+		samples = samples[~isnan(samples)]
+		if len(samples) <= interval_width:
+			raise ValueError("the samples contained too much nan to get a credibility interval")
 		samples = np.sort(samples)
 		lower_bounds = samples[:-interval_width]
 		upper_bounds = samples[interval_width:]
