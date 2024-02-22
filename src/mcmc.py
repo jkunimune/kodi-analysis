@@ -3,9 +3,12 @@ from typing import Union
 import arviz
 import numpy as np
 from matplotlib import pyplot as plt
-from numpy import reshape, sqrt, shape, exp, inf, pi, ones
+from numpy import reshape, sqrt, shape, inf, pi, ones
 from numpy.typing import NDArray
-from pymc import Model, Gamma, Uniform, Truncated, sample, Normal, draw, TruncatedNormal, Deterministic, Beta
+from pymc import Model, Gamma, Uniform, sample, Deterministic, Beta, \
+	DensityDist
+from pymc.distributions.dist_math import check_parameters
+from pytensor import tensor
 
 from coordinate import Image
 from util import standard_deviation
@@ -34,26 +37,23 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		size = Gamma("size", mu=30e-4, sigma=20e-4, initval=standard_deviation(guess))
 		intensity_gess = np.sum(guess.values)*guess.domain.pixel_area/(2*pi*size**2)
 		intensity = Gamma("intensity", mu=intensity_gess, sigma=sqrt(2)*intensity_gess)
-		smoothness = 1#LogNormal("smoothness", mu=log(.1), sigma=2)
+		noise_scale = Gamma("smoothness", mu=15e-4, sigma=sqrt(2)*15e-4)
 		x0_normalized = 2*Beta.dist(alpha=3/2, beta=3/2) - 1
-		y0_normalized = Uniform.dist(lower=-sqrt(1 - x0_normalized**2), upper=sqrt(1 - x0_normalized**2))
+		y0_normalized = Uniform.dist(lower=-tensor.sqrt(1 - x0_normalized**2), upper=tensor.sqrt(1 - x0_normalized**2))
 		x0 = Deterministic("x0", x0_normalized*guess.x.half_range + guess.x.center)
 		y0 = Deterministic("y0", y0_normalized*guess.y.half_range + guess.y.center)
 		X, Y = guess.domain.get_pixels(sparse=True)
-		gaussian = intensity*exp(-((X - x0)**2 + (Y - y0)**2)/(2*size**2))
-		source = Deterministic(
-			"source",
-			gaussian*TruncatedNormal.dist(
-				mu=1, sigma=1/2,
-				# mu=gaussian,
-				# tau=-2/gaussian*eye(guess.num_pixels).reshape(source_region.shape*2) +
-				#     smoothness*discrete_laplacian(guess.domain),
-				lower=0, upper=inf,
-				shape=guess.shape,
-				# initval=guess.values,
-			),
+		base_shape = intensity*tensor.exp(-((X - x0)**2 + (Y - y0)**2)/(2*size**2))
+		shape_modifier = DensityDist(
+			"shape_modifier",
+			1, 1/2,
+			noise_scale/guess.x.bin_width, noise_scale/guess.y.bin_width,
+			0, inf,
+			logp=truncated_spacially_correlated_distribution_logp,
+			shape=guess.shape,
+			initval=ones(guess.shape),
 		)
-		print(draw(source))
+		source = Deterministic("source", base_shape*shape_modifier)
 
 		inference = sample(1000)
 
@@ -73,3 +73,15 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		guess.domain,
 		reshape(inference.posterior["source"].to_numpy(), (-1, guess.shape[0], guess.shape[1]))
 	)
+
+
+def truncated_spacially_correlated_distribution_logp(values, mu, sigma, x_factor, y_factor, minimum, maximum):
+	values = check_parameters(
+		values,
+		tensor.all(values >= minimum) and tensor.all(values <= maximum),
+		msg="at least one value out of bounds",
+	)
+	identity_penalties = (values - mu)**2/(2*sigma**2)/(1 + x_factor*y_factor)
+	x_penalties = (x_factor*(values[0:-1, :] - values[1:, :]))**2
+	y_penalties = (y_factor*(values[:, 0:-1] - values[:, 1:]))**2
+	return -(tensor.sum(identity_penalties) + tensor.sum(x_penalties) + tensor.sum(y_penalties))
