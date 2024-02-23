@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from numpy import reshape, sqrt, shape, inf, pi, ones
 from numpy.typing import NDArray
 from pymc import Model, Gamma, Uniform, sample, Deterministic, Beta, \
-	DensityDist, Poisson, Normal
+	DensityDist, Poisson, Normal, HalfNormal
 from pymc.distributions.dist_math import check_parameters
 from pytensor import tensor
 from pytensor.tensor import conv
@@ -35,28 +35,30 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		raise ValueError("these arrays don't have the right sizes")
 
 	with Model():
-		size = Gamma("size", mu=30e-4, sigma=20e-4, initval=standard_deviation(guess))
+		size = standard_deviation(guess)
+		# size = Gamma("size", mu=30e-4, sigma=20e-4, initval=standard_deviation(guess))
 		intensity_gess = np.sum(guess.values)*guess.domain.pixel_area/(2*pi*size**2)
-		intensity = Gamma("intensity", mu=intensity_gess, sigma=sqrt(2)*intensity_gess)
-		noise_scale = Gamma("smoothness", mu=15e-4, sigma=sqrt(2)*15e-4)
-		x0_normalized = 2*Beta("x0_normalized", alpha=3/2, beta=3/2) - 1
-		y0_normalized = Uniform("y0_normalized", lower=-tensor.sqrt(1 - x0_normalized**2), upper=tensor.sqrt(1 - x0_normalized**2))
-		x0 = Deterministic("x0", x0_normalized*guess.x.half_range + guess.x.center)
-		y0 = Deterministic("y0", y0_normalized*guess.y.half_range + guess.y.center)
-		X, Y = guess.domain.get_pixels(sparse=True)
-		base_shape = intensity*tensor.exp(-((X - x0)**2 + (Y - y0)**2)/(2*size**2))
-		shape_modifier = DensityDist(
-			"shape_modifier",
-			1, 1/2,
-			noise_scale/guess.x.bin_width, noise_scale/guess.y.bin_width,
-			0, inf,
-			logp=truncated_spacially_correlated_distribution_logp,
-			shape=guess.shape,
-			initval=ones(guess.shape),
-		)
-		source = Deterministic("source", base_shape*shape_modifier)
-		background = Gamma("background", alpha=1/20, beta=1/2)
-		true_image = intensity*background + conv.conv2d(
+		# intensity = Gamma("intensity", mu=intensity_gess, sigma=sqrt(2)*intensity_gess)
+		# noise_scale = Gamma("smoothness", mu=15e-4, sigma=sqrt(2)*15e-4)
+		# x0_normalized = 2*Beta("x0_normalized", alpha=3/2, beta=3/2) - 1
+		# y0_normalized = Uniform("y0_normalized", lower=-tensor.sqrt(1 - x0_normalized**2), upper=tensor.sqrt(1 - x0_normalized**2))
+		# x0 = Deterministic("x0", x0_normalized*guess.x.half_range + guess.x.center)
+		# y0 = Deterministic("y0", y0_normalized*guess.y.half_range + guess.y.center)
+		# X, Y = guess.domain.get_pixels(sparse=True)
+		# base_shape = intensity*tensor.exp(-((X - x0)**2 + (Y - y0)**2)/(2*size**2))
+		# shape_modifier = DensityDist(
+		# 	"shape_modifier",
+		# 	1, 1/2,
+		# 	noise_scale/guess.x.bin_width, noise_scale/guess.y.bin_width,
+		# 	0, inf,
+		# 	logp=truncated_spacially_correlated_distribution_logp,
+		# 	shape=guess.shape,
+		# 	initval=ones(guess.shape),
+		# )
+		# source = Deterministic("source", base_shape*shape_modifier)
+		background = Gamma("background", mu=1/10, sigma=sqrt(2)/10)
+		source = HalfNormal("source", sigma=intensity_gess, shape=guess.shape, initval=np.maximum(intensity_gess*.01, guess.values))
+		true_image = intensity_gess*background + conv.conv2d(
 			tensor.shape_padleft(source, 2), tensor.shape_padleft(kernel, 2),
 			border_mode="full")[0, 0, :, :]
 		if noise == "poisson":
@@ -64,9 +66,9 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		else:
 			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
 
-		inference = sample(1000)
+		inference = sample(100)
 
-	arviz.plot_trace(inference, var_names=["size", "x0", "y0"])
+	# arviz.plot_trace(inference, var_names=["size", "x0", "y0"])
 
 	if np.any(np.all(inference.posterior["source"].to_numpy() <= 0, axis=(2, 3))):
 		i, j = np.nonzero(np.all(inference.posterior["source"].to_numpy() == 0, axis=(2, 3)))

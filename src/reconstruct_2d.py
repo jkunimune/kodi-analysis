@@ -69,12 +69,12 @@ FORCE_LARGE_SOURCE_DOMAIN = False  # whether to enable a source domain larger th
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
-CHARGED_PARTICLE_RESOLUTION = 5e-4  # resolution of reconstructed KoD sources
-X_RAY_RESOLUTION = 5e-4  # spatial resolution of reconstructed x-ray sources
+CHARGED_PARTICLE_RESOLUTION = 20e-4  # resolution of reconstructed KoD sources
+X_RAY_RESOLUTION = 20e-4  # spatial resolution of reconstructed x-ray sources
 CHARGED_PARTICLE_CONTOUR_LEVEL = .17  # contour to use when characterizing KoDI sources
 XRAY_CONTOUR_LEVEL = .17  # contour to use when characterizing x-ray sources
 MIN_OBJECT_SIZE = 100e-4  # minimum amount of space to allocate in the source plane
-MAX_OBJECT_PIXELS = 250  # maximum size of the source array to use in reconstructions
+MAX_OBJECT_PIXELS = 3  # maximum size of the source array to use in reconstructions
 MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
 MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
@@ -1163,7 +1163,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		Q = 0
 
 	domain = r > r0/2
-	ρ_cutoff = ρ_max*.001 + ρ_min*.999
+	ρ_cutoff = ρ_max*.01 + ρ_min*.99
 	r_cutoff = find_intercept(r[domain], ρ[domain] - ρ_cutoff)
 	if SHOW_ELECTRIC_FIELD_CALCULATION:
 		χ2, ρ_sphere, n_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
