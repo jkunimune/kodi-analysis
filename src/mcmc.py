@@ -6,9 +6,10 @@ from matplotlib import pyplot as plt
 from numpy import reshape, sqrt, shape, inf, pi, ones
 from numpy.typing import NDArray
 from pymc import Model, Gamma, Uniform, sample, Deterministic, Beta, \
-	DensityDist
+	DensityDist, Poisson, Normal
 from pymc.distributions.dist_math import check_parameters
 from pytensor import tensor
+from pytensor.tensor import conv
 
 from coordinate import Image
 from util import standard_deviation
@@ -38,8 +39,8 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		intensity_gess = np.sum(guess.values)*guess.domain.pixel_area/(2*pi*size**2)
 		intensity = Gamma("intensity", mu=intensity_gess, sigma=sqrt(2)*intensity_gess)
 		noise_scale = Gamma("smoothness", mu=15e-4, sigma=sqrt(2)*15e-4)
-		x0_normalized = 2*Beta.dist(alpha=3/2, beta=3/2) - 1
-		y0_normalized = Uniform.dist(lower=-tensor.sqrt(1 - x0_normalized**2), upper=tensor.sqrt(1 - x0_normalized**2))
+		x0_normalized = 2*Beta("x0_normalized", alpha=3/2, beta=3/2) - 1
+		y0_normalized = Uniform("y0_normalized", lower=-tensor.sqrt(1 - x0_normalized**2), upper=tensor.sqrt(1 - x0_normalized**2))
 		x0 = Deterministic("x0", x0_normalized*guess.x.half_range + guess.x.center)
 		y0 = Deterministic("y0", y0_normalized*guess.y.half_range + guess.y.center)
 		X, Y = guess.domain.get_pixels(sparse=True)
@@ -54,6 +55,14 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			initval=ones(guess.shape),
 		)
 		source = Deterministic("source", base_shape*shape_modifier)
+		background = Gamma("background", alpha=1/20, beta=1/2)
+		true_image = intensity*background + conv.conv2d(
+			tensor.shape_padleft(source, 2), tensor.shape_padleft(kernel, 2),
+			border_mode="full")[0, 0, :, :]
+		if noise == "poisson":
+			image = Poisson("image", mu=true_image, observed=data.values)
+		else:
+			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
 
 		inference = sample(1000)
 
