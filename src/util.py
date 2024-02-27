@@ -11,7 +11,7 @@ import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
 from numpy.typing import NDArray
-from pandas import DataFrame
+from pandas import DataFrame, isna
 from scipy import optimize, integrate, interpolate
 from skimage import measure
 
@@ -84,12 +84,14 @@ def case_insensitive_dataframe(dataframe: DataFrame) -> DataFrame:
 	    modify it in-place and also return it.
 	"""
 	def recursively_lower(x):
-		if type(x) is str:
+		if isna(x):
+			return x
+		elif type(x) is str:
 			return str.lower(x)
 		elif type(x) is tuple:
 			return tuple(recursively_lower(item) for item in x)
 		else:
-			raise TypeError(type(x))
+			raise TypeError(f"cannot make {type(x)} case insensitive as it is not a str")
 	dataframe.index = dataframe.index.map(recursively_lower)
 	return dataframe
 
