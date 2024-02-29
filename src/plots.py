@@ -7,7 +7,7 @@ import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin, size, isnan, where
+from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin, size, where, arange
 from numpy.typing import NDArray
 from scipy import interpolate
 from skimage import measure
@@ -212,6 +212,7 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	         "--", label="Reconstruction")
 	plt.grid()
 	plt.legend()
+	plt.ylim(0, None)
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-residual-lineout")
@@ -246,7 +247,6 @@ def plot_source(filename: str, source_chain: Image,
 	# choose the plot limits
 	source_chain.domain = source_chain.domain.scaled(1e+4)  # convert coordinates to μm
 	object_sizes, (r1s, θ1s), _ = shape_parameters_chained(source_chain, contour_level=.17)
-	object_sizes[isnan(object_sizes)] = source_chain.domain.x.half_range
 	object_size = quantile(
 		where(isfinite(object_sizes), object_sizes, source_chain.domain.x.half_range), .95)
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
@@ -310,11 +310,13 @@ def plot_source(filename: str, source_chain: Image,
 	fig, ax_grid = plt.subplots(3, 3, sharex="all", sharey="all", facecolor="none",
 	                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.3, 5))
 	k = 0
+	samples = np.random.choice(arange(source_chain.shape[0]), 9, replace=False)
 	for ax_row in ax_grid:
 		for ax in ax_row:
 			ax.imshow(
-				source_chain[k].values, extent=source_chain[k].domain.extent, origin="lower",
-				vmin=0, vmax=np.max(source_chain.values[:size(ax_grid), :, :]), cmap=cmap)
+				source_chain[samples[k]].values, extent=source_chain[samples[k]].domain.extent,
+				origin="lower", cmap=cmap,
+				vmin=0, vmax=np.max(source_chain.values[:size(ax_grid), :, :]))
 			ax.set_facecolor("black")
 			ax.axis([x0 - object_size, x0 + object_size,
 			         y0 - object_size, y0 + object_size])
