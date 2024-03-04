@@ -322,6 +322,7 @@ def plot_source(filename: str, source_chain: Image,
 			         y0 - object_size, y0 + object_size])
 			k += 1
 	plt.tight_layout()
+	save_current_figure(f"{filename}-source-chain")
 
 	# plot a lineout
 	j_lineout = np.argmax(np.sum(source_chain.values, axis=(0, 1)))
