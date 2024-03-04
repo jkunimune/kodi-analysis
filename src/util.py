@@ -10,7 +10,7 @@ from typing import Callable, Optional, Union
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
-from numpy import argmin, newaxis, moveaxis, empty, isnan
+from numpy import argmin, newaxis, moveaxis, empty, isnan, inf
 from numpy.typing import NDArray
 from pandas import DataFrame, isna
 from scipy import optimize, integrate, interpolate
@@ -463,14 +463,18 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 		return np.array([[μxx, μxy], [μxy, μyy]]), np.array([μx, μy])
 
 	else:
+		# first make sure there are contours to fit
+		if np.all(image.values == 0):
+			return np.full((2, 2), nan), np.full(2, nan)
+		elif np.all(image.values >= contour_level*np.max(image.values)):
+			return np.full((2, 2), inf), np.full(2, nan)
 		# calculate the contour(s)
 		contour_paths = measure.find_contours(image.values, contour_level*np.max(image.values))
-		# make sure we found at least one
-		if len(contour_paths) == 0:
-			return np.full((2, 2), nan), np.full(2, nan)
 		# choose which contour most likely represents the source
 		contour_quality = []
 		for i, path in enumerate(contour_paths):
+			if len(path) < 3:
+				continue  # under no circumstances will we accept a contour without at least 3 points
 			r_contour = np.hypot(path[:, 0] - image.x.num_edges/2, path[:, 1] - image.y.num_edges/2)
 			R_domain = min(image.x.num_edges/2, image.y.num_edges/2)
 			if np.all(r_contour > R_domain - 10):  # avoid contours that are close to the edge of the domain
@@ -480,7 +484,10 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 			else:
 				sussiness = 0
 			contour_quality.append((-sussiness, len(path), i, path))  # also avoid ones with few vertices
-		contour_path = max(contour_quality)[-1]
+		if len(contour_quality) == 0:
+			return np.full((2, 2), nan), np.full(2, nan)
+		else:
+			contour_path = max(contour_quality)[-1]
 		# convert the contour from index space to space space
 		x_contour = np.interp(contour_path[:, 0], np.arange(image.x.num_bins), image.x.get_bins())
 		y_contour = np.interp(contour_path[:, 1], np.arange(image.y.num_bins), image.y.get_bins())
@@ -494,6 +501,8 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 
 		# use analytic formulas to fit to a sinusoidal basis
 		p0 = np.sum(r*dθ)/pi/2
+		if p0 == 0:
+			raise ValueError(p0)
 
 		p1x = np.sum(r*np.cos(θ)*dθ)/pi + x0
 		p1y = np.sum(r*np.sin(θ)*dθ)/pi + y0
@@ -587,7 +596,9 @@ def find_intercept(x: np.ndarray, y: np.ndarray):
 
 def credibility_interval(samples: NDArray[float], credibility: float) -> Interval:
 	""" compute the highest posterior probability density interval of the posterior sampled by these points
-	    – that is, the narrowest interval that contains at least the given fraction of the samples
+	    – that is, the narrowest interval that contains at least the given fraction of the samples.
+	    you can call this function on data with nans, and it will try to exclude the nans from the interval,
+	    but if there aren't enuff finite data to fill the interval, the return value will be [nan, nan].
 	"""
 	interval_width = int(ceil(credibility*len(samples))) - 1
 	if len(samples) <= 1:
@@ -597,7 +608,7 @@ def credibility_interval(samples: NDArray[float], credibility: float) -> Interva
 	else:
 		samples = samples[~isnan(samples)]
 		if len(samples) <= interval_width:
-			raise ValueError("the samples contained too much nan to get a credibility interval")
+			return Interval(nan, nan)
 		samples = np.sort(samples)
 		lower_bounds = samples[:-interval_width]
 		upper_bounds = samples[interval_width:]
