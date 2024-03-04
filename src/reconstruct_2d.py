@@ -37,7 +37,7 @@ from hdf5_util import load_hdf5, save_as_hdf5
 from image_plate import xray_energy_limit, fade
 from linear_operator import Matrix
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra, \
-	save_and_plot_radial_data
+	save_and_plot_radial_data, save_current_figure
 from solid_state import track_diameter, particle_E_in, particle_E_out
 from util import center_of_mass, find_intercept, fit_circle, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
@@ -47,7 +47,6 @@ from util import center_of_mass, find_intercept, fit_circle, \
 	resample_and_rotate_2d, case_insensitive_dataframe, credibility_interval, resample_2d, \
 	shape_parameters_chained
 
-matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
@@ -74,7 +73,7 @@ X_RAY_RESOLUTION = 10e-4  # spatial resolution of reconstructed x-ray sources
 CHARGED_PARTICLE_CONTOUR_LEVEL = .17  # contour to use when characterizing KoDI sources
 XRAY_CONTOUR_LEVEL = .17  # contour to use when characterizing x-ray sources
 MIN_OBJECT_SIZE = 100e-4  # minimum amount of space to allocate in the source plane
-MAX_OBJECT_PIXELS = 100  # maximum size of the source array to use in reconstructions
+MAX_OBJECT_PIXELS = 10  # maximum size of the source array to use in reconstructions
 MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
 MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
@@ -972,6 +971,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			source_region=source_region,
 			noise=estimated_data_variance,
 		)
+		save_current_figure(f"{shot}/{los}-{particle}-{cut_index}-trace")
 		logging.info("  postprocessing the results...")
 
 		# since the true problem is not one of deconvolution, but inverted deconvolution, rotate 180°

@@ -1,4 +1,5 @@
 from typing import Union
+from multiprocessing import cpu_count
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -67,9 +68,20 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		else:
 			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
 
-		inference = sample(100)
+		cores_available = cpu_count()
+		if cores_available >= 20:
+			cores_to_use = 8
+		elif cores_available >= 10:
+			cores_to_use = int(round(cores_available*2/5))
+		elif cores_available >= 4:
+			cores_to_use = 4
+		else:
+			cores_to_use = cores_available
+		chains_to_sample = max(3, cores_to_use)
+		draws_per_chain = int(round(4000/chains_to_sample))
+		inference = sample(tune=1000, draws=draws_per_chain, chains=chains_to_sample, cores=cores_to_use)
 
-	# arviz.plot_trace(inference, var_names=["size", "x0", "y0"])
+	arviz.plot_trace(inference, var_names=["background"])
 
 	if np.any(np.all(inference.posterior["source"].to_numpy() <= 0, axis=(2, 3))):
 		i, j = np.nonzero(np.all(inference.posterior["source"].to_numpy() == 0, axis=(2, 3)))
