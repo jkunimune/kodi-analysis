@@ -65,6 +65,7 @@ FINE_DEUTERON_ENERGY_CUTS = [
 ] # (MeV) (emitted, not detected)
 
 FORCE_LARGE_SOURCE_DOMAIN = False  # whether to enable a source domain larger than the aperture (experimental)
+USE_CHARGING_CORRECTION = False
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
@@ -1156,7 +1157,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		else:
 			return χ2  # type: ignore
 
-	if isfinite(diameters.minimum):
+	if isfinite(diameters.minimum) and USE_CHARGING_CORRECTION:
 		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e+1, 1e-3, 0)
 		logging.info(f"  inferred an aperture charge of {Q:.3f} MeV*cm")
 	else:

@@ -245,7 +245,7 @@ def plot_source(filename: str, source_chain: Image,
 	particle = re.search(r"-(xray|proton|deuteron)", filename, re.IGNORECASE).group(1)
 
 	# choose the plot limits
-	source_chain.domain = source_chain.domain.scaled(1e+4)  # convert coordinates to μm
+	source_chain = Image(source_chain.domain.scaled(1e+4), source_chain.values)  # convert coordinates to μm
 	object_sizes, (r1s, θ1s), _ = shape_parameters_chained(source_chain, contour_level=.17)
 	object_size = quantile(
 		where(isfinite(object_sizes), object_sizes, source_chain.domain.x.half_range), .95)
@@ -555,7 +555,7 @@ def plot_overlaid_contores(filename: str, source_chains: Image, contour_level: f
 	# calculate the centroid of the highest energy bin
 	x0, y0 = center_of_mass(Image(source_chains.domain, mean(source_chains.values[-1], axis=0)))
 	# center on that centroid and convert the domain to μm
-	source_chains.domain = source_chains.domain.shifted(-x0, -y0).scaled(1e+4)
+	source_chains = Image(source_chains.domain.shifted(-x0, -y0).scaled(1e+4), source_chains.values)
 
 	particle = filename.split("-")[-2]
 	colormaps = choose_colormaps(particle, source_chains.shape[0])  # TODO: choose colors, not colormaps

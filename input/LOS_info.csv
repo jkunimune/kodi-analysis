@@ -1,4 +1,4 @@
-shot,   los,  standoff, magnification, filtering
+shot,   LOS,  standoff, magnification, filtering
 95519,  tim2, 4.18,     15,            15Ta[]|250Al|
 95519,  tim4, 4.18,     15,            15Ta[]|250Al|
 95519,  tim5, 4.18,     15,            15Ta[]|250Al|
@@ -129,6 +129,3 @@ shot,   los,  standoff, magnification, filtering
 109057, tim4, 3.00,     21,            15Ta/0Ta [] 50Al |
 109057, tim5, 3.00,     21,            15Ta/0Ta [] 50Al |
 109057, srte, 10.95248, 19.51,         762Be 25kapton 127Al/254Al/610Al/1270Al |
-,,,,
-,,,,
-,,,,
