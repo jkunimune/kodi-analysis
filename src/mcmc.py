@@ -1,5 +1,6 @@
 from typing import Union
 from multiprocessing import cpu_count
+import arviz
 
 import numpy as np
 from matplotlib import pyplot as plt
