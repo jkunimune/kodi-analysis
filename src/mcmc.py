@@ -61,9 +61,14 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		source = Gamma("source", mu=intensity, sigma=sqrt(2)*intensity, shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values))
 		# source = Deterministic("source", base_shape*shape_modifier)
 		background = Gamma("background", mu=1/10, sigma=sqrt(2)/10)
-		true_image = pixel_area.values*(intensity*background + conv.conv2d(
-			tensor.shape_padleft(source, 2), tensor.shape_padleft(kernel, 2),
-			border_mode="full")[0, 0, :, :])
+		true_image = pixel_area.values*(
+			np.sum(guess.values)*np.max(kernel)*background + 
+			conv.conv2d(
+				tensor.shape_padleft(source, 2),
+				tensor.shape_padleft(kernel, 2),
+				border_mode="full"
+			)[0, 0, :, :]
+		)
 		if noise == "poisson":
 			image = Poisson("image", mu=true_image, observed=data.values)
 		else:
