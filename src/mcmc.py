@@ -41,52 +41,26 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	data = Image(data.domain, expand_dims(data.values, axis=0))
 
 	# bring the inputs into the frequency domain
-	# data_spectrum = np_fft.rfft2(data.values)
 	kernel_spectrum = np_fft.rfft2(np.pad(
 		kernel,
 		((0, 0), (0, data.shape[1] - kernel.shape[1]), (0, data.shape[2] - kernel.shape[2])),
 	))
-	# guess_spectrum = np_fft.rfft2(np.pad(
-	# 	guess.values,
-	# 	((0, 0), (0, data.shape[0] - guess.shape[0]), (0, data.shape[1] - guess.shape[1])),
-	# ))
 	# convert numpy's complex numbers to arrays of real numbers, as pytensor prefers
-	# data_spectrum = np.stack([real(data_spectrum), imag(data_spectrum)], axis=-1)
 	kernel_spectrum = np.stack([real(kernel_spectrum), imag(kernel_spectrum)], axis=-1)
-	# guess_spectrum = np.stack([real(guess_spectrum), imag(guess_spectrum)], axis=-1)
 	image_intensity = np.sum(guess.values)*np.max(kernel)
 
 	with Model():
+		# prior
 		size = standard_deviation(guess[0])
-		# size = Gamma("size", mu=30e-4, sigma=20e-4, initval=standard_deviation(guess))
 		source_intensity = np.sum(guess.values)*guess.domain.pixel_area/(2*pi*size**2)
-		# intensity = Gamma("intensity", mu=intensity_gess, sigma=sqrt(2)*intensity_gess)
-		# # intensity = np.max(guess.values)
-		# x0_normalized = 2*Beta("x0_normalized", alpha=3/2, beta=3/2) - 1
-		# y0_normalized = Uniform("y0_normalized", lower=-tensor.sqrt(1 - x0_normalized**2), upper=tensor.sqrt(1 - x0_normalized**2))
-		# x0 = Deterministic("x0", x0_normalized*guess.x.half_range + guess.x.center)
-		# y0 = Deterministic("y0", y0_normalized*guess.y.half_range + guess.y.center)
-		# X, Y = guess.domain.get_pixels(sparse=True)
-		# base_shape = intensity*tensor.exp(-((X - x0)**2 + (Y - y0)**2)/(2*size**2))
-		# shape_modifier = TruncatedNormal("shape_modifier", mu=1, sigma=1/2, lower=0, upper=inf)
-		# noise_scale = Gamma("noise_scale", mu=15e-4, sigma=sqrt(2)*15e-4)
-		# source = DensityDist(
-		# 	"source",
-		# 	1, 1/2,
-		# 	noise_scale/guess.x.bin_width, noise_scale/guess.y.bin_width,
-		# 	0, inf,
-		# 	logp=truncated_spacially_correlated_distribution_logp,
-		# 	shape=guess.shape,
-		# 	initval=np.maximum(np.max(guess.values)*.01, guess.values),
-		# )
 		source = Gamma("source", mu=source_intensity, sigma=sqrt(2)*source_intensity, shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values))
-		# source = Deterministic("source", base_shape*shape_modifier)
 		source_spectrum = Deterministic(
 			"source_spectrum",
 			tensor_fft.rfft(pad_with_zeros(source, guess.shape, data.shape)),
 		)
 		background = Gamma("background", mu=1/10, sigma=sqrt(2)/10)
 
+		# likelihood
 		true_image_spectrum = Deterministic(
 			"true_image_spectrum", complex_multiply(source_spectrum, kernel_spectrum))
 		true_image = Deterministic(
@@ -103,6 +77,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		else:
 			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
 
+		# run the MCMC chains
 		cores_available = cpu_count()
 		if cores_available >= 20:
 			cores_to_use = 8
@@ -116,8 +91,10 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		draws_per_chain = int(round(4000/chains_to_sample))
 		inference = sample(tune=1000, draws=draws_per_chain, chains=chains_to_sample, cores=cores_to_use)
 
+	# generate a basic trace plot to catch basic issues
 	arviz.plot_trace(inference, var_names=["background"])
 
+	# it should be *almost* impossible for the chain to prevent a source that's all zeros, but check anyway
 	if np.any(np.all(inference.posterior["source"].to_numpy() <= 0, axis=(2, 3))):
 		i, j = np.nonzero(np.all(inference.posterior["source"].to_numpy() == 0, axis=(2, 3)))
 		print("blank source alert!")
