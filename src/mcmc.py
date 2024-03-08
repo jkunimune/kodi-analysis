@@ -72,9 +72,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			"true_image",
 			pixel_area.values*(
 				image_intensity*background +
-				Deterministic("true_image_plain", tensor_fft.irfft(
-					true_image_spectrum, is_odd=data.shape[2]%2 == 1
-				))
+				tensor_fft.irfft(true_image_spectrum, is_odd=data.shape[2]%2 == 1)
 			),
 		)
 		if noise == "poisson":
