@@ -47,7 +47,10 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	))
 	# convert numpy's complex numbers to arrays of real numbers, as pytensor prefers
 	kernel_spectrum = np.stack([real(kernel_spectrum), imag(kernel_spectrum)], axis=-1)
+
+	# characterize the source magnitude for prior and numerical stabilization purposes
 	image_intensity = np.sum(guess.values)*np.max(kernel)
+	limit = np.sum(guess.values)*1e4
 
 	with Model():
 		# prior
@@ -56,7 +59,9 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		source = Gamma("source", mu=source_intensity, sigma=sqrt(2)*source_intensity, shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values))
 		source_spectrum = Deterministic(
 			"source_spectrum",
-			tensor_fft.rfft(pad_with_zeros(source, guess.shape, data.shape)),
+			tensor.maximum(-limit, tensor.minimum(limit, tensor_fft.rfft(
+				pad_with_zeros(source, guess.shape, data.shape)
+			))),
 		)
 		background = Gamma("background", mu=1/10, sigma=sqrt(2)/10)
 
