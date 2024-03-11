@@ -186,10 +186,10 @@ def dilate(array: np.ndarray) -> np.ndarray:
 
 def median(x, weights=None):
 	""" weited median """
-	return quantile(x, .5, weights)
+	return weighted_quantile(x, .5, weights)
 
 
-def quantile(x, q, weights=None):
+def weighted_quantile(x, q, weights=None):
 	""" weited quantile """
 	if weights is None:
 		weights = np.ones(x.shape)

@@ -6,8 +6,10 @@ from typing import Optional, Union, Iterable
 import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
+from matplotlib.patches import PathPatch
+from matplotlib.path import Path
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin, size, where, arange
+from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin, size, where, arange, quantile
 from numpy.typing import NDArray
 from scipy import interpolate
 from skimage import measure
@@ -17,7 +19,7 @@ from cmap import CMAP
 from coordinate import Image, Interval
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	shape_parameters_chained, quantile, credibility_interval
+	shape_parameters_chained, weighted_quantile, credibility_interval
 
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
@@ -82,12 +84,12 @@ def save_and_plot_radial_data(filename: str,
                               ) -> None:
 	plt.figure()
 	plt.plot(r_sphere, ρ_sphere)
-	if not isfinite(quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2)):
+	if not isfinite(weighted_quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2)):
 		logging.error(r_sphere)
 		logging.error(ρ_sphere)
 		logging.error("there is something wrong with these.")
 		raise RuntimeError("there is something wrong with the 1D reconstruction")
-	plt.xlim(0, quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2))
+	plt.xlim(0, weighted_quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2))
 	plt.ylim(0, None)
 	plt.grid("on")
 	plt.xlabel("Magnified spherical radius (cm)")
@@ -630,23 +632,31 @@ def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], lev
 	                        shaded region at any given point
 	"""
 	# first, decide whether we can fit all these contours
-	probability_within_contour = []
 	contour_regions = []
 	any_overlap = False
 	for i, level in enumerate(levels):
-		probability_within_contour.append(np.count_nonzero(z > level, axis=0)/z.shape[0])
+		probability_within_contour = np.count_nonzero(z > level, axis=0)/z.shape[0]
 		contour_regions.append(
-			(probability_within_contour[-1] > 1/2 - credibility/2) &
-			(probability_within_contour[-1] > 1/2 + credibility/2))
+			(probability_within_contour > 1/2 - credibility/2) &
+			(probability_within_contour > 1/2 + credibility/2))
 		if i > 0:
 			if np.any(contour_regions[i - 1] & contour_regions[i]):
 				any_overlap = True
 	# if not, thin them out
 	if any_overlap:
-		probability_within_contour = probability_within_contour[0::2]
+		levels = levels[0::2]
 	# then plot them
-	for i in range(len(probability_within_contour)):
-		plt.contourf(
-			x, y, probability_within_contour[i].T,
-			levels=[1/2 - credibility/2, 1/2 + credibility/2],
-			colors=[f"{color}{round(opacity*255):02x}"])
+	for level in levels:
+		outer_bound = measure.find_contours(quantile(z, 1/2 - credibility/2, axis=0), level)
+		inner_bound = measure.find_contours(quantile(z, 1/2 + credibility/2, axis=0), level)
+		path_sections = outer_bound + [loop[:, ::-1] for loop in inner_bound]
+		path_points = []
+		path_commands = []
+		for loop in path_sections:
+			loop_x = x[0] + (x[1] - x[0])*loop[:, 0]
+			loop_y = y[0] + (y[1] - y[0])*loop[:, 1]
+			path_points += list(zip(loop_x, loop_y))
+			path_commands += [Path.MOVETO] + [Path.LINETO]*(len(loop) - 1)
+		plt.gca().add_patch(PathPatch(Path(path_points, path_commands),
+		                              facecolor=f"{color}{round(opacity*255):02x}",
+		                              edgecolor="none"))
