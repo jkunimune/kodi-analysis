@@ -47,7 +47,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	))
 	# convert numpy's complex numbers to arrays of real numbers, as pytensor prefers
 	kernel_spectrum = np.stack([real(kernel_spectrum), imag(kernel_spectrum)], axis=-1)
-	
+
 	# characterize the source magnitude for prior and numerical stabilization purposes
 	image_intensity = np.sum(guess.values)*np.max(kernel)
 	limit = np.sum(guess.values)*1e4
@@ -72,9 +72,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			"true_image",
 			pixel_area.values*(
 				image_intensity*background +
-				Deterministic("true_image_plain", tensor_fft.irfft(
-					true_image_spectrum, is_odd=data.shape[2]%2 == 1
-				))
+				tensor_fft.irfft(true_image_spectrum, is_odd=data.shape[2]%2 == 1)
 			),
 		)
 		if noise == "poisson":
