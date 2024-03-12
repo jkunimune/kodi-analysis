@@ -847,14 +847,14 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 
 		# now you can combine them all
 		image = Image(local_images.domain, np.zeros(local_images.shape[1:]))
-		image_plicity = Image(local_images.domain, np.zeros(local_images.shape[1:]))
+		image_plicity = Image(local_images.domain, np.zeros(local_images.shape[1:], dtype=int))
 		for k, (x_center, y_center) in enumerate(centers):
 			relative_polygon_x, relative_polygon_y = zip(*data_polygon)
 			relative_data_polygon = list(zip(*shift_and_rotate(
 				relative_polygon_x, relative_polygon_y, -x_center, -y_center, -angle)))
 			area = inside_polygon(relative_data_polygon, *image.domain.get_pixels())
 			image.values[area] += local_images.values[k, area]
-			image_plicity.values += area
+			image_plicity.values += np.where(area, 1, 0)
 
 		if np.any(np.isnan(image.values)):
 			raise DataError("it appears that the specified data region extended outside of the image")
