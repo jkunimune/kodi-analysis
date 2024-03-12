@@ -18,6 +18,7 @@ from util import standard_deviation
 
 pytensor.config.floatX = "float32"
 
+
 def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
                pixel_area: Image, source_region: NDArray[bool],
                noise: Union[str, Image]) -> Image:
