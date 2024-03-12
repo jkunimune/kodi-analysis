@@ -92,7 +92,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			cores_to_use = cores_available
 		chains_to_sample = max(3, cores_to_use)
 		draws_per_chain = int(round(4000/chains_to_sample))
-		inference = sample(tune=1000, draws=draws_per_chain, chains=chains_to_sample, cores=cores_to_use)
+		inference = sample(tune=2000, draws=draws_per_chain, chains=chains_to_sample, cores=cores_to_use)
 
 	# generate a basic trace plot to catch basic issues
 	arviz.plot_trace(inference, var_names=["background"])
