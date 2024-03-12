@@ -4,9 +4,10 @@ from typing import Union
 import arviz
 import numpy as np
 import numpy.fft as np_fft
+import pytensor
 import pytensor.tensor.fft as tensor_fft
 from matplotlib import pyplot as plt
-from numpy import reshape, sqrt, shape, pi, real, imag, expand_dims
+from numpy import reshape, sqrt, shape, pi, real, imag, expand_dims, float32, int32
 from numpy.typing import NDArray
 from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic
 from pymc.distributions.dist_math import check_parameters
@@ -14,6 +15,8 @@ from pytensor import tensor
 
 from coordinate import Image
 from util import standard_deviation
+
+pytensor.config.floatX = "float32"
 
 
 def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
@@ -46,17 +49,21 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		((0, 0), (0, data.shape[1] - kernel.shape[1]), (0, data.shape[2] - kernel.shape[2])),
 	))
 	# convert numpy's complex numbers to arrays of real numbers, as pytensor prefers
-	kernel_spectrum = np.stack([real(kernel_spectrum), imag(kernel_spectrum)], axis=-1)
+	kernel_spectrum = np.stack([real(kernel_spectrum), imag(kernel_spectrum)], axis=-1).astype(float32)
 
 	# characterize the source magnitude for prior and numerical stabilization purposes
-	image_intensity = np.sum(guess.values)*np.max(kernel)
-	limit = np.sum(guess.values)*1e4
+	image_intensity = (np.sum(guess.values)*np.max(kernel)).astype(np.float32)
+	limit = np.sum(guess.values*1e4).astype(float32)
 
 	with Model():
+		pytensor.config.warn_float64 = "raise"
+
 		# prior
 		size = standard_deviation(guess[0])
 		source_intensity = np.sum(guess.values)*guess.domain.pixel_area/(2*pi*size**2)
-		source = Gamma("source", mu=source_intensity, sigma=sqrt(2)*source_intensity, shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values))
+		source = Gamma(
+			"source", mu=source_intensity, sigma=sqrt(2)*source_intensity,
+			shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values).astype(float32))
 		source_spectrum = Deterministic(
 			"source_spectrum",
 			tensor.maximum(-limit, tensor.minimum(limit, tensor_fft.rfft(
@@ -70,15 +77,17 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			"true_image_spectrum", complex_multiply(source_spectrum, kernel_spectrum))
 		true_image = Deterministic(
 			"true_image",
-			pixel_area.values*(
+			pixel_area.values.astype(float32)*(
 				image_intensity*background +
 				tensor_fft.irfft(true_image_spectrum, is_odd=data.shape[2]%2 == 1)
 			),
 		)
 		if noise == "poisson":
-			image = Poisson("image", mu=true_image, observed=data.values)
+			image = Poisson("image", mu=true_image, observed=data.values.astype(int32))
 		else:
-			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
+			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values.astype(float32))
+
+		pytensor.config.warn_float64 = "ignore"
 
 		# run the MCMC chains
 		cores_available = cpu_count()
@@ -143,6 +152,6 @@ def pad_with_zeros(a, old_shape, new_shape):
 			pass
 		else:
 			supplement_shape = new_shape[:axis] + (new_shape[axis] - old_shape[axis],) + old_shape[axis + 1:]
-			supplement = tensor.zeros(supplement_shape)
+			supplement = tensor.zeros(supplement_shape, dtype=float32)
 			a = tensor.concatenate([a, supplement], axis=axis)
 	return a
