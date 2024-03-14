@@ -126,9 +126,10 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 	density = counts.values/np.where(area.values > 0, area.values, 1)
 	vmax = max(np.nanquantile(density, (density.size - 6)/density.size),
 	           np.nanquantile(density, 1 - A_circle/A_square/2)*1.25)
+	vmin = max(0, 1.3*np.min(density) - 0.3*np.max(density))
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.imshow(density.T, extent=counts.domain.extent, origin="lower", cmap=CMAP["viridissimus"],
-	           vmin=max(0, 2*np.min(density) - np.max(density)), vmax=vmax)
+	           vmin=vmin, vmax=vmax)
 	T = np.linspace(0, 2*pi)
 	if PLOT_THEORETICAL_50c_CONTOUR:
 		for dx, dy in aperture_array.positions(grid_shape, s0, grid_transform, r0, counts.x.half_range):
@@ -142,7 +143,7 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 		plt.title(f"$h\\nu$ ≥ {energies.minimum:.0f} keV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	make_colorbar(0, vmax, "Counts")
+	make_colorbar(0, min(vmax, np.max(density)), "Counts", facecolor="#000")
 	plt.tight_layout()
 
 	save_current_figure(f"{filename}-penumbra")
@@ -215,8 +216,13 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	         "--", label="Reconstruction")
 	plt.grid()
 	plt.legend()
-	plt.ylim(max(1.3*np.min(measurement) - 0.3*np.max(measurement), np.min(reconstruction), 0),
-	         min(1.1*np.max(measurement) - 0.1*np.min(measurement), np.max(reconstruction)))
+	plt.ylim(
+		max(1.3*np.min(measurement.values/normalization) - 0.3*np.max(measurement.values/normalization),
+		    np.min(reconstruction.values/normalization),
+		    0),
+		min(1.1*np.max(measurement.values/normalization) - 0.1*np.min(measurement.values/normalization),
+		    np.max(reconstruction.values/normalization)),
+	)
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-residual-lineout")
@@ -621,7 +627,7 @@ def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90, color=No
 
 
 def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], levels: Iterable[float],
-                    color: str, opacity=.5, credibility=.90) -> None:
+                    color: str, opacity=.7, credibility=.90) -> None:
 	""" do a contour plot where the contours have width because instead of just an image z is
 	    actually a chain of images stacked on dimension 0.
 	    :param x: the 1D array of x values
