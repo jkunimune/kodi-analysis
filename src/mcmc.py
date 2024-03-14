@@ -9,14 +9,18 @@ import pytensor.tensor.fft as tensor_fft
 from matplotlib import pyplot as plt
 from numpy import reshape, sqrt, shape, pi, real, imag, expand_dims
 from numpy.typing import NDArray
-from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic
+from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, draw
 from pymc.distributions.dist_math import check_parameters
 from pytensor import tensor
+from scipy import signal
 
 from coordinate import Image
 from util import standard_deviation
 
 pytensor.config.floatX = "float64"
+
+
+SHOW_ONE_DRAW = False  # whether to show the user one set of images to verify that the function graph is working
 
 
 def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
@@ -84,6 +88,23 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			image = Poisson("image", mu=true_image, observed=data.values)
 		else:
 			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
+
+		# verify that the function graph is set up correctly
+		if SHOW_ONE_DRAW:
+			test_source, test_source_spectrum, test_image, test_image_spectrum = \
+				draw([source, source_spectrum, true_image, true_image_spectrum])
+			fig, axs = plt.subplots(2, 3)
+			im = axs[0, 0].imshow(test_source[0, :, :])
+			plt.colorbar(im, ax=axs[0, 0])
+			im = axs[1, 0].imshow(np.hstack([test_source_spectrum[0, :, :, 0], test_source_spectrum[0, ::-1, ::-1, 1]]))
+			plt.colorbar(im, ax=axs[1, 0])
+			im = axs[0, 1].imshow(test_image[0, :, :])
+			plt.colorbar(im, ax=axs[0, 1])
+			im = axs[1, 1].imshow(np.hstack([test_image_spectrum[0, :, :, 0], test_image_spectrum[0, ::-1, ::-1, 1]]))
+			plt.colorbar(im, ax=axs[1, 1])
+			im = axs[0, 2].imshow(pixel_area.values*signal.convolve2d(test_source[0, :, :], kernel[0, :, :], mode="full"))
+			plt.colorbar(im, ax=axs[0, 2])
+			plt.show()
 
 		# run the MCMC chains
 		cores_available = cpu_count()

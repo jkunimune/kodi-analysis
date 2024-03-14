@@ -13,7 +13,6 @@ from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degre
 from typing import Any, Optional, Union
 
 import h5py
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd

@@ -127,7 +127,8 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 	vmax = max(np.nanquantile(density, (density.size - 6)/density.size),
 	           np.nanquantile(density, 1 - A_circle/A_square/2)*1.25)
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	plt.imshow(density.T, extent=counts.domain.extent, origin="lower", cmap=CMAP["coffee"], vmax=vmax)
+	plt.imshow(density.T, extent=counts.domain.extent, origin="lower", cmap=CMAP["viridissimus"],
+	           vmin=max(0, 2*np.min(density) - np.max(density)), vmax=vmax)
 	T = np.linspace(0, 2*pi)
 	if PLOT_THEORETICAL_50c_CONTOUR:
 		for dx, dy in aperture_array.positions(grid_shape, s0, grid_transform, r0, counts.x.half_range):
@@ -214,7 +215,8 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	         "--", label="Reconstruction")
 	plt.grid()
 	plt.legend()
-	plt.ylim(0, None)
+	plt.ylim(max(1.3*np.min(measurement) - 0.3*np.max(measurement), np.min(reconstruction), 0),
+	         min(1.1*np.max(measurement) - 0.1*np.min(measurement), np.max(reconstruction)))
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-residual-lineout")
