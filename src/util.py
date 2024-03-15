@@ -4,13 +4,13 @@ import os
 import re
 import shutil
 import subprocess
-from math import pi, cos, sin, nan, sqrt, ceil, atan2, copysign
+from math import ceil
 from typing import Callable, Optional, Union
 
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
-from numpy import argmin, newaxis, moveaxis, empty, isnan, inf
+from numpy import argmin, newaxis, moveaxis, empty, isnan, inf, pi, cos, sin, nan, sqrt, arctan2, copysign
 from numpy.typing import NDArray
 from pandas import DataFrame, isna
 from scipy import optimize, integrate, interpolate
@@ -154,18 +154,19 @@ def periodic_mean(values: np.ndarray, minimum: float, maximum: float):
 		return mean_angle/(2*pi)*(maximum - minimum) + minimum
 
 
-def center_of_mass(image: Image) -> NDArray[float]:
+def center_of_mass(image: Image) -> tuple[float, float]:
 	""" get the center of mass of a 2d function """
-	return np.array([
-		np.average(image.x.get_bins(), weights=image.values.sum(axis=1)),
-		np.average(image.y.get_bins(), weights=image.values.sum(axis=0))])
+	return (
+		(image.x.get_bins()*image.values.sum(axis=1)).sum()/image.values.sum(),
+		(image.y.get_bins()*image.values.sum(axis=0)).sum()/image.values.sum())
 
 
 def standard_deviation(image: Image) -> float:
 	""" get the radius of this distribution """
 	x0, y0 = center_of_mass(image)
 	x_bins, y_bins = image.domain.get_pixels()
-	mean_r2 = np.average((x_bins - x0)**2 + (y_bins - y0)**2, weights=image.values)
+	r2 = (x_bins - x0)**2 + (y_bins - y0)**2
+	mean_r2 = (r2*image.values).sum()/image.values.sum()
 	return sqrt(mean_r2/2)
 
 
@@ -394,8 +395,8 @@ def decompose_2x2_into_intuitive_parameters(matrix: NDArray[float]
 		L, R = -L, -R
 	scale = sqrt(σ1*σ2)
 	skew = σ1/σ2 - 1
-	left_angle = atan2(L[1, 0], L[0, 0])
-	rite_angle = atan2(R[1, 0], R[0, 0])
+	left_angle = arctan2(L[1, 0], L[0, 0])
+	rite_angle = arctan2(R[1, 0], R[0, 0])
 	angle = left_angle + rite_angle
 	skew_angle = left_angle - rite_angle
 	if abs(angle) > pi:

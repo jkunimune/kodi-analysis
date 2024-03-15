@@ -83,16 +83,16 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	# convert numpy's complex numbers to arrays of real numbers, as pytensor prefers
 	kernel_spectrum = np.stack([real(kernel_spectrum), imag(kernel_spectrum)], axis=-1)
 
-	# characterize the source magnitude for prior and numerical stabilization purposes
-	image_intensity = (np.sum(guess.values)*np.max(kernel))
+	# characterize the guess for the prior
+	guess_radius = standard_deviation(guess[0])
+	guess_intensity = np.sum(guess.values)*guess.domain.pixel_area/(2*pi*guess_radius**2)
+	guess_image_intensity = (np.sum(guess.values)*np.max(kernel))
 	limit = np.sum(guess.values*1e4)
 
 	with Model():
 		# prior
-		size = standard_deviation(guess[0])
-		source_intensity = np.sum(guess.values)*guess.domain.pixel_area/(2*pi*size**2)
 		source = Gamma(
-			"source", mu=source_intensity, sigma=sqrt(2)*source_intensity,
+			"source", mu=guess_intensity, sigma=sqrt(2)*guess_intensity,
 			shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values))
 		source_spectrum = Deterministic(
 			"source_spectrum",
@@ -108,7 +108,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		true_image = Deterministic(
 			"true_image",
 			pixel_area.values*(
-				image_intensity*background +
+				guess_image_intensity*background +
 				tensor.fft.irfft(true_image_spectrum, is_odd=data.shape[2]%2 == 1)
 			),
 		)
@@ -116,6 +116,10 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			image = Poisson("image", mu=true_image, observed=data.values)
 		else:
 			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
+
+		# some auxiliary variables for the trace plot
+		source_radius = Deterministic("source_radius", standard_deviation(Image(guess.domain, source)))
+		source_intensity = Deterministic("source_intensity", tensor.sum(source)*guess.domain.pixel_area)
 
 		# verify that the function graph is set up correctly
 		if SHOW_ONE_DRAW:
@@ -150,7 +154,8 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		                   cores=cores_to_use, nuts_sampler="numpyro")
 
 	# generate a basic trace plot to catch basic issues
-	arviz.plot_trace(inference, var_names=["background"])
+	arviz.plot_trace(inference, var_names=["source_intensity", "source_radius", "background"])
+	plt.tight_layout()
 
 	# it should be *almost* impossible for the chain to prevent a source that's all zeros, but check anyway
 	if np.any(np.all(inference.posterior["source"].to_numpy() <= 0, axis=(2, 3))):

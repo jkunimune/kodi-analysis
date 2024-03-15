@@ -281,7 +281,7 @@ class Image:
 		"""
 		if values.ndim < 2:
 			raise ValueError("an Image's values must be at least 2D.")
-		if domain.shape != values.shape[-2:]:
+		if type(values.shape) is tuple and domain.shape != values.shape[-2:]:
 			raise ValueError(f"this domain {domain.shape} doesn't match these values {values.shape}!")
 		self.domain = domain
 		self.values = values
