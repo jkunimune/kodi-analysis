@@ -2,16 +2,19 @@ from multiprocessing import cpu_count
 from typing import Union
 
 import arviz
+import jax.numpy
+import jax.numpy.fft
 import numpy as np
-import numpy.fft as np_fft
+import numpy.fft
 import pytensor
-import pytensor.tensor.fft as tensor_fft
 from matplotlib import pyplot as plt
-from numpy import reshape, sqrt, shape, pi, real, imag, expand_dims
+from numpy import reshape, sqrt, shape, pi, real, imag, expand_dims, prod
 from numpy.typing import NDArray
 from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, draw
 from pymc.distributions.dist_math import check_parameters
 from pytensor import tensor
+from pytensor.link.jax.dispatch import jax_funcify
+from pytensor.tensor.fft import RFFTOp, IRFFTOp
 from scipy import signal
 
 from coordinate import Image
@@ -47,8 +50,33 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	kernel = expand_dims(kernel, axis=0)
 	data = Image(data.domain, expand_dims(data.values, axis=0))
 
+	# define JAX versions of the pytensor FFT Ops so we can do this on GPUs
+	# NOTE: normally the shape would be passed as the twoth argument to the functions that these overloaded Ops return.
+	#       but the parameters the function receives are all JAX arrays, which is actually not okay when you pass it to
+	#       the JAX function (index-related values like shapes must be static, while JAX arrays are traced by default).
+	#       that's why I define the shape beforehand and pull that tuple in directly, ignoring the shape parameter.
+	image_shape = data.shape[1:]
+	@jax_funcify.register(RFFTOp)
+	def jax_funcify_RFFTOp(_, **__):
+		def rfft(inpoot, _):
+			# call JAX's rfft function
+			result = jax.numpy.fft.rfftn(inpoot, s=image_shape)
+			# convert each complex number to two real numbers for pytensor's sake
+			return jax.numpy.stack([jax.numpy.real(result), jax.numpy.imag(result)], axis=-1)
+		return rfft
+	@jax_funcify.register(IRFFTOp)
+	def jax_funcify_IRFFTOp(_, **__):
+		def irfft(inpoot, _):
+			# convert the pairs of real numbers to individual complex numbers
+			array = inpoot[..., 0] + 1j*inpoot[..., 1]
+			# call JAX's irfft function
+			output = jax.numpy.fft.irfftn(array, s=image_shape)
+			# remove numpy's default normalization
+			return (output*prod(image_shape)).astype(inpoot.dtype)
+		return irfft
+
 	# bring the inputs into the frequency domain
-	kernel_spectrum = np_fft.rfft2(np.pad(
+	kernel_spectrum = numpy.fft.rfft2(np.pad(
 		kernel,
 		((0, 0), (0, data.shape[1] - kernel.shape[1]), (0, data.shape[2] - kernel.shape[2])),
 	))
@@ -68,7 +96,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values))
 		source_spectrum = Deterministic(
 			"source_spectrum",
-			tensor.maximum(-limit, tensor.minimum(limit, tensor_fft.rfft(
+			tensor.maximum(-limit, tensor.minimum(limit, tensor.fft.rfft(
 				pad_with_zeros(source, guess.shape, data.shape)
 			))),
 		)
@@ -81,7 +109,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			"true_image",
 			pixel_area.values*(
 				image_intensity*background +
-				tensor_fft.irfft(true_image_spectrum, is_odd=data.shape[2]%2 == 1)
+				tensor.fft.irfft(true_image_spectrum, is_odd=data.shape[2]%2 == 1)
 			),
 		)
 		if noise == "poisson":
@@ -118,7 +146,8 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			cores_to_use = cores_available
 		chains_to_sample = max(3, cores_to_use)
 		draws_per_chain = int(round(4000/chains_to_sample))
-		inference = sample(tune=2000, draws=draws_per_chain, chains=chains_to_sample, cores=cores_to_use)
+		inference = sample(tune=2000, draws=draws_per_chain, chains=chains_to_sample,
+		                   cores=cores_to_use, nuts_sampler="numpyro")
 
 	# generate a basic trace plot to catch basic issues
 	arviz.plot_trace(inference, var_names=["background"])
