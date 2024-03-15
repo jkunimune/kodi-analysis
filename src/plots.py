@@ -120,21 +120,21 @@ def plot_image_grid(filename: str, full_image: Image, crop_image: Image, contour
 	"""
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.imshow(full_image.values.T, extent=full_image.domain.extent, origin="lower",
-	           vmin=0, vmax=np.nanquantile(crop_image.values, .999), cmap=CMAP["coffee"])
+	           vmin=0, vmax=np.nanquantile(crop_image.values, .999), cmap=CMAP["viridissimus"])
 	θ = np.linspace(0, 2*pi, 145)
 	for x0, y0 in aperture_array.positions(grid_shape, grid_spacing, grid_transform,
 	                                       r_true, full_image.domain.diagonal, grid_x0, grid_y0):
 		plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-		         "#063", linestyle="solid", linewidth=1.2, zorder=20)
+		         "#630", linestyle="solid", linewidth=1.2, zorder=20)
 		plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-		         "#3e7", linestyle="dashed", linewidth=1.2, zorder=20)
+		         "#e73", linestyle="dashed", linewidth=1.2, zorder=20)
 	plt.scatter(x_circles[circle_is_valid], y_circles[circle_is_valid],
 	            np.where(circle_fullness[circle_is_valid], 30, 5),
-	            c="#8ae", marker="x", zorder=30)
+	            c="#751", marker="x", zorder=30)
 	plt.contour(crop_image.x.get_bins(), crop_image.y.get_bins(), crop_image.values.T,
-	            levels=[contour_level], colors="k", linewidths=.5, zorder=10)
+	            levels=[contour_level], colors="w", linewidths=.5, zorder=10)
 	plt.fill([x for x, y in region], [y for x, y in region],
-	         facecolor="none", edgecolor="k", linewidth=.5, zorder=10)
+	         facecolor="none", edgecolor="w", linewidth=.5, zorder=10)
 	plt.title("Located apertures marked with exes")
 	plt.xlim(min(np.min(x_circles), crop_image.x.minimum),
 	         max(np.max(x_circles), crop_image.x.maximum))
