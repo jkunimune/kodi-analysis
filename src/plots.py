@@ -110,6 +110,41 @@ def save_and_plot_radial_data(filename: str,
 	save_current_figure(f"{filename}-penumbra-profile")
 
 
+def plot_image_grid(filename: str, full_image: Image, crop_image: Image, contour_level: float,
+                    grid_shape: str, grid_spacing: float, grid_transform: NDArray[float],
+                    grid_x0: float, grid_y0: float, r_true: float,
+                    x_circles: NDArray[float], y_circles: NDArray[float], circle_fullness: NDArray[bool],
+                    circle_is_valid: NDArray[bool], region: list[tuple[float, float]]):
+	""" plot the raw data, zoomed into the relevant region of the detector plane, marking which
+	    apertures are being used and where you think they are.
+	"""
+	plt.figure(figsize=SQUARE_FIGURE_SIZE)
+	plt.imshow(full_image.values.T, extent=full_image.domain.extent, origin="lower",
+	           vmin=0, vmax=np.nanquantile(crop_image.values, .999), cmap=CMAP["viridissimus"])
+	θ = np.linspace(0, 2*pi, 145)
+	for x0, y0 in aperture_array.positions(grid_shape, grid_spacing, grid_transform,
+	                                       r_true, full_image.domain.diagonal, grid_x0, grid_y0):
+		plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
+		         "#630", linestyle="solid", linewidth=1.2, zorder=20)
+		plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
+		         "#e73", linestyle="dashed", linewidth=1.2, zorder=20)
+	plt.scatter(x_circles[circle_is_valid], y_circles[circle_is_valid],
+	            np.where(circle_fullness[circle_is_valid], 30, 5),
+	            c="#751", marker="x", zorder=30)
+	plt.contour(crop_image.x.get_bins(), crop_image.y.get_bins(), crop_image.values.T,
+	            levels=[contour_level], colors="w", linewidths=.5, zorder=10)
+	plt.fill([x for x, y in region], [y for x, y in region],
+	         facecolor="none", edgecolor="w", linewidth=.5, zorder=10)
+	plt.title("Located apertures marked with exes")
+	plt.xlim(min(np.min(x_circles), crop_image.x.minimum),
+	         max(np.max(x_circles), crop_image.x.maximum))
+	plt.ylim(min(np.min(y_circles), crop_image.y.minimum),
+	         max(np.max(y_circles), crop_image.y.maximum))
+	plt.tight_layout()
+
+	save_current_figure(f"{filename}-raw")
+
+
 def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
                            energies: Interval, s0: float, r0: float, grid_shape: str,
                            grid_transform: NDArray[float] = np.identity(2)):
