@@ -36,7 +36,7 @@ from hdf5_util import load_hdf5, save_as_hdf5
 from image_plate import xray_energy_limit, fade
 from linear_operator import Matrix
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra, \
-	save_and_plot_radial_data, save_current_figure
+	save_and_plot_radial_data, plot_image_grid, save_current_figure
 from solid_state import track_diameter, particle_E_in, particle_E_out
 from util import center_of_mass, find_intercept, fit_circle, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
@@ -51,7 +51,6 @@ warnings.filterwarnings("ignore")
 
 ASK_FOR_HELP = False
 SHOW_DIAMETER_CUTS = True
-SHOW_CENTER_FINDING_CALCULATION = True
 SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 SHOW_GRID_FITTING_DEBUG_PLOTS = False
@@ -613,6 +612,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 		# find the centers and spacings of the penumbral images
 		try:
 			centers, grid_transform = find_circle_centers(
+				f"{shot}/{los}-{particle}-{section_index}",
 				input_file, particle, 35.,
 				M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
 				los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS)
@@ -1589,11 +1589,12 @@ def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArra
 	return x_fit, y_fit, total_error  # type: ignore
 
 
-def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: float,
+def find_circle_centers(filename: str, scan: Union[Scan, Image], particle: str, max_contrast: float,
                         r_nominal: float, s_nominal: float,
                         grid_shape: str, grid_parameters: Optional[GridParameters],
                         region: list[Point], trust_grid: bool) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
+	    :param filename: a string used to describe the plot that will get saved
 	    :param scan: the scanfile containing the data to be analyzed
 	    :param particle: the type of radiation being detected, for the purposes of statistics: "xray" for Gaussian
 	                     error and "proton" or "deuteron" for Poisson error
@@ -1736,6 +1737,7 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 		error = np.hypot(x_grid_nodes - x_circles_raw, y_grid_nodes - y_circles_raw)
 		valid = error < max(r_true/2, 2*np.median(error))  # check for misplaced apertures if you do it like this
 		x_circles, y_circles = x_grid_nodes, y_grid_nodes
+	# or just leave them wherever you find them
 	else:
 		valid = np.full(len(circles), True)
 		x_circles, y_circles = x_circles_raw, y_circles_raw
@@ -1745,30 +1747,9 @@ def find_circle_centers(scan: Union[Scan, Image], particle: str, max_contrast: f
 		if np.any((x_grid_nodes[:i] == x_grid_nodes[i]) & (y_grid_nodes[:i] == y_grid_nodes[i])):
 			valid[i] = False
 
-	if SHOW_CENTER_FINDING_CALCULATION:
-		plt.figure()
-		plt.imshow(full_image.values.T, extent=full_image.domain.extent, origin="lower",
-		           vmin=0, vmax=np.nanquantile(crop_image.values, .999), cmap=CMAP["viridissimus"])
-		θ = np.linspace(0, 2*pi, 145)
-		for x0, y0 in aperture_array.positions(grid_shape, s_nominal, grid_transform,
-		                                       r_true, full_image.domain.diagonal, grid_x0, grid_y0):
-			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-			         "#630", linestyle="solid", linewidth=1.2, zorder=20)
-			plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-			         "#e73", linestyle="dashed", linewidth=1.2, zorder=20)
-		plt.scatter(x_circles[valid], y_circles[valid],
-		            np.where(circle_fullness[valid], 30, 5),
-		            c="#751", marker="x", zorder=30)
-		plt.contour(crop_image.x.get_bins(), crop_image.y.get_bins(), crop_image.values.T,
-		            levels=[contour_level], colors="w", linewidths=.5, zorder=10)
-		plt.fill([x for x, y in region], [y for x, y in region],
-		         facecolor="none", edgecolor="w", linewidth=.5, zorder=10)
-		plt.title("Located apertures marked with exes")
-		plt.xlim(min(np.min(x_circles), crop_image.x.minimum),
-		         max(np.max(x_circles), crop_image.x.maximum))
-		plt.ylim(min(np.min(y_circles), crop_image.y.minimum),
-		         max(np.max(y_circles), crop_image.y.maximum))
-		plt.tight_layout()
+	plot_image_grid(filename, full_image, crop_image, contour_level,
+	                grid_shape, s_nominal, grid_transform, grid_x0, grid_y0,
+	                r_true, x_circles, y_circles, circle_fullness, valid, region)
 
 	if len(circles) == 0:  # TODO: check for duplicate centers (tho I think they should be rare and not too big a problem)
 		raise DataError("I couldn't find any circles in this region")
