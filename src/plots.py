@@ -125,8 +125,8 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 	A_circle, A_square = pi*r0**2, counts.domain.total_area
 	density = counts.values/np.where(area.values > 0, area.values, 1)
 	vmax = max(np.nanquantile(density, (density.size - 6)/density.size),
-	           np.nanquantile(density, 1 - A_circle/A_square/2)*1.25)
-	vmin = max(0, 1.3*np.min(density) - 0.3*np.max(density))
+	           1.3*np.nanquantile(density, 1 - A_circle/A_square/2) - 0.3*np.min(density))
+	vmin = max(0, 1.4*np.min(density) - 0.4*np.max(density))
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.imshow(density.T, extent=counts.domain.extent, origin="lower", cmap=CMAP["viridissimus"],
 	           vmin=vmin, vmax=vmax)
