@@ -10,7 +10,7 @@ import pytensor
 from matplotlib import pyplot as plt
 from numpy import reshape, sqrt, shape, pi, real, imag, expand_dims, prod
 from numpy.typing import NDArray
-from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, draw
+from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, draw, DensityDist
 from pymc.distributions.dist_math import check_parameters
 from pytensor import tensor
 from pytensor.link.jax.dispatch import jax_funcify
@@ -91,9 +91,14 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	limit = np.sum(guess.values*1e4)
 
 	with Model():
+		# latent variables
+		source_scale = 20
 		# prior
-		source = Gamma(
-			"source", mu=guess_intensity, sigma=sqrt(2)*guess_intensity,
+		source = DensityDist(
+			"source", guess_intensity,
+			(source_scale/guess.x.bin_width)**2,
+			(source_scale/guess.y.bin_width)**2,
+			logp=spacially_correlated_gamma_logp,
 			shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values))
 		source_spectrum = Deterministic(
 			"source_spectrum",
@@ -179,14 +184,22 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	)
 
 
-def truncated_spacially_correlated_distribution_logp(values, mu, sigma, x_factor, y_factor, lower, upper):
+def spacially_correlated_gamma_logp(values, mu, x_factor, y_factor):
+	""" the log-probability for a multivariate distribution that looks ruffly like a gamma
+	    distribution with α=1/2 on average but individual pixels are correlated with their neibors.
+	    :param values: the pixel values at which to evaluate the probability
+	    :param mu: the desired mean value of this distribution
+	    :param x_factor: the coefficient by which to correlate horizontally adjacent pixels
+	    :param y_factor: the coefficient by which to correlate verticly adjacent pixels
+	    :return: the log of the probability value, not absolutely normalized but normalized enuff
+	             that relative values are correct for variations in all hyperparameters
+	"""
 	values = check_parameters(
-		values,
-		tensor.all(values >= lower) and tensor.all(values <= upper),
-		msg="at least one value out of bounds",
+		values, tensor.all(values >= 0),
+		msg="negative values are not permitted by the gamma distribution",
 	)
-	# prefactor = 1/2*det_precision
-	identity_penalties = (values - mu)**2/(2*sigma**2)/(1 + x_factor*y_factor)
+	# prefactor = SPACIALLY_CORRELATED_GAMMA_PREFACTOR(x_factor**2 + y_factor**2)
+	identity_penalties = (-values/2 - values/(2*mu))#/(1 + x_factor*y_factor)
 	x_penalties = (x_factor*(values[0:-1, :] - values[1:, :]))**2
 	y_penalties = (y_factor*(values[:, 0:-1] - values[:, 1:]))**2
 	return -(tensor.sum(identity_penalties) + tensor.sum(x_penalties) + tensor.sum(y_penalties))
