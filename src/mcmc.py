@@ -28,7 +28,7 @@ SHOW_ONE_DRAW = False  # whether to show the user one set of images to verify th
 
 def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
                pixel_area: Image, source_region: NDArray[bool],
-               noise: Union[str, Image]) -> Image:
+               noise: Union[str, Image], use_gpu: bool) -> Image:
 	""" perform Hamiltonian Monte Carlo to estimate the distribution of images that might produce F when
 	    convolved with q.  a background level will be automatically inferred to go along with the noise.
 		:param data: the full convolution (counts/bin)
@@ -37,6 +37,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		:param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
 		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
+	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 		:return: the reconstructed source G such that convolve2d(G, q) ~= F
 	"""
 	if data.domain != pixel_area.domain or shape(guess) != shape(source_region):
@@ -150,8 +151,12 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			cores_to_use = cores_available
 		chains_to_sample = max(3, cores_to_use)
 		draws_per_chain = int(round(6000/chains_to_sample))
+		if use_gpu:
+			kwargs = dict(nuts_sampler="numpyro", nuts_sampler_kwargs=dict(chain_method="vectorized"))
+		else:
+			kwargs = dict()
 		inference = sample(tune=2000, draws=draws_per_chain, chains=chains_to_sample,
-		                   cores=cores_to_use)#, nuts_sampler="numpyro", nuts_sampler_kwargs=dict(chain_method="vectorized"))
+		                   cores=cores_to_use, **kwargs)
 
 	# generate a basic trace plot to catch basic issues
 	arviz.plot_trace(inference, var_names=["source_intensity", "source_radius", "background"])

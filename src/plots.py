@@ -355,13 +355,16 @@ def plot_source(filename: str, source_chain: Image,
 	fig, ax_grid = plt.subplots(3, 3, sharex="all", sharey="all", facecolor="none",
 	                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.3, 5))
 	k = 0
-	samples = np.random.choice(arange(source_chain.shape[0]), size(ax_grid), replace=False)
+	samples = np.random.choice(
+		arange(source_chain.shape[0]),
+		min(source_chain.shape[0], size(ax_grid)), replace=False)
 	for ax_row in ax_grid:
 		for ax in ax_row:
-			ax.imshow(
-				source_chain[samples[k]].values, extent=source_chain[samples[k]].domain.extent,
-				origin="lower", cmap=cmap,
-				vmin=0, vmax=np.max(source_chain.values[samples, :, :]))
+			if k < len(samples):
+				ax.imshow(
+					source_chain[samples[k]].values, extent=source_chain[samples[k]].domain.extent,
+					origin="lower", cmap=cmap,
+					vmin=0, vmax=np.max(source_chain.values[samples, :, :]))
 			ax.set_facecolor("black")
 			ax.axis([x0 - object_size, x0 + object_size,
 			         y0 - object_size, y0 + object_size])

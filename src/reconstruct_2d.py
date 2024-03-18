@@ -89,7 +89,9 @@ def analyze(shots_to_reconstruct: list[str],
             only_IP: bool,
             only_cr39: bool,
             skip_reconstruction: bool,
-            show_plots: bool):
+            show_plots: bool,
+            do_mcmc: bool,
+            use_gpu: bool):
 	""" iterate thru the scan files in the input/scans directory that match the provided shot
 	    numbers, preprocess them into some number of penumbral images, apply the 2D reconstruction
 	    algorithm to them (or load the results of the previus reconstruction if so desired),
@@ -103,11 +105,16 @@ def analyze(shots_to_reconstruct: list[str],
 	                            deuteron energy bins, and "proton" for one huge energy bin.
 	    :param only_IP: whether to skip all .cpsa files and only look at .h5
 	    :param only_cr39: whether to skip all .h5 files and only look at .cpsa
+	    :param do_mcmc: whether to run the MCMC uncertainty analysis
+	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
 	                       user to close them, rather than only saving them to disc and silently proceeding.
 	"""
+	if use_gpu and not do_mcmc:
+		raise ValueError("you passed the --GPU option but not the --MCMC option.  do you want me to run the MCMC or not?")
+
 	# ensure all of the important results directories exist
 	if not os.path.isdir("results"):
 		os.mkdir("results")
@@ -275,6 +282,8 @@ def analyze(shots_to_reconstruct: list[str],
 		try:
 			results = analyze_scan(
 				input_filename     =filename,
+				do_mcmc            =do_mcmc,
+				use_gpu            =use_gpu,
 				skip_reconstruction=skip_reconstruction,
 				show_plots         =show_plots,
 				shot               =shot,
@@ -328,6 +337,7 @@ def analyze_scan(input_filename: str,
                  offset: tuple[float, float, float], velocity: tuple[float, float, float],
                  stalk_position: str, num_stalks: int,
                  charged_particle_energy_cuts: list[Interval],
+                 do_mcmc: bool, use_gpu: bool,
                  skip_reconstruction: bool, show_plots: bool,
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct all of the penumbral images contained in a single scan file.
@@ -348,6 +358,8 @@ def analyze_scan(input_filename: str,
 	    :param stalk_position: the name of the port from which the target is held (should be "TPS2")
 	    :param num_stalks: the number of stalks on this target (usually 1)
 	    :param charged_particle_energy_cuts: the energy bins to use for reconstructing charged particles
+	    :param do_mcmc: whether to run the MCMC uncertainty analysis
+	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -425,7 +437,8 @@ def analyze_scan(input_filename: str,
 					grid_parameters,
 					source_domain,
 					charged_particle_energy_cuts,
-					skip_reconstruction, show_plots)
+					do_mcmc=do_mcmc, use_gpu=use_gpu,
+					skip_reconstruction=skip_reconstruction, show_plots=show_plots)
 		except DataError as e:
 			logging.warning(e)
 		else:
@@ -524,6 +537,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
                          grid_parameters: Optional[GridParameters],
                          source_domain: Optional[Grid],
                          charged_particle_energy_cuts: list[Interval],
+                         do_mcmc: bool, use_gpu: bool,
                          skip_reconstruction: bool, show_plots: bool,
                          ) -> tuple[GridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
@@ -550,6 +564,8 @@ def analyze_scan_section(input_file: Union[Scan, Image],
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
 	    :param charged_particle_energy_cuts: the energy cuts to use when you break this section up into diameter bins
+	    :param do_mcmc: whether to run the MCMC uncertainty analysis
+	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -661,8 +677,9 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 				etch_time, filter_stack, data_polygon,
 				grid_transform/grid_mean_scale, centers,
 				f"{section_index}{energy_cut_index}", num_detectors, len(energy_cuts),
-				energy_cut, max_contrast,
-				source_domain, skip_reconstruction, show_plots)
+				energy_cut, max_contrast, source_domain,
+				do_mcmc=do_mcmc, use_gpu=use_gpu,
+				skip_reconstruction=skip_reconstruction, show_plots=show_plots)
 		except (DataError, FilterError, RecordNotFoundError) as e:
 			logging.warning(f"  {e}")
 		else:
@@ -694,6 +711,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
                              cut_index: str, num_detectors: int, num_energy_cuts: int,
                              energies: Interval, max_contrast: float,
                              output_plane: Optional[Grid],
+                             do_mcmc: bool, use_gpu: bool,
                              skip_reconstruction: bool, show_plots: bool
                              ) -> tuple[Image, dict[str, Any]]:
 	""" reconstruct the penumbral image contained in a single energy cut in a single filtering
@@ -726,6 +744,8 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
         :param output_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
+	    :param do_mcmc: whether to run the MCMC uncertainty analysis
+	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -963,15 +983,19 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			)
 		)
 		source.values = np.maximum(0, source.values) # we know this must be nonnegative (counts/cm^2/srad)
-		logging.info(f"  sampling the posterior distribution...")
-		source = mcmc.deconvolve(
-			data=clipd_image,
-			kernel=kernel.values,
-			guess=source,
-			pixel_area=clipd_image_plicity,
-			source_region=source_region,
-			noise=estimated_data_variance,
-		)
+		if do_mcmc:
+			logging.info(f"  sampling the posterior distribution...")
+			source = mcmc.deconvolve(
+				data=clipd_image,
+				kernel=kernel.values,
+				guess=source,
+				pixel_area=clipd_image_plicity,
+				source_region=source_region,
+				noise=estimated_data_variance,
+				use_gpu=use_gpu,
+			)
+		else:
+			source.values = np.expand_dims(source.values, axis=0)
 		save_current_figure(f"{shot}/{los}-{particle}-{cut_index}-trace")
 		logging.info("  postprocessing the results...")
 
@@ -1815,6 +1839,12 @@ if __name__ == '__main__':
 	parser.add_argument(
 		"--only_IP", action="store_true",
 		help="whether to ignore all .cpsa files and only process the .h5 files")
+	parser.add_argument(
+		"--MCMC", action="store_true",
+		help="whether to run the MCMC uncertainty analysis")
+	parser.add_argument(
+		"--GPU", action="store_true",
+		help="whether to run the MCMC on a GPU (rather than on all CPUs as is default)")
 	args = parser.parse_args()
 
 	analyze(shots_to_reconstruct=args.shots.split(","),
@@ -1822,4 +1852,6 @@ if __name__ == '__main__':
 	        show_plots=args.show,
 	        energy_cut_mode="proton" if args.proton else "fine" if args.fine else "normal",
 	        only_cr39=args.only_CR39,
-	        only_IP=args.only_IP)
+	        only_IP=args.only_IP,
+	        do_mcmc=args.MCMC,
+	        use_gpu=args.GPU)
