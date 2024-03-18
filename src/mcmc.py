@@ -92,7 +92,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 
 	with Model():
 		# latent variables
-		source_scale = 20
+		source_scale = 20e-4
 		# prior
 		source = DensityDist(
 			"source", guess_intensity,
@@ -199,7 +199,7 @@ def spacially_correlated_gamma_logp(values, mu, x_factor, y_factor):
 		msg="negative values are not permitted by the gamma distribution",
 	)
 	# prefactor = SPACIALLY_CORRELATED_GAMMA_PREFACTOR(x_factor**2 + y_factor**2)
-	identity_penalties = (-values/2 - values/(2*mu))#/(1 + x_factor*y_factor)
+	identity_penalties = (tensor.log(values)/2 + values/(2*mu))#/(1 + x_factor*y_factor)
 	x_penalties = (x_factor*(values[0:-1, :] - values[1:, :]))**2
 	y_penalties = (y_factor*(values[:, 0:-1] - values[:, 1:]))**2
 	return -(tensor.sum(identity_penalties) + tensor.sum(x_penalties) + tensor.sum(y_penalties))
