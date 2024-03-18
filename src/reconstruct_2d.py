@@ -65,6 +65,7 @@ FINE_DEUTERON_ENERGY_CUTS = [
 FORCE_LARGE_SOURCE_DOMAIN = False  # whether to enable a source domain larger than the aperture (experimental)
 USE_CHARGING_CORRECTION = False
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
+UPSAMPLE_SOURCES = False  # whether to save the sources at a potentially higher resolution than they were reconstructed at
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
 CHARGED_PARTICLE_RESOLUTION = 5e-4  # resolution of reconstructed KoD sources
@@ -993,10 +994,13 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			logging.warning("the reconstruction would take too long to reproduce so I’m skipping the residual plot")
 			reconstructed_image = Image(image.domain, np.full(image.shape, nan))
 
-		# after reproducing the input, we must make some adjustments to the source
+		# after reproducing the input, we must rebin the source to a unified Grid for the stack
 		if output_plane is None:
-			output_plane = Grid.from_size(source.x.half_range, source.domain.pixel_width/2, True)
-		# specificly, we must rebin it to a unified Grid for the stack
+			# if a unified Grid has not been set yet, define it now
+			if UPSAMPLE_SOURCES:
+				output_plane = Grid.from_size(source.x.half_range, source.domain.pixel_width/2, True)
+			else:
+				output_plane = Grid.from_size(source.x.half_range, source.domain.pixel_width, True)
 		output = resample_2d(source, output_plane)
 
 	# if we’re skipping the reconstruction, just load the previus stacked penumbra and reconstructed source
