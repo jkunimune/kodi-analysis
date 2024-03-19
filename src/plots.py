@@ -703,6 +703,7 @@ def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], lev
 			loop_y = y[0] + (y[1] - y[0])*loop[:, 1]
 			path_points += list(zip(loop_x, loop_y))
 			path_commands += [Path.MOVETO] + [Path.LINETO]*(len(loop) - 1)
-		plt.gca().add_patch(PathPatch(Path(path_points, path_commands),
-		                              facecolor=f"{color}{round(opacity*255):02x}",
-		                              edgecolor="none"))
+		if len(path_points) > 0:
+			plt.gca().add_patch(PathPatch(Path(path_points, path_commands),
+			                              facecolor=f"{color}{round(opacity*255):02x}",
+			                              edgecolor="none"))
