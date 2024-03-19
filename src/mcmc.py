@@ -106,7 +106,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 				pad_with_zeros(source, guess.shape, data.shape)
 			))),
 		)
-		background = Gamma("background", mu=1/10, sigma=sqrt(2)/10)
+		background = Gamma("background", mu=1/2, sigma=sqrt(2)/2)
 
 		# likelihood
 		true_image_spectrum = Deterministic(
