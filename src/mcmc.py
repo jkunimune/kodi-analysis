@@ -11,7 +11,6 @@ from matplotlib import pyplot as plt
 from numpy import reshape, sqrt, shape, pi, real, imag, expand_dims, prod
 from numpy.typing import NDArray
 from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, draw, DensityDist
-from pymc.distributions.dist_math import check_parameters
 from pytensor import tensor
 from pytensor.link.jax.dispatch import jax_funcify
 from pytensor.tensor.fft import RFFTOp, IRFFTOp
@@ -92,14 +91,15 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 
 	with Model():
 		# latent variables
-		source_scale = 20e-4
+		noise_scale = 20e-4
 		# prior
-		source = DensityDist(
-			"source", guess_intensity,
-			(source_scale/guess.x.bin_width)**2,
-			(source_scale/guess.y.bin_width)**2,
-			logp=spacially_correlated_gamma_logp,
-			shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values))
+		source_shape_log = DensityDist(
+			"source_shape_log",
+			(noise_scale/guess.x.bin_width)**2,
+			(noise_scale/guess.y.bin_width)**2,
+			logp=spacially_correlated_exp_gamma_logp,
+			shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values)/guess_intensity)
+		source = Deterministic("source", tensor.exp(source_shape_log)*guess_intensity)
 		source_spectrum = Deterministic(
 			"source_spectrum",
 			tensor.maximum(-limit, tensor.minimum(limit, tensor.fft.rfft(
@@ -184,24 +184,21 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	)
 
 
-def spacially_correlated_gamma_logp(values, mu, x_factor, y_factor):
-	""" the log-probability for a multivariate distribution that looks ruffly like a gamma
-	    distribution with α=1/2 on average but individual pixels are correlated with their neibors.
-	    :param values: the pixel values at which to evaluate the probability
-	    :param mu: the desired mean value of this distribution
+def spacially_correlated_exp_gamma_logp(log_values, x_factor, y_factor):
+	""" the log-probability for a set of points whose exponentials are drawn from a multivariate
+	    distribution that looks ruffly like a gamma distribution with α=β=1/2 on average but
+	    individual pixels are correlated with their neibors.
+	    :param log_values: the 1×m×n array of pixel value logarithms at which to evaluate the probability
 	    :param x_factor: the coefficient by which to correlate horizontally adjacent pixels
 	    :param y_factor: the coefficient by which to correlate verticly adjacent pixels
 	    :return: the log of the probability value, not absolutely normalized but normalized enuff
 	             that relative values are correct for variations in all hyperparameters
 	"""
-	values = check_parameters(
-		values, tensor.all(values >= 0),
-		msg="negative values are not permitted by the gamma distribution",
-	)
-	# prefactor = SPACIALLY_CORRELATED_GAMMA_PREFACTOR(x_factor**2 + y_factor**2)
-	identity_penalties = (tensor.log(values)/2 + values/(2*mu))#/(1 + x_factor*y_factor)
-	x_penalties = (x_factor*(values[0:-1, :] - values[1:, :]))**2
-	y_penalties = (y_factor*(values[:, 0:-1] - values[:, 1:]))**2
+	values = tensor.exp(log_values)
+	# prefactor = SPACIALLY_CORRELATED_GAMMA_PREFACTOR(x_factor + y_factor)
+	identity_penalties = (values - log_values)/2
+	x_penalties = x_factor*(values[:, 0:-1, :] - values[:, 1:, :])**2
+	y_penalties = y_factor*(values[:, :, 0:-1] - values[:, :, 1:])**2
 	return -(tensor.sum(identity_penalties) + tensor.sum(x_penalties) + tensor.sum(y_penalties))
 
 
