@@ -169,7 +169,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 
 	# it should be *almost* impossible for the chain to prevent a source that's all zeros, but check anyway
 	if np.any(np.all(inference.posterior["source"].to_numpy() <= 0, axis=(2, 3))):
-		i, j = np.nonzero(np.all(inference.posterior["source"].to_numpy() == 0, axis=(2, 3)))
+		i, j = np.nonzero(np.all(inference.posterior["source"].to_numpy() == 0, axis=(-3, -2, -1)))
 		print("blank source alert!")
 		print(inference.posterior["size"].to_numpy()[i, j])
 		print(inference.posterior["x0"].to_numpy()[i, j])
