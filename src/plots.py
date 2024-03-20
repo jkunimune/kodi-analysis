@@ -353,7 +353,7 @@ def plot_source(filename: str, source_chain: Image,
 
 	# plot a few random samples
 	fig, ax_grid = plt.subplots(3, 3, sharex="all", sharey="all", facecolor="none",
-	                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.3, 5))
+	                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.2, 5))
 	k = 0
 	samples = np.random.choice(
 		arange(source_chain.shape[0]),
@@ -695,7 +695,7 @@ def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], lev
 	for level in levels:
 		outer_bound = measure.find_contours(quantile(z, 1/2 - credibility/2, axis=0), level)
 		inner_bound = measure.find_contours(quantile(z, 1/2 + credibility/2, axis=0), level)
-		path_sections = outer_bound + [loop[:, ::-1] for loop in inner_bound]
+		path_sections = outer_bound + [loop[::-1, :] for loop in inner_bound]
 		path_points = []
 		path_commands = []
 		for loop in path_sections:
