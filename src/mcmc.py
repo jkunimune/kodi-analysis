@@ -84,22 +84,23 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	kernel_spectrum = np.stack([real(kernel_spectrum), imag(kernel_spectrum)], axis=-1)
 
 	# characterize the guess for the prior
-	guess_radius = standard_deviation(guess[0])
-	guess_intensity = np.sum(guess.values)*guess.domain.pixel_area/(2*pi*guess_radius**2)
-	guess_image_intensity = (np.sum(guess.values)*np.max(kernel))
-	limit = np.sum(guess.values*1e4)
+	guess_intensity = np.sum(guess.values)  # the expected sum of the source pixels
+	guess_image_intensity = guess_intensity*np.max(kernel)  # the expected signal level of the image
+	limit = guess_intensity*1e4  # the maximum credible value of the source's Fourier transform
 
 	with Model():
 		# latent variables
-		noise_scale = 20e-4
+		smoothing = .1
 		# prior
-		source_shape_log = DensityDist(
-			"source_shape_log",
-			(noise_scale/guess.x.bin_width)**2,
-			(noise_scale/guess.y.bin_width)**2,
-			logp=spacially_correlated_exp_gamma_logp,
-			shape=guess.shape, initval=np.maximum(np.max(guess.values)*.01, guess.values)/guess_intensity)
-		source = Deterministic("source", tensor.exp(source_shape_log)*guess_intensity)
+		source_shape = DensityDist(  # note that the prior we sample can produce negative values
+			"source_shape",
+			smoothing/guess.x.bin_width**2*guess.domain.pixel_area,
+			smoothing/guess.y.bin_width**2*guess.domain.pixel_area,
+			logp=spacially_correlated_normal_logp,
+			moment=lambda *args, **kwargs: guess.values/guess_intensity,
+			initval=guess.values/guess_intensity,
+			shape=guess.shape)
+		source = Deterministic("source", source_shape*guess_intensity)
 		source_spectrum = Deterministic(
 			"source_spectrum",
 			tensor.maximum(-limit, tensor.minimum(limit, tensor.fft.rfft(
@@ -184,22 +185,21 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	)
 
 
-def spacially_correlated_exp_gamma_logp(log_values, x_factor, y_factor):
-	""" the log-probability for a set of points whose exponentials are drawn from a multivariate
-	    distribution that looks ruffly like a gamma distribution with α=β=1/2 on average but
-	    individual pixels are correlated with their neibors.
-	    :param log_values: the 1×m×n array of pixel value logarithms at which to evaluate the probability
+def spacially_correlated_normal_logp(values, x_factor, y_factor):
+	""" the log-probability for a set of points drawn from a multivariate normal distribution
+	    on order 1/values.size but individual pixels are correlated with their neibors.
+	    :param values: the 1×m×n array of pixel value logarithms at which to evaluate the probability
 	    :param x_factor: the coefficient by which to correlate horizontally adjacent pixels
 	    :param y_factor: the coefficient by which to correlate verticly adjacent pixels
 	    :return: the log of the probability value, not absolutely normalized but normalized enuff
 	             that relative values are correct for variations in all hyperparameters
 	"""
-	values = tensor.exp(log_values)
-	# prefactor = SPACIALLY_CORRELATED_GAMMA_PREFACTOR(x_factor + y_factor)
-	identity_penalties = (values - log_values)/2
+	# prefactor = det(precision)
+	total_μ, total_σ = 1., 1.
+	total_term = -((tensor.sum(values) - total_μ)/total_σ)**2/2
 	x_penalties = x_factor*(values[:, 0:-1, :] - values[:, 1:, :])**2
 	y_penalties = y_factor*(values[:, :, 0:-1] - values[:, :, 1:])**2
-	return -(tensor.sum(identity_penalties) + tensor.sum(x_penalties) + tensor.sum(y_penalties))
+	return total_term - (tensor.sum(x_penalties) + tensor.sum(y_penalties))
 
 
 def complex_multiply(a, b):
