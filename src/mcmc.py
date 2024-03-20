@@ -124,7 +124,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
 
 		# some auxiliary variables for the trace plot
-		source_radius = Deterministic("source_radius", standard_deviation(Image(guess.domain, source)))
+		source_radius = Deterministic("source_radius", standard_deviation(Image(guess.domain, source))/1e-4)
 		source_intensity = Deterministic("source_intensity", tensor.sum(source)*guess.domain.pixel_area)
 
 		# verify that the function graph is set up correctly
