@@ -362,7 +362,7 @@ def plot_source(filename: str, source_chain: Image,
 		for ax in ax_row:
 			if k < len(samples):
 				ax.imshow(
-					source_chain[samples[k]].values, extent=source_chain[samples[k]].domain.extent,
+					source_chain[samples[k]].values.T, extent=source_chain[samples[k]].domain.extent,
 					origin="lower", cmap=cmap,
 					vmin=0, vmax=np.max(source_chain.values[samples, :, :]))
 			ax.set_facecolor("black")
