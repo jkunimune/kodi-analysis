@@ -188,12 +188,15 @@ def analyze(shots_to_reconstruct: list[str],
 				else:
 					los_match = re.search(rf"({los})", filename, re.IGNORECASE)
 
+				# for each filename that matches
 				if os.path.splitext(filename)[-1] in supported_filetypes and "_alphas" not in filename.lower() \
 						and shot_match and (los_match or los is None):
 					# extract the line of sight from the filename
 					if los_match is None:
 						logging.warning(f"the file {filename} doesn’t specify a LOS, so I’m calling it none.")
-					matching_los = los_match.group(1).lower() if los_match is not None else "none"
+						matching_los = "none"
+					else:
+						matching_los = los_match.group(1).lower()
 					# extract the index of this detector
 					if re.search(r"bert", filename, re.IGNORECASE):
 						detector_index = 0
@@ -248,17 +251,18 @@ def analyze(shots_to_reconstruct: list[str],
 		except KeyError:
 			logging.error(f"please add shot {shot!r} to the input/shot_info.csv file.")
 			continue
-		if shot_info.ndim != 1:
+		if shot_info.ndim != 1:  # if the requested shot is duplicated, this will return a dataframe, not a series
 			logging.error(f"shot {shot!r} appears more than once in the input/shot_info.csv file!")
 			continue
 		try:
-			los_specific_shot_info = los_table.loc[(shot, los)]
+			los_specific_shot_info = los_table.loc[[(shot, los)]]
 		except KeyError:
 			logging.error(f"please add shot {shot!r}, LOS {los!r} to the input/LOS_info.csv file.")
 			continue
-		if los_specific_shot_info.ndim != 1:
+		if los_specific_shot_info.shape[0] > 1:  # for multiindexing the behavior is different; I've set it up to always return a dataframe
 			logging.error(f"shot {shot!r}, LOS {los!r} appears more than once in the input/LOS_info.csv file!")
 			continue
+		los_specific_shot_info = los_specific_shot_info.iloc[0]  # convert it back to series once we've verified there are no duplicates
 		shot_info = pd.concat([shot_info, los_specific_shot_info])
 
 		# make sure we found all the necessary information
@@ -1004,7 +1008,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		output = load_source(shot, los, f"{particle}-{cut_index[0]}",
 		                     filter_stack, energy_min, energy_max)
 		residual, = load_hdf5(
-			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra-residual", ["z"])
+			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra-residual", ["N"])
 		reconstructed_image = Image(image.domain, image.values - residual.T)  # remember to convert from (y,x) indexing to (i,j)
 
 	# calculate and print the main shape parameters
@@ -1421,17 +1425,21 @@ def load_shot_info(shot: str, los: str,
                    energy_max: Optional[float] = None,
                    filter_str: Optional[str] = None) -> pd.Series:
 	""" load the summary.csv file and look for a row that matches the given criteria """
-	old_summary = pd.read_csv("results/summary.csv", dtype={'shot': str, 'LOS': str})
-	matching_record = (old_summary["shot"] == shot) & (old_summary["LOS"] == los)
+	all_records = case_insensitive_dataframe(
+		pd.read_csv("results/summary.csv", dtype={'shot': str, 'LOS': str}, index_col=['shot', 'LOS']))
+	# load a dataframe of all matching sommary.csv rows
+	matching_records = all_records.loc[[(shot, los)]]
+	# disqualify any rows that don't match given inputs
 	if energy_min is not None:
-		matching_record &= np.isclose(old_summary["energy min"], energy_min)
+		matching_records = matching_records[np.isclose(matching_records["energy min"], energy_min)]
 	if energy_max is not None:
-		matching_record &= np.isclose(old_summary["energy max"], energy_max)
+		matching_records = matching_records[np.isclose(matching_records["energy max"], energy_max)]
 	if filter_str is not None:
-		matching_record &= (old_summary["filtering"] == filter_str)
-	if np.count_nonzero(matching_record) == 1:
-		return old_summary[matching_record].iloc[-1]
-	elif np.count_nonzero(matching_record) == 0:
+		matching_records = matching_records[matching_records["filtering"] == filter_str]
+	# make sure there's exactly one row remaining
+	if len(matching_records) == 1:
+		return matching_records.iloc[-1]
+	elif len(matching_records) == 0:
 		raise RecordNotFoundError(f"couldn’t find {shot} {los} \"{filter_str}\" {energy_min}–{energy_max} cut in summary.csv")
 	else:
 		raise DataError(f"there were multiple entries in summary.csv for {shot} {los} \"{filter_str}\" {energy_min}–{energy_max}.  how did that happen‽")
