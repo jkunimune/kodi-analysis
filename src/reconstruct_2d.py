@@ -352,7 +352,12 @@ def analyze_scan(input_filename: str,
 	             energy bin. the reconstructed image will not be returned, but simply saved to disc after various nice
 	             pictures have been taken and also saved.
 	"""
-	# start by parsing the filter stacks
+	# start by deleting any plots previusly generated for this scan
+	for filename in os.listdir(f"results/plots/{shot}"):
+		if filename.startswith(f"{los}-{particle}-{detector_index}"):
+			os.remove(os.path.join(f"results/plots/{shot}", filename))
+
+	# parse the filter stacks
 	if particle == "proton" or particle == "deuteron":
 		contour = CHARGED_PARTICLE_CONTOUR_LEVEL
 		detector_type = "cr39"
