@@ -78,15 +78,19 @@ It should automatically find and load your previous 2D reconstructions for each 
 It's okay if some of the data is missing (like if one TIM failed on one of the shots).
 The plot limits aren't as smart, so you may want to adjust those manually.
 
-All output files follow the naming convention `results/subdirectory/shotnumber/[tim-]quantity-coordinates[-operation].file_extension`.
+All output files follow the naming convention `results/subdirectory/shotnumber/[tim-]quantity[-index]-domain[-operation].file_extension`.
 The shot number is an integer prepended by `synth` if based on synthetic data.
 The quantity is one of:
 - `morphology` for combined mass density and neutron source
-- `deuteron` for combined deuteron sources
-- `deuteron-[i]` for deuteron sources on the i-th detector
-- `xray-[i]` for x-ray sources on the i-th detector
+- `deuteron` for deuteron emission/detection
+- `xray` for x-ray emission/detection
 
-the coordinates are one of:
+the index is three digits representing:
+1. the index of the detector (0 is the IP or CR-39 closest to TCC, and so on)
+2. the index of the filtering region (0 is the region with the weakest filtering, and so on)
+3. the index of the diameter cut (0 is the largest-diameter and lowest-energy cut, and so on)
+
+the domain is one of:
 - `distribution` for 3D reconstructed (or synthetic) quantities
 - `penumbra` for 2D measured penumbral images
 - `source` for 2D reconstructed (or synthetic) emission images
