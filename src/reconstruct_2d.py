@@ -1420,10 +1420,10 @@ def load_source(shot: str, los: str, particle_index: str,
 		filterings = [filtering.decode("utf-8") for filtering in filterings]
 	# then look for the matching filtering section and energy cut
 	source_plane = Grid.from_bin_array(x*1e-4, y*1e-4)
-	source_stack = source_stack.transpose((0, 2, 1))/1e-4**2  # don’t forget to convert from (y,x) to (i,j) indexing
+	source_stack = source_stack.transpose((0, 1, 3, 2))/1e-4**2  # don’t forget to convert from (y,x) to (i,j) indexing
 	for i in range(source_stack.shape[0]):
 		if parse_filtering(filterings[i])[0] == filter_stack and Interval(*energy_bounds[i]) == energies:
-			return Image(source_plane, source_stack[i, :, :])
+			return Image(source_plane, source_stack[i, :, :, :])
 	raise RecordNotFoundError(f"couldn’t find a {print_filtering(filter_stack)}, {energies} k/MeV "
 	                          f"source for {shot}, {los}, {particle_index}")
 
