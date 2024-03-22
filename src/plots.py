@@ -291,7 +291,7 @@ def plot_source(filename: str, source_chain: Image,
 
 	# choose the plot limits
 	source_chain = Image(source_chain.domain.scaled(1e+4), source_chain.values)  # convert coordinates to μm
-	object_sizes, (r1s, θ1s), _ = shape_parameters_chained(source_chain, contour_level=.17)
+	object_sizes, (r1s, θ1s), (p2s, θ2s) = shape_parameters_chained(source_chain, contour_level=.17)
 	object_size = quantile(
 		where(isfinite(object_sizes), object_sizes, source_chain.domain.x.half_range), .95)
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
@@ -311,10 +311,16 @@ def plot_source(filename: str, source_chain: Image,
 	# plot the contours with some Bayesian width to them
 	if PLOT_SOURCE_CONTOURS:
 		peak_chain = np.max(source_chain.values, axis=(1, 2), keepdims=True)
-		contour_chained(source_chain.x.get_bins(), source_chain.y.get_bins(),
-		                source_chain.values/where(peak_chain != 0, peak_chain, 1),
-		                levels=np.linspace(0, 1, 6, endpoint=False)[1:],
-		                color="#ffffff")
+		if source_chain.shape[0] == 1:
+			plt.contour(source_chain.x.get_bins(), source_chain.y.get_bins(),
+			            (source_chain.values/peak_chain)[0, :, :].T,
+			            levels=np.linspace(0, 1, 6, endpoint=False)[1:],
+			            colors=["#ffffff"])
+		else:
+			contour_chained(source_chain.x.get_bins(), source_chain.y.get_bins(),
+			                source_chain.values/where(peak_chain != 0, peak_chain, 1),
+			                levels=np.linspace(0, 1, 6, endpoint=False)[1:],
+			                color="#ffffff")
 	if PLOT_OFFSET:
 		if projected_offset is not None:
 			x_off, y_off, z_off = projected_offset
@@ -351,26 +357,46 @@ def plot_source(filename: str, source_chain: Image,
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source")
 
-	# plot a few random samples
-	fig, ax_grid = plt.subplots(3, 3, sharex="all", sharey="all", facecolor="none",
-	                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.2, 5))
-	k = 0
-	samples = np.random.choice(
-		arange(source_chain.shape[0]),
-		min(source_chain.shape[0], size(ax_grid)), replace=False)
-	for ax_row in ax_grid:
-		for ax in ax_row:
-			if k < len(samples):
-				ax.imshow(
-					source_chain[samples[k]].values.T, extent=source_chain[samples[k]].domain.extent,
-					origin="lower", cmap=cmap,
-					vmin=0, vmax=np.max(source_chain.values[samples, :, :]))
-			ax.set_facecolor("black")
-			ax.axis([x0 - object_size, x0 + object_size,
-			         y0 - object_size, y0 + object_size])
-			k += 1
-	plt.tight_layout()
-	save_current_figure(f"{filename}-source-chain")
+	if source_chain.shape[0] > 1:
+		# plot a few random samples
+		fig, ax_grid = plt.subplots(3, 3, sharex="all", sharey="all", facecolor="none",
+		                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.2, 5))
+		k = 0
+		samples = np.random.choice(
+			arange(source_chain.shape[0]),
+			min(source_chain.shape[0], size(ax_grid)), replace=False)
+		for ax_row in ax_grid:
+			for ax in ax_row:
+				if k < len(samples):
+					ax.imshow(
+						source_chain[samples[k]].values.T, extent=source_chain[samples[k]].domain.extent,
+						origin="lower", cmap=cmap,
+						vmin=0, vmax=np.max(source_chain.values[samples, :, :]))
+				ax.set_facecolor("black")
+				ax.axis([x0 - object_size, x0 + object_size,
+				         y0 - object_size, y0 + object_size])
+				k += 1
+		plt.tight_layout()
+		save_current_figure(f"{filename}-source-chain")
+
+		# plot a histogram of the source parameters
+		fig, (ax_top, ax_bottom) = plt.subplots(2, 1, facecolor="none", figsize=RECTANGULAR_FIGURE_SIZE)
+		ax_top.hist(object_sizes, bins=31, zorder=2, color="#a31f34")
+		ax_top.set_xlabel("17% contour radius (μm)")
+		ax_top.yaxis.set_major_locator(ticker.LinearLocator(5))
+		ax_top.grid()
+		for tick in ax_top.yaxis.get_major_ticks():
+			tick.tick1line.set_visible(False)
+			tick.label1.set_visible(False)
+		ax_bottom.hist(p2s/object_sizes*100, bins=31, zorder=2, color="#a31f34")
+		ax_bottom.set_xlabel("17% contour radius (μm)")
+		ax_bottom.yaxis.set_major_locator(ticker.LinearLocator(5))
+		ax_bottom.grid()
+		for tick in ax_bottom.yaxis.get_major_ticks():
+			tick.tick1line.set_visible(False)
+			tick.label1.set_visible(False)
+		plt.tight_layout()
+		save_current_figure(f"{filename}-source-histogram")
 
 	# plot a lineout
 	j_lineout = np.argmax(np.sum(source_chain.values, axis=(0, 1)))
@@ -379,13 +405,11 @@ def plot_source(filename: str, source_chain: Image,
 	line_chain = line_chain/where(peak_chain != 0, peak_chain, 1)
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
 	plot_chained(source_chain.x.get_bins(), line_chain)
-
 	plt.grid()
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
 	plt.xlim(x0 - object_size, x0 + object_size)
-	plt.ylim(0, 2)
-	plt.yscale("symlog", linthresh=1e-2, linscale=1/log(10))
+	plt.ylim(-0.1, 1.1)
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source-lineout")
 
@@ -644,12 +668,11 @@ def plot_overlaid_contores(filename: str, source_chains: Image, contour_level: f
 	save_current_figure(f"{filename}-source")
 
 
-def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90, color=None) -> None:
+def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90) -> None:
 	""" plot a line that has width because instead of just an image it's actually a chain of images
 	    :param x: the 1D array of x values
 	    :param y: the 2D array where each row is a potential set of y values
 	    :param credibility: the probability that a true y value falls within the shaded region at any given x value
-	    :param color: the color of the line and shaded region, expressed however you like
 	"""
 	# we'll be using a maximum-density interval today, even tho it's slower than an equal-tailed one
 	lower_bounds, upper_bounds = empty(x.size), empty(x.size)
@@ -658,10 +681,10 @@ def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90, color=No
 		lower_bounds[j] = interval.minimum
 		upper_bounds[j] = interval.maximum
 	# plot the shaded region
-	plt.fill_between(x, lower_bounds, upper_bounds, color=color, alpha=.30)
+	plt.fill_between(x, lower_bounds, upper_bounds, color="#e78c91", zorder=2.0)
 	# plot a representative line in the middle
 	i_best = argmin(np.sum((y - ((lower_bounds + upper_bounds)/2)[newaxis, :])**2))
-	plt.plot(x, y[i_best, :], color=color)
+	plt.plot(x, y[i_best, :], color="#a31f34", zorder=2.1)
 
 
 def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], levels: Iterable[float],
