@@ -8,16 +8,15 @@ import numpy as np
 import numpy.fft
 import pytensor
 from matplotlib import pyplot as plt
-from numpy import reshape, sqrt, shape, pi, real, imag, expand_dims, prod
+from numpy import reshape, sqrt, shape, real, imag, expand_dims, prod
 from numpy.typing import NDArray
-from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, draw, DensityDist
+from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, DensityDist, LogNormal, draw
 from pytensor import tensor
 from pytensor.link.jax.dispatch import jax_funcify
 from pytensor.tensor.fft import RFFTOp, IRFFTOp
 from scipy import signal
 
 from coordinate import Image
-from util import standard_deviation
 
 pytensor.config.floatX = "float64"
 
@@ -84,21 +83,20 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	kernel_spectrum = np.stack([real(kernel_spectrum), imag(kernel_spectrum)], axis=-1)
 
 	# characterize the guess for the prior
-	guess_radius = sqrt(2)*standard_deviation(guess[0])  # the expected spacial scale of the source
-	guess_num_pixels = pi*guess_radius**2/guess.domain.pixel_area  # the expected number of pixels contributing to the source
+	guess_num_pixels = guess.domain.num_pixels  # the expected number of pixels contributing to the source
 	guess_intensity = np.sum(guess.values)/guess_num_pixels  # the expected ballpark pixel value
 	guess_image_intensity = (np.sum(guess.values)*np.max(kernel))  # the general intensity of the umbra
 	limit = np.sum(guess.values*1e4)  # the maximum credible value of the source's Fourier transform
 
 	with Model():
 		# latent variables
-		smoothing = .1
+		smoothing = LogNormal("smoothing", mu=0, sigma=3)
 		# prior
 		source_shape = DensityDist(  # note that the prior we sample can produce negative values
 			"source_shape",
 			smoothing/guess.x.bin_width**2*guess.domain.pixel_area,
 			smoothing/guess.y.bin_width**2*guess.domain.pixel_area,
-			guess_num_pixels,
+			guess.domain.num_pixels,
 			logp=spacially_correlated_normal_logp,
 			moment=lambda *args, **kwargs: guess.values/guess_intensity,
 			initval=guess.values/guess_intensity,
@@ -128,7 +126,6 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
 
 		# some auxiliary variables for the trace plot
-		source_radius = Deterministic("source_radius", standard_deviation(Image(guess.domain, source))/1e-4)
 		source_intensity = Deterministic("source_intensity", tensor.sum(source)*guess.domain.pixel_area)
 
 		# verify that the function graph is set up correctly
@@ -168,16 +165,14 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		                   cores=cores_to_use, **kwargs)
 
 	# generate a basic trace plot to catch basic issues
-	arviz.plot_trace(inference, var_names=["source_intensity", "source_radius", "background"])
+	arviz.plot_trace(inference, var_names=["smoothing", "source_intensity", "background"])
 	plt.tight_layout()
 
 	# it should be *almost* impossible for the chain to prevent a source that's all zeros, but check anyway
-	if np.any(np.all(inference.posterior["source"].to_numpy() <= 0, axis=(2, 3))):
+	if np.any(np.all(inference.posterior["source"].to_numpy() == 0, axis=(2, 3))):
 		i, j = np.nonzero(np.all(inference.posterior["source"].to_numpy() == 0, axis=(-3, -2, -1)))
 		print("blank source alert!")
-		print(inference.posterior["size"].to_numpy()[i, j])
-		print(inference.posterior["x0"].to_numpy()[i, j])
-		print(inference.posterior["y0"].to_numpy()[i, j])
+		print(inference.posterior["smoothing"].to_numpy()[i, j])
 		plt.figure()
 		plt.imshow(inference.posterior["source"].to_numpy()[i[0], j[0]], extent=guess.domain.extent)
 		plt.show()
@@ -198,12 +193,16 @@ def spacially_correlated_normal_logp(values, x_factor, y_factor, expected_sum):
 	    :return: the log of the probability value, not absolutely normalized but normalized enuff
 	             that relative values are correct for variations in all hyperparameters
 	"""
-	# prefactor = det(precision)
+	if x_factor != y_factor:
+		raise NotImplementedError(
+			"I would love to support rectangular pixels but it makes the math harder to a surprising degree. tho "
+			"really, as long as the x and y factors remain proportional to each other, it shouldn't be a problem.")
+	log_prefactor = (values.size - 1)/2*tensor.log(x_factor)
 	total_μ, total_σ = expected_sum, expected_sum
-	total_term = -((tensor.sum(values) - total_μ)/total_σ)**2/2
+	sum_penalty = ((tensor.sum(values) - total_μ)/total_σ)**2/2
 	x_penalties = x_factor*(values[:, 0:-1, :] - values[:, 1:, :])**2
 	y_penalties = y_factor*(values[:, :, 0:-1] - values[:, :, 1:])**2
-	return total_term - (tensor.sum(x_penalties) + tensor.sum(y_penalties))
+	return log_prefactor - sum_penalty - (tensor.sum(x_penalties) + tensor.sum(y_penalties))
 
 
 def complex_multiply(a, b):
