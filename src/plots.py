@@ -295,9 +295,12 @@ def plot_source(filename: str, source_chain: Image,
 	object_size = quantile(
 		where(isfinite(object_sizes), object_sizes, source_chain.domain.x.half_range), .95)
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
-	x0s, y0s = r1s*cos(θ1s), r1s*sin(θ1s)
-	x0 = median(x0s[isfinite(x0s)])
-	y0 = median(y0s[isfinite(y0s)])
+	if np.any(isfinite(r1s) & isfinite(θ1s)):
+		x0s, y0s = r1s*cos(θ1s), r1s*sin(θ1s)
+		x0 = median(x0s[isfinite(x0s)])
+		y0 = median(y0s[isfinite(y0s)])
+	else:
+		x0, y0 = 0, 0
 
 	# choose the colormap
 	cmap = choose_colormaps(particle, num_colors)[color_index]
@@ -380,23 +383,24 @@ def plot_source(filename: str, source_chain: Image,
 		save_current_figure(f"{filename}-source-chain")
 
 		# plot a histogram of the source parameters
-		fig, (ax_top, ax_bottom) = plt.subplots(2, 1, facecolor="none", figsize=RECTANGULAR_FIGURE_SIZE)
-		ax_top.hist(object_sizes, bins=31, zorder=2, color="#a31f34")
-		ax_top.set_xlabel("17% contour radius (μm)")
-		ax_top.yaxis.set_major_locator(ticker.LinearLocator(5))
-		ax_top.grid()
-		for tick in ax_top.yaxis.get_major_ticks():
-			tick.tick1line.set_visible(False)
-			tick.label1.set_visible(False)
-		ax_bottom.hist(p2s/object_sizes*100, bins=31, zorder=2, color="#a31f34")
-		ax_bottom.set_xlabel("17% contour radius (μm)")
-		ax_bottom.yaxis.set_major_locator(ticker.LinearLocator(5))
-		ax_bottom.grid()
-		for tick in ax_bottom.yaxis.get_major_ticks():
-			tick.tick1line.set_visible(False)
-			tick.label1.set_visible(False)
-		plt.tight_layout()
-		save_current_figure(f"{filename}-source-histogram")
+		if np.any(isfinite(object_sizes) & isfinite(p2s)):
+			fig, (ax_top, ax_bottom) = plt.subplots(2, 1, facecolor="none", figsize=RECTANGULAR_FIGURE_SIZE)
+			ax_top.hist(object_sizes, bins=31, zorder=2, color="#a31f34")
+			ax_top.set_xlabel("17% contour radius (μm)")
+			ax_top.yaxis.set_major_locator(ticker.LinearLocator(5))
+			ax_top.grid()
+			for tick in ax_top.yaxis.get_major_ticks():
+				tick.tick1line.set_visible(False)
+				tick.label1.set_visible(False)
+			ax_bottom.hist(p2s/object_sizes*100, bins=31, zorder=2, color="#a31f34")
+			ax_bottom.set_xlabel("17% contour radius (μm)")
+			ax_bottom.yaxis.set_major_locator(ticker.LinearLocator(5))
+			ax_bottom.grid()
+			for tick in ax_bottom.yaxis.get_major_ticks():
+				tick.tick1line.set_visible(False)
+				tick.label1.set_visible(False)
+			plt.tight_layout()
+			save_current_figure(f"{filename}-source-histogram")
 
 	# plot a lineout
 	j_lineout = np.argmax(np.sum(source_chain.values, axis=(0, 1)))
