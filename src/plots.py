@@ -684,7 +684,8 @@ def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90) -> None:
 	plt.fill_between(x, lower_bounds, upper_bounds, color="#e78c91", zorder=2.0)
 	# plot a representative line in the middle
 	i_best = argmin(np.sum((y - ((lower_bounds + upper_bounds)/2)[newaxis, :])**2))
-	plt.plot(x, y[i_best, :], color="#a31f34", zorder=2.1)
+	plt.plot(x, y[i_best, :], color="#a31f34", linewidth=1.2, zorder=2.2)
+	plt.axhline(0, color="k", zorder=2.1, linewidth=.8)
 
 
 def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], levels: Iterable[float],
