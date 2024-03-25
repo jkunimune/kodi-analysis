@@ -13,7 +13,6 @@ from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degre
 from typing import Any, Optional, Union
 
 import h5py
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -30,22 +29,23 @@ from skimage import measure
 import aperture_array
 import deconvolution
 import electric_field
+import mcmc
 from cmap import CMAP
 from coordinate import project, los_coordinates, rotation_matrix, Grid, NAMED_LOS, LinSpace, Image
 from hdf5_util import load_hdf5, save_as_hdf5
 from image_plate import xray_energy_limit, fade
 from linear_operator import Matrix
 from plots import plot_overlaid_contores, save_and_plot_penumbra, plot_source, save_and_plot_overlaid_penumbra, \
-	save_and_plot_radial_data, plot_image_grid
+	save_and_plot_radial_data, plot_image_grid, save_current_figure
 from solid_state import track_diameter, particle_E_in, particle_E_out
-from util import center_of_mass, shape_parameters, find_intercept, fit_circle, \
+from util import center_of_mass, find_intercept, fit_circle, \
 	inside_polygon, bin_centers, downsample_2d, Point, dilate, abel_matrix, cumul_pointspread_function_matrix, \
 	line_search, bin_centers_and_sizes, periodic_mean, parse_filtering, \
 	print_filtering, Filter, count_detectors, compose_2x2_from_intuitive_parameters, \
 	decompose_2x2_into_intuitive_parameters, Interval, name_filter_stacks, crop_to_finite, shift_and_rotate, \
-	resample_and_rotate, case_insensitive_dataframe
+	resample_and_rotate_2d, case_insensitive_dataframe, credibility_interval, resample_2d, \
+	shape_parameters_chained
 
-matplotlib.use("Qt5agg")
 warnings.filterwarnings("ignore")
 
 
@@ -55,21 +55,25 @@ SHOW_ELECTRIC_FIELD_CALCULATION = True
 SHOW_POINT_SPREAD_FUNCCION = False
 SHOW_GRID_FITTING_DEBUG_PLOTS = False
 
-PROTON_ENERGY_CUTS = [(0, inf)]
-NORMAL_DEUTERON_ENERGY_CUTS = [(10, 12.5), (0, 6), (6, 10)] # (MeV) (emitted, not detected)
-FINE_DEUTERON_ENERGY_CUTS = [(11, 12.5), (2, 3.5), (3.5, 5), (5, 6.5), (6.5, 8), (8, 9.5), (9.5, 11)] # (MeV) (emitted, not detected)
+PROTON_ENERGY_CUTS = [Interval(0, inf)]
+NORMAL_DEUTERON_ENERGY_CUTS = [Interval(10, 12.5), Interval(0, 6), Interval(6, 10)] # (MeV) (emitted, not detected)
+FINE_DEUTERON_ENERGY_CUTS = [
+	Interval(11, 12.5), Interval(2, 3.5), Interval(3.5, 5), Interval(5, 6.5),
+	Interval(6.5, 8), Interval(8, 9.5), Interval(9.5, 11)
+] # (MeV) (emitted, not detected)
 
-FORCE_LARGE_SOURCE_DOMAIN = True  # whether to enable a source domain larger than the aperture (experimental)
+FORCE_LARGE_SOURCE_DOMAIN = False  # whether to enable a source domain larger than the aperture (experimental)
 USE_CHARGING_CORRECTION = False
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
+UPSAMPLE_SOURCES = False  # whether to save the sources at a potentially higher resolution than they were reconstructed at
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
 CHARGED_PARTICLE_RESOLUTION = 5e-4  # resolution of reconstructed KoD sources
-X_RAY_RESOLUTION = 3e-4  # spatial resolution of reconstructed x-ray sources
+X_RAY_RESOLUTION = 5e-4  # spatial resolution of reconstructed x-ray sources
 CHARGED_PARTICLE_CONTOUR_LEVEL = .17  # contour to use when characterizing KoDI sources
 XRAY_CONTOUR_LEVEL = .17  # contour to use when characterizing x-ray sources
 MIN_OBJECT_SIZE = 100e-4  # minimum amount of space to allocate in the source plane
-MAX_OBJECT_PIXELS = 250  # maximum size of the source array to use in reconstructions
+MAX_OBJECT_PIXELS = 10  # maximum size of the source array to use in reconstructions
 MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
 MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
@@ -85,7 +89,9 @@ def analyze(shots_to_reconstruct: list[str],
             only_IP: bool,
             only_cr39: bool,
             skip_reconstruction: bool,
-            show_plots: bool):
+            show_plots: bool,
+            do_mcmc: bool,
+            use_gpu: bool):
 	""" iterate thru the scan files in the input/scans directory that match the provided shot
 	    numbers, preprocess them into some number of penumbral images, apply the 2D reconstruction
 	    algorithm to them (or load the results of the previus reconstruction if so desired),
@@ -99,11 +105,16 @@ def analyze(shots_to_reconstruct: list[str],
 	                            deuteron energy bins, and "proton" for one huge energy bin.
 	    :param only_IP: whether to skip all .cpsa files and only look at .h5
 	    :param only_cr39: whether to skip all .h5 files and only look at .cpsa
+	    :param do_mcmc: whether to run the MCMC uncertainty analysis
+	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
 	                       user to close them, rather than only saving them to disc and silently proceeding.
 	"""
+	if use_gpu and not do_mcmc:
+		raise ValueError("you passed the --GPU option but not the --MCMC option.  do you want me to run the MCMC or not?")
+
 	# ensure all of the important results directories exist
 	if not os.path.isdir("results"):
 		os.mkdir("results")
@@ -275,6 +286,8 @@ def analyze(shots_to_reconstruct: list[str],
 		try:
 			results = analyze_scan(
 				input_filename     =filename,
+				do_mcmc            =do_mcmc,
+				use_gpu            =use_gpu,
 				skip_reconstruction=skip_reconstruction,
 				show_plots         =show_plots,
 				shot               =shot,
@@ -328,6 +341,7 @@ def analyze_scan(input_filename: str,
                  offset: tuple[float, float, float], velocity: tuple[float, float, float],
                  stalk_position: str, num_stalks: int,
                  charged_particle_energy_cuts: list[Interval],
+                 do_mcmc: bool, use_gpu: bool,
                  skip_reconstruction: bool, show_plots: bool,
                  ) -> list[dict[str, str or float]]:
 	""" reconstruct all of the penumbral images contained in a single scan file.
@@ -348,6 +362,8 @@ def analyze_scan(input_filename: str,
 	    :param stalk_position: the name of the port from which the target is held (should be "TPS2")
 	    :param num_stalks: the number of stalks on this target (usually 1)
 	    :param charged_particle_energy_cuts: the energy bins to use for reconstructing charged particles
+	    :param do_mcmc: whether to run the MCMC uncertainty analysis
+	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
@@ -433,7 +449,8 @@ def analyze_scan(input_filename: str,
 					grid_parameters,
 					source_domain,
 					charged_particle_energy_cuts,
-					skip_reconstruction, show_plots)
+					do_mcmc=do_mcmc, use_gpu=use_gpu,
+					skip_reconstruction=skip_reconstruction, show_plots=show_plots)
 		except DataError as e:
 			logging.warning(e)
 		else:
@@ -441,14 +458,14 @@ def analyze_scan(input_filename: str,
 			statistics += filter_section_statistics
 			for energy_cut_index, statblock in enumerate(filter_section_statistics):
 				filter_strings.append(print_filtering(filter_stack))
-				energy_bounds.append((statblock["energy min"], statblock["energy max"]))
+				energy_bounds.append(Interval(statblock["energy min"], statblock["energy max"]))
 				indices.append(f"{detector_index}{filter_section_index}{energy_cut_index}")
 
 	if len(sources) == 0:
 		raise DataError("well, that was pointless")
 
 	# sort the results by energy if you can
-	order = np.argsort([bound[0] for bound in energy_bounds])
+	order = np.argsort([bound.minimum for bound in energy_bounds])
 	sources = [sources[i] for i in order]
 	statistics = [statistics[i] for i in order]
 	filter_strings = [filter_strings[i] for i in order]
@@ -461,10 +478,10 @@ def analyze_scan(input_filename: str,
 	# finally, save the combined image set
 	save_as_hdf5(f"results/data/{shot}/{los}-{particle}-{detector_index}-source",
 	             filtering=filter_strings,
-	             energy=energy_bounds,
+	             energy=[[interval.minimum, interval.maximum] for interval in energy_bounds],
 	             x=source_stack.x.get_bins()/1e-4,
 	             y=source_stack.y.get_bins()/1e-4,
-	             images=np.transpose(source_stack.values, (0, 2, 1))*1e-4**2,  # save it with (y,x) indexing, not (i,j)
+	             images=np.transpose(source_stack.values, (0, 1, 3, 2))*1e-4**2,  # save it with (y,x) indexing, not (i,j)
 	             etch_time=etch_time if etch_time is not None else nan)
 
 	# compute the additional lines to be put on the plots (checking in case they’re absent)
@@ -480,18 +497,18 @@ def analyze_scan(input_filename: str,
 		projected_flow = None
 
 	# and replot each of the individual sources in the correct color
-	for cut_index in range(source_stack.num_channels):
+	for cut_index in range(source_stack.shape[0]):
 		if particle == "proton" or particle == "deuteron":
 			color_index = int(indices[cut_index][-1])
 			num_colors = len(charged_particle_energy_cuts)
 		else:
 			num_sections = len(filter_stacks)
-			num_missing_sections = num_sections - source_stack.num_channels
+			num_missing_sections = num_sections - source_stack.shape[0]
 			color_index = detector_index*num_sections + cut_index + num_missing_sections
 			num_colors = num_detectors*num_sections
 		plot_source(f"{shot}/{los}-{particle}-{indices[cut_index]}",
 		            source_stack[cut_index],
-		            energy_bounds[cut_index][0], energy_bounds[cut_index][1],
+		            energy_bounds[cut_index],
 		            color_index=color_index, num_colors=num_colors,
 		            projected_offset=projected_offset,
 		            projected_flow=projected_flow,
@@ -500,7 +517,7 @@ def analyze_scan(input_filename: str,
 		plt.close("all")
 
 	# if can, plot some plots that overlay the sources in the stack
-	if source_stack.num_channels > 1:
+	if source_stack.shape[0] > 1:
 		dxL, dyL = center_of_mass(source_stack[0])
 		dxH, dyH = center_of_mass(source_stack[-1])
 		dx, dy = dxH - dxL, dyH - dyL
@@ -532,13 +549,15 @@ def analyze_scan_section(input_file: Union[Scan, Image],
                          grid_parameters: Optional[GridParameters],
                          source_domain: Optional[Grid],
                          charged_particle_energy_cuts: list[Interval],
+                         do_mcmc: bool, use_gpu: bool,
                          skip_reconstruction: bool, show_plots: bool,
                          ) -> tuple[GridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
 	""" reconstruct all of the penumbral images in a single filtering region of a single scan file.
 	    :param input_file: the CR39 or image plate scan result object to analyze
 	    :param shot: the shot number/name
 	    :param los: the name of the line of sight (e.g. "tim2", "srte")
-	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for an image plate)
+	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for
+	                     an image plate)
 	    :param rA: the aperture radius (cm)
 	    :param sA: the aperture spacing (cm), specificly the distance from one aperture to its nearest neighbor.
 	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
@@ -557,13 +576,15 @@ def analyze_scan_section(input_file: Union[Scan, Image],
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
 	    :param charged_particle_energy_cuts: the energy cuts to use when you break this section up into diameter bins
+	    :param do_mcmc: whether to run the MCMC uncertainty analysis
+	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
 	                       user to close them, rather than only saving them to disc and silently proceeding.
 	    :return: 0. the image array parameters that we fit to the centers,
 	             1. the Grid that ended up being used for the output if any,
-	             2. the list of reconstructed sources, and
+	             2. the list of reconstructed source chains, and
 	             3. a list of dictionaries containing various measurables for the reconstruction in each energy bin.
 	"""
 	# choose the energy cuts given the filtering and type of radiation
@@ -575,7 +596,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 		energy_cuts = charged_particle_energy_cuts  # these energy bounds are in MeV
 	elif particle == "xray":
 		max_contrast = nan
-		energy_cuts = [(xray_energy_limit(filter_stack), inf)]  # these energy bounds are in keV
+		energy_cuts = [Interval(xray_energy_limit(filter_stack), inf)]  # these energy bounds are in keV
 	else:
 		raise ValueError(f"what in davy jones's locker is a {particle}")
 
@@ -583,7 +604,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 	if not skip_reconstruction:
 		# check the statistics, if these are deuterons
 		num_tracks, x_min, x_max, y_min, y_max = count_tracks_in_scan(
-			input_file, 0, inf, max_contrast, False)
+			input_file, Interval(0, inf), max_contrast, False)
 		if particle == "proton" or particle == "deuteron":
 			logging.info(f"found {num_tracks:.4g} tracks in the file")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
@@ -659,8 +680,8 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 	# now go thru each energy cut and compile the results
 	sources: list[NDArray[float]] = []
 	results: list[dict[str, Any]] = []
-	for energy_min, energy_max in energy_cuts:
-		energy_cut_index = sorted(energy_cuts).index((energy_min, energy_max))
+	for energy_cut in energy_cuts:
+		energy_cut_index = sorted(energy_cuts).index(energy_cut)
 		try:
 			source, statblock = analyze_scan_section_cut(
 				input_file, shot, los, particle,
@@ -668,14 +689,15 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 				etch_time, filter_stack, data_polygon,
 				grid_transform/grid_mean_scale, centers,
 				f"{section_index}{energy_cut_index}", num_detectors, len(energy_cuts),
-				energy_min, energy_max, max_contrast,
-				source_domain, skip_reconstruction, show_plots)
+				energy_cut, max_contrast, source_domain,
+				do_mcmc=do_mcmc, use_gpu=use_gpu,
+				skip_reconstruction=skip_reconstruction, show_plots=show_plots)
 		except (DataError, FilterError, RecordNotFoundError) as e:
 			logging.warning(f"  {e}")
 		else:
 			statblock["filtering"] = print_filtering(filter_stack)
-			statblock["energy min"] = energy_min
-			statblock["energy max"] = energy_max
+			statblock["energy min"] = energy_cut.minimum
+			statblock["energy max"] = energy_cut.maximum
 			statblock["x0"] = grid_x0
 			statblock["y0"] = grid_y0
 			statblock["M"] = M
@@ -699,9 +721,9 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
                              filter_stack: list[Filter], data_polygon: list[Point],
                              grid_transform: NDArray[float], centers: list[Point],
                              cut_index: str, num_detectors: int, num_energy_cuts: int,
-                             energy_min: float, energy_max: float,
-                             max_contrast: float,
+                             energies: Interval, max_contrast: float,
                              output_plane: Optional[Grid],
+                             do_mcmc: bool, use_gpu: bool,
                              skip_reconstruction: bool, show_plots: bool
                              ) -> tuple[Image, dict[str, Any]]:
 	""" reconstruct the penumbral image contained in a single energy cut in a single filtering
@@ -709,7 +731,8 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	    :param scan: the CR39 or image plate scan result object to analyze
 	    :param shot: the shot number/name
 	    :param los: the name of the line of sight (e.g. "tim2", "srte")
-	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for an image plate)
+	    :param particle: the type of radiation being detected ("proton" or "deuteron" for CR39 or "xray" for
+	                     an image plate)
 	    :param rA: the aperture radius in cm
 	    :param sA: the aperture spacing (cm), specificly the distance from one aperture to its nearest neighbor.
 	    :param M: the radiography magnification (L1 + L2)/L1
@@ -728,17 +751,19 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
                           line-of-sight that has multiple detectors of the same type
         :param num_detectors: the number of detectors for this particle, for the purposes of choosing a plot color
         :param num_energy_cuts: the number of cuts of this particle, for the purposes of choosing a plot color
-        :param energy_min: the minimum energy at which to look (MeV for deuterons, keV for x-rays)
-        :param energy_max: the maximum energy at which to look (MeV for deuterons, keV for x-rays)
+        :param energies: the minimum maximum energy at which to look (MeV for deuterons, keV for x-rays)
 	    :param max_contrast: the maximum track contrast level at which to look if this is CR39 (%)
         :param output_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
+	    :param do_mcmc: whether to run the MCMC uncertainty analysis
+	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
 	                                than performing the full analysis procedure again.
 	    :param show_plots: if True, then each graphic will be shown upon completion and the program will wait for the
 	                       user to close them, rather than only saving them to disc and silently proceeding.
-	    :return: the source map, and a dict that contains some miscellaneus statistics for the source
+	    :return: the Markov chain of possible sources, and a dict that contains some miscellaneus
+	             statistics for the source distribution
 	"""
 	# switch out some values depending on whether these are xrays or deuterons
 	if particle == "proton" or particle == "deuteron":
@@ -750,32 +775,32 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		else:
 			Z, A = 1, 2
 		# convert scattering energies to CR-39 energies
-		incident_energy_min, incident_energy_max = particle_E_out(
-			[energy_min, energy_max], Z, A, filter_stack)
+		incident_energies = Interval(*particle_E_out(
+			[energies.minimum, energies.maximum], Z, A, filter_stack))
 		# exclude particles to which the CR-39 won’t be sensitive
-		incident_energy_min = max(MIN_DETECTABLE_ENERGY, incident_energy_min)
-		incident_energy_max = min(MAX_DETECTABLE_ENERGY, incident_energy_max)
+		incident_energies.minimum = max(MIN_DETECTABLE_ENERGY, incident_energies.minimum)
+		incident_energies.maximum = min(MAX_DETECTABLE_ENERGY, incident_energies.maximum)
 		# convert CR-39 energies to track diameters
-		diameter_max, diameter_min = track_diameter(
-			[incident_energy_min, incident_energy_max], etch_time=etch_time, z=Z, a=A)
+		diameters = Interval(*track_diameter(
+			[incident_energies.maximum, incident_energies.minimum], etch_time=etch_time, z=Z, a=A))
 		# expand make sure we capture max D if we don’t expect anything bigger than this
-		if incident_energy_min <= MIN_DETECTABLE_ENERGY:
-			diameter_max = inf
+		if incident_energies.minimum <= MIN_DETECTABLE_ENERGY:
+			diameters.maximum = inf
 		# convert back to exclude particles that are ranged out
-		energy_min, energy_max = particle_E_in(
-			[incident_energy_min, incident_energy_max], Z, A, filter_stack)
+		energies = Interval(*particle_E_in(
+			[incident_energies.minimum, incident_energies.maximum], Z, A, filter_stack))
 
-		if incident_energy_max <= MIN_DETECTABLE_ENERGY:
-			raise FilterError(f"{energy_max:.1f} MeV {particle}s will be ranged down to just {incident_energy_max:.1f} "
+		if incident_energies.maximum <= MIN_DETECTABLE_ENERGY:
+			raise FilterError(f"{energies.maximum:.1f} MeV {particle}s will be ranged down to just {incident_energies.maximum:.1f} "
 			                  f"by a {print_filtering(filter_stack)} filter")
-		if incident_energy_min >= MAX_DETECTABLE_ENERGY:
-			raise FilterError(f"{energy_min:.1f} MeV {particle}s will still be at {incident_energy_min:.1f} "
+		if incident_energies.minimum >= MAX_DETECTABLE_ENERGY:
+			raise FilterError(f"{energies.minimum:.1f} MeV {particle}s will still be at {incident_energies.minimum:.1f} "
 			                  f"after a {print_filtering(filter_stack)} filter")
 
 	elif particle == "xray":
 		contour = XRAY_CONTOUR_LEVEL
 		resolution = X_RAY_RESOLUTION
-		diameter_max, diameter_min = nan, nan
+		diameters = Interval(nan, nan)
 
 	else:
 		raise ValueError(f"there are no {particle}s within the walls.")
@@ -787,10 +812,10 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		if particle == "xray":
 			logging.info(f"Reconstructing region with {print_filtering(filter_stack)} filtering")
 		else:
-			logging.info(f"Reconstructing tracks with {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
+			logging.info(f"Reconstructing tracks with {diameters.minimum:5.2f}μm < d <{diameters.maximum:5.2f}μm")
 			# check the statistics, if these are deuterons
 			num_tracks, _, _, _, _ = count_tracks_in_scan(
-				scan, diameter_min, diameter_max, max_contrast,
+				scan, diameters, max_contrast,
 				SHOW_DIAMETER_CUTS)
 			logging.info(f"  found {num_tracks:.4g} tracks in the cut")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
@@ -799,8 +824,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
 			scan, f"{shot}/{los}-{particle}-{cut_index}",
-			diameter_min, diameter_max,
-			energy_min, energy_max, max_contrast, M*rA, M*sA,
+			diameters, energies, max_contrast, M*rA, M*sA,
 			centers, data_polygon) # TODO: infer rA, as well?
 
 		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
@@ -808,7 +832,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
 			r_max = M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution
 
-		r_psf = min(electric_field.get_expanded_radius(Q, M*rA, energy_min, energy_max), 2*M*rA)
+		r_psf = min(electric_field.get_expanded_radius(Q, M*rA, energies), 2*M*rA)
 
 		if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
 			r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
@@ -829,7 +853,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		# if it's a cpsa file
 		if type(scan) is Scan:
 			x_tracks, y_tracks = cut_cr39_scan(
-				scan, diameter_min, diameter_max, max_contrast)  # load all track coordinates
+				scan, diameters, max_contrast)  # load all track coordinates
 			for k, (x_center, y_center) in enumerate(centers):
 				# center them on the penumbra and rotate them if the aperture grid appears rotated
 				x_relative, y_relative = shift_and_rotate(x_tracks, y_tracks,
@@ -845,7 +869,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 				                f"be zoomed and enhanced.")
 			for k, (x_center, y_center) in enumerate(centers):
 				# center them on the penumbra and rotate them if the aperture grid appears rotated
-				local_images.values[k, :, :] = resample_and_rotate(
+				local_images.values[k, :, :] = resample_and_rotate_2d(
 					scan,
 					local_image_domain.shifted(x_center, y_center),
 					-angle).values # resample to the chosen bin size
@@ -854,15 +878,15 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			raise TypeError(f"I don't know how to interpret a {type(scan)} as a scan result")
 
 		# now you can combine them all
-		image = Image(local_images.domain, np.zeros(local_images.shape))
-		image_plicity = Image(local_images.domain, np.zeros(local_images.shape))
+		image = Image(local_images.domain, np.zeros(local_images.shape[1:]))
+		image_plicity = Image(local_images.domain, np.zeros(local_images.shape[1:], dtype=int))
 		for k, (x_center, y_center) in enumerate(centers):
 			relative_polygon_x, relative_polygon_y = zip(*data_polygon)
 			relative_data_polygon = list(zip(*shift_and_rotate(
 				relative_polygon_x, relative_polygon_y, -x_center, -y_center, -angle)))
 			area = inside_polygon(relative_data_polygon, *image.domain.get_pixels())
 			image.values[area] += local_images.values[k, area]
-			image_plicity.values += area
+			image_plicity.values += np.where(area, 1, 0)
 
 		if np.any(np.isnan(image.values)):
 			raise DataError("it appears that the specified data region extended outside of the image")
@@ -894,11 +918,10 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			source_domain = Grid.from_pixels(num_bins=image.x.num_bins - kernel_domain.x.num_bins + 1,
 			                                 pixel_width=kernel_domain.pixel_width/(M - 1))
 
-		logging.info(f"  generating a {kernel_domain.shape} point spread function with Q={Q:.3g} MeV*cm")
+		logging.info(f"  generating a {kernel_domain.shape} point spread function with Q={Q:.3g} MeV*cm...")
 
 		# calculate the point-spread function
-		kernel = point_spread_function(kernel_domain, Q, M*rA, grid_transform,
-		                               energy_min, energy_max) # get the dimensionless shape of the penumbra
+		kernel = point_spread_function(kernel_domain, Q, M*rA, grid_transform, energies) # get the dimensionless shape of the penumbra
 		if account_for_overlap:
 			raise NotImplementedError("I also will need to add more things to the kernel")
 		kernel.values *= source_domain.pixel_area*image.domain.pixel_area/(M*L1)**2 # scale by the solid angle subtended by each image pixel
@@ -957,7 +980,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			raise DataError("I think this image is saturated. I'm not going to try to reconstruct it. :(")
 
 		# perform the reconstruction
-		logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source")
+		logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source...")
 		method = "gelfgat" if particle == "xray" else "richardson-lucy"
 		source = Image(
 			source_domain,
@@ -968,18 +991,38 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 				r_psf=M*rA/image.domain.pixel_width,
 				pixel_area=clipd_image_plicity.values,
 				source_region=source_region,
-				noise=estimated_data_variance))
-		logging.info("  done!")
+				noise=estimated_data_variance,
+			)
+		)
+		source.values = np.maximum(0, source.values) # we know this must be nonnegative (counts/cm^2/srad)
+		if do_mcmc:
+			logging.info(f"  sampling the posterior distribution...")
+			source = mcmc.deconvolve(
+				data=clipd_image,
+				kernel=kernel.values,
+				guess=source,
+				pixel_area=clipd_image_plicity,
+				source_region=source_region,
+				noise=estimated_data_variance,
+				use_gpu=use_gpu,
+			)
+		else:
+			source.values = np.expand_dims(source.values, axis=0)
+		save_current_figure(f"{shot}/{los}-{particle}-{cut_index}-trace")
+		logging.info("  postprocessing the results...")
 
 		# since the true problem is not one of deconvolution, but inverted deconvolution, rotate 180°
 		source = source.rotated_180()
-		source.values = np.maximum(0, source.values) # we know this must be nonnegative (counts/cm^2/srad)
 
 		if source.num_pixels*kernel.num_pixels <= MAX_CONVOLUTION:
 			# back-calculate the reconstructed penumbral image
 			reconstructed_image = Image(
 				image.domain,
-				signal.fftconvolve(source.values[::-1, ::-1], kernel.values, mode="full")*image_plicity.values)
+				signal.fftconvolve(
+					np.mean(source.values, axis=0)[::-1, ::-1],
+					kernel.values, mode="full"
+				)*image_plicity.values
+			)
 			# and estimate background as whatever makes it fit best
 			reconstructed_image.values += np.nanmean((image - reconstructed_image).values/positive_image_plicity,
 			                                         where=on_penumbra)*image_plicity.values
@@ -987,43 +1030,45 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			logging.warning("the reconstruction would take too long to reproduce so I’m skipping the residual plot")
 			reconstructed_image = Image(image.domain, np.full(image.shape, nan))
 
-		# after reproducing the input, we must make some adjustments to the source
+		# after reproducing the input, we must rebin the source to a unified Grid for the stack
 		if output_plane is None:
-			output_plane = Grid.from_size(source.x.half_range, source.domain.pixel_width/2, True)
-		# specificly, we must rebin it to a unified Grid for the stack
-		output = Image(
-			output_plane,
-			interpolate.RegularGridInterpolator(
-				(source.x.get_bins(), source.x.get_bins()), source.values,
-				bounds_error=False, fill_value=0)(
-				np.stack(output_plane.get_pixels(), axis=-1)))
+			# if a unified Grid has not been set yet, define it now
+			if UPSAMPLE_SOURCES:
+				output_plane = Grid.from_size(source.x.half_range, source.domain.pixel_width/2, True)
+			else:
+				output_plane = Grid.from_size(source.x.half_range, source.domain.pixel_width, True)
+		output = resample_2d(source, output_plane)
 
 	# if we’re skipping the reconstruction, just load the previus stacked penumbra and reconstructed source
 	else:
-		logging.info(f"Loading reconstruction for diameters {diameter_min:5.2f}μm < d <{diameter_max:5.2f}μm")
-		previus_parameters = load_shot_info(shot, los, energy_min, energy_max, filter_str)
+		logging.info(f"Loading reconstruction for diameters {diameters.minimum:5.2f}μm < d <{diameters.maximum:5.2f}μm")
+		previus_parameters = load_shot_info(shot, los, energies, filter_str)
 		Q = previus_parameters.Q
 		x, y, image_values, image_plicity_values = load_hdf5(
 			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
 		image = Image(Grid.from_edge_array(x, y), image_values.T)  # don’t forget to convert from (y,x) to (i,j) indexing
 		image_plicity = Image(image.domain, image_plicity_values.T)
 
-		output = load_source(shot, los, f"{particle}-{cut_index[0]}",
-		                     filter_stack, energy_min, energy_max)
+		output = load_source(shot, los, f"{particle}-{cut_index[0]}", filter_stack, energies)
 		residual, = load_hdf5(
 			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra-residual", ["N"])
 		reconstructed_image = Image(image.domain, image.values - residual.T)  # remember to convert from (y,x) indexing to (i,j)
 
 	# calculate and print the main shape parameters
-	yeeld = np.sum(output.values*output.domain.pixel_area)*4*pi
-	p0, (_, _), (p2, θ2) = shape_parameters(output, contour_level=contour)
-	logging.info(f"  ∫B dA dσ = {yeeld :.4g} deuterons")
-	logging.info(f"  {contour:.0%} P0   = {p0/1e-4:.2f} μm")
-	logging.info(f"  {contour:.0%} P2   = {p2/1e-4:.2f} μm = {p2/p0*100:.1f}%, θ = {np.degrees(θ2):.1f}°")
+	yeeld = credibility_interval(
+		np.sum(output.values, axis=(1, 2))*output.domain.pixel_area*4*pi, .9)
+	p0_array, (_, _), (p2_array, θ2_array) = shape_parameters_chained(output, contour_level=contour)
+	p0 = credibility_interval(p0_array/1e-4, .9)
+	p2 = credibility_interval(p2_array/p0_array, .9)
+	θ2 = credibility_interval(θ2_array, .9)
+	logging.info(f"  ∫B dA dσ = {yeeld.center:.4g} ± {yeeld.width/2:.4g} deuterons")
+	logging.info(f"  {contour:.0%} P0   = ({p0.center:.2f} ± {p0.width/2:.2f}) μm")
+	logging.info(f"  {contour:.0%} P2   = ({p2.center*100:.2f} ± {p2.width/2*100:.2f})%, "
+	             f"θ = {np.degrees(θ2.center):.1f}°")
 
 	# save and plot the results
 	save_and_plot_penumbra(f"{shot}/{los}-{particle}-{cut_index}",
-	                       image, image_plicity, energy_min, energy_max,
+	                       image, image_plicity, energies,
 	                       r0=M*rA, s0=M*sA, grid_shape=grid_shape, grid_transform=grid_transform)
 	if particle == "xray":
 		color_index = int(cut_index[0])  # we’ll redo the colors later, so just use a heuristic here
@@ -1032,7 +1077,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		color_index = int(cut_index[2])
 		num_colors = num_energy_cuts
 	plot_source(f"{shot}/{los}-{particle}-{cut_index}",
-	            output, energy_min, energy_max,
+	            output, energies,
 	            color_index=color_index, num_colors=num_colors,
 	            projected_flow=None, projected_offset=None,
 	            projected_stalk=None, num_stalks=0)
@@ -1043,47 +1088,24 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	else:
 		plt.close("all")
 
-	# estimate a P0 error bar
-	r_source, (_, _), (_, _) = shape_parameters(output, contour_level=.5)
-	r_source *= 1e-4
-	if particle == "xray":
-		δ_PSF = 0
-		statistics = inf
-	else:
-		if Q == 0:
-			δ_PSF = 0
-			r_PSF = M*rA
-		else:
-			r_test, f_test = electric_field.get_modified_point_spread(
-				M*rA, Q, energy_min=energy_min, energy_max=energy_max)
-			δ_PSF = -np.max(f_test)/np.min(np.gradient(f_test, r_test))/2
-			r_PSF = r_test[np.argmin(np.gradient(f_test, r_test))]
-		r_image = np.hypot(*image.domain.get_pixels())
-		δ_image = sqrt(((M - 1)*r_source)**2 + δ_PSF**2)
-		statistics = np.sum(image.values,
-		                    where=(r_image > r_PSF - δ_image) & (r_image < r_PSF + δ_image))
-
 	statblock = {"Q": Q, "dQ": 0.,
 	             "yield": yeeld, "dyield": 0.,
-	             "P0 magnitude": p0/1e-4, "dP0 magnitude": (r_source**2 + (δ_PSF/(M - 1))**2)/r_source*statistics**(-1/2)*p0/r_source/1e-4,
-	             "P2 magnitude": p2/1e-4, "dP2 magnitude": 0.,
-	             "P2 angle": degrees(θ2)}
+	             "P0 magnitude": p0.center, "dP0 magnitude": p0.width/2,
+	             "P2 magnitude": p2.center, "dP2 magnitude": p2.width/2,
+	             "P2 angle": degrees(θ2.center)}
 
 	return output, statblock
 
 
 def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
-                         diameter_min: float, diameter_max: float,
-                         energy_min: float, energy_max: float, max_contrast: float,
+                         diameters: Interval, energies: Interval, max_contrast: float,
                          r0: float, s0: float, centers: list[Point], region: list[Point]) -> Point:
 	""" perform an inverse Abel transformation while fitting for charging
 	    :param scan: the scan result object containing the data to be analyzed
 	    :param plot_filename: the filename to pass to the plotting function for the resulting figure
-	    :param diameter_min: the minimum track diameter to consider (μm)
-	    :param diameter_max: the maximum track diameter to consider (μm)
+	    :param diameters: the minimum and maximum track diameter to consider (μm)
+	    :param energies: the minimum and maximum particle energy considered, for charging purposes (MeV)
 	    :param max_contrast: the maximum track contrast level to consider (%)
-	    :param energy_min: the minimum particle energy considered, for charging purposes (MeV)
-	    :param energy_max: the maximum particle energy considered, for charging purposes (MeV)
 	    :param centers: the x and y coordinates of the centers of the circles (cm)
 	    :param r0: the radius of the aperture in the imaging plane (cm)
 	    :param s0: the distance to the center of the next aperture in the imaging plane (cm)
@@ -1095,8 +1117,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 
 	# either bin the tracks in radius
 	if type(scan) is Scan:  # if it's a cpsa file
-		x_tracks, y_tracks = cut_cr39_scan(
-			scan, diameter_min, diameter_max, max_contrast)  # load all track coordinates
+		x_tracks, y_tracks = cut_cr39_scan(scan, diameters, max_contrast)  # load all track coordinates
 		valid = inside_polygon(region, x_tracks, y_tracks)
 		x_tracks, y_tracks = x_tracks[valid], y_tracks[valid]
 		r_tracks = np.full(np.count_nonzero(valid), inf)
@@ -1158,8 +1179,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 	sphere_to_plane = abel_matrix(r_sphere_bins)
 	# do this nested 1d reconstruction
 	def reconstruct_1d_assuming_Q(Q: float, return_other_stuff=False) -> Union[float, tuple]:
-		r_PSF, f_PSF = electric_field.get_modified_point_spread(
-			r0, Q, energy_min, energy_max)
+		r_PSF, f_PSF = electric_field.get_modified_point_spread(r0, Q, energies)
 		source_to_image = cumul_pointspread_function_matrix(
 			r_sphere, r, r_PSF, f_PSF)
 		forward_matrix = A[:, newaxis] * source_to_image @ sphere_to_plane
@@ -1176,20 +1196,20 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		else:
 			return χ2  # type: ignore
 
-	if isfinite(diameter_min) and USE_CHARGING_CORRECTION:
+	if isfinite(diameters.minimum) and USE_CHARGING_CORRECTION:
 		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e+1, 1e-3, 0)
 		logging.info(f"  inferred an aperture charge of {Q:.3f} MeV*cm")
 	else:
 		Q = 0
 
 	domain = r > r0/2
-	ρ_cutoff = ρ_max*.001 + ρ_min*.999
+	ρ_cutoff = ρ_max*.01 + ρ_min*.99
 	r_cutoff = find_intercept(r[domain], ρ[domain] - ρ_cutoff)
 	if SHOW_ELECTRIC_FIELD_CALCULATION:
 		χ2, ρ_sphere, n_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
 		ρ_recon = n_recon/A
 		r_PSF, f_PSF = electric_field.get_modified_point_spread(
-			r0, Q, energy_min, energy_max, normalize=True)
+			r0, Q, energies, normalize=True)
 		save_and_plot_radial_data(
 			plot_filename, r_sphere, ρ_sphere,
 			r, ρ, dρ, ρ_recon, r_PSF, f_PSF, r0, r_cutoff, ρ_min, ρ_cutoff, ρ_max)
@@ -1228,7 +1248,7 @@ def where_is_the_ocean(image: Image, title, timeout=None) -> Point:
 def user_defined_region(scan, title, max_contrast: float, default=None, timeout=None) -> list[Point]:
 	""" solicit the user's help in circling a region """
 	if type(scan) is Scan:
-		x_tracks, y_tracks = cut_cr39_scan(scan, 0, inf, max_contrast)
+		x_tracks, y_tracks = cut_cr39_scan(scan, Interval(0, inf), max_contrast)
 		counts, x, y = np.histogram2d(x_tracks, y_tracks, bins=200)
 		image = Image(Grid.from_edge_array(x, y), counts)
 	elif type(scan) is Image:
@@ -1292,13 +1312,13 @@ def user_defined_region(scan, title, max_contrast: float, default=None, timeout=
 
 
 def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[float],
-                          з_min: float, з_max: float) -> Image:
+                          energies: Interval) -> Image:
 	""" build the dimensionless point spread function by calling electric_field.get_modified_point_spread, skewing it
 	    according to the grid's transform matrix, and antialiasing the edges.
 	"""
 	# calculate the profile using the electric field model
 	r_interp, n_interp = electric_field.get_modified_point_spread(
-		r0, Q, energy_min=з_min, energy_max=з_max)
+		r0, Q, energy_range=energies)
 
 	transform = np.linalg.inv(transform)
 
@@ -1314,8 +1334,7 @@ def point_spread_function(grid: Grid, Q: float, r0: float, transform: NDArray[fl
 	return Image(grid, func)
 
 
-def cut_cr39_scan(scan: Scan,
-                  min_diameter, max_diameter,
+def cut_cr39_scan(scan: Scan, diameter_range: Interval,
                   max_contrast, max_eccentricity=MAX_ECCENTRICITY,
                   show_plots=False) -> tuple[NDArray[float], NDArray[float]]:
 	""" filter the track coordinates by diameter and contrast and pull out the x and y values
@@ -1325,8 +1344,8 @@ def cut_cr39_scan(scan: Scan,
 	c_tracks = scan.trackdata_subset[:, 3]
 	scan.add_cut(Cut(cmin=max_contrast))
 	scan.add_cut(Cut(emin=max_eccentricity))
-	scan.add_cut(Cut(dmax=min_diameter))
-	scan.add_cut(Cut(dmin=max_diameter))
+	scan.add_cut(Cut(dmax=diameter_range.minimum))
+	scan.add_cut(Cut(dmin=diameter_range.maximum))
 	scan.apply_cuts()
 	x_tracks = scan.trackdata_subset[:, 0]
 	y_tracks = scan.trackdata_subset[:, 1]
@@ -1341,8 +1360,8 @@ def cut_cr39_scan(scan: Scan,
 		                 np.arange(0.5, max_contrast_to_plot + 1)),
 		           norm=SymLogNorm(10, 1/np.log(10)),
 		           cmap=CMAP["coffee"])
-		x0 = max(min_diameter, 0)
-		x1 = min(max_diameter, max_diameter_to_plot)
+		x0 = max(diameter_range.minimum, 0)
+		x1 = min(diameter_range.maximum, max_diameter_to_plot)
 		y1 = min(max_contrast, max_contrast_to_plot)
 		plt.plot([x0, x0, x1, x1], [0, y1, y1, 0], "k--")
 		plt.title("Making these cuts in contrast-diameter space")
@@ -1374,21 +1393,20 @@ def load_ip_scan_file(filename: str) -> Image:
 	return Image(grid, values)
 
 
-def count_tracks_in_scan(scan: Union[Scan, Image], diameter_min: float, diameter_max: float,
+def count_tracks_in_scan(scan: Union[Scan, Image], diameter_range: Interval,
                          max_contrast: float, show_plots: bool
                          ) -> tuple[float, float, float, float, float]:
 	""" open a scan file and simply count the total number of tracks without putting
 	    anything additional in memory.  if the scan file is an image plate scan, return inf
 	    :param scan: the scanfile containing the data to be analyzed
-	    :param diameter_min: the minimum diameter to count (μm)
-	    :param diameter_max: the maximum diameter to count (μm)
+	    :param diameter_range: the minimum and maximum diameter to count (μm)
 	    :param max_contrast: the maximum track contrast level to consider (%)
 	    :param show_plots: whether to demand that we see the diameter cuts
 	    :return: the number of tracks if it's a CR-39 scan, inf if it's an image plate scan. also the bounding box.
 	"""
 	if type(scan) is Scan:
 		x_tracks, y_tracks = cut_cr39_scan(
-			scan, diameter_min, diameter_max, max_contrast, show_plots=show_plots)
+			scan, diameter_range, max_contrast, show_plots=show_plots)
 		if x_tracks.size == 0:
 			return 0, nan, nan, nan, nan
 		else:
@@ -1402,7 +1420,7 @@ def count_tracks_in_scan(scan: Union[Scan, Image], diameter_min: float, diameter
 
 
 def load_source(shot: str, los: str, particle_index: str,
-                filter_stack: list[Filter], energy_min: float, energy_max: float,
+                filter_stack: list[Filter], energies: Interval,
                 ) -> Image:
 	""" open up a saved HDF5 file and find and read a single source from the stack """
 	# get all the necessary info from the HDF5 file
@@ -1414,18 +1432,16 @@ def load_source(shot: str, los: str, particle_index: str,
 		filterings = [filtering.decode("utf-8") for filtering in filterings]
 	# then look for the matching filtering section and energy cut
 	source_plane = Grid.from_bin_array(x*1e-4, y*1e-4)
-	source_stack = source_stack.transpose((0, 2, 1))/1e-4**2  # don’t forget to convert from (y,x) to (i,j) indexing
+	source_stack = source_stack.transpose((0, 1, 3, 2))/1e-4**2  # don’t forget to convert from (y,x) to (i,j) indexing
 	for i in range(source_stack.shape[0]):
-		if parse_filtering(filterings[i])[0] == filter_stack and \
-			np.array_equal(energy_bounds[i], [energy_min, energy_max]):
-			return Image(source_plane, source_stack[i, :, :])
-	raise RecordNotFoundError(f"couldn’t find a {print_filtering(filter_stack)}, [{energy_min}, "
-	                          f"{energy_max}] k/MeV source for {shot}, {los}, {particle_index}")
+		if parse_filtering(filterings[i])[0] == filter_stack and Interval(*energy_bounds[i]) == energies:
+			return Image(source_plane, source_stack[i, :, :, :])
+	raise RecordNotFoundError(f"couldn’t find a {print_filtering(filter_stack)}, {energies} k/MeV "
+	                          f"source for {shot}, {los}, {particle_index}")
 
 
 def load_shot_info(shot: str, los: str,
-                   energy_min: Optional[float] = None,
-                   energy_max: Optional[float] = None,
+                   energy_range: Optional[Interval] = None,
                    filter_str: Optional[str] = None) -> pd.Series:
 	""" load the summary.csv file and look for a row that matches the given criteria """
 	all_records = case_insensitive_dataframe(
@@ -1433,19 +1449,18 @@ def load_shot_info(shot: str, los: str,
 	# load a dataframe of all matching sommary.csv rows
 	matching_records = all_records.loc[[(shot, los)]]
 	# disqualify any rows that don't match given inputs
-	if energy_min is not None:
-		matching_records = matching_records[np.isclose(matching_records["energy min"], energy_min)]
-	if energy_max is not None:
-		matching_records = matching_records[np.isclose(matching_records["energy max"], energy_max)]
+	if energy_range is not None:
+		matching_records = matching_records[np.isclose(matching_records["energy min"], energy_range.minimum)]
+		matching_records = matching_records[np.isclose(matching_records["energy max"], energy_range.maximum)]
 	if filter_str is not None:
 		matching_records = matching_records[matching_records["filtering"] == filter_str]
 	# make sure there's exactly one row remaining
 	if len(matching_records) == 1:
 		return matching_records.iloc[-1]
 	elif len(matching_records) == 0:
-		raise RecordNotFoundError(f"couldn’t find {shot} {los} \"{filter_str}\" {energy_min}–{energy_max} cut in summary.csv")
+		raise RecordNotFoundError(f"couldn’t find {shot} {los} \"{filter_str}\" {energy_range} cut in summary.csv")
 	else:
-		raise DataError(f"there were multiple entries in summary.csv for {shot} {los} \"{filter_str}\" {energy_min}–{energy_max}.  how did that happen‽")
+		raise DataError(f"there were multiple entries in summary.csv for {shot} {los} \"{filter_str}\" {energy_range}.  how did that happen‽")
 
 
 def load_filtering_info(shot: str, los: str) -> str:
@@ -1644,7 +1659,7 @@ def find_circle_centers(filename: str, scan: Union[Scan, Image], particle: str, 
 		raise NotImplementedError("I haven't accounted for this.")
 
 	if type(scan) is Scan:  # if it's a cpsa file
-		x_tracks, y_tracks = cut_cr39_scan(scan, 0, inf, max_contrast)  # load all track coordinates
+		x_tracks, y_tracks = cut_cr39_scan(scan, Interval(0, inf), max_contrast)  # load all track coordinates
 		n_bins = max(6, int(min(sqrt(x_tracks.size)/5, MAX_NUM_PIXELS)))  # get the image resolution needed to resolve the circle
 		r_data = max(np.ptp(x_tracks), np.ptp(y_tracks))/2
 		x0_data = (np.min(x_tracks) + np.max(x_tracks))/2
@@ -1840,6 +1855,12 @@ if __name__ == '__main__':
 	parser.add_argument(
 		"--only_IP", action="store_true",
 		help="whether to ignore all .cpsa files and only process the .h5 files")
+	parser.add_argument(
+		"--MCMC", action="store_true",
+		help="whether to run the MCMC uncertainty analysis")
+	parser.add_argument(
+		"--GPU", action="store_true",
+		help="whether to run the MCMC on a GPU (rather than on all CPUs as is default)")
 	args = parser.parse_args()
 
 	analyze(shots_to_reconstruct=args.shots.split(","),
@@ -1847,4 +1868,6 @@ if __name__ == '__main__':
 	        show_plots=args.show,
 	        energy_cut_mode="proton" if args.proton else "fine" if args.fine else "normal",
 	        only_cr39=args.only_CR39,
-	        only_IP=args.only_IP)
+	        only_IP=args.only_IP,
+	        do_mcmc=args.MCMC,
+	        use_gpu=args.GPU)

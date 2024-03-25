@@ -95,8 +95,40 @@ def rotation_matrix(angle: float) -> NDArray[float]:
 	                 [sin(angle),  cos(angle)]])
 
 
+class Interval:
+	def __init__(self, minimum: float, maximum: float):
+		""" a pair of numbers that define an interval """
+		self.minimum = minimum
+		self.maximum = maximum
+
+	def __str__(self) -> str:
+		return f"Interval[{self.minimum}, {self.maximum}]"
+
+	def __lt__(self, other: Interval) -> bool:
+		if self == other:
+			return False
+		elif self.minimum >= other.minimum and self.maximum >= other.maximum:
+			return False
+		elif self.minimum <= other.minimum and self.maximum <= other.maximum:
+			return True
+		else:
+			raise ValueError(f"the comparison of {self} and {other} is ambiguus.")
+
+	def __eq__(self, other: Interval) -> bool:
+		return self.minimum == other.minimum and self.maximum == other.maximum
+
+	@property
+	def center(self) -> float:
+		return (self.minimum + self.maximum)/2
+
+	@property
+	def width(self) -> float:
+		return self.maximum - self.minimum
+
+
 class LinSpace:
 	def __init__(self, minimum: float, maximum: float, num_bins: int):
+		""" a class that efficiently describes a finite set of equally spaced numbers """
 		self.minimum = minimum
 		self.maximum = maximum
 		self.num_bins = num_bins
@@ -244,17 +276,15 @@ class Grid:
 
 class Image:
 	def __init__(self, domain: Grid, values: NDArray[ScalarType]):
-		""" package a spacial coordinate system with a 2D array of values to fill it """
-		if values.ndim != 2 and values.ndim != 3:
-			raise ValueError("an Image's values must be either a 2D array or a 3D array (if multiple channels)")
-		if domain.shape != values.shape[-2:]:
+		""" package a spacial coordinate system with a 2D (or higher) array of values to fill it.
+		    the last two dims will be treated as the x and y dims, in that order.
+		"""
+		if values.ndim < 2:
+			raise ValueError("an Image's values must be at least 2D.")
+		if type(values.shape) is tuple and domain.shape != values.shape[-2:]:
 			raise ValueError(f"this domain {domain.shape} doesn't match these values {values.shape}!")
 		self.domain = domain
 		self.values = values
-
-	@staticmethod
-	def empty(domain: Grid) -> Image:
-		return Image(domain, np.empty((0,) + domain.shape))
 
 	@property
 	def x(self) -> LinSpace:
@@ -266,24 +296,16 @@ class Image:
 
 	@property
 	def shape(self) -> tuple[int, ...]:
-		return self.domain.shape
+		return self.values.shape
 
 	@property
 	def num_pixels(self) -> int:
 		return self.domain.num_pixels
 
-	@property
-	def num_channels(self) -> int:
-		if self.values.ndim == 3:
-			return self.values.shape[0]
-		else:
-			raise ValueError("this image does not have channels")
-
-	def __getitem__(self, index: int) -> Image:
-		if self.values.ndim == 3:
-			return Image(self.domain, self.values[index, :, :])
-		else:
-			raise ValueError("this image does not have channels")
+	def __getitem__(self, index: int | tuple[int, ...]) -> Image:
+		if self.values.ndim <= 2:
+			raise IndexError("this image has no channels and therefore cannot be indexed")
+		return Image(self.domain, self.values[index])
 
 	def __add__(self, other: Image) -> Image:
 		if self.domain != other.domain:

@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from scipy import integrate, signal
 
 from interpolate import RegularInterpolator
-from util import find_intercept, bin_centers
+from util import find_intercept, bin_centers, Interval
 
 MODELS = ["planar", "cylindrical"]
 E_interpolator_dict: dict[str, RegularInterpolator] = {}
@@ -99,7 +99,7 @@ def electric_field(r: NDArray[float], model: str, normalized_aperture_thickness:
 	return E_interpolator(-np.log(1 - r))
 
 
-def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max=1., normalize=False,
+def get_modified_point_spread(r0: float, Q: float, energy_range=Interval(1.e-15, 1.), normalize=False,
                               model="planar", normalized_aperture_thickness=0.0,
                               ) -> tuple[NDArray[float], NDArray[float]]:
 	""" get the effective brightness as a function of radius, accounting for a point
@@ -108,8 +108,7 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 	    :param r0: the radius of the penumbra with no charging
 	    :param Q: the charging factor. I’ll rite down the exact definition later. its units are the product of r0’s
 	              units and e_min’s units.
-	    :param energy_min: the minimum deuteron energy in the image. must be greater than 0.
-	    :param energy_max: the maximum deuteron energy in the image. must be greater than e_min.
+	    :param energy_range: the minimum and maximum deuteron energy in the image. must be greater than e_min.
 	    :param normalize: if true, scale so the peak value is 1.
 	    :param model: either "planar" for the model used in previus work or "cylindrical" for a full axisymmetric
 	                  Poisson equation solution
@@ -124,8 +123,8 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 		return r0*R, np.where(R < 1, 1, 0) # TODO: use nonuniform R
 
 	d_index = index[1] - index[0]
-	min_bound = min(np.log(energy_min*r0/Q) - d_index/2, np.log(energy_max*r0/Q) - d_index)
-	max_bound = max(np.log(energy_max*r0/Q) + d_index/2, np.log(energy_min*r0/Q) + d_index)
+	min_bound = min(np.log(energy_range.minimum*r0/Q) - d_index/2, np.log(energy_range.maximum*r0/Q) - d_index)
+	max_bound = max(np.log(energy_range.maximum*r0/Q) + d_index/2, np.log(energy_range.minimum*r0/Q) + d_index)
 	if np.all((index < min_bound) | (index >= max_bound)):
 		raise ValueError("the modified point spread function needs to be calculated for a wider range of Qs")
 	weights = np.where( # the briteness will be a weited linear combination of pre-solved profiles
@@ -140,38 +139,38 @@ def get_modified_point_spread(r0: float, Q: float, energy_min=1.e-15, energy_max
 		return r0*R, unscaled
 
 
-def get_dilation_factor(Q: float, r0: float, energy_min: float, energy_max: float) -> float:
+def get_dilation_factor(Q: float, r0: float, energy_range: Interval) -> float:
 	""" get the factor by which the 50% radius of the penumbra increases due to aperture charging """
-	r, z = get_modified_point_spread(r0, Q, energy_min, energy_max, normalize=True)
+	r, z = get_modified_point_spread(r0, Q, energy_range, normalize=True)
 	return find_intercept(r, z - z[0]*.50)/r0
 
 
-def get_expanded_radius(Q: float, r0: float, energy_min: float, energy_max: float) -> float:
+def get_expanded_radius(Q: float, r0: float, energy_range: Interval) -> float:
 	""" get the resulting 1% radius of the penumbra after aperture charging """
-	r, z = get_modified_point_spread(r0, Q, energy_min, energy_max)
+	r, z = get_modified_point_spread(r0, Q, energy_range)
 	try:
 		return find_intercept(r, z - z[0]*.005)
 	except ValueError:
 		return inf
 
 
-def get_charging_parameter(dilation: float, r0: float, energy_min: float, energy_max: float) -> float:
+def get_charging_parameter(dilation: float, r0: float, energy_range: Interval) -> float:
 	""" get the charging parameter Q = σd/(4πɛ0)...there’s some other stuff mixd in there but it has units MeV*cm
 	    as a function of M_eff/M_nom """
-	Q_min = r0*energy_min*1e-5
-	dilation_min = get_dilation_factor(Q_min, r0, energy_min, energy_max)
-	Q_max = r0*energy_min*5e-2
-	dilation_max = get_dilation_factor(Q_max, r0, energy_min, energy_max)
+	Q_min = r0*energy_range.minimum*1e-5
+	dilation_min = get_dilation_factor(Q_min, r0, energy_range)
+	Q_max = r0*energy_range.minimum*5e-2
+	dilation_max = get_dilation_factor(Q_max, r0, energy_range)
 	if dilation < dilation_min:
 		return 0
 	elif dilation > dilation_max:
-		raise ValueError(f"I don't know how to account for artificial magnification so larg ({dilation}, {r0}, {energy_min}, {energy_max})")
+		raise ValueError(f"I don't know how to account for artificial magnification so larg ({dilation}, {r0}, {energy_range})")
 	else:
 		while True:
 			Q_gess = np.sqrt(Q_max*Q_min)
 			if Q_max/Q_min < 1.001:
 				return Q_gess
-			dilation_gess = get_dilation_factor(Q_gess, r0, energy_min, energy_max)
+			dilation_gess = get_dilation_factor(Q_gess, r0, energy_range)
 			if dilation_gess > dilation:
 				Q_max = Q_gess
 			else:
@@ -207,7 +206,7 @@ if __name__ == '__main__':
 
 	plt.figure()
 	for Q in [.112, .112/4.3, 0]:
-		x, y = get_modified_point_spread(1.5, Q, 2, 6)
+		x, y = get_modified_point_spread(1.5, Q, Interval(2, 6))
 		plt.plot(x, y, label="Brightness")
 		plt.fill_between(x, 0, y, alpha=0.5, label="Brightness")
 	x = np.linspace(0, 1.5, 1000, endpoint=False)

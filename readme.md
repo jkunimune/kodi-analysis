@@ -3,6 +3,20 @@ KoDI analysis
 
 Code for analyzing penumbral imaging, including PCIS, KoDI, SRTE, and XRIS aka PIX aka x-ray KoDI.
 
+# Installation
+
+This codebase has some PyPI dependencies.
+I think they’re all in the requirements.txt, so you should be all set if you do
+~~~~
+ pip install -r requirements.txt
+~~~~
+
+It also requires Peter Heuer’s [cr39py](https://github.com/pheuer/CR39py) library, which is not on PyPI as of writing,
+so for that just install it like
+~~~~
+ pip install git+https://github.com/pheuer/CR39py.git
+~~~~
+
 # File structure
 
 The file structure goes like this:
@@ -100,17 +114,3 @@ and the operation is up to one of:
 - `lineout` for 1D cartesian lineouts of multidimensional quantities
 - `profile` for 1D polar lineouts of multidimensional quantities
 - `residual` for comparisons of measured and reconstructed images
-
-# Dependencies
-
-This codebase has some PyPI dependencies.
-I think they’re all in the requirements.txt, so you should be all set if you do
-~~~~
- pip install -r requirements.txt
-~~~~
-
-It also requires Peter Heuer’s [cr39py](https://github.com/pheuer/CR39py) library, which is not on PyPI as of writing,
-so for that just install it like
-~~~~
- pip install git+https://github.com/pheuer/CR39py.git
-~~~~

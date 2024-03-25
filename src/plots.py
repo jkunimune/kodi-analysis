@@ -1,24 +1,25 @@
 import logging
 import os
 import re
-from typing import cast, Optional, Union
+from typing import Optional, Union, Iterable
 
 import matplotlib
 import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
+from matplotlib.patches import PathPatch
+from matplotlib.path import Path
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from numpy import isfinite, pi, sin, cos, sqrt, log, inf
+from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin, size, where, arange, quantile
 from numpy.typing import NDArray
-from scipy import optimize, interpolate
-from scipy import special
+from scipy import interpolate
 from skimage import measure
 
 import aperture_array
 from cmap import CMAP
-from coordinate import Image
+from coordinate import Image, Interval
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	Interval, shape_parameters, quantile
+	shape_parameters_chained, weighted_quantile, credibility_interval
 
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
@@ -27,7 +28,7 @@ plt.rcParams["savefig.facecolor"] = 'none'
 
 
 PLOT_THEORETICAL_50c_CONTOUR = True
-PLOT_SOURCE_CONTOUR = True
+PLOT_SOURCE_CONTOURS = True
 PLOT_OFFSET = False
 PLOT_FLOW = True
 PLOT_STALK = False
@@ -83,12 +84,12 @@ def save_and_plot_radial_data(filename: str,
                               ) -> None:
 	plt.figure()
 	plt.plot(r_sphere, ρ_sphere)
-	if not isfinite(quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2)):
+	if not isfinite(weighted_quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2)):
 		logging.error(r_sphere)
 		logging.error(ρ_sphere)
 		logging.error("there is something wrong with these.")
 		raise RuntimeError("there is something wrong with the 1D reconstruction")
-	plt.xlim(0, quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2))
+	plt.xlim(0, weighted_quantile(r_sphere, .999, weights=ρ_sphere*r_sphere**2))
 	plt.ylim(0, None)
 	plt.grid("on")
 	plt.xlabel("Magnified spherical radius (cm)")
@@ -119,21 +120,21 @@ def plot_image_grid(filename: str, full_image: Image, crop_image: Image, contour
 	"""
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.imshow(full_image.values.T, extent=full_image.domain.extent, origin="lower",
-	           vmin=0, vmax=np.nanquantile(crop_image.values, .999), cmap=CMAP["coffee"])
+	           vmin=0, vmax=np.nanquantile(crop_image.values, .999), cmap=CMAP["viridissimus"])
 	θ = np.linspace(0, 2*pi, 145)
 	for x0, y0 in aperture_array.positions(grid_shape, grid_spacing, grid_transform,
 	                                       r_true, full_image.domain.diagonal, grid_x0, grid_y0):
 		plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-		         "#063", linestyle="solid", linewidth=1.2, zorder=20)
+		         "#630", linestyle="solid", linewidth=1.2, zorder=20)
 		plt.plot(x0 + r_true*np.cos(θ), y0 + r_true*np.sin(θ),
-		         "#3e7", linestyle="dashed", linewidth=1.2, zorder=20)
+		         "#e73", linestyle="dashed", linewidth=1.2, zorder=20)
 	plt.scatter(x_circles[circle_is_valid], y_circles[circle_is_valid],
 	            np.where(circle_fullness[circle_is_valid], 30, 5),
-	            c="#8ae", marker="x", zorder=30)
+	            c="#751", marker="x", zorder=30)
 	plt.contour(crop_image.x.get_bins(), crop_image.y.get_bins(), crop_image.values.T,
-	            levels=[contour_level], colors="k", linewidths=.5, zorder=10)
+	            levels=[contour_level], colors="w", linewidths=.5, zorder=10)
 	plt.fill([x for x, y in region], [y for x, y in region],
-	         facecolor="none", edgecolor="k", linewidth=.5, zorder=10)
+	         facecolor="none", edgecolor="w", linewidth=.5, zorder=10)
 	plt.title("Located apertures marked with exes")
 	plt.xlim(min(np.min(x_circles), crop_image.x.minimum),
 	         max(np.max(x_circles), crop_image.x.maximum))
@@ -145,8 +146,7 @@ def plot_image_grid(filename: str, full_image: Image, crop_image: Image, contour
 
 
 def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
-                           energy_min: float, energy_max: float,
-                           s0: float, r0: float, grid_shape: str,
+                           energies: Interval, s0: float, r0: float, grid_shape: str,
                            grid_transform: NDArray[float] = np.identity(2)):
 	""" plot the data along with the initial fit to it, and the reconstructed superaperture. """
 	save_as_hdf5(f'results/data/{filename}-penumbra',
@@ -160,9 +160,11 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 	A_circle, A_square = pi*r0**2, counts.domain.total_area
 	density = counts.values/np.where(area.values > 0, area.values, 1)
 	vmax = max(np.nanquantile(density, (density.size - 6)/density.size),
-	           np.nanquantile(density, 1 - A_circle/A_square/2)*1.25)
+	           1.3*np.nanquantile(density, 1 - A_circle/A_square/2) - 0.3*np.min(density))
+	vmin = max(0, 1.4*np.min(density) - 0.4*np.max(density))
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
-	plt.imshow(density.T, extent=counts.domain.extent, origin="lower", cmap=CMAP["coffee"], vmax=vmax)
+	plt.imshow(density.T, extent=counts.domain.extent, origin="lower", cmap=CMAP["viridissimus"],
+	           vmin=vmin, vmax=vmax)
 	T = np.linspace(0, 2*pi)
 	if PLOT_THEORETICAL_50c_CONTOUR:
 		for dx, dy in aperture_array.positions(grid_shape, s0, grid_transform, r0, counts.x.half_range):
@@ -171,12 +173,12 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 	if "proton" in filename:
 		plt.title("D³He protons")
 	elif "deuteron" in filename:
-		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+		plt.title(f"$E_\\mathrm{{d}}$ = {energies.minimum:.1f} – {min(12.5, energies.maximum):.1f} MeV")
 	elif "xray" in filename:
-		plt.title(f"$h\\nu$ ≥ {energy_min:.0f} keV")
+		plt.title(f"$h\\nu$ ≥ {energies.minimum:.0f} keV")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	make_colorbar(0, vmax, "Counts")
+	make_colorbar(0, min(vmax, np.max(density)), "Counts", facecolor="#000")
 	plt.tight_layout()
 
 	save_current_figure(f"{filename}-penumbra")
@@ -249,21 +251,27 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	         "--", label="Reconstruction")
 	plt.grid()
 	plt.legend()
+	plt.ylim(
+		max(1.3*np.min(measurement.values/normalization) - 0.3*np.max(measurement.values/normalization),
+		    np.min(reconstruction.values/normalization),
+		    0),
+		min(1.1*np.max(measurement.values/normalization) - 0.1*np.min(measurement.values/normalization),
+		    np.max(reconstruction.values/normalization)),
+	)
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-residual-lineout")
 
 
-def plot_source(filename: str, source: Image,
-                energy_min: float, energy_max: float, color_index: int, num_colors: int,
+def plot_source(filename: str, source_chain: Image,
+                energies: Interval, color_index: int, num_colors: int,
                 projected_offset: Optional[tuple[float, float, float]],
                 projected_flow: Optional[tuple[float, float, float]],
                 projected_stalk: Optional[tuple[float, float, float]], num_stalks: Optional[int]) -> None:
 	""" plot a single reconstructed deuteron/xray source
 	    :param filename: the name with which to save the resulting files, minus the fluff
-	    :param source: the brightness of each pixel (d/cm^2/srad)
-	    :param energy_min: the minimum energy being plotted (for the label)
-	    :param energy_max: the maximum energy being plotted (for the label)
+	    :param source_chain: a Markov chain of images, each containing the brightness of each pixel (d/cm^2/srad)
+	    :param energies: the energy range being plotted (for the label)
 	    :param color_index: the index of this image in the set (for choosing the color)
 	    :param num_colors: the total number of images in this set (for choosing the color)
 	    :param projected_offset: the capsule offset from TCC in μm, given as (x, y, z)
@@ -274,30 +282,48 @@ def plot_source(filename: str, source: Image,
 	if color_index >= num_colors:
 		raise ValueError(f"I was only expecting to have to color-code {num_colors} sources, so why am I being told "
 		                 f"this is source[{color_index}] (indexing from zero)?")
+
 	# sometimes this is all nan, but we don't need to plot it
-	if np.all(np.isnan(source.values)):
+	if np.all(np.isnan(source_chain.values)):
 		return
 
 	particle = re.search(r"-(xray|proton|deuteron)", filename, re.IGNORECASE).group(1)
 
 	# choose the plot limits
-	source = Image(source.domain.scaled(1e+4), source.values)  # convert coordinates to μm
-	object_size, (r1, θ1), _ = shape_parameters(source, contour_level=.17)
+	source_chain = Image(source_chain.domain.scaled(1e+4), source_chain.values)  # convert coordinates to μm
+	object_sizes, (r1s, θ1s), (p2s, θ2s) = shape_parameters_chained(source_chain, contour_level=.17)
+	object_size = quantile(
+		where(isfinite(object_sizes), object_sizes, source_chain.domain.x.half_range), .95)
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
-	x0, y0 = r1*cos(θ1), r1*sin(θ1)
-	assert isfinite(x0) and isfinite(y0), f"{r1}, {θ1}"
+	if np.any(isfinite(r1s) & isfinite(θ1s)):
+		x0s, y0s = r1s*cos(θ1s), r1s*sin(θ1s)
+		x0 = median(x0s[isfinite(x0s)])
+		y0 = median(y0s[isfinite(y0s)])
+	else:
+		x0, y0 = 0, 0
 
-	# plot the reconstructed source image
+	# choose the colormap
+	cmap = choose_colormaps(particle, num_colors)[color_index]
+
+	# plot the mean source as a pseudocolor
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
-	plt.imshow(source.values.T, extent=source.domain.extent, origin="lower",
-	           cmap=choose_colormaps(particle, num_colors)[color_index],
-	           vmin=0, interpolation="bilinear")
+	plt.imshow(mean(source_chain.values, axis=0).T, extent=source_chain.domain.extent, origin="lower",
+	           cmap=cmap, vmin=0, interpolation="bilinear")
 
-	if PLOT_SOURCE_CONTOUR:
-		plt.contour(source.x.get_bins(), source.y.get_bins(), source.values.T,
-		            levels=np.linspace(0, np.max(source.values), 6, endpoint=False)[1:],
-		            colors='#eee', linestyles='solid', linewidths=1)
+	# plot the contours with some Bayesian width to them
+	if PLOT_SOURCE_CONTOURS:
+		peak_chain = np.max(source_chain.values, axis=(1, 2), keepdims=True)
+		if source_chain.shape[0] == 1:
+			plt.contour(source_chain.x.get_bins(), source_chain.y.get_bins(),
+			            (source_chain.values/peak_chain)[0, :, :].T,
+			            levels=np.linspace(0, 1, 6, endpoint=False)[1:],
+			            colors=["#ffffff"])
+		else:
+			contour_chained(source_chain.x.get_bins(), source_chain.y.get_bins(),
+			                source_chain.values/where(peak_chain != 0, peak_chain, 1),
+			                levels=np.linspace(0, 1, 6, endpoint=False)[1:],
+			                color="#ffffff")
 	if PLOT_OFFSET:
 		if projected_offset is not None:
 			x_off, y_off, z_off = projected_offset
@@ -324,9 +350,9 @@ def plot_source(filename: str, source: Image,
 	if particle == "proton":
 		plt.title("D³He protons")
 	elif particle == "deuteron":
-		plt.title(f"$E_\\mathrm{{d}}$ = {energy_min:.1f} – {min(12.5, energy_max):.1f} MeV")
+		plt.title(f"$E_\\mathrm{{d}}$ = {energies.minimum:.1f} – {min(12.5, energies.maximum):.1f} MeV")
 	elif particle == "xray":
-		plt.title(f"$h\\nu$ ≥ {energy_min:.0f} keV")
+		plt.title(f"$h\\nu$ ≥ {energies.minimum:.0f} keV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.axis([x0 - object_size, x0 + object_size,
@@ -334,30 +360,60 @@ def plot_source(filename: str, source: Image,
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source")
 
+	if source_chain.shape[0] > 1:
+		# plot a few random samples
+		fig, ax_grid = plt.subplots(3, 3, sharex="all", sharey="all", facecolor="none",
+		                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.1, 5))
+		k = 0
+		samples = np.random.choice(
+			arange(source_chain.shape[0]),
+			min(source_chain.shape[0], size(ax_grid)), replace=False)
+		for ax_row in ax_grid:
+			for ax in ax_row:
+				if k < len(samples):
+					ax.imshow(
+						source_chain[samples[k]].values.T, extent=source_chain[samples[k]].domain.extent,
+						origin="lower", cmap=cmap,
+						vmin=0, vmax=np.max(source_chain.values[samples, :, :]))
+				ax.set_facecolor("black")
+				ax.axis([x0 - object_size, x0 + object_size,
+				         y0 - object_size, y0 + object_size])
+				k += 1
+		plt.tight_layout()
+		save_current_figure(f"{filename}-source-chain")
+
+		# plot a histogram of the source parameters
+		if np.any(isfinite(object_sizes) & isfinite(p2s)):
+			fig, (ax_top, ax_bottom) = plt.subplots(2, 1, facecolor="none", figsize=RECTANGULAR_FIGURE_SIZE)
+			ax_top.hist(object_sizes, bins=31, zorder=2, color="#a31f34")
+			ax_top.set_xlabel("17% contour radius (μm)")
+			ax_top.yaxis.set_major_locator(ticker.LinearLocator(5))
+			ax_top.grid()
+			for tick in ax_top.yaxis.get_major_ticks():
+				tick.tick1line.set_visible(False)
+				tick.label1.set_visible(False)
+			ax_bottom.hist(p2s/object_sizes*100, bins=31, zorder=2, color="#a31f34")
+			ax_bottom.set_xlabel("17% contour radius (μm)")
+			ax_bottom.yaxis.set_major_locator(ticker.LinearLocator(5))
+			ax_bottom.grid()
+			for tick in ax_bottom.yaxis.get_major_ticks():
+				tick.tick1line.set_visible(False)
+				tick.label1.set_visible(False)
+			plt.tight_layout()
+			save_current_figure(f"{filename}-source-histogram")
+
 	# plot a lineout
-	j_lineout = np.argmax(np.sum(source.values, axis=0))
-	scale = 1/np.max(source.values[:, j_lineout])
+	j_lineout = np.argmax(np.sum(source_chain.values, axis=(0, 1)))
+	line_chain = source_chain.values[:, :, j_lineout]
+	peak_chain = np.max(line_chain, axis=1, keepdims=True)
+	line_chain = line_chain/where(peak_chain != 0, peak_chain, 1)
 	plt.figure(figsize=RECTANGULAR_FIGURE_SIZE)
-	plt.plot(source.x.get_bins(), source.values[:, j_lineout]*scale)
-
-	# and fit a curve to it if it's a "disc"
-	if "disc" in filename:
-		def blurred_boxcar(x, A, d):
-			return A*special.erfc((x - 100)/d/sqrt(2))*special.erfc(-(x + 100)/d/sqrt(2))/4
-		r_centers = np.hypot(*source.domain.get_pixels())
-		popt, pcov = cast(tuple[list, list], optimize.curve_fit(
-			blurred_boxcar,
-			r_centers.ravel(), source.values.ravel(),
-			[np.max(source.values), 10]))
-		logging.info(f"  1σ resolution = {popt[1]} μm")
-		plt.plot(source.x.get_bins(), blurred_boxcar(source.x.get_bins(), *popt)*scale, '--')
-
+	plot_chained(source_chain.x.get_bins(), line_chain)
 	plt.grid()
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
 	plt.xlim(x0 - object_size, x0 + object_size)
-	plt.ylim(0, 2)
-	plt.yscale("symlog", linthresh=1e-2, linscale=1/log(10))
+	plt.ylim(-0.1, 1.1)
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source-lineout")
 
@@ -558,14 +614,14 @@ def apply_shading(vertex_locations, triangles):
 	return (light_colors.T@[east_light, north_light, sky_light]).T
 
 
-def plot_overlaid_contores(filename: str, sources: Image, contour_level: float,
+def plot_overlaid_contores(filename: str, source_chains: Image, contour_level: float,
                            projected_offset: Optional[tuple[float, float, float]],
                            projected_flow: Optional[tuple[float, float, float]],
                            projected_stalk: Optional[tuple[float, float, float]],
                            num_stalks: Optional[int]) -> None:
 	""" plot the plot with the multiple energy cuts overlaid
 	    :param filename: the extensionless filename with which to save the figure
-	    :param sources: a stack of all the reconstructed sources we have (x and y in cm)
+	    :param source_chains: an array of all the reconstructed source Markov chains we have (x and y in cm)
 	    :param contour_level: the contour level in (0, 1) to plot
 	    :param projected_offset: the capsule offset from TCC in μm, given as (x, y, z)
 	    :param projected_flow: the measured hot spot velocity in ?, given as (x, y, z)
@@ -573,20 +629,21 @@ def plot_overlaid_contores(filename: str, sources: Image, contour_level: float,
 	    :param num_stalks: the number of stalks to draw: 0, 1, or 2
 	"""
 	# calculate the centroid of the highest energy bin
-	x0, y0 = center_of_mass(sources[-1])
+	x0, y0 = center_of_mass(Image(source_chains.domain, mean(source_chains.values[-1], axis=0)))
 	# center on that centroid and convert the domain to μm
-	sources = Image(sources.domain.shifted(-x0, -y0).scaled(1e+4), sources.values)
+	source_chains = Image(source_chains.domain.shifted(-x0, -y0).scaled(1e+4), source_chains.values)
 
 	particle = filename.split("-")[-2]
-	colormaps = choose_colormaps(particle, sources.num_channels)  # TODO: choose colors, not colormaps
+	colormaps = choose_colormaps(particle, source_chains.shape[0])  # TODO: choose colors, not colormaps
 
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
-	for i in range(sources.num_channels):
+	for i, source_chain in enumerate(source_chains):
 		color = saturate(*colormaps[i].colors[-1], factor=2.0)
-		plt.contour(sources.x.get_bins(), sources.y.get_bins(),
-		            sources.values[i].T/np.max(sources.values[i]),
-		            levels=[contour_level], colors=[color], linewidths=[2])
+		contour_chained(
+			source_chain.x.get_bins(), source_chain.y.get_bins(),
+			source_chain.values[i]/np.max(source_chain.values[i], axis=(1, 2), keepdims=True),
+			levels=[contour_level], color=color)
 
 	if PLOT_OFFSET:
 		if projected_offset is not None:
@@ -613,3 +670,68 @@ def plot_overlaid_contores(filename: str, sources: Image, contour_level: float,
 	plt.ylabel("y (μm)")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source")
+
+
+def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90) -> None:
+	""" plot a line that has width because instead of just an image it's actually a chain of images
+	    :param x: the 1D array of x values
+	    :param y: the 2D array where each row is a potential set of y values
+	    :param credibility: the probability that a true y value falls within the shaded region at any given x value
+	"""
+	# we'll be using a maximum-density interval today, even tho it's slower than an equal-tailed one
+	lower_bounds, upper_bounds = empty(x.size), empty(x.size)
+	for j in range(x.size):
+		interval = credibility_interval(y[:, j], credibility)
+		lower_bounds[j] = interval.minimum
+		upper_bounds[j] = interval.maximum
+	# plot the shaded region
+	plt.fill_between(x, lower_bounds, upper_bounds, color="#f8adac", zorder=2.0)
+	# plot a representative line in the middle
+	i_best = argmin(np.sum((y - ((lower_bounds + upper_bounds)/2)[newaxis, :])**2))
+	plt.plot(x, y[i_best, :], color="#a31f34", linewidth=1.2, zorder=2.2)
+	plt.axhline(0, color="k", zorder=2.1, linewidth=.8)
+
+
+def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], levels: Iterable[float],
+                    color: str, opacity=.7, credibility=.90) -> None:
+	""" do a contour plot where the contours have width because instead of just an image z is
+	    actually a chain of images stacked on dimension 0.
+	    :param x: the 1D array of x values
+	    :param y: the 1D array of y values
+	    :param z: the 3D array where the chain goes along axis 0, x varies along axis 1, and y varies along axis 2
+	    :param levels: the levels at which to draw each thicc contour
+	    :param color: the six-digit hex string describing the contour color
+	    :param opacity: the opacity of the contours
+	    :param credibility: the probability that a true contour falls within the corresponding
+	                        shaded region at any given point
+	"""
+	# first, decide whether we can fit all these contours
+	contour_regions = []
+	any_overlap = False
+	for i, level in enumerate(levels):
+		probability_within_contour = np.count_nonzero(z > level, axis=0)/z.shape[0]
+		contour_regions.append(
+			(probability_within_contour > 1/2 - credibility/2) &
+			(probability_within_contour > 1/2 + credibility/2))
+		if i > 0:
+			if np.any(contour_regions[i - 1] & contour_regions[i]):
+				any_overlap = True
+	# if not, thin them out
+	if any_overlap:
+		levels = levels[0::2]
+	# then plot them
+	for level in levels:
+		outer_bound = measure.find_contours(quantile(z, 1/2 - credibility/2, axis=0), level)
+		inner_bound = measure.find_contours(quantile(z, 1/2 + credibility/2, axis=0), level)
+		path_sections = outer_bound + [loop[::-1, :] for loop in inner_bound]
+		path_points = []
+		path_commands = []
+		for loop in path_sections:
+			loop_x = x[0] + (x[1] - x[0])*loop[:, 0]
+			loop_y = y[0] + (y[1] - y[0])*loop[:, 1]
+			path_points += list(zip(loop_x, loop_y))
+			path_commands += [Path.MOVETO] + [Path.LINETO]*(len(loop) - 1)
+		if len(path_points) > 0:
+			plt.gca().add_patch(PathPatch(Path(path_points, path_commands),
+			                              facecolor=f"{color}{round(opacity*255):02x}",
+			                              edgecolor="none"))

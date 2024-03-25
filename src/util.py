@@ -4,21 +4,21 @@ import os
 import re
 import shutil
 import subprocess
-from math import pi, cos, sin, nan, sqrt, ceil, atan2, copysign
+from math import ceil
 from typing import Callable, Optional, Union
 
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
+from numpy import argmin, newaxis, moveaxis, empty, isnan, inf, pi, cos, sin, nan, sqrt, arctan2, copysign
 from numpy.typing import NDArray
 from pandas import DataFrame, isna
 from scipy import optimize, integrate, interpolate
 from skimage import measure
 
-from coordinate import Grid, LinSpace, rotation_matrix, Image
+from coordinate import Grid, LinSpace, rotation_matrix, Image, Interval
 
 Point = tuple[float, float]
-Interval = tuple[float, float]
 Filter = tuple[float, str]
 
 
@@ -154,11 +154,20 @@ def periodic_mean(values: np.ndarray, minimum: float, maximum: float):
 		return mean_angle/(2*pi)*(maximum - minimum) + minimum
 
 
-def center_of_mass(image: Image) -> NDArray[float]:
+def center_of_mass(image: Image) -> tuple[float, float]:
 	""" get the center of mass of a 2d function """
-	return np.array([
-		np.average(image.x.get_bins(), weights=image.values.sum(axis=1)),
-		np.average(image.y.get_bins(), weights=image.values.sum(axis=0))])
+	return (
+		(image.x.get_bins()*image.values.sum(axis=1)).sum()/image.values.sum(),
+		(image.y.get_bins()*image.values.sum(axis=0)).sum()/image.values.sum())
+
+
+def standard_deviation(image: Image) -> float:
+	""" get the radius of this distribution """
+	x0, y0 = center_of_mass(image)
+	x_bins, y_bins = image.domain.get_pixels()
+	r2 = (x_bins - x0)**2 + (y_bins - y0)**2
+	mean_r2 = (r2*image.values).sum()/image.values.sum()
+	return sqrt(mean_r2/2)
 
 
 def normalize(x):
@@ -178,10 +187,10 @@ def dilate(array: np.ndarray) -> np.ndarray:
 
 def median(x, weights=None):
 	""" weited median """
-	return quantile(x, .5, weights)
+	return weighted_quantile(x, .5, weights)
 
 
-def quantile(x, q, weights=None):
+def weighted_quantile(x, q, weights=None):
 	""" weited quantile """
 	if weights is None:
 		weights = np.ones(x.shape)
@@ -219,15 +228,6 @@ def nearest_value(exact: Union[float, NDArray[float]], options: NDArray[float]) 
 	return options[best_index]
 
 
-def downsample_1d(x_bins, N):
-	""" double the bin size of this 1d histogram """
-	assert N.shape == (x_bins.size - 1,)
-	n = (x_bins.size - 1)//2
-	x_bins = x_bins[::2]
-	Np = N[0:2*n:2] + N[1:2*n:2]
-	return x_bins, Np
-
-
 def downsample_2d(image: Image) -> Image:
 	""" double the bin size of this 2d histogram """
 	n = image.x.num_bins//2
@@ -241,15 +241,49 @@ def downsample_2d(image: Image) -> Image:
 	return Image(reduced_domain, reduced_values)
 
 
-def resample_and_rotate(old: Image, new_domain: Grid, angle: float) -> Image:
-	""" apply new bins to a 2d function, preserving quality and accuraccy as much as possible, and
-	    also rotate it about the new grid’s center by some number of radians. the result will sum
-	    to the same number as the old one.
+def resample_1d(old_values: NDArray[float], old_domain: LinSpace, new_domain: LinSpace) -> NDArray[float]:
+	""" apply new bins to a 1d function, preserving quality and accuracy as much as possible.
+	    the result will sum to the same number as the old one, minus any signal that got cropped out.
+	    if an nD-array is passed, it will be resampled on the last dimension.
 	"""
-	# convert to a density array
-	ρ_old = old.values/old.domain.pixel_area
+	# do this bilinear-type-thing
+	λ = max(old_domain.bin_width, new_domain.bin_width)
+	kernel_x = np.maximum(0, (1 - abs(
+		new_domain.get_bins()[:, newaxis] - old_domain.get_bins()[newaxis, :]
+	)/λ))
+	# make sure it's normalized so it doesn't change the magnitude of the function
+	kernel_x /= np.sum(kernel_x, axis=1, keepdims=True)
+	# apply the transform to the data
+	new_values = kernel_x @ old_values[..., :, newaxis]
+	assert new_values.shape[-1] == 1
+	return new_values[..., 0]
+
+
+def resample_2d(old: Image, new_domain: Grid) -> Image:
+	""" apply new bins to a 2d function, preserving quality and accuracy as much as possible.
+	    this function is a lot more efficient than resample_and_rotate_2d (but less general, obvy)
+	"""
+	data = old.values
+	# interpolate on the x axis (move the x dim to the last dim first)
+	data = moveaxis(
+		resample_1d(
+			moveaxis(
+				data,
+				-2, -1),
+			old.domain.x, new_domain.x),
+		-1, -2)
+	# interpolate on the y axis
+	data = resample_1d(data, old.domain.y, new_domain.y)
+	# convert back to an Image and you're done
+	return Image(new_domain, data)
+
+
+def resample_and_rotate_2d(old: Image, new_domain: Grid, angle: float) -> Image:
+	""" apply new bins to a 2d function, preserving quality and accuracy as much as possible, and
+	    also rotate it about the new grid’s center by some number of radians.
+	"""
 	# make an interpolator
-	f_old = interpolate.RegularGridInterpolator((old.x.get_bins(), old.y.get_bins()), ρ_old,
+	f_old = interpolate.RegularGridInterpolator((old.x.get_bins(), old.y.get_bins()), old.values,
 	                                            method="nearest", bounds_error=False)
 	# decide what points to sample
 	sampling = max(3, ceil(2*new_domain.pixel_width/old.domain.pixel_width))
@@ -263,9 +297,8 @@ def resample_and_rotate(old: Image, new_domain: Grid, angle: float) -> Image:
 	x_old =  cos(angle)*(x_new - x0) + sin(angle)*(y_new - y0) + x0
 	y_old = -sin(angle)*(x_new - x0) + cos(angle)*(y_new - y0) + y0
 	# interpolate and sum along the sampling axes
-	ρ_new = np.mean(f_old((x_old, y_old)), axis=(2, 3))
-	# convert back to counts
-	new_values = ρ_new*new_domain.pixel_area
+	new_values = np.mean(f_old((x_old, y_old)), axis=(2, 3))
+	# convert back to an Image
 	return Image(new_domain, new_values)
 
 
@@ -362,8 +395,8 @@ def decompose_2x2_into_intuitive_parameters(matrix: NDArray[float]
 		L, R = -L, -R
 	scale = sqrt(σ1*σ2)
 	skew = σ1/σ2 - 1
-	left_angle = atan2(L[1, 0], L[0, 0])
-	rite_angle = atan2(R[1, 0], R[0, 0])
+	left_angle = arctan2(L[1, 0], L[0, 0])
+	rite_angle = arctan2(R[1, 0], R[0, 0])
 	angle = left_angle + rite_angle
 	skew_angle = left_angle - rite_angle
 	if abs(angle) > pi:
@@ -431,14 +464,18 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 		return np.array([[μxx, μxy], [μxy, μyy]]), np.array([μx, μy])
 
 	else:
+		# first make sure there are contours to fit
+		if np.all(image.values == 0):
+			return np.full((2, 2), nan), np.full(2, nan)
+		elif np.all(image.values >= contour_level*np.max(image.values)):
+			return np.full((2, 2), inf), np.full(2, nan)
 		# calculate the contour(s)
 		contour_paths = measure.find_contours(image.values, contour_level*np.max(image.values))
-		# make sure we found at least one
-		if len(contour_paths) == 0:
-			return np.full((2, 2), nan), np.full(2, nan)
 		# choose which contour most likely represents the source
 		contour_quality = []
 		for i, path in enumerate(contour_paths):
+			if len(path) < 3:
+				continue  # under no circumstances will we accept a contour without at least 3 points
 			r_contour = np.hypot(path[:, 0] - image.x.num_edges/2, path[:, 1] - image.y.num_edges/2)
 			R_domain = min(image.x.num_edges/2, image.y.num_edges/2)
 			if np.all(r_contour > R_domain - 10):  # avoid contours that are close to the edge of the domain
@@ -448,7 +485,10 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 			else:
 				sussiness = 0
 			contour_quality.append((-sussiness, len(path), i, path))  # also avoid ones with few vertices
-		contour_path = max(contour_quality)[-1]
+		if len(contour_quality) == 0:
+			return np.full((2, 2), nan), np.full(2, nan)
+		else:
+			contour_path = max(contour_quality)[-1]
 		# convert the contour from index space to space space
 		x_contour = np.interp(contour_path[:, 0], np.arange(image.x.num_bins), image.x.get_bins())
 		y_contour = np.interp(contour_path[:, 1], np.arange(image.y.num_bins), image.y.get_bins())
@@ -462,6 +502,8 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 
 		# use analytic formulas to fit to a sinusoidal basis
 		p0 = np.sum(r*dθ)/pi/2
+		if p0 == 0:
+			raise ValueError(p0)
 
 		p1x = np.sum(r*np.cos(θ)*dθ)/pi + x0
 		p1y = np.sum(r*np.sin(θ)*dθ)/pi + y0
@@ -476,9 +518,24 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 		return covariance_from_harmonics(p0, p1, θ1, p2, θ2)
 
 
-def shape_parameters(image: Image, contour_level=None):
+def shape_parameters(image: Image, contour_level=None) -> tuple[float, tuple[float, float], tuple[float, float]]:
 	""" get some scalar parameters that describe the shape of this distribution. """
 	return harmonics_from_covariance(*fit_ellipse(image, contour_level))
+
+
+def shape_parameters_chained(image_chain: Image, contour_level=None) -> tuple[NDArray[float], tuple[NDArray[float], NDArray[float]], tuple[NDArray[float], NDArray[float]]]:
+	""" get some scalar parameters that describe the shape of each distribution in this chain """
+	p0_array = empty(image_chain.shape[0])
+	p1_array, θ1_array = empty(image_chain.shape[0]), empty(image_chain.shape[0])
+	p2_array, θ2_array = empty(image_chain.shape[0]), empty(image_chain.shape[0])
+	for i, image in enumerate(image_chain):  # TODO: wait, how does this work? I didn't make Image iterable.
+		p0, (p1, θ1), (p2, θ2) = shape_parameters(image, contour_level=contour_level)
+		p0_array[i] = p0
+		p1_array[i] = p1
+		θ1_array[i] = θ1
+		p2_array[i] = p2
+		θ2_array[i] = θ2
+	return p0_array, (p1_array, θ1_array), (p2_array, θ2_array)
 
 
 def line_search(func: Callable[[float], float], lower_bound: float, upper_bound: float,
@@ -536,6 +593,28 @@ def find_intercept(x: np.ndarray, y: np.ndarray):
 		return x[i] - y[i]/(y[i + 1] - y[i])*(x[i + 1] - x[i])
 	else:
 		raise ValueError("no intercept found")
+
+
+def credibility_interval(samples: NDArray[float], credibility: float) -> Interval:
+	""" compute the highest posterior probability density interval of the posterior sampled by these points
+	    – that is, the narrowest interval that contains at least the given fraction of the samples.
+	    you can call this function on data with nans, and it will try to exclude the nans from the interval,
+	    but if there aren't enuff finite data to fill the interval, the return value will be [nan, nan].
+	"""
+	interval_width = int(ceil(credibility*len(samples))) - 1
+	if len(samples) <= 1:
+		return Interval(samples[0], samples[0])
+	elif interval_width == 0:
+		return Interval(median(samples), median(samples))
+	else:
+		samples = samples[~isnan(samples)]
+		if len(samples) <= interval_width:
+			return Interval(nan, nan)
+		samples = np.sort(samples)
+		lower_bounds = samples[:-interval_width]
+		upper_bounds = samples[interval_width:]
+		highest_density = argmin(upper_bounds - lower_bounds)
+		return Interval(lower_bounds[highest_density], upper_bounds[highest_density])
 
 
 def execute_java(script: str, *args: str, classpath="out/production/kodi-analysis/") -> None:

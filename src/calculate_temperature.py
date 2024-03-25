@@ -8,6 +8,7 @@ from typing import Callable, Optional
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+from numpy import quantile
 from numpy.typing import NDArray
 from scipy import interpolate, integrate, optimize
 
@@ -17,7 +18,7 @@ from coordinate import Grid
 from hdf5_util import load_hdf5
 from image_plate import log_xray_sensitivity
 from plots import make_colorbar, save_current_figure
-from util import parse_filtering, print_filtering, Filter, median, quantile, shape_parameters, nearest_value
+from util import parse_filtering, print_filtering, Filter, median, shape_parameters, nearest_value
 
 NUM_SAMPLES = 100
 PLOT_STALK = False
