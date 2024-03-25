@@ -368,7 +368,7 @@ def plot_source(filename: str, source_chain: Image,
 	if source_chain.shape[0] > 1:
 		# plot a few random samples
 		fig, ax_grid = plt.subplots(3, 3, sharex="all", sharey="all", facecolor="none",
-		                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.1, 5))
+		                            gridspec_kw=dict(hspace=0, wspace=0), figsize=(5.15, 5))
 		k = 0
 		samples = np.random.choice(
 			arange(source_chain.shape[0]),
