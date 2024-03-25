@@ -685,7 +685,7 @@ def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90) -> None:
 		lower_bounds[j] = interval.minimum
 		upper_bounds[j] = interval.maximum
 	# plot the shaded region
-	plt.fill_between(x, lower_bounds, upper_bounds, color="#e78c91", zorder=2.0)
+	plt.fill_between(x, lower_bounds, upper_bounds, color="#f8adac", zorder=2.0)
 	# plot a representative line in the middle
 	i_best = argmin(np.sum((y - ((lower_bounds + upper_bounds)/2)[newaxis, :])**2))
 	plt.plot(x, y[i_best, :], color="#a31f34", linewidth=1.2, zorder=2.2)
