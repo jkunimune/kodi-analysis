@@ -315,7 +315,7 @@ def plot_source(filename: str, source_chain: Image,
 			plt.contour(source_chain.x.get_bins(), source_chain.y.get_bins(),
 			            (source_chain.values/peak_chain)[0, :, :].T,
 			            levels=np.linspace(0, 1, 6, endpoint=False)[1:],
-			            colors=["#ffffff"])
+			            colors=["#ffffff"], linewidths=1.0)
 		else:
 			contour_chained(source_chain.x.get_bins(), source_chain.y.get_bins(),
 			                source_chain.values/where(peak_chain != 0, peak_chain, 1),
