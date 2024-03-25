@@ -96,7 +96,6 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			"source_shape",
 			smoothing/guess.x.bin_width**2*guess.domain.pixel_area,
 			smoothing/guess.y.bin_width**2*guess.domain.pixel_area,
-			guess.domain.num_pixels,
 			logp=spacially_correlated_normal_logp,
 			moment=lambda *args, **kwargs: guess.values/guess_intensity,
 			initval=guess.values/guess_intensity,
@@ -183,13 +182,12 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	)
 
 
-def spacially_correlated_normal_logp(values, x_factor, y_factor, expected_sum):
+def spacially_correlated_normal_logp(values, x_factor, y_factor):
 	""" the log-probability for a set of points drawn from a multivariate normal distribution
-	    on order 1/values.size but individual pixels are correlated with their neibors.
+	    but individual pixels are correlated with their neibors.
 	    :param values: the 1×m×n array of pixel value logarithms at which to evaluate the probability
 	    :param x_factor: the coefficient by which to correlate horizontally adjacent pixels
 	    :param y_factor: the coefficient by which to correlate verticly adjacent pixels
-	    :param expected_sum: the desired median of the sum of the values
 	    :return: the log of the probability value, not absolutely normalized but normalized enuff
 	             that relative values are correct for variations in all hyperparameters
 	"""
@@ -197,12 +195,14 @@ def spacially_correlated_normal_logp(values, x_factor, y_factor, expected_sum):
 		raise NotImplementedError(
 			"I would love to support rectangular pixels but it makes the math harder to a surprising degree. tho "
 			"really, as long as the x and y factors remain proportional to each other, it shouldn't be a problem.")
-	log_prefactor = (values.size - 1)/2*tensor.log(x_factor)
-	total_μ, total_σ = expected_sum, expected_sum
-	sum_penalty = ((tensor.sum(values) - total_μ)/total_σ)**2/2
-	x_penalties = x_factor*(values[:, 0:-1, :] - values[:, 1:, :])**2
-	y_penalties = y_factor*(values[:, :, 0:-1] - values[:, :, 1:])**2
-	return log_prefactor - sum_penalty - (tensor.sum(x_penalties) + tensor.sum(y_penalties))
+	log_prefactor = values.size/2*tensor.log(x_factor)
+	x_penalty = x_factor*(tensor.sum(values[:, 0, :]**2) +
+	                      tensor.sum((values[:, 0:-1, :] - values[:, 1:, :])**2) +
+	                      tensor.sum(values[:, -1, :]**2))
+	y_penalty = y_factor*(tensor.sum(values[:, :, 0]**2) +
+	                      tensor.sum((values[:, :, 0:-1] - values[:, :, 1:])**2) +
+	                      tensor.sum(values[:, :, -1]**2))
+	return log_prefactor - (x_penalty + y_penalty)
 
 
 def complex_multiply(a, b):
