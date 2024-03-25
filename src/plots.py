@@ -252,11 +252,8 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	plt.grid()
 	plt.legend()
 	plt.ylim(
-		max(1.3*np.min(measurement.values/normalization) - 0.3*np.max(measurement.values/normalization),
-		    np.min(reconstruction.values/normalization),
-		    0),
-		min(1.1*np.max(measurement.values/normalization) - 0.1*np.min(measurement.values/normalization),
-		    np.max(reconstruction.values/normalization)),
+		max(0, 1.3*np.min(measurement.values/normalization) - 0.3*np.max(measurement.values/normalization)),
+		1.1*np.max(measurement.values/normalization) - 0.1*np.min(measurement.values/normalization),
 	)
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
