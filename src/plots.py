@@ -8,6 +8,7 @@ import numpy as np
 from matplotlib import colors, pyplot as plt, ticker
 from matplotlib.patches import PathPatch
 from matplotlib.path import Path
+from matplotlib.ticker import MaxNLocator
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin, size, where, arange, quantile
 from numpy.typing import NDArray
@@ -352,6 +353,8 @@ def plot_source(filename: str, source_chain: Image,
 		plt.title(f"$h\\nu$ ≥ {energies.minimum:.0f} keV")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
+	plt.gca().xaxis.set_major_locator(MaxNLocator(nbins=6, steps=[1, 2, 5, 10]))
+	plt.gca().yaxis.set_major_locator(MaxNLocator(nbins=6, steps=[1, 2, 5, 10]))
 	plt.axis([x0 - object_size, x0 + object_size,
 	          y0 - object_size, y0 + object_size])
 	plt.tight_layout()
