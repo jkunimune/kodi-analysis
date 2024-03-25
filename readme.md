@@ -63,7 +63,7 @@ The typical workflow for doing 2D reconstructions looks like this:
      The spaces are optional.
 3. If you are analyzing TIM-based x-ray data, you must run `src/split_ip_scans.py`
    to convert the multiple-scan-files to individual image plate scans.
-4. Run `python src/reconstruct_2d.py shot_number [--show] [--skip] [--proton]` with the shots you want to analyze passed as an argument.
+4. Run `python src/reconstruct_2d.py shot_number [--show] [--skip] [--proton] [--MCMC]` with the shots you want to analyze passed as an argument.
    This looks for the `.txt` files in the `input/scans/` directory and performs the reconstruction.
    - The first argument should be a comma-separated list of shot numbers.
      You can also specify specific lines of sight to analyze; for example, `95520tim4,95521srte`
@@ -73,6 +73,8 @@ The typical workflow for doing 2D reconstructions looks like this:
      skipping the actual reconstruction algorithm.
    - The `--proton` flag tell it that you’re analyzing charged particles that don’t follow a knock-on deuteron spectrum.
      This is important so that it doesn’t try to group the signal into < 6 MeV and > 9 MeV parts by their diameters.
+   - The `--MCMC` flag tells it to do uncertainty quantification.  It will take a lot longer and generate a few extra plots.
+     If you're running on a machine with GPUs, I recommend trying it with the `--GPU` option as well, which might make it faster.
 5. The only input you need to provide once it starts running is the data region (and that’s only if you use `--show`).
    When it asks you to "select" a "region", simply click on the plot to draw a polygon enclosing the good signal region,
    and ideally excluding any scratches or fiducials.
