@@ -96,11 +96,11 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			"source_shape",
 			smoothing/guess.x.bin_width**2*guess.domain.pixel_area,
 			smoothing/guess.y.bin_width**2*guess.domain.pixel_area,
-			logp=spacially_correlated_normal_logp,
-			moment=lambda *args, **kwargs: guess.values/guess_intensity,
-			initval=guess.values/guess_intensity,
+			logp=spacially_correlated_exp_normal_logp,
+			moment=lambda *args, **kwargs: np.log(np.maximum(1e-3, guess.values/guess_intensity)),
+			initval=np.log(np.maximum(1e-3, guess.values/guess_intensity)),
 			shape=guess.shape)
-		source = Deterministic("source", source_shape*guess_intensity)
+		source = Deterministic("source", tensor.exp(source_shape)*guess_intensity)
 		source_spectrum = Deterministic(
 			"source_spectrum",
 			tensor.maximum(-limit, tensor.minimum(limit, tensor.fft.rfft(
@@ -182,10 +182,10 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	)
 
 
-def spacially_correlated_normal_logp(values, x_factor, y_factor):
-	""" the log-probability for a set of points drawn from a multivariate normal distribution
-	    but individual pixels are correlated with their neibors.
-	    :param values: the 1×m×n array of pixel value logarithms at which to evaluate the probability
+def spacially_correlated_exp_normal_logp(log_values, x_factor, y_factor):
+	""" the log-probability for a set of points whose exponentials are drawn from a multivariate
+	    normal distribution but individual pixels are correlated with their neibors.
+	    :param log_values: the 1×m×n array of pixel value logarithms at which to evaluate the probability
 	    :param x_factor: the coefficient by which to correlate horizontally adjacent pixels
 	    :param y_factor: the coefficient by which to correlate verticly adjacent pixels
 	    :return: the log of the probability value, not absolutely normalized but normalized enuff
@@ -195,7 +195,8 @@ def spacially_correlated_normal_logp(values, x_factor, y_factor):
 		raise NotImplementedError(
 			"I would love to support rectangular pixels but it makes the math harder to a surprising degree. tho "
 			"really, as long as the x and y factors remain proportional to each other, it shouldn't be a problem.")
-	log_prefactor = values.size/2*tensor.log(x_factor)
+	values = tensor.exp(log_values)
+	log_prefactor = tensor.sum(log_values) + values.size/2*tensor.log(x_factor)
 	x_penalty = x_factor*(tensor.sum(values[:, 0, :]**2) +
 	                      tensor.sum((values[:, 0:-1, :] - values[:, 1:, :])**2) +
 	                      tensor.sum(values[:, -1, :]**2))
