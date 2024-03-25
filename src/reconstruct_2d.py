@@ -357,9 +357,12 @@ def analyze_scan(input_filename: str,
 	             pictures have been taken and also saved.
 	"""
 	# start by deleting any plots previusly generated for this scan
-	for filename in os.listdir(f"results/plots/{shot}"):
-		if filename.startswith(f"{los}-{particle}-{detector_index}"):
-			os.remove(os.path.join(f"results/plots/{shot}", filename))
+	try:
+		for filename in os.listdir(f"results/plots/{shot}"):
+			if filename.startswith(f"{los}-{particle}-{detector_index}"):
+				os.remove(os.path.join(f"results/plots/{shot}", filename))
+	except FileNotFoundError:
+		pass
 
 	# parse the filter stacks
 	if particle == "proton" or particle == "deuteron":
