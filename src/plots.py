@@ -10,7 +10,8 @@ from matplotlib.patches import PathPatch
 from matplotlib.path import Path
 from matplotlib.ticker import MaxNLocator
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from numpy import isfinite, pi, sin, cos, log, mean, inf, median, empty, newaxis, argmin, size, where, arange, quantile
+from numpy import isfinite, pi, sin, cos, mean, inf, median, empty, newaxis, argmin, size, where, arange, quantile, \
+	hypot
 from numpy.typing import NDArray
 from scipy import interpolate
 from skimage import measure
@@ -306,12 +307,16 @@ def plot_source(filename: str, source_chain: Image,
 	# plot the mean source as a pseudocolor
 	plt.figure(figsize=SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
+	X, Y = source_chain.domain.get_pixels()
+	peak_chain = np.max(
+		source_chain.values, axis=(1, 2), keepdims=True,
+		where=hypot(X - x0, Y - y0) < source_chain.x.half_range - source_chain.domain.pixel_width, initial=-inf,
+	)
 	plt.imshow(mean(source_chain.values, axis=0).T, extent=source_chain.domain.extent, origin="lower",
-	           cmap=cmap, vmin=0, interpolation="bilinear")
+	           cmap=cmap, vmin=0, vmax=np.mean(peak_chain))
 
 	# plot the contours with some Bayesian width to them
 	if PLOT_SOURCE_CONTOURS:
-		peak_chain = np.max(source_chain.values, axis=(1, 2), keepdims=True)
 		if source_chain.shape[0] == 1:
 			plt.contour(source_chain.x.get_bins(), source_chain.y.get_bins(),
 			            (source_chain.values/peak_chain)[0, :, :].T,
