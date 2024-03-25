@@ -390,6 +390,7 @@ def plot_source(filename: str, source_chain: Image,
 		# plot a histogram of the source parameters
 		if np.any(isfinite(object_sizes) & isfinite(p2s)):
 			fig, (ax_top, ax_bottom) = plt.subplots(2, 1, facecolor="none", figsize=RECTANGULAR_FIGURE_SIZE)
+			ax_top.locator_params(steps=[1, 2, 5, 10])
 			ax_top.hist(object_sizes, bins=31, zorder=2, color="#a31f34")
 			ax_top.set_xlabel("17% contour radius (μm)")
 			ax_top.yaxis.set_major_locator(ticker.LinearLocator(5))
@@ -397,6 +398,7 @@ def plot_source(filename: str, source_chain: Image,
 			for tick in ax_top.yaxis.get_major_ticks():
 				tick.tick1line.set_visible(False)
 				tick.label1.set_visible(False)
+			ax_bottom.locator_params(steps=[1, 2, 5, 10])
 			ax_bottom.hist(p2s/object_sizes*100, bins=31, zorder=2, color="#a31f34")
 			ax_bottom.set_xlabel("P2 asymmetry (%)")
 			ax_bottom.yaxis.set_major_locator(ticker.LinearLocator(5))
