@@ -420,7 +420,7 @@ def plot_source(filename: str, source_chain: Image,
 	plt.xlabel("x (μm)")
 	plt.ylabel("Intensity (normalized)")
 	plt.xlim(x0 - object_size, x0 + object_size)
-	plt.ylim(-0.1, 1.1)
+	plt.ylim(0.0, 1.1)
 	plt.tight_layout()
 	save_current_figure(f"{filename}-source-lineout")
 
@@ -696,7 +696,6 @@ def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90) -> None:
 	# plot a representative line in the middle
 	i_best = argmin(np.sum((y - ((lower_bounds + upper_bounds)/2)[newaxis, :])**2))
 	plt.plot(x, y[i_best, :], color="#a31f34", linewidth=1.2, zorder=2.2)
-	plt.axhline(0, color="k", zorder=2.1, linewidth=.8)
 
 
 def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], levels: Iterable[float],
