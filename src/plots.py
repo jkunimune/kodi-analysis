@@ -316,17 +316,18 @@ def plot_source(filename: str, source_chain: Image,
 	           cmap=cmap, vmin=0, vmax=np.mean(peak_chain))
 
 	# plot the contours with some Bayesian width to them
+	levels = np.linspace(0, 1, 6, endpoint=False)[1:]
 	if PLOT_SOURCE_CONTOURS:
 		if source_chain.shape[0] == 1:
-			plt.contour(source_chain.x.get_bins(), source_chain.y.get_bins(),
-			            (source_chain.values/peak_chain)[0, :, :].T,
-			            levels=np.linspace(0, 1, 6, endpoint=False)[1:],
-			            colors=["#ffffff"], linewidths=1.0)
+			plt.contour(
+				source_chain.x.get_bins(), source_chain.y.get_bins(),
+				(source_chain.values/peak_chain)[0, :, :].T,
+				levels=levels, colors=["#ffffff"], linewidths=1.2)
 		else:
-			contour_chained(source_chain.x.get_bins(), source_chain.y.get_bins(),
-			                source_chain.values/where(peak_chain != 0, peak_chain, 1),
-			                levels=np.linspace(0, 1, 6, endpoint=False)[1:],
-			                color="#ffffff")
+			levels = contour_chained(
+				source_chain.x.get_bins(), source_chain.y.get_bins(),
+				source_chain.values/where(peak_chain != 0, peak_chain, 1),
+				levels=levels, color="#ffffff")
 	if PLOT_OFFSET:
 		if projected_offset is not None:
 			x_off, y_off, z_off = projected_offset
@@ -377,9 +378,16 @@ def plot_source(filename: str, source_chain: Image,
 			for ax in ax_row:
 				if k < len(samples):
 					ax.imshow(
-						source_chain[samples[k]].values.T, extent=source_chain[samples[k]].domain.extent,
+						source_chain[samples[k]].values.T,
+						extent=source_chain[samples[k]].domain.extent,
 						origin="lower", cmap=cmap,
 						vmin=0, vmax=np.max(source_chain.values[samples, :, :]))
+					if PLOT_SOURCE_CONTOURS:
+						ax.contour(
+							source_chain.x.get_bins(), source_chain.y.get_bins(),
+							source_chain[samples[k]].values.T,
+							levels=levels*peak_chain[samples[k], 0, 0],
+							colors=["#ffffff"], linewidths=0.8)
 				ax.set_facecolor("black")
 				ax.axis([x0 - object_size, x0 + object_size,
 				         y0 - object_size, y0 + object_size])
@@ -698,8 +706,8 @@ def plot_chained(x: NDArray[float], y: NDArray[float], credibility=.90) -> None:
 	plt.plot(x, y[i_best, :], color="#a31f34", linewidth=1.2, zorder=2.2)
 
 
-def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], levels: Iterable[float],
-                    color: str, opacity=.7, credibility=.90) -> None:
+def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], levels: NDArray[float],
+                    color: str, opacity=.7, credibility=.90) -> NDArray[float]:
 	""" do a contour plot where the contours have width because instead of just an image z is
 	    actually a chain of images stacked on dimension 0.
 	    :param x: the 1D array of x values
@@ -710,6 +718,7 @@ def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], lev
 	    :param opacity: the opacity of the contours
 	    :param credibility: the probability that a true contour falls within the corresponding
 	                        shaded region at any given point
+	    :return: the contours you ended up plotting
 	"""
 	# first, decide whether we can fit all these contours
 	contour_regions = []
@@ -741,3 +750,5 @@ def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], lev
 			plt.gca().add_patch(PathPatch(Path(path_points, path_commands),
 			                              facecolor=f"{color}{round(opacity*255):02x}",
 			                              edgecolor="none"))
+	# tell us how many levels you ended up plotting
+	return levels
