@@ -1052,7 +1052,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		output = load_source(shot, los, f"{particle}-{cut_index[0]}", filter_stack, energies)
 		residual, = load_hdf5(
 			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra-residual", ["N"])
-		reconstructed_image = Image(image.domain, image.values - residual.T)  # remember to convert from (y,x) indexing to (i,j)
+		reconstructed_image = Image(image.domain, image.values + residual.T)  # remember to convert from (y,x) indexing to (i,j)
 
 	# calculate and print the main shape parameters
 	yeeld = credibility_interval(
