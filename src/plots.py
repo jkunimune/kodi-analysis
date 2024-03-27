@@ -293,7 +293,7 @@ def plot_source(filename: str, source_chain: Image,
 	object_sizes, (r1s, θ1s), (p2s, θ2s) = shape_parameters_chained(source_chain, contour_level=.17)
 	object_size = quantile(
 		where(isfinite(object_sizes), object_sizes, source_chain.domain.x.half_range), .95)
-	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.2*object_size, initial=FRAME_SIZES[-1])
+	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.1*object_size, initial=FRAME_SIZES[-1])
 	if np.any(isfinite(r1s) & isfinite(θ1s)):
 		x0s, y0s = r1s*cos(θ1s), r1s*sin(θ1s)
 		x0 = median(x0s[isfinite(x0s)])
