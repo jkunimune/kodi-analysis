@@ -36,6 +36,7 @@ PLOT_FLOW = True
 PLOT_STALK = False
 
 MAX_NUM_PIXELS = 40000
+AXESLESS_SQUARE_FIGURE_SIZE = (5.0, 5.0)
 SQUARE_FIGURE_SIZE = (5.5, 4.6)
 RECTANGULAR_FIGURE_SIZE = (6.5, 3.7)
 LONG_FIGURE_SIZE = (8, 5)
@@ -368,7 +369,7 @@ def plot_source(filename: str, source_chain: Image,
 
 	if source_chain.shape[0] > 1:
 		# plot a few random samples
-		fig, ax_grid = plt.subplots(3, 3, facecolor="none", figsize=(5.2, 5),
+		fig, ax_grid = plt.subplots(3, 3, facecolor="none", figsize=AXESLESS_SQUARE_FIGURE_SIZE,
 		                            gridspec_kw=dict(hspace=0, wspace=0))
 		k = 0
 		samples = np.random.choice(
