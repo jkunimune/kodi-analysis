@@ -369,7 +369,7 @@ def plot_source(filename: str, source_chain: Image,
 	if source_chain.shape[0] > 1:
 		# plot a few random samples
 		fig, ax_grid = plt.subplots(3, 3, facecolor="none", figsize=(5.2, 5),
-		                            gridspec_kw=dict(top=.97, bottom=.10, hspace=0, wspace=0))
+		                            gridspec_kw=dict(hspace=0, wspace=0))
 		k = 0
 		samples = np.random.choice(
 			arange(source_chain.shape[0]),
@@ -392,6 +392,8 @@ def plot_source(filename: str, source_chain: Image,
 				ax.axis("equal")
 				ax.axis([x0 - object_size, x0 + object_size,
 				         y0 - object_size, y0 + object_size])
+				ax.set_xticks([])
+				ax.set_yticks([])
 				k += 1
 		plt.tight_layout()
 		save_current_figure(f"{filename}-source-chain")
