@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from typing import Optional, Union, Iterable
+from typing import Optional, Union
 
 import matplotlib
 import numpy as np
@@ -313,7 +313,7 @@ def plot_source(filename: str, source_chain: Image,
 		source_chain.values, axis=(1, 2), keepdims=True,
 		where=hypot(X - x0, Y - y0) < source_chain.x.half_range - source_chain.domain.pixel_width, initial=-inf,
 	)
-	plt.imshow(mean(source_chain.values, axis=0).T, extent=source_chain.domain.extent, origin="lower",
+	plt.imshow(median(source_chain.values, axis=0).T, extent=source_chain.domain.extent, origin="lower",
 	           cmap=cmap, vmin=0, vmax=np.mean(peak_chain))
 
 	# plot the contours with some Bayesian width to them
