@@ -154,8 +154,8 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			cores_to_use = 4
 		else:
 			cores_to_use = cores_available
-		chains_to_sample = max(3, cores_to_use)
-		draws_per_chain = int(round(6000/chains_to_sample))
+		chains_to_sample = max(4, cores_to_use)
+		draws_per_chain = int(round(8000/chains_to_sample))
 		if use_gpu:
 			kwargs = dict(nuts_sampler="numpyro", nuts_sampler_kwargs=dict(chain_method="vectorized"))
 		else:
