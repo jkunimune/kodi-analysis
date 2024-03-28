@@ -52,7 +52,7 @@ COLORMAPS: dict[str, list[tuple[int, str]]] = {
 }
 
 
-def save_current_figure(filename: str, filetypes=('png', 'eps')) -> None:
+def save_current_figure(filename: str, filetypes=('png', 'eps', 'svg')) -> None:
 	os.makedirs(os.path.dirname(f"results/plots/{filename}"), exist_ok=True)
 	for filetype in filetypes:
 		extension = filetype[1:] if filetype.startswith('.') else filetype
