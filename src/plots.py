@@ -372,9 +372,9 @@ def plot_source(filename: str, source_chain: Image,
 		fig, ax_grid = plt.subplots(3, 3, facecolor="none", figsize=AXESLESS_SQUARE_FIGURE_SIZE,
 		                            gridspec_kw=dict(hspace=0, wspace=0))
 		k = 0
-		samples = np.random.choice(
+		samples = np.sort(np.random.choice(
 			arange(source_chain.shape[0]),
-			min(source_chain.shape[0], size(ax_grid)), replace=False)
+			min(source_chain.shape[0], size(ax_grid)), replace=False))
 		for ax_row in ax_grid:
 			for ax in ax_row:
 				if k < len(samples):
@@ -389,6 +389,10 @@ def plot_source(filename: str, source_chain: Image,
 							source_chain[samples[k]].values.T,
 							levels=levels*peak_chain[samples[k], 0, 0],
 							colors=["#ffffff"], linewidths=0.8)
+				ax.text(.98, .01, f"#{samples[k] + 1}",
+				        color="w", size=12,
+				        horizontalalignment="right", verticalalignment="bottom",
+				        transform=ax.transAxes)
 				ax.set_facecolor("black")
 				ax.axis("equal")
 				ax.axis([x0 - object_size, x0 + object_size,
