@@ -1061,9 +1061,9 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	p0 = credibility_interval(p0_array/1e-4, .9)
 	p2 = credibility_interval(p2_array/p0_array, .9)
 	θ2 = credibility_interval(θ2_array, .9)
-	logging.info(f"  ∫B dA dσ = {yeeld.center:.4g} ± {yeeld.width/2:.4g} deuterons")
-	logging.info(f"  {contour:.0%} P0   = ({p0.center:.2f} ± {p0.width/2:.2f}) μm")
-	logging.info(f"  {contour:.0%} P2   = ({p2.center*100:.2f} ± {p2.width/2*100:.2f})%, "
+	logging.info(f"  ∫B dA dσ = {yeeld.center:.4g} ± {yeeld.width/2:.4g} deuterons (90% sure)")
+	logging.info(f"  {contour:.0%} P0   = ({p0.center:.2f} ± {p0.width/2:.2f}) μm (90% sure)")
+	logging.info(f"  {contour:.0%} P2   = ({p2.center*100:.2f} ± {p2.width/2*100:.2f})% (90% sure), "
 	             f"θ = {np.degrees(θ2.center):.1f}°")
 
 	# save and plot the results
