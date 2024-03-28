@@ -97,8 +97,8 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			smoothing/guess.x.bin_width**2*guess.domain.pixel_area,
 			smoothing/guess.y.bin_width**2*guess.domain.pixel_area,
 			logp=spacially_correlated_exp_normal_logp,
-			moment=lambda *args, **kwargs: np.log(np.maximum(1e-3, guess.values/guess_intensity)),
-			initval=np.log(np.maximum(1e-3, guess.values/guess_intensity)),
+			# moment=lambda *args, **kwargs: np.log(np.maximum(1e-3, guess.values/guess_intensity)),
+			# initval=np.log(np.maximum(1e-3, guess.values/guess_intensity)),
 			shape=guess.shape)
 		source = Deterministic("source", tensor.exp(source_shape)*guess_intensity)
 		source_spectrum = Deterministic(
