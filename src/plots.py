@@ -735,7 +735,7 @@ def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], lev
 		probability_within_contour = np.count_nonzero(z > level, axis=0)/z.shape[0]
 		contour_regions.append(
 			(probability_within_contour > 1/2 - credibility/2) &
-			(probability_within_contour > 1/2 + credibility/2))
+			(probability_within_contour < 1/2 + credibility/2))
 		if i > 0:
 			if np.any(contour_regions[i - 1] & contour_regions[i]):
 				any_overlap = True
