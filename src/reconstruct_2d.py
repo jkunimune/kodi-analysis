@@ -1006,9 +1006,9 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 				noise=estimated_data_variance,
 				use_gpu=use_gpu,
 			)
+			save_current_figure(f"{shot}/{los}-{particle}-{cut_index}-trace")
 		else:
 			source.values = np.expand_dims(source.values, axis=0)
-		save_current_figure(f"{shot}/{los}-{particle}-{cut_index}-trace")
 		logging.info("  postprocessing the results...")
 
 		# since the true problem is not one of deconvolution, but inverted deconvolution, rotate 180°
