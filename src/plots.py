@@ -174,11 +174,11 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 			plt.plot(dx + r0*np.cos(T), dy + r0*np.sin(T), 'k--')
 	plt.axis('square')
 	if "proton" in filename:
-		plt.title("D³He protons")
+		plt.title("Proton tracks per bin")
 	elif "deuteron" in filename:
 		plt.title(f"$E_\\mathrm{{d}}$ = {energies.minimum:.1f} – {min(12.5, energies.maximum):.1f} MeV")
 	elif "xray" in filename:
-		plt.title(f"$h\\nu$ ≥ {energies.minimum:.0f} keV")
+		plt.title("Measured luminescence")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
 	make_colorbar(0, min(vmax, np.max(density)), "Counts", facecolor="#000")
@@ -353,11 +353,11 @@ def plot_source(filename: str, source_chain: Image,
 	plt.gca().set_facecolor("#000")
 	plt.axis('square')
 	if particle == "proton":
-		plt.title("D³He protons")
+		plt.title("Proton emission")
 	elif particle == "deuteron":
 		plt.title(f"$E_\\mathrm{{d}}$ = {energies.minimum:.1f} – {min(12.5, energies.maximum):.1f} MeV")
 	elif particle == "xray":
-		plt.title(f"$h\\nu$ ≥ {energies.minimum:.0f} keV")
+		plt.title("Line-integrated intensity")
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
 	plt.gca().xaxis.set_major_locator(MaxNLocator(nbins=6, steps=[1, 2, 5, 10]))
