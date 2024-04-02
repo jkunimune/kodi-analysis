@@ -27,8 +27,9 @@ SHOW_ONE_DRAW = False  # whether to show the user one set of images to verify th
 def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
                pixel_area: Image, source_region: NDArray[bool],
                noise: Union[str, Image], use_gpu: bool) -> Image:
-	""" perform Hamiltonian Monte Carlo to estimate the distribution of images that might produce F when
-	    convolved with q.  a background level will be automatically inferred to go along with the noise.
+	""" perform Hamiltonian Monte Carlo to estimate the distribution of sources that satisfy
+ 	        convolve2d(source, kernel, mode="full") + background ~= data
+	    a background level will be automatically inferred to go along with the noise.
 		:param data: the full convolution (counts/bin)
 		:param kernel: the point-spread function
 		:param guess: an initial guess that is a potential solution
