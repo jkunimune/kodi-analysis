@@ -974,7 +974,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		umbra = (image_plicity.values > 0) & (r_image_pixels < max(M*rA/2, M*rA - (r_max - r_psf)))
 		umbra_value = np.mean(image.values/positive_image_plicity, where=umbra)
 		umbra_variance = np.mean((image.values - umbra_value*positive_image_plicity)**2/positive_image_plicity, where=umbra)
-		estimated_data_variance = image.values/umbra_value*umbra_variance
+		estimated_data_variance = np.sqrt(image.values/umbra_value)*umbra_variance
 
 		if sqrt(umbra_variance) < umbra_value/500:
 			raise DataError("I think this image is saturated. I'm not going to try to reconstruct it. :(")

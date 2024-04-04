@@ -27,8 +27,9 @@ SHOW_ONE_DRAW = False  # whether to show the user one set of images to verify th
 def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
                pixel_area: Image, source_region: NDArray[bool],
                noise: Union[str, Image], use_gpu: bool) -> Image:
-	""" perform Hamiltonian Monte Carlo to estimate the distribution of images that might produce F when
-	    convolved with q.  a background level will be automatically inferred to go along with the noise.
+	""" perform Hamiltonian Monte Carlo to estimate the distribution of sources that satisfy
+ 	        convolve2d(source, kernel, mode="full") + background ~= data
+	    a background level will be automatically inferred to go along with the noise.
 		:param data: the full convolution (counts/bin)
 		:param kernel: the point-spread function
 		:param guess: an initial guess that is a potential solution
@@ -92,7 +93,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		# latent variables
 		smoothing = LogNormal("smoothing", mu=0, sigma=3)
 		# prior
-		source_shape = DensityDist(  # note that the prior we sample can produce negative values
+		source_shape = DensityDist(  # sample the logarithms of the pixel values so we don't get negative pixels
 			"source_shape",
 			smoothing/guess.x.bin_width**2*guess.domain.pixel_area,
 			smoothing/guess.y.bin_width**2*guess.domain.pixel_area,
@@ -101,7 +102,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			# initval=np.log(np.maximum(1e-3, guess.values/guess_intensity)),
 			shape=guess.shape)
 		source = Deterministic("source", tensor.exp(source_shape)*guess_intensity)
-		source_spectrum = Deterministic(
+		source_spectrum = Deterministic(  # clip extreme values when you FFT it to suppress numeric instabilities
 			"source_spectrum",
 			tensor.maximum(-limit, tensor.minimum(limit, tensor.fft.rfft(
 				pad_with_zeros(source, guess.shape, data.shape)
