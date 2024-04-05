@@ -36,8 +36,9 @@ PLOT_FLOW = True
 PLOT_STALK = False
 
 MAX_NUM_PIXELS = 40000
-AXESLESS_SQUARE_FIGURE_SIZE = (5.0, 5.0)
-SQUARE_FIGURE_SIZE = (5.5, 4.6)
+SQUARE_GRID_FIGURE_SIZE = (5.6, 5.6)
+TRUE_SQUARE_FIGURE_SIZE = (4.5, 4.5)
+ALMOST_SQUARE_FIGURE_SIZE = (5.6, 4.5)
 RECTANGULAR_FIGURE_SIZE = (6.5, 3.7)
 LONG_FIGURE_SIZE = (8, 5)
 
@@ -121,7 +122,7 @@ def plot_image_grid(filename: str, full_image: Image, crop_image: Image, contour
 	""" plot the raw data, zoomed into the relevant region of the detector plane, marking which
 	    apertures are being used and where you think they are.
 	"""
-	plt.figure(figsize=SQUARE_FIGURE_SIZE)
+	plt.figure(figsize=ALMOST_SQUARE_FIGURE_SIZE)
 	plt.imshow(full_image.values.T, extent=full_image.domain.extent, origin="lower",
 	           vmin=0, vmax=np.nanquantile(crop_image.values, .999), cmap=CMAP["viridissimus"])
 	θ = np.linspace(0, 2*pi, 145)
@@ -165,7 +166,7 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 	vmax = max(np.nanquantile(density, (density.size - 6)/density.size),
 	           1.3*np.nanquantile(density, 1 - A_circle/A_square/2) - 0.3*np.min(density))
 	vmin = max(0, 1.4*np.min(density) - 0.4*np.max(density))
-	plt.figure(figsize=SQUARE_FIGURE_SIZE)
+	plt.figure(figsize=ALMOST_SQUARE_FIGURE_SIZE)
 	plt.imshow(density.T, extent=counts.domain.extent, origin="lower", cmap=CMAP["viridissimus"],
 	           vmin=vmin, vmax=vmax)
 	T = np.linspace(0, 2*pi)
@@ -225,7 +226,7 @@ def save_and_plot_overlaid_penumbra(filename: str,
 		measurement = downsample_2d(measurement)
 		image_plicity = downsample_2d(image_plicity)
 
-	plt.figure(figsize=SQUARE_FIGURE_SIZE)
+	plt.figure(figsize=ALMOST_SQUARE_FIGURE_SIZE)
 	# calculating (x-y)/x is a little tricky since I'm trying hard to avoid dividing by zero
 	relative_error = np.empty(reconstruction.shape)
 	valid = (reconstruction.values != 0)
@@ -306,7 +307,7 @@ def plot_source(filename: str, source_chain: Image,
 	cmap = choose_colormaps(particle, num_colors)[color_index]
 
 	# plot the mean source as a pseudocolor
-	plt.figure(figsize=SQUARE_FIGURE_SIZE)
+	plt.figure(figsize=TRUE_SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10])
 	X, Y = source_chain.domain.get_pixels()
 	peak_chain = np.max(
@@ -369,7 +370,7 @@ def plot_source(filename: str, source_chain: Image,
 
 	if source_chain.shape[0] > 1:
 		# plot a few random samples
-		fig, ax_grid = plt.subplots(3, 3, facecolor="none", figsize=AXESLESS_SQUARE_FIGURE_SIZE,
+		fig, ax_grid = plt.subplots(3, 3, facecolor="none", figsize=SQUARE_GRID_FIGURE_SIZE,
 		                            gridspec_kw=dict(hspace=0, wspace=0))
 		k = 0
 		samples = np.sort(np.random.choice(
@@ -469,7 +470,7 @@ def save_and_plot_source_sets(shot_number: str, energy_bins: list[Union[list[Int
 			maximum = np.amax([image_set[l][h, :, :] for image_set in image_sets])
 			for i, image_set in enumerate(image_sets):
 				minimum = min(0, np.min(image_set[l][h]))
-				plt.figure(figsize=SQUARE_FIGURE_SIZE)
+				plt.figure(figsize=ALMOST_SQUARE_FIGURE_SIZE)
 				plt.pcolormesh(x[l], y[l], image_set[l][h, :, :].T,
 				               vmin=minimum,
 				               vmax=maximum,
@@ -659,7 +660,7 @@ def plot_overlaid_contores(filename: str, source_chains: Image, contour_level: f
 	particle = filename.split("-")[-2]
 	colormaps = choose_colormaps(particle, source_chains.shape[0])  # TODO: choose colors, not colormaps
 
-	plt.figure(figsize=SQUARE_FIGURE_SIZE)
+	plt.figure(figsize=ALMOST_SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
 	for i, source_chain in enumerate(source_chains):
 		color = saturate(*colormaps[i].colors[-1], factor=2.0)
