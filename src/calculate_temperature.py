@@ -57,8 +57,8 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 
 			while len(emissions[-1]) < len(emissions[0]):
 				emissions[-1].append(nan)  # pad this to force it to be rectangular
-			stalk_position = shot_table.loc[shot]["TPS"]
-			num_stalks = shot_table.loc[shot]["stalks"]
+			stalk_position = shot_table.loc[shot].get("TPS", 2)
+			num_stalks = shot_table.loc[shot].get("stalks", 1)
 
 			# calculate the temperature!
 			temperature, temperature_error = analyze(
