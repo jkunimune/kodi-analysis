@@ -406,7 +406,10 @@ def load_all_xray_images_for(shot: str, tim: str) \
 			if shot in filepath and tim in filepath and "xray" in filepath and "source" in filepath:
 				x, y, source_stack, filtering = load_hdf5(
 					filepath, keys=["x", "y", "images", "filtering"])
-				source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
+				source_stack = source_stack.transpose((0, 1, 3, 2))  # don’t forget to convert from (y,x) to (i,j) indexing
+
+				# average over the MCMC chain
+				source_stack = np.mean(source_stack, axis=1)
 
 				# try to aline it to the previus stack
 				next_centroid = (np.average(x, weights=source_stack[0].sum(axis=1)),
