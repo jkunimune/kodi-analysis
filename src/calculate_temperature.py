@@ -15,7 +15,7 @@ from scipy import interpolate, integrate, optimize
 import coordinate
 from cmap import CMAP
 from coordinate import Grid
-from hdf5_util import load_hdf5
+from hdf5_util import load_hdf5, save_as_hdf5
 from image_plate import log_xray_sensitivity
 from plots import make_colorbar, save_current_figure
 from util import parse_filtering, print_filtering, Filter, median, shape_parameters, nearest_value
@@ -142,35 +142,6 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 			# emission_map[i, j] = εL
 			emission_map[i, j] = np.mean(data)
 
-	# plot a synthetic lineout
-	plt.figure()
-	ref = np.argsort(emissions[:, 0])[-1]
-	for filter_stack, emission in zip(filter_stacks, emissions):
-		plt.plot(test_temperature[1:],
-		         emission[1:]/emissions[ref, 1:],
-		         label=print_filtering(filter_stack))
-	plt.legend()
-	plt.yscale("log")
-	plt.xlabel("Temperature (keV)")
-	plt.ylabel("X-ray emission")
-	plt.xscale("log")
-	plt.ylim(3e-4, 3e+0)
-	plt.grid()
-	plt.tight_layout()
-
-	# plot lineouts of the images
-	plt.figure()
-	for filter_stack, image in zip(filter_stacks, images):
-		plt.plot(basis.x.get_bins(), image.at((basis.x.get_bins(), 0)),
-		         label=print_filtering(filter_stack))  # TODO: error bars
-	plt.legend()
-	plt.yscale("log")
-	plt.xlabel("x (μm)")
-	plt.ylabel("X-ray image")
-	plt.ylim(plt.gca().get_ylim()[1]*1e-4, plt.gca().get_ylim()[1])
-	plt.grid()
-	plt.tight_layout()
-
 	# plot the temperature
 	tim_coordinates = coordinate.los_coordinates(los)
 	if stalk_position in coordinate.NAMED_LOS:
@@ -178,9 +149,10 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 			1., *coordinate.NAMED_LOS[stalk_position], tim_coordinates)
 	else:
 		stalk_direction = None
-	plot_electron_temperature(f"{shot}/{los}", show_plots, basis,
-	                          temperature_map, emission_map, temperature_integrated,
-	                          stalk_direction, num_stalks)
+	plot_and_save_electron_temperature(
+		f"{shot}/{los}", show_plots, basis,
+		temperature_map, emission_map, temperature_integrated,
+		stalk_direction, num_stalks)
 
 	return temperature_integrated, temperature_error_integrated
 
@@ -337,14 +309,19 @@ def model_emission_derivative(temperature: float, ref_energies: NDArray[float],
 	return integrate.trapezoid(x=ref_energies, y=-ref_energies*integrand, axis=1)
 
 
-def plot_electron_temperature(filename: str, show: bool,
-                              grid: Grid, temperature: NDArray[float], emission: NDArray[float],
-                              temperature_integrated: float,
-                              projected_stalk_direction: Optional[tuple[float, float, float]],
-                              num_stalks: Optional[int]) -> None:
+def plot_and_save_electron_temperature(filename: str, show: bool,
+                                       grid: Grid, temperature: NDArray[float], emission: NDArray[float],
+                                       temperature_integrated: float,
+                                       projected_stalk_direction: Optional[tuple[float, float, float]],
+                                       num_stalks: Optional[int]) -> None:
 	""" plot the electron temperature as a heatmap, along with some contours to show where the
 	    implosion actually is.
 	"""
+	save_as_hdf5(
+		filename, x=grid.x.get_bins(), y=grid.y.get_bins(),
+		temperature_map=temperature, emission_map=emission,
+		average_temperature=temperature_integrated)
+
 	plt.figure()
 	plt.gca().set_facecolor("k")
 	plt.imshow(temperature.T, extent=grid.extent,
