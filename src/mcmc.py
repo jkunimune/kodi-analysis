@@ -5,10 +5,10 @@ import arviz
 import jax.numpy
 import jax.numpy.fft
 import numpy as np
-import numpy.fft
 import pytensor
 from matplotlib import pyplot as plt
-from numpy import reshape, sqrt, shape, real, imag, expand_dims, prod
+from numpy import reshape, sqrt, shape, expand_dims, prod, hypot, linspace, meshgrid, stack, zeros, \
+	ones
 from numpy.typing import NDArray
 from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, DensityDist, LogNormal, draw
 from pytensor import tensor
@@ -24,14 +24,15 @@ pytensor.config.floatX = "float64"
 SHOW_ONE_DRAW = False  # whether to show the user one set of images to verify that the function graph is working
 
 
-def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
+def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, guess: Image,
                pixel_area: Image, source_region: NDArray[bool],
                noise: Union[str, Image], use_gpu: bool) -> Image:
 	""" perform Hamiltonian Monte Carlo to estimate the distribution of sources that satisfy
  	        convolve2d(source, kernel, mode="full") + background ~= data
 	    a background level will be automatically inferred to go along with the noise.
 		:param data: the full convolution (counts/bin)
-		:param kernel: the point-spread function
+		:param psf_efficiency: the maximum value of the point-spread function
+		:param psf_nominal_radius: the expected radius of the point-spread function (pixels)
 		:param guess: an initial guess that is a potential solution
 		:param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
@@ -39,15 +40,11 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 		:return: the reconstructed source G such that convolve2d(G, q) ~= F
 	"""
-	if data.domain != pixel_area.domain or shape(guess) != shape(source_region):
+	if data.domain != pixel_area.domain or guess.shape != shape(source_region):
 		raise ValueError("these images' dimensions don't match")
-	if data.shape[0] != guess.shape[0] + kernel.shape[0] - 1 or \
-			data.shape[1] != guess.shape[1] + kernel.shape[1] - 1:
-		raise ValueError("these arrays don't have the right sizes")
 
 	# add a dummy "batch" dimension to all of these so that the archaic pytensor fft functions work
 	guess = Image(guess.domain, expand_dims(guess.values, axis=0))
-	kernel = expand_dims(kernel, axis=0)
 	data = Image(data.domain, expand_dims(data.values, axis=0))
 
 	# define JAX versions of the pytensor FFT Ops so we can do this on GPUs
@@ -75,23 +72,51 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 			return (output*prod(image_shape)).astype(inpoot.dtype)
 		return irfft
 
-	# bring the inputs into the frequency domain
-	kernel_spectrum = numpy.fft.rfft2(np.pad(
-		kernel,
-		((0, 0), (0, data.shape[1] - kernel.shape[1]), (0, data.shape[2] - kernel.shape[2])),
-	))
-	# convert numpy's complex numbers to arrays of real numbers, as pytensor prefers
-	kernel_spectrum = np.stack([real(kernel_spectrum), imag(kernel_spectrum)], axis=-1)
+	# calculate some of the invariable things regarding the kernel
+	kernel_width = data.shape[1] - guess.shape[1] + 1
+	kernel_height = data.shape[2] - guess.shape[2] + 1
+	# create a kernel polar coordinate system for calculating the point-spread function
+	_, x, y = meshgrid(
+		[0],
+		linspace(-(kernel_width - 1)/2, (kernel_width - 1)/2, kernel_width),
+		linspace(-(kernel_height - 1)/2, (kernel_height - 1)/2, kernel_height),
+		indexing="ij",
+	)
+	# the distance from the center of the kernel to each corner of the pixel
+	r_nodes = np.sort(stack([
+		hypot(x + 1/2,  y + 1/2),
+		hypot(x + 1/2,  y - 1/2),
+		hypot(x - 1/2,  y - 1/2),
+		hypot(x - 1/2,  y + 1/2),
+	], axis=0), axis=0)
+	# the peak partial derivative with respect to PSF radius of the mean normalized PSF value in each pixel
+	mid_slope = 1/np.maximum(1/sqrt(2), (r_nodes[3] - r_nodes[0] + r_nodes[2] - r_nodes[1])/2)
+	# the mean PSF value in the pixel when the true edge of the PSF is at each node
+	z_nodes = psf_efficiency*stack([
+		zeros(x.shape),
+		1/2*mid_slope*(r_nodes[1] - r_nodes[0]),
+		1 - 1/2*mid_slope*(r_nodes[3] - r_nodes[2]),
+		ones(x.shape),
+	], axis=0)
 
 	# characterize the guess for the prior
 	guess_num_pixels = guess.domain.num_pixels  # the expected number of pixels contributing to the source
 	guess_intensity = np.sum(guess.values)/guess_num_pixels  # the expected ballpark pixel value
-	guess_image_intensity = (np.sum(guess.values)*np.max(kernel))  # the general intensity of the umbra
+	guess_image_intensity = (np.sum(guess.values)*np.max(psf_efficiency))  # the general intensity of the umbra
 	limit = np.sum(guess.values*1e4)  # the maximum credible value of the source's Fourier transform
 
 	with Model():
 		# latent variables
+		kernel_radius = Normal("radius", mu=psf_nominal_radius, sigma=psf_nominal_radius*0.05)
+		kernel = piecewise_sigmoid(kernel_radius, r_nodes, z_nodes)
+		kernel_spectrum = Deterministic(
+			"kernel_spectrum",
+			tensor.fft.rfft(
+				pad_with_zeros(kernel, r_nodes.shape[1:], data.shape)
+			),
+		)
 		smoothing = LogNormal("smoothing", mu=0, sigma=3)
+
 		# prior
 		source_shape = DensityDist(  # sample the logarithms of the pixel values so we don't get negative pixels
 			"source_shape",
@@ -104,9 +129,10 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		source = Deterministic("source", tensor.exp(source_shape)*guess_intensity)
 		source_spectrum = Deterministic(  # clip extreme values when you FFT it to suppress numeric instabilities
 			"source_spectrum",
-			tensor.maximum(-limit, tensor.minimum(limit, tensor.fft.rfft(
-				pad_with_zeros(source, guess.shape, data.shape)
-			))),
+			tensor.clip(
+				tensor.fft.rfft(pad_with_zeros(source, guess.shape, data.shape)),
+				-limit, limit,
+			)
 		)
 		background = Gamma("background", mu=1/2, sigma=sqrt(2)/2)
 
@@ -165,7 +191,7 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 		                   cores=cores_to_use, **kwargs)
 
 	# generate a basic trace plot to catch basic issues
-	arviz.plot_trace(inference, var_names=["smoothing", "source_intensity", "background"])
+	arviz.plot_trace(inference, var_names=["smoothing", "kernel_radius", "background"])
 	plt.tight_layout()
 
 	# it should be *almost* impossible for the chain to prevent a source that's all zeros, but check anyway
@@ -183,7 +209,30 @@ def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
 	)
 
 
-def spacially_correlated_exp_normal_logp(log_values, x_factor, y_factor):
+def piecewise_sigmoid(x: tensor.TensorLike, x_ref: NDArray[float], y_ref: NDArray[float]) -> tensor.TensorLike:
+	""" a differentiable sigmoid function composed of a horizontal line, a parabola, a diagonal line,
+	    a parabola, and a horizontal line.
+	    :param x: the scalar function argument
+	    :param x_ref: an array of size (4, ...) that specifies the x values at which the pieces are joined
+	    :param y_ref: an array of size (4, ...) that specifies the value of the tensor at each x
+	"""
+	return tensor.where(
+		x < x_ref[0], y_ref[0], tensor.where(
+			x < x_ref[1], y_ref[0] + ((x - x_ref[0])/(x_ref[1] - x_ref[0]))**2*(y_ref[1] - y_ref[0]),
+			tensor.where(
+				x < x_ref[2], y_ref[1] + (x - x_ref[1])/(x_ref[2] - x_ref[1])*(y_ref[2] - y_ref[1]),
+				tensor.where(
+					x < x_ref[3], y_ref[3] + ((x - x_ref[3])/(x_ref[2] - x_ref[3]))**2*(y_ref[2] - y_ref[3]),
+					y_ref[3]
+				)
+			)
+		)
+	)
+
+
+def spacially_correlated_exp_normal_logp(
+		log_values: tensor.TensorLike, x_factor: tensor.TensorLike, y_factor: tensor.TensorLike
+) -> tensor.TensorLike:
 	""" the log-probability for a set of points whose exponentials are drawn from a multivariate
 	    normal distribution but individual pixels are correlated with their neibors.
 	    :param log_values: the 1×m×n array of pixel value logarithms at which to evaluate the probability
@@ -207,14 +256,14 @@ def spacially_correlated_exp_normal_logp(log_values, x_factor, y_factor):
 	return log_prefactor - (x_penalty + y_penalty)
 
 
-def complex_multiply(a, b):
+def complex_multiply(a: tensor.TensorLike, b: tensor.TensorLike):
 	""" treating two float tensors of shape (..., 2) as complex tensors of shape (...), multiply them elementwise. """
 	c_real = a[..., 0]*b[..., 0] - a[..., 1]*b[..., 1]
 	c_imag = a[..., 0]*b[..., 1] + a[..., 1]*b[..., 0]
 	return tensor.stack([c_real, c_imag], axis=-1)
 
 
-def pad_with_zeros(a, old_shape, new_shape):
+def pad_with_zeros(a: tensor.TensorLike, old_shape: tuple[int, ...], new_shape: tuple[int, ...]):
 	""" this does more or less the same thing as numpy.pad() but for pytensor tensors """
 	for axis in range(len(new_shape)):
 		if new_shape[axis] < old_shape[axis]:

@@ -832,7 +832,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
 			r_max = M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution
 
-		r_psf = min(electric_field.get_expanded_radius(Q, M*rA, energies), 2*M*rA)
+		r_psf = min(electric_field.get_expanded_radius(Q, M*rA, energies), 2.05*M*rA)
 
 		if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
 			r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
@@ -999,7 +999,8 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			logging.info(f"  sampling the posterior distribution...")
 			source = mcmc.deconvolve(
 				data=clipd_image,
-				kernel=kernel.values,
+				psf_efficiency=np.max(kernel.values),
+				psf_nominal_radius=M*rA/image.domain.pixel_width,
 				guess=source,
 				pixel_area=clipd_image_plicity,
 				source_region=source_region,
