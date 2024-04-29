@@ -107,7 +107,7 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 
 	with Model():
 		# latent variables
-		kernel_radius = Normal("radius", mu=psf_nominal_radius, sigma=psf_nominal_radius*0.05)
+		kernel_radius = Normal("kernel_radius", mu=psf_nominal_radius, sigma=psf_nominal_radius*0.05)
 		kernel = piecewise_sigmoid(kernel_radius, r_nodes, z_nodes)
 		kernel_spectrum = Deterministic(
 			"kernel_spectrum",
