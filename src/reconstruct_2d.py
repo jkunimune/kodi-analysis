@@ -63,7 +63,7 @@ FINE_DEUTERON_ENERGY_CUTS = [
 ] # (MeV) (emitted, not detected)
 
 FORCE_LARGE_SOURCE_DOMAIN = False  # whether to enable a source domain larger than the aperture (experimental)
-USE_CHARGING_CORRECTION = False
+USE_CHARGING_CORRECTION = True
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 UPSAMPLE_SOURCES = False  # whether to save the sources at a potentially higher resolution than they were reconstructed at
 DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
@@ -991,7 +991,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 				r_psf=M*rA/image.domain.pixel_width,
 				pixel_area=clipd_image_plicity.values,
 				source_region=source_region,
-				noise=estimated_data_variance,
+				noise=estimated_data_variance if particle == "xray" else "poisson",
 			)
 		)
 		source.values = np.maximum(0, source.values) # we know this must be nonnegative (counts/cm^2/srad)
@@ -1004,7 +1004,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 				guess=source,
 				pixel_area=clipd_image_plicity,
 				source_region=source_region,
-				noise=estimated_data_variance,
+				noise=estimated_data_variance if particle == "xray" else "poisson",
 				use_gpu=use_gpu,
 			)
 			save_current_figure(f"{shot}/{los}-{particle}-{cut_index}-trace")
