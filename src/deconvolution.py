@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from math import nan, isnan, sqrt, pi, inf
-from typing import cast, Union
+from typing import cast, Optional
 
 import numpy as np
 from numpy import fft, where, reshape, expand_dims, ravel
@@ -18,7 +18,8 @@ MAX_ARRAY_SIZE = 1.5e9/4 # an upper limit on the number of elements in a float32
 def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
                pixel_area: NDArray[int], source_region: NDArray[bool],
                r_psf: float = None,
-               noise: Union[str, NDArray[float]] = None) -> NDArray[float]:
+               noise_mode: Optional[str] = None, noise_variance: Optional[NDArray[float]] = None,
+               ) -> NDArray[float]:
 	""" deconvolve the simple discrete 2d kernel q from a measured image. a background
 	    value will be automatically inferred.  options include:
 
@@ -43,13 +44,14 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
 		:param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
 	    :param r_psf: the radius of the point-spread function (pixels)
-		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
+		:param noise_mode: either "gaussian" to use a Gaussian noise model or "poisson" to use a Poisson noise model
+		:param noise_variance: an array of variances for the data (only used if noise_mode is "gaussian")
 		:return: the reconstructed source G such that convolve2d(G, q)*pixel_area \\approx F
 	"""
 	if method == "gelfgat":
-		return gelfgat_deconvolve(F, q, pixel_area, source_region, noise)
+		return gelfgat_deconvolve(F, q, pixel_area, source_region, noise_mode, noise_variance)
 	elif method == "richardson-lucy":
-		return gelfgat_deconvolve(F, q, pixel_area, source_region, "poisson")
+		return gelfgat_deconvolve(F, q, pixel_area, source_region, "poisson", None)
 	elif method == "wiener":
 		return wiener_deconvolve(F, q, source_region)
 	elif method == "seguin":
@@ -58,7 +60,7 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
 
 def gelfgat_deconvolve(F: NDArray[float], q: NDArray[float],
                        pixel_area: NDArray[int], source_region: NDArray[bool],
-                       noise: Union[str, NDArray[float]]) -> NDArray[float]:
+                       noise_mode: str, noise_variance: Optional[NDArray[float]]) -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
 			V. I. Gelfgat et al., "Programs for signal recovery from noisy data…",
 			*Comput. Phys. Commun.* 74 (1993), 335
@@ -68,7 +70,8 @@ def gelfgat_deconvolve(F: NDArray[float], q: NDArray[float],
 		:param q: the point-spread function
 		:param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
-		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
+		:param noise_mode: either "gaussian" to use a Gaussian noise model or "poisson" to use a Poisson noise model
+		:param noise_variance: an array of variances for the data (only used if noise_mode is "gaussian")
 		:return: the reconstructed source G such that convolve2d(G, q) ~= F
 	"""
 	G, _ = gelfgat_solve_with_background_inference(
@@ -79,14 +82,15 @@ def gelfgat_deconvolve(F: NDArray[float], q: NDArray[float],
 		),
 		ravel(F),
 		ravel(pixel_area),
-		"poisson" if noise == "poisson" else ravel(noise)
+		noise_mode,
+		ravel(noise_variance) if noise_variance is not None else None,
 	)
 	return reshape(G, source_region.shape)
 
 
 def gelfgat_solve_with_background_inference(
 		P: LinearOperator, F: NDArray[float], pixel_area: NDArray[float],
-		noise: Union[str, NDArray[float]]) -> tuple[NDArray[float], float]:
+		noise_mode: str, noise_variance: Optional[NDArray[float]]) -> tuple[NDArray[float], float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
 			V. I. Gelfgat et al., "Programs for signal recovery from noisy data…",
 			*Comput. Phys. Commun.* 74 (1993), 335
@@ -96,7 +100,8 @@ def gelfgat_solve_with_background_inference(
 		:param P: the linear transformation to be inverted
 		:param F: the observed data to match
 		:param pixel_area: the scaling on the background for each pixel
-		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
+		:param noise_mode: either "gaussian" to use a Gaussian noise model or "poisson" to use a Poisson noise model
+		:param noise_variance: an array of variances for the data (only used if noise_mode is "gaussian")
 		:return: the reconstructed solution (G, F0) such that P@G ~= F + F0
 	"""
 	# determine the "point-spread-function" for the background "pixel"
@@ -105,12 +110,12 @@ def gelfgat_solve_with_background_inference(
 	# solve it with that added to the end of the P matrix as a full collum
 	g = gelfgat_solve(
 		CompoundLinearOperator([[P, Matrix(uniform_column)]]),
-		F, noise)
+		F, noise_mode, noise_variance)
 	# remove the extraneus element from the result before returning
 	return g[:-1], g[-1]
 
 
-def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArray[float]]
+def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise_mode: str, noise_variance: Optional[NDArray[float]],
                   ) -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
 			V. I. Gelfgat et al., "Programs for signal recovery from noisy data…",
@@ -120,7 +125,8 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 		where ɛ is random noise
 		:param P: the linear transformation to be inverted
 		:param F: the observed data to match
-		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
+		:param noise_mode: either "gaussian" to use a Gaussian noise model or "poisson" to use a Poisson noise model
+		:param noise_variance: an array of variances for the data (only used if noise_mode is "gaussian")
 		:return: the reconstructed solution G such that P@G ~= F
 	"""
 	np.seterr("raise", under="ignore")
@@ -132,22 +138,22 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 	# find items in x that don't affect b and should be set to zero
 	source_region = P.sum(axis=0) > 0
 
-	if noise == "poisson":
-		mode = "poisson"
+	if noise_mode == "poisson":
 		D = np.full(F.shape, nan)
 		if not np.array_equal(np.floor(F[data_region]), F[data_region]):
 			raise ValueError("the poisson noise model gelfgat reconstruction (aka richardson-lucy) is only available "
 			                 "for integer data (otherwise I don't know when to stop)")
-	elif type(noise) is np.ndarray:
-		if noise.shape != F.shape:
+	elif noise_mode == "gaussian":
+		if noise_variance is None:
+			raise TypeError("if the noise mode is 'gaussian', the noise variance array must be provided.")
+		if noise_variance.shape != F.shape:
 			raise ValueError("if you give a noise array, it must have the same shape as the data.")
-		mode = "gaussian"
-		D = 2*noise
+		D = 2*noise_variance
 		if np.any(~(D > 0) & data_region):
 			raise ValueError(f"if you pass noise values, they must all be positive, but I found a "
 			                 f"{np.min(D, where=data_region, initial=inf)}.")
 	else:
-		raise ValueError(f"I don't understand the noise parameter you gave ({noise})")
+		raise ValueError(f"I don't understand the noise parameter you gave ('{noise_mode}')")
 
 	# set the non-data-region sections of F to NaN
 	F = np.where(data_region, F, nan)
@@ -183,12 +189,12 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 		s = s/g_error_factor
 
 		# recalculate the scaling term N (for gaussian only)
-		if mode == "gaussian":
+		if noise_mode == "gaussian":
 			N = np.sum(F*s/where(data_region, D, inf), where=data_region)/\
 			    np.sum(s**2/where(data_region, D, inf), where=data_region)
 
 		# then get the step direction for this iteration
-		if mode == "poisson":
+		if noise_mode == "poisson":
 			dlds = f/s - 1
 		else:
 			dlds = (F - N*s)/D
@@ -197,7 +203,7 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 		δs = p @ δg
 
 		# complete the line search algebraicly
-		if mode == "poisson":
+		if noise_mode == "poisson":
 			dldh = np.sum(δg**2/where(g != 0, g, inf))
 			d2ldh2 = -np.sum(f*δs**2/where(data_region, s, inf)**2, where=data_region)
 			if not (dldh > 0 and d2ldh2 < 0):
@@ -234,7 +240,7 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise: Union[str, NDArra
 		G[t] = N*g/where(source_region, η, inf)
 
 		# and the probability that this step is correct
-		if mode == "poisson":
+		if noise_mode == "poisson":
 			log_L[t] = N*np.sum(f*np.log(where(data_region, s, 1)), where=data_region)
 		else:
 			log_L[t] = -np.sum((N*s - F)**2/D, where=data_region)
@@ -447,7 +453,7 @@ if __name__ == '__main__':
 	                            np.full(image.shape, True),
 	                            np.full(source.shape, True),
 	                            r_psf=nan,
-	                            noise="poisson")
+	                            noise_mode="poisson")
 
 	plt.figure()
 	plt.imshow(source, vmin=0, vmax=np.max(source))

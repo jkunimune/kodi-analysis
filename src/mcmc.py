@@ -1,5 +1,4 @@
 from multiprocessing import cpu_count
-from typing import Union
 
 import arviz
 import jax.numpy
@@ -26,7 +25,7 @@ SHOW_ONE_DRAW = False  # whether to show the user one set of images to verify th
 
 def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, guess: Image,
                pixel_area: Image, source_region: NDArray[bool],
-               noise: Union[str, Image], use_gpu: bool) -> Image:
+               noise_mode: str, noise_variance: Image, use_gpu: bool) -> Image:
 	""" perform Hamiltonian Monte Carlo to estimate the distribution of sources that satisfy
  	        convolve2d(source, kernel, mode="full") + background ~= data
 	    a background level will be automatically inferred to go along with the noise.
@@ -36,7 +35,8 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 		:param guess: an initial guess that is a potential solution
 		:param pixel_area: a multiplier on the sensitivity of each data bin; pixels with area 0 will be ignored
 		:param source_region: a mask for the reconstruction; pixels marked as false will be reconstructed as 0
-		:param noise: either an array of variances for the data, or the string "poisson" to use a Poisson model
+		:param noise_mode: either "gaussian" or "poisson"
+		:param noise_variance: an array of variances for the data (only used if noise_mode is "gaussian")
 	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 		:return: the reconstructed source G such that convolve2d(G, q) ~= F
 	"""
@@ -146,10 +146,10 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 				tensor.fft.irfft(true_image_spectrum, is_odd=data.shape[2]%2 == 1)
 			),
 		)
-		if noise == "poisson":
+		if noise_mode == "poisson":
 			image = Poisson("image", mu=true_image, observed=data.values)
 		else:
-			image = Normal("image", mu=true_image, sigma=sqrt(noise), observed=data.values)
+			image = Normal("image", mu=true_image, sigma=sqrt(noise_variance), observed=data.values)
 
 		# some auxiliary variables for the trace plot
 		source_intensity = Deterministic("source_intensity", tensor.sum(source)*guess.domain.pixel_area)

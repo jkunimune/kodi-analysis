@@ -991,7 +991,8 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 				r_psf=M*rA/image.domain.pixel_width,
 				pixel_area=clipd_image_plicity.values,
 				source_region=source_region,
-				noise=estimated_data_variance if particle == "xray" else "poisson",
+				noise_mode="gaussian" if particle == "xray" else "poisson",
+				noise_variance=estimated_data_variance,
 			)
 		)
 		source.values = np.maximum(0, source.values) # we know this must be nonnegative (counts/cm^2/srad)
@@ -1004,7 +1005,8 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 				guess=source,
 				pixel_area=clipd_image_plicity,
 				source_region=source_region,
-				noise=estimated_data_variance if particle == "xray" else "poisson",
+				noise_mode="gaussian" if particle == "xray" else "poisson",
+				noise_variance=estimated_data_variance,
 				use_gpu=use_gpu,
 			)
 			save_current_figure(f"{shot}/{los}-{particle}-{cut_index}-trace")
@@ -1186,7 +1188,8 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		forward_matrix = A[:, newaxis] * source_to_image @ sphere_to_plane
 		profile, ρ_background = deconvolution.gelfgat_solve_with_background_inference(
 			Matrix(forward_matrix), n, pixel_area=A,
-			noise="poisson" if histogram else n/n_inf*dρ2_inf/ρ_min**2)
+			noise_mode="poisson" if histogram else "gaussian",
+			noise_variance=n/n_inf*dρ2_inf/ρ_min**2)
 		reconstruction = forward_matrix @ profile + ρ_background*A
 		if histogram:
 			χ2 = -np.sum(n*np.log(reconstruction))
