@@ -321,10 +321,7 @@ def analyze(shots_to_reconstruct: list[str],
 		summary = summary[~matching]
 
 		# and save the new ones to the dataframe
-		for result in results:
-			summary = summary.append(
-				result,
-				ignore_index=True)
+		summary = pd.concat([summary, pd.DataFrame(results)], ignore_index=True)
 
 		summary = summary.sort_values(['shot', 'LOS', 'particle', 'energy max', 'energy min', 'detector index'])
 		try:
