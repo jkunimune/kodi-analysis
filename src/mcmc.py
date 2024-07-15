@@ -267,7 +267,7 @@ def pad_with_zeros(a: tensor.TensorLike, old_shape: tuple[int, ...], new_shape: 
 	""" this does more or less the same thing as numpy.pad() but for pytensor tensors """
 	for axis in range(len(new_shape)):
 		if new_shape[axis] < old_shape[axis]:
-			raise ValueError("the requested shape must be no bigger than the input tensor in any dimension")
+			raise ValueError("the requested shape must be no smaller than the input tensor in any dimension")
 		elif new_shape[axis] == old_shape[axis]:
 			pass
 		else:
