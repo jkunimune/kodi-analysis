@@ -21,7 +21,7 @@ from cr39py.cut import Cut
 from cr39py.scan import Scan
 from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.colors import SymLogNorm
-from numpy import newaxis, arccos
+from numpy import newaxis, arccos, full
 from numpy.typing import NDArray
 from scipy import interpolate, optimize, linalg
 from skimage import measure
@@ -955,7 +955,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			                      where=dilate(without_penumbra) & on_penumbra)
 			clipd_image.values = np.where(without_penumbra, outer_value, clipd_image.values)
 		clipd_image_plicity = Image(image.domain, np.where(on_penumbra, image_plicity.values, 0))
-		source_region = np.hypot(*source_domain.get_pixels()) <= source_domain.x.half_range
+		source_region = full(source_domain.shape, True)
 
 		if SHOW_POINT_SPREAD_FUNCCION:
 			plt.figure()

@@ -10,7 +10,9 @@ from typing import Callable, Optional, Union
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
-from numpy import argmin, newaxis, moveaxis, empty, isnan, inf, pi, cos, sin, nan, sqrt, arctan2, copysign
+from matplotlib import pyplot as plt
+from numpy import argmin, newaxis, moveaxis, empty, isnan, inf, pi, cos, sin, nan, sqrt, arctan2, copysign, transpose, \
+	array
 from numpy.typing import NDArray
 from pandas import DataFrame, isna
 from scipy import optimize, integrate, interpolate
@@ -330,6 +332,12 @@ def inside_polygon(polygon: list[Point], x: np.ndarray, y: np.ndarray):
 	return num_crossings%2 == 1
 
 
+def polygon_area(polygon: list[Point]):
+	""" compute the signed area of a polygon using the shoelace formula """
+	x, y = transpose(array(polygon))
+	return 1/2*(np.sum(x*np.roll(y, 1)) - np.sum(y*np.roll(x, 1)))
+
+
 def crop_to_finite(image: Image) -> Image:
 	""" crop an image to the smallest rectangular region containing all finite pixels """
 	i_min = np.min(np.nonzero(np.any(np.isfinite(image.values), axis=1)))
@@ -472,23 +480,18 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 		# calculate the contour(s)
 		contour_paths = measure.find_contours(image.values, contour_level*np.max(image.values))
 		# choose which contour most likely represents the source
-		contour_quality = []
+		biggest_area, biggest_contour_path = -inf, None
 		for i, path in enumerate(contour_paths):
 			if len(path) < 3:
 				continue  # under no circumstances will we accept a contour without at least 3 points
-			r_contour = np.hypot(path[:, 0] - image.x.num_edges/2, path[:, 1] - image.y.num_edges/2)
-			R_domain = min(image.x.num_edges/2, image.y.num_edges/2)
-			if np.all(r_contour > R_domain - 10):  # avoid contours that are close to the edge of the domain
-				sussiness = 2
-			elif np.any(r_contour > R_domain - 10):
-				sussiness = 1
-			else:
-				sussiness = 0
-			contour_quality.append((-sussiness, len(path), i, path))  # also avoid ones with few vertices
-		if len(contour_quality) == 0:
+			area = polygon_area(path)
+			if area > biggest_area:
+				biggest_contour_path = path
+				biggest_area = area
+		if biggest_contour_path is None:
 			return np.full((2, 2), nan), np.full(2, nan)
 		else:
-			contour_path = max(contour_quality)[-1]
+			contour_path = biggest_contour_path
 		# convert the contour from index space to space space
 		x_contour = np.interp(contour_path[:, 0], np.arange(image.x.num_bins), image.x.get_bins())
 		y_contour = np.interp(contour_path[:, 1], np.arange(image.y.num_bins), image.y.get_bins())
@@ -497,21 +500,18 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 		y0 = np.average(Y, weights=image.values)
 		r = np.hypot(x_contour - x0, y_contour - y0)
 		θ = np.arctan2(y_contour - y0, x_contour - x0)
-		θL, θR = np.concatenate([θ[1:], θ[:1]]), np.concatenate([θ[-1:], θ[:-1]])
-		dθ = abs(np.arcsin(np.sin(θL)*np.cos(θR) - np.cos(θL)*np.sin(θR)))/2
 
-		# use analytic formulas to fit to a sinusoidal basis
-		p0 = np.sum(r*dθ)/pi/2
-		if p0 == 0:
-			raise ValueError(p0)
+		# fit to a sinusoidal basis
+		p0_basis = np.ones(r.size)
+		p1x_basis = np.cos(θ)
+		p1y_basis = np.sin(θ)
+		p2x_basis = np.cos(2*θ)
+		p2y_basis = np.sin(2*θ)
+		p0, p1x, p1y, p2x, p2y = np.linalg.lstsq(
+			transpose([p0_basis, p1x_basis, p1y_basis, p2x_basis, p2y_basis]), r, rcond=None)[0]
 
-		p1x = np.sum(r*np.cos(θ)*dθ)/pi + x0
-		p1y = np.sum(r*np.sin(θ)*dθ)/pi + y0
 		p1 = np.hypot(p1x, p1y)
 		θ1 = np.arctan2(p1y, p1x)
-
-		p2x = np.sum(r*np.cos(2*θ)*dθ)/pi
-		p2y = np.sum(r*np.sin(2*θ)*dθ)/pi
 		p2 = np.hypot(p2x, p2y)
 		θ2 = np.arctan2(p2y, p2x)/2
 
