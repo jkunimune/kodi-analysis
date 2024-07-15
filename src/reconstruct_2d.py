@@ -997,8 +997,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			logging.info(f"  sampling the posterior distribution...")
 			source = mcmc.deconvolve(
 				data=clipd_image,
-				psf_efficiency=np.max(kernel.values),
-				psf_nominal_radius=M*rA/image.domain.pixel_width,
+				kernel=kernel.values,
 				guess=source,
 				pixel_area=clipd_image_plicity,
 				source_region=source_region,

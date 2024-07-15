@@ -23,7 +23,7 @@ pytensor.config.floatX = "float64"
 SHOW_ONE_DRAW = False  # whether to show the user one set of images to verify that the function graph is working
 
 
-def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, guess: Image,
+def deconvolve(data: Image, kernel: NDArray[float], guess: Image,
                pixel_area: Image, source_region: NDArray[bool],
                noise_mode: str, noise_variance: Image, use_gpu: bool) -> Image:
 	""" perform Hamiltonian Monte Carlo to estimate the distribution of sources that satisfy
@@ -46,6 +46,7 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 	# add a dummy "batch" dimension to all of these so that the archaic pytensor fft functions work
 	guess = Image(guess.domain, expand_dims(guess.values, axis=0))
 	data = Image(data.domain, expand_dims(data.values, axis=0))
+	kernel = expand_dims(kernel, axis=0)
 
 	# define JAX versions of the pytensor FFT Ops so we can do this on GPUs
 	# NOTE: normally the shape would be passed as the twoth argument to the functions that these overloaded Ops return.
@@ -72,47 +73,47 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 			return (output*prod(image_shape)).astype(inpoot.dtype)
 		return irfft
 
-	# calculate some of the invariable things regarding the kernel
-	kernel_width = data.shape[1] - guess.shape[1] + 1
-	kernel_height = data.shape[2] - guess.shape[2] + 1
-	# create a kernel polar coordinate system for calculating the point-spread function
-	_, x, y = meshgrid(
-		[0],
-		linspace(-(kernel_width - 1)/2, (kernel_width - 1)/2, kernel_width),
-		linspace(-(kernel_height - 1)/2, (kernel_height - 1)/2, kernel_height),
-		indexing="ij",
-	)
-	# the distance from the center of the kernel to each corner of the pixel
-	r_nodes = np.sort(stack([
-		hypot(x + 1/2,  y + 1/2),
-		hypot(x + 1/2,  y - 1/2),
-		hypot(x - 1/2,  y - 1/2),
-		hypot(x - 1/2,  y + 1/2),
-	], axis=0), axis=0)
-	# the peak partial derivative with respect to PSF radius of the mean normalized PSF value in each pixel
-	mid_slope = 1/np.maximum(1/sqrt(2), (r_nodes[3] - r_nodes[0] + r_nodes[2] - r_nodes[1])/2)
-	# the mean PSF value in the pixel when the true edge of the PSF is at each node
-	z_nodes = psf_efficiency*stack([
-		zeros(x.shape),
-		1/2*mid_slope*(r_nodes[1] - r_nodes[0]),
-		1 - 1/2*mid_slope*(r_nodes[3] - r_nodes[2]),
-		ones(x.shape),
-	], axis=0)
+	# # calculate some of the invariable things regarding the kernel
+	# kernel_width = data.shape[1] - guess.shape[1] + 1
+	# kernel_height = data.shape[2] - guess.shape[2] + 1
+	# # create a kernel polar coordinate system for calculating the point-spread function
+	# _, x, y = meshgrid(
+	# 	[0],
+	# 	linspace(-(kernel_width - 1)/2, (kernel_width - 1)/2, kernel_width),
+	# 	linspace(-(kernel_height - 1)/2, (kernel_height - 1)/2, kernel_height),
+	# 	indexing="ij",
+	# )
+	# # the distance from the center of the kernel to each corner of the pixel
+	# r_nodes = np.sort(stack([
+	# 	hypot(x + 1/2,  y + 1/2),
+	# 	hypot(x + 1/2,  y - 1/2),
+	# 	hypot(x - 1/2,  y - 1/2),
+	# 	hypot(x - 1/2,  y + 1/2),
+	# ], axis=0), axis=0)
+	# # the peak partial derivative with respect to PSF radius of the mean normalized PSF value in each pixel
+	# mid_slope = 1/np.maximum(1/sqrt(2), (r_nodes[3] - r_nodes[0] + r_nodes[2] - r_nodes[1])/2)
+	# # the mean PSF value in the pixel when the true edge of the PSF is at each node
+	# z_nodes = psf_efficiency*stack([
+	# 	zeros(x.shape),
+	# 	1/2*mid_slope*(r_nodes[1] - r_nodes[0]),
+	# 	1 - 1/2*mid_slope*(r_nodes[3] - r_nodes[2]),
+	# 	ones(x.shape),
+	# ], axis=0)
 
 	# characterize the guess for the prior
 	guess_num_pixels = guess.domain.num_pixels  # the expected number of pixels contributing to the source
 	guess_intensity = np.sum(guess.values)/guess_num_pixels  # the expected ballpark pixel value
-	guess_image_intensity = (np.sum(guess.values)*np.max(psf_efficiency))  # the general intensity of the umbra
+	guess_image_intensity = (np.sum(guess.values)*np.max(kernel))  # the general intensity of the umbra
 	limit = np.sum(guess.values*1e4)  # the maximum credible value of the source's Fourier transform
 
 	with Model():
 		# latent variables
-		kernel_radius = Normal("kernel_radius", mu=psf_nominal_radius, sigma=psf_nominal_radius*0.05)
-		kernel = piecewise_sigmoid(kernel_radius, r_nodes, z_nodes)
+		# kernel_radius = Normal("kernel_radius", mu=psf_nominal_radius, sigma=psf_nominal_radius*0.05)
+		# kernel = piecewise_sigmoid(kernel_radius, r_nodes, z_nodes)
 		kernel_spectrum = Deterministic(
 			"kernel_spectrum",
 			tensor.fft.rfft(
-				pad_with_zeros(kernel, r_nodes.shape[1:], data.shape)
+				pad_with_zeros(kernel, kernel.shape, data.shape)
 			),
 		)
 		smoothing = LogNormal("smoothing", mu=0, sigma=3)
@@ -191,7 +192,7 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 		                   cores=cores_to_use, **kwargs)
 
 	# generate a basic trace plot to catch basic issues
-	arviz.plot_trace(inference, var_names=["smoothing", "kernel_radius", "background"])
+	arviz.plot_trace(inference, var_names=["smoothing", "background"])
 	plt.tight_layout()
 
 	# it should be *almost* impossible for the chain to prevent a source that's all zeros, but check anyway
