@@ -35,7 +35,8 @@ PLOT_OFFSET = False
 PLOT_FLOW = True
 PLOT_STALK = False
 
-MAX_NUM_PIXELS = 40000
+# the minimum image resolution to show in the residual plot
+MIN_NUM_PIXELS = 50**2
 SQUARE_GRID_FIGURE_SIZE = (5.6, 5.6)
 TRUE_SQUARE_FIGURE_SIZE = (4.5, 4.5)
 ALMOST_SQUARE_FIGURE_SIZE = (5.6, 4.5)
@@ -220,22 +221,15 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	if np.all(np.isnan((reconstruction - measurement).values) | (image_plicity.values == 0)):
 		return
 
-	# resample the penumbral images to increase the bin size
-	while reconstruction.num_pixels > MAX_NUM_PIXELS:
+	# resample the penumbral images to increase the bin size if necessary
+	while (reconstruction.num_pixels > MIN_NUM_PIXELS and
+	       median(abs(relative_difference(reconstruction, measurement))) > .3):
 		reconstruction = downsample_2d(reconstruction)
 		measurement = downsample_2d(measurement)
 		image_plicity = downsample_2d(image_plicity)
 
 	plt.figure(figsize=ALMOST_SQUARE_FIGURE_SIZE)
-	# calculating (x-y)/x is a little tricky since I'm trying hard to avoid dividing by zero
-	relative_error = np.empty(reconstruction.shape)
-	valid = (reconstruction.values != 0)
-	irrelevant = (reconstruction.values == 0) & (measurement.values == 0)
-	terrible = (reconstruction.values == 0) & (measurement.values != 0)
-	relative_error[valid] = (reconstruction - measurement).values[valid]/reconstruction.values[valid]
-	relative_error[irrelevant] = 0
-	relative_error[terrible] = inf
-	plt.imshow(relative_error.T,
+	plt.imshow(relative_difference(reconstruction, measurement).T,
 	           extent=reconstruction.domain.extent, origin="lower",
 	           cmap='RdBu', vmin=-.3, vmax=.3)
 	plt.axis('square')
@@ -262,6 +256,19 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	plt.xlabel("x (cm)")
 	plt.tight_layout()
 	save_current_figure(f"{filename}-penumbra-residual-lineout")
+
+
+def relative_difference(a: Image, b: Image):
+	""" calculate the difference between two images, normalized as (a - b)/a, properly accounting for zeros """
+	# calculating (x-y)/x is a little tricky since I'm trying hard to avoid dividing by zero
+	relative_error = np.empty(a.shape)
+	valid = (a.values != 0)
+	irrelevant = (a.values == 0) & (b.values == 0)
+	terrible = (a.values == 0) & (b.values != 0)
+	relative_error[valid] = (a - b).values[valid]/a.values[valid]
+	relative_error[irrelevant] = 0
+	relative_error[terrible] = inf
+	return relative_error
 
 
 def plot_source(filename: str, source_chain: Image,
