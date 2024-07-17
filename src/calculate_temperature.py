@@ -28,7 +28,7 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 	if os.path.basename(os.getcwd()) == "src":
 		os.chdir("..")
 
-	shot_table = pd.read_csv('input/shot_info.csv', index_col="shot", dtype={"shot": str}, skipinitialspace=True)
+	shot_table = pd.read_csv('input/shot_info.csv', index_col="shot", dtype={"shot": str, "TPS": str}, skipinitialspace=True)
 	reconstruction_table = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
 
 	# build a table of emissions on all shots and all LOSs
@@ -57,7 +57,9 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 
 			while len(emissions[-1]) < len(emissions[0]):
 				emissions[-1].append(nan)  # pad this to force it to be rectangular
-			stalk_position = shot_table.loc[shot].get("TPS", 2)
+			stalk_position = shot_table.loc[shot].get("TPS", "2")
+			if len(stalk_position) == 1:
+				stalk_position = "TPS" + stalk_position  # if it looks like the user forgot to include the prefix in the TPS specifier, add it
 			num_stalks = shot_table.loc[shot].get("stalks", 1)
 
 			# calculate the temperature!
@@ -123,7 +125,7 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 
 	# estimate the radius of the source
 	object_size = nearest_value(1.5*images[0].radius,
-	                            np.array([100, 250, 750, 2000]))
+	                            np.array([50, 100, 250, 750, 2000]))
 
 	# calculate the spacially resolved temperature
 	measurement_errors = 0.05*np.array([image.supremum for image in images])  # this isn’t very quantitative, but it captures the character of errors in the reconstructions
@@ -148,6 +150,8 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 		stalk_direction = coordinate.project(
 			1., *coordinate.NAMED_LOS[stalk_position], tim_coordinates)
 	else:
+		if len(stalk_position) > 0:
+			print(f"sorry, I don't recognize '{stalk_position}' as a location in the target chamber so I can't plot the stalk.")
 		stalk_direction = None
 	plot_and_save_electron_temperature(
 		f"{shot}/{los}", show_plots, basis,
@@ -318,7 +322,7 @@ def plot_and_save_electron_temperature(filename: str, show: bool,
 	    implosion actually is.
 	"""
 	save_as_hdf5(
-		filename, x=grid.x.get_bins(), y=grid.y.get_bins(),
+		f'results/data/{filename}.h5', x=grid.x.get_bins(), y=grid.y.get_bins(),
 		temperature_map=temperature, emission_map=emission,
 		average_temperature=temperature_integrated)
 
