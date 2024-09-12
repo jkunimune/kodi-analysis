@@ -72,8 +72,8 @@ CHARGED_PARTICLE_RESOLUTION = 2e-4  # resolution of reconstructed KoD sources
 X_RAY_RESOLUTION = 2e-4  # spatial resolution of reconstructed x-ray sources
 CHARGED_PARTICLE_CONTOUR_LEVEL = .17  # contour to use when characterizing KoDI sources
 XRAY_CONTOUR_LEVEL = .17  # contour to use when characterizing x-ray sources
-MIN_OBJECT_SIZE = 100e-4  # minimum amount of space to allocate in the source plane
-MAX_OBJECT_PIXELS = 10  # maximum size of the source array to use in reconstructions
+MIN_OBJECT_SIZE = 250e-4  # minimum amount of space to allocate in the source plane
+MAX_OBJECT_PIXELS = 100  # maximum size of the source array to use in reconstructions
 MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
 MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
@@ -643,7 +643,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 				M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
 				los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS)
 		except DataError as e:
-			raise DataError(f"I couldn't fit the circles to infer the magnification becuase {e}  this might mean that "
+			raise DataError(f"I couldn't fit the circles to infer the magnification because {e}  this might mean that "
 			                f"the aperture radius or magnification are wrong.  does {rA/1e-4:.3g} μm × {M_gess:.1f} "
 			                f"= {M_gess*rA:.3g} cm sound right?")
 		grid_x0, grid_y0 = centers[0]
@@ -691,6 +691,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 				skip_reconstruction=skip_reconstruction, show_plots=show_plots)
 		except (DataError, FilterError, RecordNotFoundError) as e:
 			logging.warning(f"  {e}")
+			plt.close("all")
 		else:
 			statblock["filtering"] = print_filtering(filter_stack)
 			statblock["energy min"] = energy_cut.minimum
@@ -821,7 +822,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
 			scan, f"{shot}/{los}-{particle}-{cut_index}",
-			diameters, energies, max_contrast, M*rA, M*sA,
+			diameters, energies, max_contrast, M*rA, M*sA if grid_shape != "single" else inf,
 			centers, data_polygon) # TODO: infer rA, as well?
 
 		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
@@ -978,7 +979,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 
 		# perform the reconstruction
 		logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source...")
-		method = "gelfgat" if particle == "xray" else "richardson-lucy"
+		method = "wiener"
 		source = Image(
 			source_domain,
 			deconvolution.deconvolve(
@@ -1140,6 +1141,8 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 			(scan_plane.x.get_bins(), scan_plane.y.get_bins()), NC,
 			bounds_error=False, fill_value=0)
 		dr = (scan_plane.x.bin_width + scan_plane.y.bin_width)/2
+		if dr > 2*r0:
+			raise DataError(f"this scan resolution of {dr/1e-4:.0f} μm is insufficient to resolve a {r0/1e-4:.2g} μm radius image.  are you sure you put the aperture radius in correctly?  {r0/1e-4} seems pretty small.")
 		dθ = 2*pi/θ.size
 		r_bins = np.linspace(0, r_max, int(r_max/(dr*2)))
 		r, dr = bin_centers_and_sizes(r_bins)
@@ -1490,8 +1493,13 @@ def fit_grid_to_points(x_points: NDArray[float], y_points: NDArray[float],
 	"""
 	if x_points.size < 1:
 		raise DataError("you can’t fit an aperture array to zero apertures.")
-	if x_points.size == 1:
-		return np.identity(2), x_points[0], y_points[0]
+	elif grid_shape == "single" or x_points.size == 1:
+		return np.identity(2), float(x_points[0]), float(y_points[0])
+	elif nominal_spacing == 0:
+		raise ValueError(
+			f"you specified an aperture spacing of 0μm, which is not acceptable for a {grid_shape} "
+			f"grid arrangement.  if there's only one aperture, please set aperture arrangement to "
+			f"'single'.  otherwise, tell me how far apart they are.")
 
 	def cost_function(args):
 		if len(args) == 2:
@@ -1566,7 +1574,7 @@ def fit_grid_alignment_to_points(x_points, y_points, grid_shape: str, grid_matri
 	    :return: the x and y coordinates of one of the grid nodes
 	"""
 	if np.linalg.det(grid_matrix) == 0:
-		raise ValueError("this grid is degenerate so I cannot fit it")
+		raise DataError("this grid is degenerate so I cannot fit it")
 
 	Δξ = aperture_array.Ξ_PERIOD[grid_shape]/2
 	Δυ = aperture_array.Υ_PERIOD[grid_shape]/2
