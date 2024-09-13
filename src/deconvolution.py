@@ -115,6 +115,22 @@ def gelfgat_solve_with_background_inference(
 	return g[:-1], g[-1]
 
 
+def strict_math_mode(f):
+	def wrapped_f(*args, **kwargs):
+		previus_err_settings = np.geterr()
+		np.seterr("raise", under="ignore")
+		try:
+			result = f(*args, **kwargs)
+		except:
+			np.seterr(**previus_err_settings)
+			raise
+		else:
+			np.seterr(**previus_err_settings)
+			return result
+	return wrapped_f
+
+
+@strict_math_mode
 def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise_mode: str, noise_variance: Optional[NDArray[float]],
                   ) -> NDArray[float]:
 	""" perform the Richardson–Lucy-like algorithm outlined in
@@ -153,9 +169,6 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise_mode: str, noise_v
 			                 f"{np.min(D, where=data_region, initial=inf)}.")
 	else:
 		raise ValueError(f"I don't understand the noise parameter you gave ('{noise_mode}')")
-
-	previus_err_settings = np.geterr()
-	np.seterr("raise", under="ignore")
 
 	# set the non-data-region sections of F to NaN
 	F = np.where(data_region, F, nan)
@@ -211,7 +224,6 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise_mode: str, noise_v
 			if not (dldh > 0 and d2ldh2 < 0):
 				print(F)
 				print(p)
-				np.seterr(**previus_err_settings)
 				raise RuntimeError(f"{dldh} > 0; {d2ldh2} < 0")
 			h = -dldh/d2ldh2 # compute step length
 		else:
@@ -221,7 +233,6 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise_mode: str, noise_v
 			dldh = np.sum(δg**2/where(g != 0, g, inf))
 			h = dldh/(N*(δδ - sδ*sδ/ss) - dldh*sδ/ss)
 			if not (h > 0):
-				np.seterr(**previus_err_settings)
 				raise RuntimeError(f"the calculated step size was {h} for some reason.")
 
 		# limit the step length if necessary to prevent negative values
@@ -231,7 +242,6 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise_mode: str, noise_v
 			print(g)
 			print("+")
 			print(δg)
-			np.seterr(**previus_err_settings)
 			raise RuntimeError(f"the step size became nan after limiting the step length.  ")
 		assert h > 0, h
 
@@ -250,7 +260,6 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise_mode: str, noise_v
 		else:
 			log_L[t] = -np.sum((N*s - F)**2/D, where=data_region)
 		if isnan(log_L[t]):
-			np.seterr(**previus_err_settings)
 			raise RuntimeError("something's gone horribly rong.")
 
 		# quit early if it seems like you're no longer making progress
@@ -269,8 +278,6 @@ def gelfgat_solve(P: LinearOperator, F: NDArray[float], noise_mode: str, noise_v
 	# as the point at which χ2 dips below some cutoff
 	assert np.any(χ2 < χ2_cutoff)
 	t = np.nonzero(χ2 < χ2_cutoff)[0][0]
-
-	np.seterr(**previus_err_settings)
 	return G[t]
 
 
