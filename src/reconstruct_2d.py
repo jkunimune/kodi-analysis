@@ -1113,7 +1113,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 	    :param region: the polygon inside which we care about the data
 	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
 	"""
-	r_max = min(2*r0, s0/sqrt(3))
+	r_max = min(2*r0, s0/sqrt(3), max(s0 - 1.8*r0, 0.55*s0))
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 
 	# either bin the tracks in radius
@@ -1145,7 +1145,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 			raise DataError(f"this scan resolution of {dr/1e-4:.0f} μm is insufficient to resolve a {r0/1e-4:.2g} μm radius image.  are you sure you put the aperture radius in correctly?  {r0/1e-4} seems pretty small.")
 		dθ = 2*pi/θ.size
 		r_bins = np.linspace(0, r_max, int(r_max/(dr*2)))
-		r, dr = bin_centers_and_sizes(r_bins)
+		r, _ = bin_centers_and_sizes(r_bins)
 		n = np.zeros(r.size)
 		for x0, y0 in centers:
 			n += r*dr*dθ*np.sum(interpolator((x0 + r*np.cos(θ), y0 + r*np.sin(θ))), axis=0)
@@ -1162,19 +1162,17 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 	valid = A > 0
 	if not np.any(valid):
 		raise DataError("none of the found penumbrums are anywhere near the data region.")
-	inside_umbra, outside_penumbra = (r < 0.5*r0), (r > r[np.nonzero(valid)[0][-1]] - 0.2*r0)
+	last_valid_r = r[np.nonzero(valid)[0][-1]]
+	inside_umbra = r < 0.5*r0
+	outside_penumbra = r > last_valid_r - max(4*dr, 0.2*(last_valid_r - r0))
+	if np.any(outside_penumbra & (r <= r0)):
+		raise DataError("there's not enough of a background region here.  either I think the projected aperture is bigger than it is, or you need to draw a bigger polygon.")
 	if not np.any(valid & inside_umbra):
-		plt.figure()
-		plt.plot(r, A)
-		plt.axvline(0.5*r0)
-		plt.show()
-		raise DataError("the whole inside of the image is clipd for some reason.")
-	if not np.any(valid & outside_penumbra):
-		raise DataError("too much of the image is clipd; I need a background region.")
-	ρ_max = np.average(ρ[valid], weights=np.where(inside_umbra, 1/dρ**2, 0)[valid])
-	ρ_min = np.min(ρ, where=valid & outside_penumbra, initial=inf)
-	n_inf = np.mean(n, where=(r > min(1.8*r0, 0.45*s0)) & (r < max(s0 - 1.8*r0, 0.55*s0)))
-	dρ2_inf = np.var(ρ, where=(r > min(1.8*r0, 0.45*s0)) & (r < max(s0 - 1.8*r0, 0.55*s0)))
+		raise DataError("the whole inside of the image is clipd for some reason.  what's wrong with your polygon???")
+	ρ_inside = np.average(ρ[valid], weights=np.where(inside_umbra, 1/dρ**2, 0)[valid])
+	ρ_outside = np.min(ρ, where=valid & outside_penumbra, initial=inf)
+	n_outside = np.mean(n, where=valid & outside_penumbra)
+	dρ2_outside = np.var(ρ, where=valid & outside_penumbra)
 
 	# now compute the relation between spherical radius and image radius
 	r_sphere_bins = r_bins[r_bins <= r_bins[-1] - r0][::2]
@@ -1189,7 +1187,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		profile, ρ_background = deconvolution.gelfgat_solve_with_background_inference(
 			Matrix(forward_matrix), n, pixel_area=A,
 			noise_mode="poisson" if histogram else "gaussian",
-			noise_variance=n/n_inf*dρ2_inf/ρ_min**2)
+			noise_variance=n/n_outside*dρ2_outside/ρ_outside**2)
 		reconstruction = forward_matrix @ profile + ρ_background*A
 		if histogram:
 			χ2 = -np.sum(n*np.log(reconstruction))
@@ -1207,16 +1205,16 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		Q = 0
 
 	domain = r > r0/2
-	ρ_cutoff = ρ_max*.01 + ρ_min*.99
+	ρ_cutoff = ρ_inside*.01 + ρ_outside*.99
 	r_cutoff = find_intercept(r[domain], ρ[domain] - ρ_cutoff)
 	if SHOW_ELECTRIC_FIELD_CALCULATION:
 		χ2, ρ_sphere, n_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
-		ρ_recon = n_recon/A
+		ρ_recon = n_recon[valid]/A[valid]
 		r_PSF, f_PSF = electric_field.get_modified_point_spread(
 			r0, Q, energies, normalize=True)
 		save_and_plot_radial_data(
 			plot_filename, r_sphere, ρ_sphere,
-			r, ρ, dρ, ρ_recon, r_PSF, f_PSF, r0, r_cutoff, ρ_min, ρ_cutoff, ρ_max)
+			r[valid], ρ[valid], dρ[valid], ρ_recon, r_PSF, f_PSF, r0, r_cutoff, ρ_outside, ρ_cutoff, ρ_inside)
 
 	if FORCE_LARGE_SOURCE_DOMAIN:
 		return Q, 3*r0
