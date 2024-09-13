@@ -1158,8 +1158,8 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 	A = np.zeros(r.size)
 	for x0, y0 in centers:
 		A += 2*pi*r*dr*np.mean(inside_polygon(region, x0 + r*np.cos(θ), y0 + r*np.sin(θ)), axis=0)
-	ρ, dρ = n/A, dn/A
 	valid = A > 0
+	ρ, dρ = n/A, dn/A
 	if not np.any(valid):
 		raise DataError("none of the found penumbrums are anywhere near the data region.")
 	last_valid_r = r[np.nonzero(valid)[0][-1]]
@@ -1209,12 +1209,12 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 	r_cutoff = find_intercept(r[domain], ρ[domain] - ρ_cutoff)
 	if SHOW_ELECTRIC_FIELD_CALCULATION:
 		χ2, ρ_sphere, n_recon = reconstruct_1d_assuming_Q(Q, return_other_stuff=True)
-		ρ_recon = n_recon[valid]/A[valid]
+		ρ_recon = n_recon/A
 		r_PSF, f_PSF = electric_field.get_modified_point_spread(
 			r0, Q, energies, normalize=True)
 		save_and_plot_radial_data(
 			plot_filename, r_sphere, ρ_sphere,
-			r[valid], ρ[valid], dρ[valid], ρ_recon, r_PSF, f_PSF, r0, r_cutoff, ρ_outside, ρ_cutoff, ρ_inside)
+			r, ρ, dρ, ρ_recon, r_PSF, f_PSF, r0, r_cutoff, ρ_outside, ρ_cutoff, ρ_inside)
 
 	if FORCE_LARGE_SOURCE_DOMAIN:
 		return Q, 3*r0
