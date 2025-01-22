@@ -19,10 +19,10 @@ from skimage import measure
 
 import aperture_array
 from cmap import CMAP
-from coordinate import Image, Interval
+from coordinate import Image, Interval, Grid
 from hdf5_util import save_as_hdf5
 from util import downsample_2d, saturate, center_of_mass, \
-	shape_parameters_chained, weighted_quantile, credibility_interval
+	shape_parameters_chained, weighted_quantile, credibility_interval, resample_2d
 
 # matplotlib.use("Qt5agg")
 plt.rcParams["legend.framealpha"] = 1
@@ -160,12 +160,18 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 	             y=counts.y.get_edges(),
 	             N=counts.values.T, A=area.values.T)  # save it with (y,x) indexing, not (i,j)
 
-	# while x_bins.size > MAX_NUM_PIXELS+1: # resample the penumbral images to increase the bin size
-	# 	x_bins, y_bins, N = resample_2d(x_bins, y_bins, N)
+	# resample the penumbral images to increase the bin size
+	in_umbra = hypot(*counts.domain.get_pixels()) <= r0*2/3
+	mean_bin_value = np.mean(counts.values, where=in_umbra)
+	mean_bin_deviation = np.std(counts.values, where=in_umbra)
+	desired_scale = (mean_bin_deviation/mean_bin_value)/(1/6)
+	desired_num_bins = min(counts.x.num_bins, max(round(counts.x.num_bins/desired_scale), 100))
+	counts = resample_2d(counts, Grid.from_num_bins(counts.x.half_range, desired_num_bins))
+	area = resample_2d(area, counts.domain)
 
 	A_circle, A_square = pi*r0**2, counts.domain.total_area
 	density = counts.values/np.where(area.values > 0, area.values, 1)
-	vmax = max(np.nanquantile(density, (density.size - 6)/density.size),
+	vmax = max(np.nanquantile(density, 0.999),
 	           1.3*np.nanquantile(density, 1 - A_circle/A_square/2) - 0.3*np.min(density))
 	vmin = max(0, 1.4*np.min(density) - 0.4*np.max(density))
 	plt.figure(figsize=ALMOST_SQUARE_FIGURE_SIZE)
@@ -184,7 +190,7 @@ def save_and_plot_penumbra(filename: str, counts: Image, area: Image,
 		plt.title("Measured luminescence")
 	plt.xlabel("x (cm)")
 	plt.ylabel("y (cm)")
-	make_colorbar(0, min(vmax, np.max(density)), "Counts", facecolor="#000")
+	make_colorbar(0, min(vmax, np.max(density)), "Intensity", facecolor="#000")
 	plt.tight_layout()
 
 	save_current_figure(f"{filename}-penumbra")
