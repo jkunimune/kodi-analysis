@@ -1128,6 +1128,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		n, r_bins = np.histogram(r_tracks, bins=r_bins)
 		dn = np.sqrt(n) + 1
 		r, dr = bin_centers_and_sizes(r_bins)
+		dr = np.mean(dr)
 		histogram = True
 		if np.sum(n) < MIN_ACCEPTABLE_NUM_TRACKS:
 			raise DataError("Not enuff tracks to reconstuct")
