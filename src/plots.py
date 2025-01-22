@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from math import floor
 from typing import Optional, Union
 
 import matplotlib
@@ -670,11 +671,12 @@ def plot_overlaid_contores(filename: str, source_chains: Image, contour_level: f
 	plt.figure(figsize=ALMOST_SQUARE_FIGURE_SIZE)
 	plt.locator_params(steps=[1, 2, 5, 10], nbins=6)
 	for i, source_chain in enumerate(source_chains):
-		color = saturate(*colormaps[i].colors[-1], factor=2.0)
+		red, green, blue = saturate(*colormaps[i].colors[-1], factor=2.0)
 		contour_chained(
 			source_chain.x.get_bins(), source_chain.y.get_bins(),
-			source_chain.values[i]/np.max(source_chain.values[i], axis=(1, 2), keepdims=True),
-			levels=[contour_level], color=color)
+			source_chain.values/np.max(source_chain.values, axis=(1, 2), keepdims=True),
+			levels=[contour_level],
+			color=f"#{floor(256*red):02x}{floor(256*green):02x}{floor(256*blue):02x}")
 
 	if PLOT_OFFSET:
 		if projected_offset is not None:

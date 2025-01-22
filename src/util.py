@@ -263,6 +263,7 @@ def resample_1d(old_values: NDArray[float], old_domain: LinSpace, new_domain: Li
 
 def resample_2d(old: Image, new_domain: Grid) -> Image:
 	""" apply new bins to a 2d function, preserving quality and accuracy as much as possible.
+	    the result will sum to the same number as the old one, minus any signal that got cropped out.
 	    this function is a lot more efficient than resample_and_rotate_2d (but less general, obvy)
 	"""
 	data = old.values
@@ -304,7 +305,7 @@ def resample_and_rotate_2d(old: Image, new_domain: Grid, angle: float) -> Image:
 	return Image(new_domain, new_values)
 
 
-def saturate(r, g, b, factor=2.0):
+def saturate(r, g, b, factor=2.0) -> tuple[float, float, float]:
 	""" take an RGB color and make it briter """
 	color = sRGBColor(r, g, b)
 	color = convert_color(color, LabColor)
