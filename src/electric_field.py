@@ -201,20 +201,29 @@ def generate_modified_point_spread(model: str, normalized_aperture_thickness: fl
 
 if __name__ == '__main__':
 	import matplotlib.pyplot as plt
+	import matplotlib
 
 	os.chdir("..")
 
-	plt.figure()
-	for Q in [.112, .112/4.3, 0]:
-		x, y = get_modified_point_spread(1.5, Q, Interval(2, 6))
-		plt.plot(x, y, label="Brightness")
-		plt.fill_between(x, 0, y, alpha=0.5, label="Brightness")
-	x = np.linspace(0, 1.5, 1000, endpoint=False)
-	plt.plot(x, electric_field(x/1.5, model="cylindrical", normalized_aperture_thickness=0), label="Electric field")
+	plt.rcParams["font.size"] = 12
+	plt.figure(facecolor="none", figsize=(6, 3.5))
+	def swoopspace(start, stop, num):
+		x = np.linspace(start, stop, num)
+		return x**2/(1 - x)
+	for i, Q in enumerate(swoopspace(0, .5, 6)):
+		color = matplotlib.colormaps["plasma"]((5 - i)/6.5)
+		x, y = get_modified_point_spread(1.0, Q, Interval(2, 6))
+		plt.plot(x, y, zorder=2 + i/100, color=color)
+		plt.fill_between(x, 0, y, alpha=1/6, zorder=2 + i/100, color=color)
+	plt.grid()
+	# x = np.linspace(0, 1.5, 1000, endpoint=False)
+	# plt.plot(x, electric_field(x/1.5, model="cylindrical", normalized_aperture_thickness=0), label="Electric field")
 	plt.xlim(0, 2.0)
-	# plt.ylim(0, 1.2)
-	plt.xlabel("r/r0")
-	plt.ylabel("arbitrary")
+	plt.ylim(0, 1.1)
+	plt.locator_params(steps=[1, 2, 5, 10])
+	plt.xlabel("Radius (normalized)")
+	plt.ylabel("Point-spread intensity")
+	plt.tight_layout()
 	# plt.legend()
 
 	# plt.figure()
