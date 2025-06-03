@@ -10,7 +10,6 @@ from typing import Callable, Optional, Union
 import numpy as np
 from colormath.color_conversions import convert_color
 from colormath.color_objects import sRGBColor, LabColor
-from matplotlib import pyplot as plt
 from numpy import argmin, newaxis, moveaxis, empty, isnan, inf, pi, cos, sin, nan, sqrt, arctan2, copysign, transpose, \
 	array
 from numpy.typing import NDArray

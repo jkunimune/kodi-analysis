@@ -18,7 +18,7 @@ from coordinate import Grid
 from hdf5_util import load_hdf5, save_as_hdf5
 from image_plate import log_xray_sensitivity
 from plots import make_colorbar, save_current_figure
-from util import parse_filtering, print_filtering, Filter, median, shape_parameters, nearest_value
+from util import parse_filtering, Filter, median, shape_parameters, nearest_value
 
 NUM_SAMPLES = 100
 PLOT_STALK = False

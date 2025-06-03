@@ -33,14 +33,14 @@ def main():
 		print(shot)
 		if SHOW_ALIGNED_LINEOUTS:
 			for j in range(len(LOS)):
-				show_aligned_lineouts(shot, LOS[j], LOS[(j + 1)%len(LOS)])
+				show_aligned_lineouts(LOS[j], LOS[(j + 1)%len(LOS)])
 		asymmetries[i, :] = fit_ellipsoid(shot, LOS)
 		num_stalks[i] = get_num_stalks(shot)
 
 	polar_plot_asymmetries(SHOTS, asymmetries, num_stalks)
 
 
-def show_aligned_lineouts(shot: str, los_0: str, los_1: str) -> None:
+def show_aligned_lineouts(los_0: str, los_1: str) -> None:
 	axis_0 = coordinate.los_direction(los_0)
 	axis_1 = coordinate.los_direction(los_1)
 	mutual_axis = np.cross(axis_0, axis_1)

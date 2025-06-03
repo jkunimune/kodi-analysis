@@ -53,7 +53,6 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 		try:
 			tru_emission = cast(NDArray, np.loadtxt("tmp/emission.csv").reshape((N+1, N+1, N+1))) # (μm^-3)
 			tru_density = cast(NDArray, np.loadtxt("tmp/density.csv").reshape((N+1, N+1, N+1))) # (g/cc)
-			tru_temperature = cast(NDArray, np.loadtxt("tmp/temperature.csv")) # (keV)
 		except OSError:
 			tru_emission, tru_density, tru_temperature = None, None, None
 
@@ -87,8 +86,6 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 			np.savetxt("tmp/emission.csv", tru_emission.ravel())
 			np.savetxt("tmp/density.csv", tru_density.ravel())
 			np.savetxt("tmp/temperature.csv", [tru_temperature]) # type: ignore
-
-			tru_images = None # we won't have the input images until after the Java runs
 
 			print(f"there are {Э_cuts.shape[0]} synthetic {n_pixels}^2 images on {len(lines_of_sight)} lines of sight")
 
@@ -220,10 +217,8 @@ def reconstruct_3d(name: str, mode: str, show_plots: bool, skip_reconstruction: 
 	recon_emission = np.loadtxt("tmp/emission-recon.csv").reshape((x_model.size,)*3) # (μm^-3)
 	if mode == "deuteron":
 		recon_density = np.loadtxt("tmp/density-recon.csv").reshape((x_model.size,)*3) # (g/cc)
-		recon_temperature = np.loadtxt("tmp/temperature-recon.csv") # (keV)
 	else:
 		recon_density = None
-		recon_temperature = None
 	Э_cuts, ξ_centers, υ_centers = [], [], []
 	tru_images, recon_images = [], []
 	for l in range(len(lines_of_sight)):

@@ -147,12 +147,12 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 			),
 		)
 		if noise_mode == "poisson":
-			image = Poisson("image", mu=true_image, observed=data.values)
+			Poisson("image", mu=true_image, observed=data.values)
 		else:
-			image = Normal("image", mu=true_image, sigma=sqrt(noise_variance), observed=data.values)
+			Normal("image", mu=true_image, sigma=sqrt(noise_variance), observed=data.values)
 
 		# some auxiliary variables for the trace plot
-		source_intensity = Deterministic("source_intensity", tensor.sum(source)*guess.domain.pixel_area)
+		Deterministic("source_intensity", tensor.sum(source)*guess.domain.pixel_area)
 
 		# verify that the function graph is set up correctly
 		if SHOW_ONE_DRAW:
