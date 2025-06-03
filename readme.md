@@ -116,3 +116,5 @@ and the operation is up to one of:
 - `lineout` for 1D cartesian lineouts of multidimensional quantities
 - `profile` for 1D polar lineouts of multidimensional quantities
 - `residual` for comparisons of measured and reconstructed images
+
+Finally, there's a meager test suite ('suite' isn't even really accurate since it's just one) that you can run with `python -m pytest src/test.py`.

@@ -56,6 +56,8 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
 		return wiener_deconvolve(F, q, source_region)
 	elif method == "seguin":
 		return seguin_deconvolve(F/np.maximum(1, pixel_area), r_psf, cast(float, np.sum(q)), pixel_area, source_region)
+	else:
+		raise ValueError(f"unrecognized method: '{method}'")
 
 
 def gelfgat_deconvolve(F: NDArray[float], q: NDArray[float],
@@ -443,51 +445,3 @@ def stingy_interpolate(i: NDArray[np.float32], j: NDArray[int], z: NDArray[np.fl
 	lower, upper = z[lower_index, j], z[upper_index, j]
 	result = lower_coef*lower + upper_coef*upper
 	return np.where(in_bounds, result, 0)
-
-
-if __name__ == '__main__':
-	import matplotlib.pyplot as plt
-
-	source = np.array([
-		[ 0,  0,  0,  0,  0],
-		[ 0,  0,  0, 20, 20],
-		[ 0,  0, 40,  0,  0],
-		[10, 20,  0,  0,  0],
-		[ 0, 10,  0,  0,  0],
-	])
-	kernel = np.array([
-		[ 0,  1,  0],
-		[ 1,  1,  1],
-		[ 0,  1,  0],
-	])
-	image = signal.convolve2d(source, kernel, mode="full") + 10
-	image = np.random.poisson(image)
-
-	reconstruction = deconvolve("gelfgat",
-	                            image, kernel,
-	                            np.full(image.shape, True),
-	                            np.full(source.shape, True),
-	                            r_psf=nan,
-	                            noise_mode="poisson")
-
-	plt.figure()
-	plt.imshow(source, vmin=0, vmax=np.max(source))
-	plt.colorbar()
-	plt.title('source')
-
-	plt.figure()
-	plt.imshow(kernel)
-	plt.colorbar()
-	plt.title('krenel')
-
-	plt.figure()
-	plt.imshow(image)
-	plt.colorbar()
-	plt.title('signal')
-
-	plt.figure()
-	plt.imshow(reconstruction, vmin=0, vmax=np.max(source))
-	plt.colorbar()
-	plt.title('reconstruccion')
-
-	plt.show()
