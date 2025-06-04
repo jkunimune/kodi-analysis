@@ -979,7 +979,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 
 		# perform the reconstruction
 		logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source...")
-		method = "wiener"
+		method = "gelfgat"
 		source = Image(
 			source_domain,
 			deconvolution.deconvolve(
