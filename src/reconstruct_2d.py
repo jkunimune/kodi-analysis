@@ -992,8 +992,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 				noise_mode="gaussian" if particle == "xray" else "poisson",
 				noise_variance=estimated_data_variance,
 			)
-		)
-		source.values = np.maximum(0, source.values) # we know this must be nonnegative (counts/cm^2/srad)
+		)  # (counts/cm^2/srad)
 		if do_mcmc:
 			logging.info(f"  sampling the posterior distribution...")
 			source = mcmc.deconvolve(
