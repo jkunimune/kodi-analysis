@@ -53,7 +53,7 @@ def deconvolve(method: str, F: NDArray[float], q: NDArray[float],
 	elif method == "richardson-lucy":
 		return gelfgat_deconvolve(F, q, pixel_area, source_region, "poisson", None)
 	elif method == "wiener":
-		return wiener_deconvolve(F, q, source_region)
+		return wiener_deconvolve(F/np.maximum(1, pixel_area), q, source_region)
 	elif method == "seguin":
 		return seguin_deconvolve(F/np.maximum(1, pixel_area), r_psf, cast(float, np.sum(q)), pixel_area, source_region)
 	else:
