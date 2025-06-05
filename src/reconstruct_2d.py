@@ -21,7 +21,7 @@ from cr39py.cut import Cut
 from cr39py.scan import Scan
 from matplotlib.backend_bases import MouseEvent, MouseButton
 from matplotlib.colors import SymLogNorm
-from numpy import newaxis, arccos, full
+from numpy import newaxis, arccos, full, concatenate
 from numpy.typing import NDArray
 from scipy import interpolate, optimize, linalg
 from skimage import measure
@@ -66,7 +66,6 @@ FORCE_LARGE_SOURCE_DOMAIN = False  # whether to enable a source domain larger th
 USE_CHARGING_CORRECTION = True
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 UPSAMPLE_SOURCES = False  # whether to save the sources at a potentially higher resolution than they were reconstructed at
-DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS = {"srte"}  # LOSs for which you can’t assume the aperture array is perfect and use that when locating images
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
 CHARGED_PARTICLE_RESOLUTION = 2e-4  # resolution of reconstructed KoD sources
 X_RAY_RESOLUTION = 2e-4  # spatial resolution of reconstructed x-ray sources
@@ -640,8 +639,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 			centers, grid_transform = find_circle_centers(
 				f"{shot}/{los}-{particle}-{section_index}",
 				input_file, particle, 35.,
-				M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon,
-				los not in DIAGNOSTICS_WITH_UNRELIABLE_APERTURE_PLACEMENTS)
+				M_gess*rA, M_gess*sA, grid_shape, grid_parameters, data_polygon)
 		except DataError as e:
 			raise DataError(f"I couldn't fit the circles to infer the magnification because {e}  this might mean that "
 			                f"the aperture radius or magnification are wrong.  does {rA/1e-4:.3g} μm × {M_gess:.1f} "
@@ -1582,6 +1580,14 @@ def fit_grid_alignment_to_points(x_points, y_points, grid_shape: str, grid_matri
 	ξ0, υ0 = np.mean(ξ_points), np.mean(υ_points)
 	ξ0 = periodic_mean(ξ_points, ξ0 - Δξ, ξ0 + Δξ)
 	υ0 = periodic_mean(υ_points, υ0 - Δυ, υ0 + Δυ)
+
+	# because one SR-TE aperture is offset in the υ direction, we should discard it and recalculate υ0
+	if grid_shape == "srte":
+		misplaced = np.argmax(abs((υ_points - υ0 + Δυ)%(2*Δυ) - Δυ))
+		υ_points = concatenate([υ_points[:misplaced], υ_points[misplaced + 1:]])
+		υ0 = periodic_mean(υ_points, υ0 - Δυ, υ0 + Δυ)
+
+	# revert the projection to get back into real space
 	naive_x0, naive_y0 = grid_matrix@[ξ0, υ0]
 
 	# there's often a degeneracy here, so I haff to compare these two cases...
@@ -1635,6 +1641,14 @@ def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArra
 		errors[point_is_close_to_here] = distances[point_is_close_to_here]
 		x_fit[point_is_close_to_here] = x
 		y_fit[point_is_close_to_here] = y
+
+	# watch out, because SR-TE has one aperture that's misplaced for some reason.  discard it if you see it.
+	if grid_shape == "srte":
+		that_one_misplaced_one = np.argmax(errors)
+		x_fit[that_one_misplaced_one] = x_points[that_one_misplaced_one]
+		y_fit[that_one_misplaced_one] = y_points[that_one_misplaced_one]
+		errors[that_one_misplaced_one] = 0
+
 	total_error = np.sum(errors**2)
 
 	return x_fit, y_fit, total_error  # type: ignore
@@ -1643,7 +1657,7 @@ def snap_points_to_grid(x_points, y_points, grid_shape: str, grid_matrix: NDArra
 def find_circle_centers(filename: str, scan: Union[Scan, Image], particle: str, max_contrast: float,
                         r_nominal: float, s_nominal: float,
                         grid_shape: str, grid_parameters: Optional[GridParameters],
-                        region: list[Point], trust_grid: bool) -> tuple[list[Point], NDArray[float]]:
+                        region: list[Point]) -> tuple[list[Point], NDArray[float]]:
 	""" look for circles in the given scanfile and give their relevant parameters
 	    :param filename: a string used to describe the plot that will get saved
 	    :param scan: the scanfile containing the data to be analyzed
@@ -1657,7 +1671,6 @@ def find_circle_centers(filename: str, scan: Union[Scan, Image], particle: str, 
 	                      means that there is only one aperture.
 	    :param grid_shape: the shape of the aperture array, one of "single", "square", "hex", or "srte".
 		:param region: the region in which to care about tracks
-		:param trust_grid: whether to return centers that are exactly on the grid, rather than centers wherever we find them
 	    :param grid_parameters: the previusly fit image array parameters, if any (the spacing, rotation, etc.)
 	    :return: the x and y of the centers of the circles, the transformation matrix that
 	             converts apertures locations from their nominal ones
@@ -1784,7 +1797,7 @@ def find_circle_centers(filename: str, scan: Union[Scan, Image], particle: str, 
 	# aline the circles to whatever grid you found
 	x_grid_nodes, y_grid_nodes, _ = snap_points_to_grid(
 		x_circles_raw, y_circles_raw, grid_shape, s_nominal*grid_transform, grid_x0, grid_y0)
-	if trust_grid and x_circles_raw.size > 0:
+	if x_circles_raw.size > 0:
 		error = np.hypot(x_grid_nodes - x_circles_raw, y_grid_nodes - y_circles_raw)
 		valid = error < max(r_true/2, 2*np.median(error))  # check for misplaced apertures if you do it like this
 		x_circles, y_circles = x_grid_nodes, y_grid_nodes
