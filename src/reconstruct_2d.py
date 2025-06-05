@@ -401,7 +401,7 @@ def analyze_scan(input_filename: str,
 	else:
 		projected_stalk = None
 		if not isnan(stalk_position):
-			logging.warning(f"I don’t recognize the target positioner {stalk_position!r}.")
+			logging.warning(f"  I don’t recognize the target positioner {stalk_position!r}.")
 	if isnan(num_stalks):
 		num_stalks = None
 
@@ -448,7 +448,7 @@ def analyze_scan(input_filename: str,
 					do_mcmc=do_mcmc, use_gpu=use_gpu,
 					skip_reconstruction=skip_reconstruction, show_plots=show_plots)
 		except DataError as e:
-			logging.warning(e)
+			logging.warning(f"    {e}")
 		else:
 			sources += filter_section_sources
 			statistics += filter_section_statistics
@@ -517,7 +517,7 @@ def analyze_scan(input_filename: str,
 		dxL, dyL = center_of_mass(source_stack[0])
 		dxH, dyH = center_of_mass(source_stack[-1])
 		dx, dy = dxH - dxL, dyH - dyL
-		logging.info(f"Δ = {hypot(dx, dy)/1e-4:.1f} μm, θ = {degrees(atan2(dx, dy)):.1f}")
+		logging.info(f"  Δ = {hypot(dx, dy)/1e-4:.1f} μm, θ = {degrees(atan2(dx, dy)):.1f}")
 		for statblock in statistics:
 			statblock["separation magnitude"] = hypot(dx, dy)/1e-4
 			statblock["separation angle"] = degrees(atan2(dy, dx))
@@ -602,10 +602,12 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 		num_tracks, x_min, x_max, y_min, y_max = count_tracks_in_scan(
 			input_file, Interval(0, inf), max_contrast, False)
 		if particle == "proton" or particle == "deuteron":
-			logging.info(f"found {num_tracks:.4g} tracks in the file")
+			logging.info(f"  found {num_tracks:.4g} tracks in the file")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
-				logging.warning("Not enuff tracks to reconstruct")
+				logging.warning("  Not enuff tracks to reconstruct")
 				return grid_parameters, source_domain, [], []
+
+		logging.info(f"  Reconstructing region with {print_filtering(filter_stack)} filtering")
 
 		# start by asking the user to highlight the data
 		try:
@@ -649,11 +651,11 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 
 	# or if we’re skipping the reconstruction, just set up some default values
 	else:
-		logging.info(f"re-loading the previous reconstructions")
+		logging.info(f"  re-loading the previous reconstructions")
 		try:
 			previus_parameters = load_shot_info(shot, los, filter_str=print_filtering(filter_stack))
 		except RecordNotFoundError as e:
-			logging.warning(e)
+			logging.warning(f"  {e}")
 			return grid_parameters, source_domain, [], []
 		data_polygon = None
 		centers = None
@@ -668,9 +670,9 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 		decompose_2x2_into_intuitive_parameters(grid_transform)
 	# update the magnification to be based on this check
 	M = M_gess*grid_mean_scale
-	logging.info(f"inferred a magnification of {M:.2f} (nominal was {M_gess:.2f}) and angle of {degrees(grid_angle):.2f}°")
+	logging.info(f"    inferred a magnification of {M:.2f} (nominal was {M_gess:.2f}) and angle of {degrees(grid_angle):.2f}°")
 	if grid_skew > .01:
-		logging.info(f"detected an aperture array skewness of {degrees(arccos(1/(1 + grid_skew))):.1f}°")
+		logging.info(f"    detected an aperture array skewness of {degrees(arccos(1/(1 + grid_skew))):.1f}°")
 
 	# now go thru each energy cut and compile the results
 	sources: list[NDArray[float]] = []
@@ -688,7 +690,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 				do_mcmc=do_mcmc, use_gpu=use_gpu,
 				skip_reconstruction=skip_reconstruction, show_plots=show_plots)
 		except (DataError, FilterError, RecordNotFoundError) as e:
-			logging.warning(f"  {e}")
+			logging.warning(f"    {e}")
 			plt.close("all")
 		else:
 			statblock["filtering"] = print_filtering(filter_stack)
@@ -805,15 +807,13 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 
 	# start by loading the input file and stacking the images
 	if not skip_reconstruction:
-		if particle == "xray":
-			logging.info(f"Reconstructing region with {print_filtering(filter_stack)} filtering")
-		else:
-			logging.info(f"Reconstructing tracks with {diameters.minimum:5.2f}μm < d <{diameters.maximum:5.2f}μm")
+		if particle != "xray":
+			logging.info(f"    Reconstructing tracks with {diameters.minimum:5.2f}μm < d <{diameters.maximum:5.2f}μm")
 			# check the statistics, if these are deuterons
 			num_tracks, _, _, _, _ = count_tracks_in_scan(
 				scan, diameters, max_contrast,
 				SHOW_DIAMETER_CUTS)
-			logging.info(f"  found {num_tracks:.4g} tracks in the cut")
+			logging.info(f"    found {num_tracks:.4g} tracks in the cut")
 			if num_tracks < MIN_ACCEPTABLE_NUM_TRACKS:
 				raise DataError("Not enuff tracks to reconstuct")
 
@@ -824,7 +824,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			centers, data_polygon) # TODO: infer rA, as well?
 
 		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
-			logging.warning(f"  the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
+			logging.warning(f"    the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
 			                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
 			r_max = M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution
 
@@ -860,7 +860,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 
 		elif type(scan) is Image: # if it's a HDF5 file
 			if scan.domain.pixel_width > local_images.domain.pixel_width:
-				logging.warning(f"The scan resolution of this image plate scan ({scan.domain.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
+				logging.warning(f"    The scan resolution of this image plate scan ({scan.domain.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
 				                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
 				                f"be zoomed and enhanced.")
 			for k, (x_center, y_center) in enumerate(centers):
@@ -914,8 +914,6 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			source_domain = Grid.from_pixels(num_bins=image.x.num_bins - kernel_domain.x.num_bins + 1,
 			                                 pixel_width=kernel_domain.pixel_width/(M - 1))
 
-		logging.info(f"  generating a {kernel_domain.shape} point spread function with Q={Q:.3g} MeV*cm...")
-
 		# calculate the point-spread function
 		kernel = point_spread_function(kernel_domain, Q, M*rA, grid_transform, energies) # get the dimensionless shape of the penumbra
 		if account_for_overlap:
@@ -936,7 +934,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			within_penumbra = reach > upper_cutoff
 			without_penumbra = reach < lower_cutoff
 		else:
-			logging.warning(f"it would be computationally inefficient to compute the reach of these "
+			logging.warning(f"    it would be computationally inefficient to compute the reach of these "
 			                f"{source_domain.num_pixels*kernel.num_pixels} data, so I'm setting the "
 			                f"data region to be everywhere")
 			within_penumbra, without_penumbra = np.full(False, image.shape), np.full(False, image.shape)
@@ -976,7 +974,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			raise DataError("I think this image is saturated. I'm not going to try to reconstruct it. :(")
 
 		# perform the reconstruction
-		logging.info(f"  reconstructing a {image.shape} image into a {source_region.shape} source...")
+		logging.info(f"    reconstructing a {image.shape} image into a {source_region.shape} source...")
 		method = "gelfgat"
 		source = Image(
 			source_domain,
@@ -992,7 +990,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			)
 		)  # (counts/cm^2/srad)
 		if do_mcmc:
-			logging.info(f"  sampling the posterior distribution...")
+			logging.info(f"    sampling the posterior distribution...")
 			source = mcmc.deconvolve(
 				data=clipd_image,
 				psf_efficiency=np.max(kernel.values),
@@ -1007,7 +1005,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			save_current_figure(f"{shot}/{los}-{particle}-{cut_index}-trace")
 		else:
 			source.values = np.expand_dims(source.values, axis=0)
-		logging.info("  postprocessing the results...")
+		logging.info("    postprocessing the results...")
 
 		# since the true problem is not one of deconvolution, but inverted deconvolution, rotate 180°
 		source = source.rotated_180()
@@ -1025,7 +1023,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			reconstructed_image.values += np.nanmean((image - reconstructed_image).values/positive_image_plicity,
 			                                         where=on_penumbra)*image_plicity.values
 		else:
-			logging.warning("the reconstruction would take too long to reproduce so I’m skipping the residual plot")
+			logging.warning("    the reconstruction would take too long to reproduce so I’m skipping the residual plot")
 			reconstructed_image = Image(image.domain, np.full(image.shape, nan))
 
 		# after reproducing the input, we must rebin the source to a unified Grid for the stack
@@ -1039,7 +1037,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 
 	# if we’re skipping the reconstruction, just load the previus stacked penumbra and reconstructed source
 	else:
-		logging.info(f"Loading reconstruction for diameters {diameters.minimum:5.2f}μm < d <{diameters.maximum:5.2f}μm")
+		logging.info(f"    Loading reconstruction for diameters {diameters.minimum:5.2f}μm < d <{diameters.maximum:5.2f}μm")
 		previus_parameters = load_shot_info(shot, los, energies, filter_str)
 		Q = previus_parameters.Q
 		x, y, image_values, image_plicity_values = load_hdf5(
@@ -1059,9 +1057,9 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	p0 = credibility_interval(p0_array/1e-4, .9)
 	p2 = credibility_interval(p2_array/p0_array, .9)
 	θ2 = credibility_interval(θ2_array, .9)
-	logging.info(f"  ∫B dA dσ = {yeeld.center:.4g} ± {yeeld.width/2:.4g} deuterons (90% sure)")
-	logging.info(f"  {contour:.0%} P0   = ({p0.center:.2f} ± {p0.width/2:.2f}) μm (90% sure)")
-	logging.info(f"  {contour:.0%} P2   = ({p2.center*100:.2f} ± {p2.width/2*100:.2f})% (90% sure), "
+	logging.info(f"    ∫B dA dσ = {yeeld.center:.4g} ± {yeeld.width/2:.4g} deuterons (90% sure)")
+	logging.info(f"    {contour:.0%} P0   = ({p0.center:.2f} ± {p0.width/2:.2f}) μm (90% sure)")
+	logging.info(f"    {contour:.0%} P2   = ({p2.center*100:.2f} ± {p2.width/2*100:.2f})% (90% sure), "
 	             f"θ = {np.degrees(θ2.center):.1f}°")
 
 	# save and plot the results
@@ -1198,7 +1196,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 
 	if isfinite(diameters.minimum) and USE_CHARGING_CORRECTION:
 		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e+1, 1e-3, 0)
-		logging.info(f"  inferred an aperture charge of {Q:.3f} MeV*cm")
+		logging.info(f"    inferred an aperture charge of {Q:.3f} MeV*cm")
 	else:
 		Q = 0
 
