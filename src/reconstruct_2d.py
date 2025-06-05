@@ -525,6 +525,10 @@ def analyze_scan(input_filename: str,
 		plot_overlaid_contores(
 			f"{shot}/{los}-{particle}-{detector_index}", source_stack, contour,
 			projected_offset, projected_flow, projected_stalk, num_stalks)
+		if show_plots:
+			plt.show()
+		else:
+			plt.close("all")
 
 	for statblock in statistics:
 		statblock["shot"] = shot
@@ -967,7 +971,9 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		positive_image_plicity = np.maximum(1, image_plicity.values)
 		umbra = (image_plicity.values > 0) & (r_image_pixels < max(M*rA/2, M*rA - (r_max - r_psf)))
 		umbra_value = np.mean(image.values/positive_image_plicity, where=umbra)
-		umbra_variance = np.mean((image.values - umbra_value*positive_image_plicity)**2/positive_image_plicity, where=umbra)
+		umbra_variance = np.quantile(  # this is an unusual formula for variance
+			((image.values - umbra_value*positive_image_plicity)**2/positive_image_plicity)[umbra],  # the scaling by image_plicity makes it variance per base pixel
+			.9)/1.645**2  # and doing quantile(.9)/1.645^2 instead of mean() makes it less sensitive to bad pixels
 		estimated_data_variance = np.sqrt(image.values/umbra_value)*umbra_variance
 
 		if sqrt(umbra_variance) < umbra_value/500:

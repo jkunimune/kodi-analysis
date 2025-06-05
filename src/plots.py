@@ -250,10 +250,10 @@ def save_and_plot_overlaid_penumbra(filename: str,
 	normalization = np.where(image_plicity.values > 0, image_plicity.values, inf)
 	plt.plot(measurement.x.get_bins(),
 	         (measurement.values/normalization)[:, measurement.shape[1]//2],
-	         "-o", label="Data")
+	         "C1-o", label="Data")
 	plt.plot(reconstruction.x.get_bins(),
 	         (reconstruction.values/normalization)[:, reconstruction.shape[1]//2],
-	         "--", label="Reconstruction")
+	         "C0--", label="Reconstruction")
 	plt.grid()
 	plt.legend()
 	plt.ylim(
@@ -334,16 +334,10 @@ def plot_source(filename: str, source_chain: Image,
 	# plot the contours with some Bayesian width to them
 	levels = np.linspace(0, 1, 6, endpoint=False)[1:]
 	if PLOT_SOURCE_CONTOURS:
-		if source_chain.shape[0] == 1:
-			plt.contour(
-				source_chain.x.get_bins(), source_chain.y.get_bins(),
-				(source_chain.values/peak_chain)[0, :, :].T,
-				levels=levels, colors=["#ffffff"], linewidths=1.2)
-		else:
-			levels = contour_chained(
-				source_chain.x.get_bins(), source_chain.y.get_bins(),
-				source_chain.values/where(peak_chain != 0, peak_chain, 1),
-				levels=levels, color="#ffffff")
+		levels = contour_chained(
+			source_chain.x.get_bins(), source_chain.y.get_bins(),
+			source_chain.values/where(peak_chain != 0, peak_chain, 1),
+			levels=levels, color="#ffffff")
 	if PLOT_OFFSET:
 		if projected_offset is not None:
 			x_off, y_off, z_off = projected_offset
@@ -744,6 +738,10 @@ def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], lev
 	                        shaded region at any given point
 	    :return: the contours you ended up plotting
 	"""
+	if z.shape[0] == 1:
+		plt.contour(x, y, z[0, :, :].T, levels, colors=[color], linewidths=1.2)
+		return levels
+
 	# first, decide whether we can fit all these contours
 	contour_regions = []
 	any_overlap = False
@@ -772,7 +770,9 @@ def contour_chained(x: NDArray[float], y: NDArray[float], z: NDArray[float], lev
 			path_commands += [Path.MOVETO] + [Path.LINETO]*(len(loop) - 1)
 		if len(path_points) > 0:
 			plt.gca().add_patch(PathPatch(Path(path_points, path_commands),
-			                              facecolor=f"{color}{round(opacity*255):02x}",
-			                              edgecolor="none"))
+			                              facecolor=color,
+			                              edgecolor=color,
+			                              linewidth=0.6,
+			                              alpha=opacity))
 	# tell us how many levels you ended up plotting
 	return levels
