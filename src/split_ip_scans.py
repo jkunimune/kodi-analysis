@@ -46,10 +46,38 @@ def main():
 
 def split_ip_scan(filepath: str, los_table: DataFrame):
 	shot = re.search(r"s([0-9]+)", filepath, re.IGNORECASE).group(1)
-	if re.search(r"_(pcis|kodi)[0-9]", filepath):
-		scan_index = int(re.search(r"_(pcis|kodi)([0-9+])", filepath, re.IGNORECASE).group(2)) - 1
-	else:
+
+	# figure out how many TIMs there are supposed to be and how many image plates are on each
+	tim_set: list[str] = []
+	num_ip_positions: list[int] = []
+	for _, tim in los_table[los_table.shot == shot].iterrows():
+		if tim.LOS != "srte":
+			tim_set.append(tim.LOS)
+			num_ip_positions.append(max(1, tim.filtering.count("|")))
+	if len(tim_set) == 0:
+		raise KeyError(f"please add shot {shot} to the input/scans/LOS_info.csv file.")
+
+	if re.search(r"_pcis[1-3]", filepath, re.IGNORECASE):
+		scan_index = int(re.search(r"_pcis([1-3])", filepath, re.IGNORECASE).group(1)) - 1
+	elif re.search(r"_kodi_[1-6]", filepath, re.IGNORECASE):
+		tim_index = int(re.search(r"_kodi_([1-6])", filepath, re.IGNORECASE).group(1))
+		try:
+			scan_index = tim_set.index(f"tim{tim_index}")
+		except ValueError:
+			raise ValueError(
+				f"I don't understand this filename.  doesn't '_kodi_{tim_index}' mean TIM{tim_index}?  but the only "
+				f"TIMs that were fielding KoDI were {' and '.join(tim_set)}.  so why is there an IP for TIM{tim_index}?")
+	elif re.search(r"_(pcis|kodi_)", filepath, re.IGNORECASE):
+		if len(tim_set) > 1:
+			raise ValueError(f"this shot is supposed to have imagers on multiple lines of sight "
+			                 f"({' and '.join(tim_set)}), so why does this filename not specify which KODI it is?")
 		scan_index = 0
+	elif re.search(r"_srte1?_?", filepath, re.IGNORECASE):
+		scan_index = 0
+	else:
+		raise ValueError(
+			f"I don't understand this filename.  is it PCIS or KODI or SR-TE?  I don't see any of those with the "
+			f"expected LOS indicator in the filename.  did LLE change the filename format agen?")
 
 	with h5py.File(filepath, "r") as f:
 		dataset = f["PSL_per_px"]
@@ -89,16 +117,6 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 	fig.canvas.mpl_connect('button_press_event', on_click)
 	plt.show()
 
-	# figure out how many TIMs there are supposed to be and how many image plates are on each
-	tim_set: list[str] = []
-	num_ip_positions: list[int] = []
-	for _, tim in los_table[los_table.shot == shot].iterrows():
-		if tim.LOS != "srte":
-			tim_set.append(tim.LOS)
-			num_ip_positions.append(max(1, tim.filtering.count("|")))
-	if len(tim_set) == 0:
-		raise KeyError(f"please add shot {shot} to the input/scans/LOS_info.csv file.")
-
 	# then split the image along those lines
 	cut_positions = np.round(image.x.get_index(sorted(cut_positions))).astype(int)
 	cut_intervals = []
@@ -130,6 +148,11 @@ def split_ip_scan(filepath: str, los_table: DataFrame):
 			                 f"image plates in this scan ({filepath}).")
 
 		new_filepath = path.join(path.dirname(filepath), f"{shot}_{tim}_ip{ip_position}.h5")
+		if os.path.isfile(new_filepath):
+			raise ValueError(
+				f"The scan at '{filepath}' seems to have the data for IP #{ip_position} on {tim} from shot {shot}, "
+				f"but there's already a file at '{new_filepath}'.  I won't overwrite it because I'm a coward.  "
+				f"Please either delete it, or delete '{filepath}', or don't call me anymore.")
 		print(f"saving to {new_filepath}")
 		with h5py.File(new_filepath, "w") as f:
 			f.attrs["scan_delay"] = scan_delay
