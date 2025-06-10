@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from math import inf, nan
 from typing import Callable, Optional
 
@@ -29,35 +30,40 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 		os.chdir("..")
 
 	shot_table = pd.read_csv('input/shot_info.csv', index_col="shot", dtype={"shot": str, "TPS": str}, skipinitialspace=True)
-	reconstruction_table = pd.read_csv("results/summary.csv", dtype={"shot": str, "tim": str})
+	reconstruction_table = pd.read_csv("results/summary.csv", dtype={"shot": str, "LOS": str, "yield": str})
 
 	# build a table of emissions on all shots and all LOSs
 	emissions = []
 	temperatures = []
-	labels = []
+	labels = None
+	num_channels = None
 	for shot in shots:
 		for line_of_sight in lines_of_sight:
-			line_of_sight = line_of_sight.lower()
+			line_of_sight = line_of_sight.upper()
 			print(shot, line_of_sight)
 			# for KoDI, collect all of the emission values from the reconstruction table
-			if line_of_sight.startswith("tim"):
+			if line_of_sight.startswith("TIM"):
 				emissions.append([])
 				energies = []
 				for i, record in reconstruction_table[(reconstruction_table.shot == shot) &
 				                                      (reconstruction_table.LOS == line_of_sight)].iterrows():
 					if record["particle"] == "xray":
-						emissions[-1].append(record["yield"])
+						lower_yield, upper_yield = re.match(r"Interval\[(.*), (.*)]", record["yield"]).groups()
+						emissions[-1].append((float(lower_yield) + float(upper_yield))/2)
 						energies.append((record["energy min"], record["energy max"]))
-				if len(temperatures) == 0:
-					for energy_min, energy_max in energies:
-						labels.append(f"≥ {energy_min:.0f} keV")
+				if num_channels is None or len(emissions[-1]) > num_channels:
+					num_channels = len(emissions[-1])
+				if labels is None or len(labels) < num_channels:
+					labels = [f"≥ {energy_min:.0f} keV" for energy_min, energy_max in energies]
 			# for SR-TE, skip that because it probably won't have the same channels
-			else:
+			elif line_of_sight == "SRTE":
 				emissions.append([])
+			else:
+				raise ValueError(f"I don't recognize the line of sight '{line_of_sight}'.  it should be 'TIM1', ..., 'TIM6', or 'SRTE'.")
 
-			while len(emissions[-1]) < len(emissions[0]):
-				emissions[-1].append(nan)  # pad this to force it to be rectangular
 			stalk_position = shot_table.loc[shot].get("TPS", "2")
+			if stalk_position is np.nan:
+				stalk_position = "TPS2"
 			if len(stalk_position) == 1:
 				stalk_position = "TPS" + stalk_position  # if it looks like the user forgot to include the prefix in the TPS specifier, add it
 			num_stalks = shot_table.loc[shot].get("stalks", 1)
@@ -68,10 +74,15 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 			# save the space-integrated temperature
 			temperatures.append((temperature, temperature_error))
 
+	# if any lines of sight were missing channels, pad them with nan to make everything rectangular
+	for i in range(len(emissions)):
+		while len(emissions[i]) < num_channels:
+			emissions[i].append(nan)
+
 	emissions = np.array(emissions)
 	temperatures = np.array(temperatures)
 
-	# plot the trends in all of the data hither plotted
+	# plot the trends in all of the data hitherto plotted
 	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(5 + .15*len(temperatures), 5))
 	x = np.ravel(
 		np.arange(1/2, len(shots))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(lines_of_sight))[np.newaxis, :])
@@ -384,7 +395,7 @@ def load_all_xray_images_for(shot: str, tim: str) \
 	for directory, _, filenames in os.walk("results/data"):
 		for filename in filenames:
 			filepath = os.path.join(directory, filename)
-			if shot in filepath and tim in filepath and "xray" in filepath and "source" in filepath:
+			if shot in filepath and tim.lower() in filepath and "xray" in filepath and "source" in filepath:
 				x, y, source_stack, filtering = load_hdf5(
 					filepath, keys=["x", "y", "images", "filtering"])
 				source_stack = source_stack.transpose((0, 1, 3, 2))  # don’t forget to convert from (y,x) to (i,j) indexing

@@ -88,7 +88,7 @@ The shot number argument on this one does not support commas.
 
 For electron temperature inference, run `python src/calculate_temperature.py shot_numbers lines_of_sight [--show]`.
 - `shot_numbers` is a comma-separated list of shot numbers.
-- `lines_of_sight` is a comma-separated list of lines of sight; for example, `tim2,tim4,tim5,srte`.
+- `lines_of_sight` is a comma-separated list of lines of sight; for example, `TIM2,TIM4,TIM5,SRTE`.
 - The `--show` flag causes it to show each plot and wait for the user before moving on.
 It should automatically find and load your previous 2D reconstructions for each shot and each line of sight.
 It's okay if some of the data is missing (like if one TIM failed on one of the shots).
