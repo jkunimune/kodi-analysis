@@ -7,6 +7,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
+from pandas import isna
 from scipy import interpolate
 
 import coordinate
@@ -16,9 +17,8 @@ from plots import save_current_figure
 from util import fit_ellipse
 
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
-LOS = ["tim2", "tim4", "tim5"]
 
-SHOW_ALIGNED_LINEOUTS = False
+SHOW_ALIGNED_LINEOUTS = True
 SHOW_ELLIPSOIDS = True
 
 
@@ -32,15 +32,16 @@ def main():
 	for i, shot in enumerate(SHOTS):
 		print(shot)
 		if SHOW_ALIGNED_LINEOUTS:
-			for j in range(len(LOS)):
-				show_aligned_lineouts(LOS[j], LOS[(j + 1)%len(LOS)])
-		asymmetries[i, :] = fit_ellipsoid(shot, LOS)
+			for j in range(1, 7):
+				for k in range(j + 1, 7):
+					show_aligned_lineouts(shot, f"tim{j}", f"tim{k}")
+		asymmetries[i, :] = fit_ellipsoid(shot)
 		num_stalks[i] = get_num_stalks(shot)
 
 	polar_plot_asymmetries(SHOTS, asymmetries, num_stalks)
 
 
-def show_aligned_lineouts(los_0: str, los_1: str) -> None:
+def show_aligned_lineouts(shot: str, los_0: str, los_1: str) -> None:
 	axis_0 = coordinate.los_direction(los_0)
 	axis_1 = coordinate.los_direction(los_1)
 	mutual_axis = np.cross(axis_0, axis_1)
@@ -66,11 +67,6 @@ def show_aligned_lineouts(los_0: str, los_1: str) -> None:
 			x_median = np.interp(1/2, np.cumsum(lineouts[i, j, :])/np.sum(lineouts[i, j, :]),
 			                     mutual_grid.x.get_bins())
 			if j == 0:
-				_, ax = plt.subplots()
-				ax.imshow(image.values.T, extent=image.domain.extent, origin="lower")
-				ax.axis("square")
-				ax.axline(xy1=[0, 0], xy2=axis[:2], color="w")
-				ax.set_title(los)
 				ax = [ax_left, ax_right][i]
 				ax.imshow(rotated_image[:, ::-1].T.T,
 				          extent=mutual_grid.shifted(0, -x_median).extent,
@@ -100,7 +96,7 @@ def project_image_to_axis(image: coordinate.Image,
 	return interpolator((x_pixels, y_pixels))
 
 
-def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
+def fit_ellipsoid(shot: str) -> tuple[float, float]:
 	""" fit a 3D ellipsoid to the images and then return the relative magnitude of the prolateness
 	    and the absolute direction of the prolate axis
 	"""
@@ -110,12 +106,14 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 	# separation_magnitudes = []
 
 	# on each los we have
-	for los in tims:
+	lines_of_sight = []
+	for los in ["tim1", "tim2", "tim3", "tim4", "tim5", "tim6"]:
 		# grab the 2d covariance matrix and our axes’ coordinates in 3d
 		try:
 			image = load_images(shot, los)[0]
 		except IndexError:
 			continue
+		lines_of_sight.append(los)
 		basis = coordinate.los_coordinates(los)
 		cov, μ = fit_ellipse(image)
 
@@ -130,6 +128,10 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 		# 	separation_magnitudes.append(dr[j])
 		# 	separation_directions.append(basis[:,j])
 
+	print(f"found images on {len(lines_of_sight)} lines of sight: {' and '.join(lines_of_sight)}")
+	if len(lines_of_sight) == 0:
+		return 0, np.nan
+
 	ellipsoid_covariances = np.linalg.lstsq(covariance_directions, covariance_values, rcond=None)[0]
 	ellipsoid_covariances = ellipsoid_covariances.reshape((3, 3))
 
@@ -137,7 +139,7 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 	order = np.argsort(principal_variances)[::-1]
 	principal_variances = principal_variances[order]
 	principal_axes = principal_axes[:, order]
-	principal_radii = np.sqrt(principal_variances)
+	principal_radii = np.sqrt(abs(principal_variances))
 
 	for r, v in zip(principal_radii, principal_axes.T):
 		print(f"extends {r:.2f} μm in the direccion ⟨{v[0]: .4f}, {v[1]: .4f}, {v[2]: .4f} ⟩")
@@ -164,7 +166,7 @@ def fit_ellipsoid(shot: str, tims: list[str]) -> tuple[float, float]:
 		ax.set_ylim(-1.0*max_radius, 1.0*max_radius)
 		ax.set_zlim(-1.0*max_radius, 1.0*max_radius)
 
-		for i, los in enumerate(["tim2", "tim4", "tim5", "srte"]):
+		for i, los in enumerate(lines_of_sight + ["srte"]):
 			tim_direction = coordinate.los_coordinates(los)[:, 2]
 			plt.plot(*np.transpose([[0, 0, 0], max_radius*tim_direction]), f'C{i}--o', label=f"To {los}")
 		plt.plot(*np.transpose([[0, 0, 0], max_radius*stalk_direction]), "k", label="Stalk")
@@ -199,7 +201,10 @@ def polar_plot_asymmetries(shots: list[str], asymmetries: NDArray[float], num_st
 def get_num_stalks(shot: str) -> int:
 	shot_table = pd.read_csv('input/shot_info.csv', index_col="shot",
 	                         skipinitialspace=True, dtype={"shot": str, "stalks": "Int64"})
-	return shot_table.loc[shot]["stalks"]
+	if isna(shot_table.loc[shot]["stalks"]):
+		return 1
+	else:
+		return shot_table.loc[shot]["stalks"]
 
 
 def load_images(shot: str, los: str) -> list[coordinate.Image]:
@@ -210,6 +215,7 @@ def load_images(shot: str, los: str) -> list[coordinate.Image]:
 			if shot in filepath and los in filepath and "xray" in filepath and "source" in filepath:
 				x, y, source_stack, filtering = load_hdf5(
 					filepath, keys=["x", "y", "images", "filtering"])
+				source_stack = np.mean(source_stack, axis=1)  # we're not equipped to do uncertainty quantification here, so drop the sampling axis
 				source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 				grid = Grid.from_bin_array(x, y)
 				for source in source_stack:
