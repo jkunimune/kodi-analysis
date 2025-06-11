@@ -75,7 +75,9 @@ The typical workflow for doing 2D reconstructions looks like this:
      This is important so that it doesn’t try to group the signal into < 6 MeV and > 9 MeV parts by their diameters.
    - The `--MCMC` flag tells it to do uncertainty quantification.  It will take a lot longer and generate a few extra plots.
      If you're running on a machine with GPUs, I recommend trying it with the `--GPU` option as well, which might make it faster.
-5. The only input you need to provide once it starts running is the data region (and that’s only if you use `--show`).
+5. - The `--charging` flag tells it to use the aperture charging model to try to compensate for distortions in charged particle data 
+     (the validity of this model is questionable, so it's off by default).
+6. The only input you need to provide once it starts running is the data region (and that’s only if you use `--show`).
    When it asks you to "select" a "region", simply click on the plot to draw a polygon enclosing the good signal region,
    and ideally excluding any scratches or fiducials.
    You may right-click at any time during this process to un-place a point.

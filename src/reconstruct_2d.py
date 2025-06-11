@@ -89,6 +89,7 @@ def analyze(shots_to_reconstruct: list[str],
             only_cr39: bool,
             skip_reconstruction: bool,
             show_plots: bool,
+            charging: bool,
             do_mcmc: bool,
             use_gpu: bool):
 	""" iterate thru the scan files in the input/scans directory that match the provided shot
@@ -104,6 +105,7 @@ def analyze(shots_to_reconstruct: list[str],
 	                            deuteron energy bins, and "proton" for one huge energy bin.
 	    :param only_IP: whether to skip all .cpsa files and only look at .h5
 	    :param only_cr39: whether to skip all .h5 files and only look at .cpsa
+	    :param charging: whether to use the aperture charging model to try to explain distortions in charged particle data
 	    :param do_mcmc: whether to run the MCMC uncertainty analysis
 	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
@@ -309,6 +311,7 @@ def analyze(shots_to_reconstruct: list[str],
 				                     shot_info.get("flow (θ)", nan),
 				                     shot_info.get("flow (ф)", nan)),
 				charged_particle_energy_cuts=deuteron_energy_cuts,
+				use_charging_model =charging and particle != "xray",
 			)
 		except DataError as e:
 			logging.warning(e)
@@ -337,6 +340,7 @@ def analyze_scan(input_filename: str,
                  offset: tuple[float, float, float], velocity: tuple[float, float, float],
                  stalk_position: str, num_stalks: int,
                  charged_particle_energy_cuts: list[Interval],
+                 use_charging_model: bool,
                  do_mcmc: bool, use_gpu: bool,
                  skip_reconstruction: bool, show_plots: bool,
                  ) -> list[dict[str, str or float]]:
@@ -358,6 +362,7 @@ def analyze_scan(input_filename: str,
 	    :param stalk_position: the name of the port from which the target is held (should be "TPS2")
 	    :param num_stalks: the number of stalks on this target (usually 1)
 	    :param charged_particle_energy_cuts: the energy bins to use for reconstructing charged particles
+	    :param use_charging_model: whether to use the aperture charging model to adjust the point-spread function in your search for a best fit
 	    :param do_mcmc: whether to run the MCMC uncertainty analysis
 	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
@@ -445,6 +450,7 @@ def analyze_scan(input_filename: str,
 					grid_parameters,
 					source_domain,
 					charged_particle_energy_cuts,
+					use_charging_model=use_charging_model,
 					do_mcmc=do_mcmc, use_gpu=use_gpu,
 					skip_reconstruction=skip_reconstruction, show_plots=show_plots)
 		except DataError as e:
@@ -549,6 +555,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
                          grid_parameters: Optional[GridParameters],
                          source_domain: Optional[Grid],
                          charged_particle_energy_cuts: list[Interval],
+                         use_charging_model: bool,
                          do_mcmc: bool, use_gpu: bool,
                          skip_reconstruction: bool, show_plots: bool,
                          ) -> tuple[GridParameters, Grid, list[NDArray[float]], list[dict[str, Any]]]:
@@ -576,6 +583,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
 	    :param charged_particle_energy_cuts: the energy cuts to use when you break this section up into diameter bins
+	    :param use_charging_model: whether to use the aperture charging model to adjust the point-spread function in your search for a best fit
 	    :param do_mcmc: whether to run the MCMC uncertainty analysis
 	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
@@ -691,6 +699,7 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 				grid_transform/grid_mean_scale, centers,
 				f"{section_index}{energy_cut_index}", num_detectors, len(energy_cuts),
 				energy_cut, max_contrast, source_domain,
+				use_charging_model=use_charging_model,
 				do_mcmc=do_mcmc, use_gpu=use_gpu,
 				skip_reconstruction=skip_reconstruction, show_plots=show_plots)
 		except (DataError, FilterError, RecordNotFoundError) as e:
@@ -725,6 +734,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
                              cut_index: str, num_detectors: int, num_energy_cuts: int,
                              energies: Interval, max_contrast: float,
                              output_plane: Optional[Grid],
+                             use_charging_model: bool,
                              do_mcmc: bool, use_gpu: bool,
                              skip_reconstruction: bool, show_plots: bool
                              ) -> tuple[Image, dict[str, Any]]:
@@ -758,6 +768,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
         :param output_plane: the coordinate system onto which to interpolate the result before returning.  if None is
                              specified, an output Grid will be chosen; this is just for when you need multiple sections
                              to be co-registered.
+        :param use_charging_model: whether to use the aperture charging model to adjust the point-spread function in your search for a best fit
 	    :param do_mcmc: whether to run the MCMC uncertainty analysis
 	    :param use_gpu: whether to run the MCMC on a GPU (rather than on all CPUs as is default)
 	    :param skip_reconstruction: if True, then the previous reconstructions will be loaded and reprocessed rather
@@ -825,7 +836,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		Q, r_max = do_1d_reconstruction(
 			scan, f"{shot}/{los}-{particle}-{cut_index}",
 			diameters, energies, max_contrast, M*rA, M*sA if grid_shape != "single" else inf,
-			centers, data_polygon) # TODO: infer rA, as well?
+			centers, data_polygon, use_charging_model) # TODO: infer rA, as well?
 
 		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
 			logging.warning(f"    the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
@@ -1101,7 +1112,8 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 
 def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
                          diameters: Interval, energies: Interval, max_contrast: float,
-                         r0: float, s0: float, centers: list[Point], region: list[Point]) -> Point:
+                         r0: float, s0: float, centers: list[Point], region: list[Point],
+                         use_charging_model: bool) -> Point:
 	""" perform an inverse Abel transformation while fitting for charging
 	    :param scan: the scan result object containing the data to be analyzed
 	    :param plot_filename: the filename to pass to the plotting function for the resulting figure
@@ -1112,6 +1124,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 	    :param r0: the radius of the aperture in the imaging plane (cm)
 	    :param s0: the distance to the center of the next aperture in the imaging plane (cm)
 	    :param region: the polygon inside which we care about the data
+	    :param use_charging_model: whether to use the aperture charging model to adjust the point-spread function in your search for a best fit
 	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
 	"""
 	r_max = min(2*r0, s0/sqrt(3), max(s0 - 1.8*r0, 0.55*s0))
@@ -1200,7 +1213,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 		else:
 			return χ2  # type: ignore
 
-	if isfinite(diameters.minimum) and USE_CHARGING_CORRECTION:
+	if use_charging_model:
 		Q = line_search(reconstruct_1d_assuming_Q, 0, 1e+1, 1e-3, 0)
 		logging.info(f"    inferred an aperture charge of {Q:.3f} MeV*cm")
 	else:
@@ -1885,6 +1898,10 @@ if __name__ == '__main__':
 	parser.add_argument(
 		"--GPU", action="store_true",
 		help="whether to run the MCMC on a GPU (rather than on all CPUs as is default)")
+	parser.add_argument(
+		"--charging", action="store_true",
+		help="whether to use the aperture charging model to try to explain distortions in charged particle data"
+	)
 	args = parser.parse_args()
 
 	analyze(shots_to_reconstruct=args.shots.split(","),
@@ -1893,5 +1910,6 @@ if __name__ == '__main__':
 	        energy_cut_mode="proton" if args.proton else "fine" if args.fine else "normal",
 	        only_cr39=args.only_CR39,
 	        only_IP=args.only_IP,
+	        charging=args.charging,
 	        do_mcmc=args.MCMC,
 	        use_gpu=args.GPU)
