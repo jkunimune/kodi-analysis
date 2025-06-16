@@ -665,7 +665,8 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 	else:
 		logging.info(f"  re-loading the previous reconstructions")
 		try:
-			previus_parameters = load_shot_info(shot, los, filter_str=print_filtering(filter_stack))
+			previus_parameters = load_shot_info(shot, los, particle, filter_str=print_filtering(filter_stack),
+			                                    duplicates_okay=True)
 		except RecordNotFoundError as e:
 			logging.warning(f"  {e}")
 			return grid_parameters, source_domain, [], []
@@ -800,7 +801,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		if incident_energies.minimum <= MIN_DETECTABLE_ENERGY:
 			diameters.maximum = inf
 		# convert back to exclude particles that are ranged out
-		energies = Interval(*particle_E_in(
+		actual_energies = Interval(*particle_E_in(
 			[incident_energies.minimum, incident_energies.maximum], Z, A, filter_stack))
 
 		if incident_energies.maximum <= MIN_DETECTABLE_ENERGY:
@@ -813,6 +814,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	elif particle == "xray":
 		contour = XRAY_CONTOUR_LEVEL
 		resolution = X_RAY_RESOLUTION
+		actual_energies = energies
 		diameters = Interval(nan, nan)
 
 	else:
@@ -835,7 +837,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		# start with a 1D reconstruction on one of the found images
 		Q, r_max = do_1d_reconstruction(
 			scan, f"{shot}/{los}-{particle}-{cut_index}",
-			diameters, energies, max_contrast, M*rA, M*sA if grid_shape != "single" else inf,
+			diameters, actual_energies, max_contrast, M*rA, M*sA if grid_shape != "single" else inf,
 			centers, data_polygon, use_charging_model) # TODO: infer rA, as well?
 
 		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
@@ -843,7 +845,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
 			r_max = M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution
 
-		r_psf = min(electric_field.get_expanded_radius(Q, M*rA, energies), 2.05*M*rA)
+		r_psf = min(electric_field.get_expanded_radius(Q, M*rA, actual_energies), 2.05*M*rA)
 
 		if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
 			r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
@@ -930,7 +932,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			                                 pixel_width=kernel_domain.pixel_width/(M - 1))
 
 		# calculate the point-spread function
-		kernel = point_spread_function(kernel_domain, Q, M*rA, grid_transform, energies) # get the dimensionless shape of the penumbra
+		kernel = point_spread_function(kernel_domain, Q, M*rA, grid_transform, actual_energies) # get the dimensionless shape of the penumbra
 		if account_for_overlap:
 			raise NotImplementedError("I also will need to add more things to the kernel")
 		kernel.values *= source_domain.pixel_area*image.domain.pixel_area/(M*L1)**2 # scale by the solid angle subtended by each image pixel
@@ -1055,7 +1057,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	# if we’re skipping the reconstruction, just load the previus stacked penumbra and reconstructed source
 	else:
 		logging.info(f"    Loading reconstruction for diameters {diameters.minimum:5.2f}μm < d <{diameters.maximum:5.2f}μm")
-		previus_parameters = load_shot_info(shot, los, energies, filter_str)
+		previus_parameters = load_shot_info(shot, los, particle, energies, filter_str)
 		Q = previus_parameters.Q
 		x, y, image_values, image_plicity_values = load_hdf5(
 			f"results/data/{shot}/{los}-{particle}-{cut_index}-penumbra", ["x", "y", "N", "A"])
@@ -1090,7 +1092,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		color_index = int(cut_index[2])
 		num_colors = num_energy_cuts
 	plot_source(f"{shot}/{los}-{particle}-{cut_index}",
-	            output, energies,
+	            output, actual_energies,
 	            color_index=color_index, num_colors=num_colors,
 	            projected_flow=None, projected_offset=None,
 	            projected_stalk=None, num_stalks=0)
@@ -1458,24 +1460,26 @@ def load_source(shot: str, los: str, particle_index: str,
 
 
 def load_shot_info(shot: str, los: str,
-                   energy_range: Optional[Interval] = None,
-                   filter_str: Optional[str] = None) -> pd.Series:
+                   particle: str, energy_range: Optional[Interval] = None,
+                   filter_str: Optional[str] = None, duplicates_okay=False) -> pd.Series:
 	""" load the summary.csv file and look for a row that matches the given criteria """
 	all_records = case_insensitive_dataframe(
 		pd.read_csv("results/summary.csv", dtype={'shot': str, 'LOS': str}, index_col=['shot', 'LOS']))
 	# load a dataframe of all matching sommary.csv rows
 	matching_records = all_records.loc[[(shot, los)]]
 	# disqualify any rows that don't match given inputs
+	if particle is not None:
+		matching_records = matching_records[matching_records["particle"] == particle]
 	if energy_range is not None:
 		matching_records = matching_records[np.isclose(matching_records["energy min"], energy_range.minimum)]
 		matching_records = matching_records[np.isclose(matching_records["energy max"], energy_range.maximum)]
 	if filter_str is not None:
 		matching_records = matching_records[matching_records["filtering"] == filter_str]
 	# make sure there's exactly one row remaining
-	if len(matching_records) == 1:
-		return matching_records.iloc[-1]
-	elif len(matching_records) == 0:
+	if len(matching_records) == 0:
 		raise RecordNotFoundError(f"couldn’t find {shot} {los} \"{filter_str}\" {energy_range} cut in summary.csv")
+	elif len(matching_records) == 1 or duplicates_okay:
+		return matching_records.iloc[-1]
 	else:
 		raise DataError(f"there were multiple entries in summary.csv for {shot} {los} \"{filter_str}\" {energy_range}.  how did that happen‽")
 
