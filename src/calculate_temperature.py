@@ -21,7 +21,7 @@ from image_plate import log_xray_sensitivity
 from plots import make_colorbar, save_current_figure
 from util import parse_filtering, Filter, median, shape_parameters, nearest_value
 
-NUM_SAMPLES = 100
+NUM_SAMPLES = 1000
 PLOT_STALK = False
 
 
@@ -114,10 +114,10 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 	# load imaging data
 	images, filter_stacks = load_all_xray_images_for(shot, los)
 	if len(images) == 0:
-		print(f"can’t find anything for shot {shot} {los}")
+		print("(no data)")
 		return nan, nan
 	elif len(images) == 1:
-		print(f"can’t infer temperatures with only one image on shot {shot} {los}")
+		print("(only one channel)")
 		return nan, nan
 
 	# calculate some synthetic lineouts
@@ -151,7 +151,7 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 			data = np.array([image.at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
 			reliable_measurements = data >= measurement_errors
 			if np.all(reliable_measurements):
-				Te, _, _, _ = compute_plasma_conditions_with_errorbars(data, filter_stacks)
+				Te, _, _ = compute_plasma_conditions(data, *compute_sensitivity(filter_stacks))
 				temperature_map[i, j] = Te
 			else:
 				temperature_map[i, j] = nan
