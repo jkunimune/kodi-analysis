@@ -88,8 +88,11 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 		np.arange(1/2, len(shots))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(lines_of_sight))[np.newaxis, :])
 	top_ax.grid(axis="y", which="both")
 	for k, (marker, label) in enumerate(zip("*ovd", labels)):
-		top_ax.scatter(x, emissions[:, k], marker=marker, color=f"C{k}", label=label, zorder=10)
-	top_ax.legend()
+		top_ax.scatter(
+			x, emissions[:, k], marker=marker,
+			color=CMAP["cool"](1 - k/max(1, len(labels) - 1)),
+			label=label, zorder=10)
+	# top_ax.legend()
 	top_ax.set_yscale("log")
 	top_ax.set_ylabel("X-ray intensity")
 	bottom_ax.grid(axis="y")

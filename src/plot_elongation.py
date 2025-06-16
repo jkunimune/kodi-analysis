@@ -6,12 +6,13 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
+from numpy import linspace
 from numpy.typing import NDArray
 from pandas import isna
 from scipy import interpolate
 
 import coordinate
-from coordinate import Grid
+from coordinate import Grid, Image
 from hdf5_util import load_hdf5
 from plots import save_current_figure
 from util import fit_ellipse
@@ -19,7 +20,10 @@ from util import fit_ellipse
 SHOTS = ["104779", "104780", "104781", "104782", "104783"]
 
 SHOW_ALIGNED_LINEOUTS = True
+SHOW_COMPARISON = True
 SHOW_ELLIPSOIDS = True
+
+FIT_CONTOUR = .50
 
 
 def main():
@@ -84,7 +88,7 @@ def show_aligned_lineouts(shot: str, los_0: str, los_1: str) -> None:
 	plt.show()
 
 
-def project_image_to_axis(image: coordinate.Image,
+def project_image_to_axis(image: Image,
                           t_mutual: NDArray[float], axis: NDArray[float]) -> NDArray[float]:
 	θ = atan2(axis[1], axis[0])
 	t_pixels, s_pixels = t_mutual[:, np.newaxis], t_mutual[np.newaxis, :]
@@ -107,6 +111,7 @@ def fit_ellipsoid(shot: str) -> tuple[float, float]:
 
 	# on each los we have
 	lines_of_sight = []
+	images = []
 	for los in ["tim1", "tim2", "tim3", "tim4", "tim5", "tim6"]:
 		# grab the 2d covariance matrix and our axes’ coordinates in 3d
 		try:
@@ -115,7 +120,8 @@ def fit_ellipsoid(shot: str) -> tuple[float, float]:
 			continue
 		lines_of_sight.append(los)
 		basis = coordinate.los_coordinates(los)
-		cov, μ = fit_ellipse(image)
+		images.append(image)
+		cov, μ = fit_ellipse(image, FIT_CONTOUR)
 
 		# enumerate the four measurable covariances and the 3×3 that defines each one’s weighting
 		for j in range(2):
@@ -149,16 +155,15 @@ def fit_ellipsoid(shot: str) -> tuple[float, float]:
 
 	stalk_direction = coordinate.tps_direction()
 
+	if SHOW_COMPARISON:
+		for (los, image) in zip(lines_of_sight, images):
+			show_ellipse_comparison(los, image, ellipsoid_covariances)
+
 	if SHOW_ELLIPSOIDS:
 		fig = plt.figure(figsize=(5, 5))  # Square figure
 		ax = fig.add_subplot(111, projection='3d')
 		ax.set_box_aspect([1, 1, 1])
 		plot_ellipsoid(principal_radii, principal_axes, ax)
-
-		for r, v in zip(principal_radii, principal_axes.T):
-			ax.plot(*np.transpose([-r*v, r*v]), color='#44AADD')
-		# ax.plot(*[[0, absolute_separation[i]] for i in range(3)], color='C0')
-		# ax.plot(*[[0, offset[i]] for i in range(3)], 'C1')
 
 		# Adjustment of the axen, so that they all have the same span:
 		max_radius = 1.4*max(principal_radii)
@@ -176,22 +181,47 @@ def fit_ellipsoid(shot: str) -> tuple[float, float]:
 		plt.tight_layout()
 		plt.show()
 
-	magnitude = (principal_radii[0] - principal_radii[1])/principal_radii[1]
+	magnitude = (principal_radii[0] - principal_radii[2])/principal_radii[2]
 	angle = acos(abs(np.dot(principal_axes[:, 0], stalk_direction)))
 	print(f"the angle between {principal_axes[:, 0]} and {stalk_direction} is {degrees(angle)}")
 	return magnitude, angle
 
 
+def show_ellipse_comparison(los: str, image: Image, ellipsoid_covariances: NDArray[float]):
+	fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(8, 4))
+
+	ax_left.imshow(image.values.T, extent=image.domain.extent, origin="lower")
+	measured_covariances, _ = fit_ellipse(image, FIT_CONTOUR)
+	measured_variances, measured_axes = np.linalg.eig(measured_covariances)
+	measured_radii = np.sqrt(abs(measured_variances))
+	plot_ellipse(measured_radii, measured_axes, ax_left)
+	ax_left.set_title(f"{los} (measured)")
+
+	basis = coordinate.los_coordinates(los)
+	projected_covariances = (basis.T@ellipsoid_covariances@basis)[:2, :2]
+	projected_variances, projected_axes = np.linalg.eig(projected_covariances)
+	projected_radii = np.sqrt(abs(projected_variances))
+	plot_ellipse(projected_radii, projected_axes, ax_right)
+	ax_right.set_title(f"{los} (3D-recon.)")
+
+	scale = max(max(measured_radii), max(projected_radii))
+	ax_left.set_xlim(-scale, scale)
+	ax_left.set_ylim(-scale, scale)
+	ax_right.set_xlim(-scale, scale)
+	ax_right.set_ylim(-scale, scale)
+
+	fig.tight_layout()
+
+
 def polar_plot_asymmetries(shots: list[str], asymmetries: NDArray[float], num_stalks: NDArray[int]) -> None:
-	fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-	ax.scatter(asymmetries[num_stalks == 1, 1], asymmetries[num_stalks == 1, 0], c="C0", marker="^", label="One stalk", zorder=10)
-	ax.scatter(asymmetries[num_stalks == 2, 1], asymmetries[num_stalks == 2, 0], c="C1", marker="d", label="Two stalks", zorder=10)
+	fig, ax = plt.subplots(subplot_kw={'projection': 'polar'}, figsize=(5.0, 5.5))
+	ax.scatter(asymmetries[num_stalks == 1, 1], asymmetries[num_stalks == 1, 0], c="C0", s=50, marker="^", label="One stalk", zorder=10)
+	ax.scatter(asymmetries[num_stalks == 2, 1], asymmetries[num_stalks == 2, 0], c="C1", s=50, marker="d", label="Two stalks", zorder=10)
 	ax.legend(loc=(.60, .90))
 	for shot, (magnitude, angle) in zip(shots, asymmetries):
-		plt.text(angle, magnitude, f" {shot}")
+		plt.text(angle, magnitude, f" {shot}", size=14)
 	ax.grid(True)
 	ax.set_thetalim(0, pi/2)
-	# ax.set_thetalabel("Angle between stalk and prolate axis")
 	ax.set_xlabel("Prolateness (P2/P0)", labelpad=20.)
 	fig.tight_layout()
 	save_current_figure("prolateness")
@@ -207,7 +237,7 @@ def get_num_stalks(shot: str) -> int:
 		return shot_table.loc[shot]["stalks"]
 
 
-def load_images(shot: str, los: str) -> list[coordinate.Image]:
+def load_images(shot: str, los: str) -> list[Image]:
 	results = []
 	for directory, _, filenames in os.walk("results/data"):
 		for filename in filenames:
@@ -219,7 +249,7 @@ def load_images(shot: str, los: str) -> list[coordinate.Image]:
 				source_stack = source_stack.transpose((0, 2, 1))  # don’t forget to convert from (y,x) to (i,j) indexing
 				grid = Grid.from_bin_array(x, y)
 				for source in source_stack:
-					results.append(coordinate.Image(grid, source))
+					results.append(Image(grid, source))
 	return results
 
 
@@ -238,6 +268,25 @@ def plot_ellipsoid(semiaxes: Sequence[float], basis: NDArray[float], axes: Axes)
 			[x, y, z], axes=(1, 0, 2)),
 		axes=(1, 0, 2))
 	axes.plot_surface(x, y, z,  rstride=4, cstride=4, color='#44AADD77', zorder=-1)
+	for r, v in zip(semiaxes, basis.T):
+		axes.plot(*np.transpose([-r*v, r*v]), color='#44AADD')
+
+
+def plot_ellipse(semiaxes: Sequence[float], basis: NDArray[float], axes: Axes) -> None:
+	t = linspace(0, 2*pi, 121)
+	xt = semiaxes[0]*np.cos(t)
+	yt = semiaxes[1]*np.sin(t)
+	θ = atan2(basis[1, 0], basis[0, 0])
+	x = xt*cos(θ) - yt*sin(θ)
+	y = xt*sin(θ) + yt*cos(θ)
+	axes.plot(x, y, "k")
+	for length, direction in zip(semiaxes, basis.T):
+		axes.plot(
+			[length*direction[0], -length*direction[0]],
+			[length*direction[1], -length*direction[1]],
+			"k"
+		)
+	axes.axis("square")
 
 
 if __name__ == "__main__":
