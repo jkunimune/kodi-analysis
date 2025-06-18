@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 from numpy import reshape, sqrt, shape, expand_dims, prod, hypot, linspace, meshgrid, stack, zeros, \
 	ones
 from numpy.typing import NDArray
-from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, DensityDist, LogNormal, draw
+from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, DensityDist, LogNormal, TruncatedNormal, draw
 from pytensor import tensor
 from pytensor.link.jax.dispatch import jax_funcify
 from pytensor.tensor.fft import RFFTOp, IRFFTOp
@@ -107,8 +107,8 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 
 	with Model():
 		# latent variables
-		kernel_radius = Normal("kernel_radius", mu=psf_nominal_radius, sigma=psf_nominal_radius*0.05)
-		kernel = piecewise_sigmoid(kernel_radius, r_nodes, z_nodes)
+		kernel_radius_factor = TruncatedNormal("kernel_radius_factor", mu=1.00, sigma=0.02, lower=0.90, upper=1.10)
+		kernel = piecewise_sigmoid(kernel_radius_factor*psf_nominal_radius, r_nodes, z_nodes)
 		kernel_spectrum = Deterministic(
 			"kernel_spectrum",
 			tensor.fft.rfft(
@@ -191,7 +191,7 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 		                   cores=cores_to_use, **kwargs)
 
 	# generate a basic trace plot to catch basic issues
-	arviz.plot_trace(inference, var_names=["smoothing", "kernel_radius", "background"])
+	arviz.plot_trace(inference, var_names=["smoothing", "kernel_radius_factor", "background"])
 	plt.tight_layout()
 
 	# it should be *almost* impossible for the chain to prevent a source that's all zeros, but check anyway
