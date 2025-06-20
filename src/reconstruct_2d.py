@@ -63,12 +63,11 @@ FINE_DEUTERON_ENERGY_CUTS = [
 ] # (MeV) (emitted, not detected)
 
 FORCE_LARGE_SOURCE_DOMAIN = False  # whether to enable a source domain larger than the aperture (experimental)
-USE_CHARGING_CORRECTION = True
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 UPSAMPLE_SOURCES = False  # whether to save the sources at a potentially higher resolution than they were reconstructed at
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
-CHARGED_PARTICLE_RESOLUTION = 2e-4  # resolution of reconstructed KoD sources
-X_RAY_RESOLUTION = 2e-4  # spatial resolution of reconstructed x-ray sources
+FINE_RESOLUTION = 2e-4  # source resolution to use when finding a single solution
+FAST_RESOLUTION = 5e-4  # source resolution to use when sampling many solutions
 CHARGED_PARTICLE_CONTOUR_LEVEL = .17  # contour to use when characterizing KoDI sources
 XRAY_CONTOUR_LEVEL = .17  # contour to use when characterizing x-ray sources
 MIN_OBJECT_SIZE = 250e-4  # minimum amount of space to allocate in the source plane
@@ -628,11 +627,13 @@ def analyze_scan_section(input_file: Union[Scan, Image],
 		except FileNotFoundError:
 			old_data_polygon = None
 		if show_plots or old_data_polygon is None:
+			logging.info(f"    I need the user to show me where the {section_name} region is...")
 			try:
 				data_polygon = user_defined_region(
 					input_file, default=old_data_polygon,
 					max_contrast=35.,
-					title=f"Select the {section_name} region, then close this window.")
+					title=f"Select the {section_name} region, then close this window.",
+					timeout=300)
 				if len(data_polygon) < 3:
 					data_polygon = None
 			except TimeoutError:
@@ -782,7 +783,6 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	# switch out some values depending on whether these are xrays or deuterons
 	if particle == "proton" or particle == "deuteron":
 		contour = CHARGED_PARTICLE_CONTOUR_LEVEL
-		resolution = CHARGED_PARTICLE_RESOLUTION
 
 		if particle == "proton":
 			Z, A = 1, 1
@@ -813,12 +813,13 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 
 	elif particle == "xray":
 		contour = XRAY_CONTOUR_LEVEL
-		resolution = X_RAY_RESOLUTION
 		actual_energies = energies
 		diameters = Interval(nan, nan)
 
 	else:
 		raise ValueError(f"there are no {particle}s within the walls.")
+
+	resolution = FAST_RESOLUTION if do_mcmc else FINE_RESOLUTION
 
 	filter_str = print_filtering(filter_stack)
 
@@ -852,10 +853,6 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		account_for_overlap = isinf(r_max)
 
 		# rebin and stack the images
-		if particle == "proton" or particle == "deuteron":
-			resolution = CHARGED_PARTICLE_RESOLUTION
-		else:
-			resolution = X_RAY_RESOLUTION
 		_, angle, _, _ = decompose_2x2_into_intuitive_parameters(grid_transform)
 
 		local_image_domain = Grid.from_size(
@@ -1732,6 +1729,7 @@ def find_circle_centers(filename: str, scan: Union[Scan, Image], particle: str, 
 
 	# ask the user for help finding the center
 	if ASK_FOR_HELP:
+		logging.info("    I need the user to tell me where the center of the image is...")
 		try:
 			x0, y0 = where_is_the_ocean(full_image, "Please click on the center of a penumbrum.", timeout=8.64)
 		except TimeoutError:

@@ -8,5 +8,5 @@ pandas
 arviz
 jax
 numpyro
-pymc
+pymc==5.*
 pytensor

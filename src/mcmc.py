@@ -7,7 +7,7 @@ import numpy as np
 import pytensor
 from matplotlib import pyplot as plt
 from numpy import reshape, sqrt, shape, expand_dims, prod, hypot, linspace, meshgrid, stack, zeros, \
-	ones
+	ones, log, inf
 from numpy.typing import NDArray
 from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, DensityDist, LogNormal, TruncatedNormal, draw
 from pytensor import tensor
@@ -20,6 +20,8 @@ from coordinate import Image
 pytensor.config.floatX = "float64"
 
 
+SCALE_INVARIANT = False  # whether to weit small sources in the prior so that they are just as likely as big sources
+VARIABLE_APERTURE_SIZE = True  # whether to consider the possibility that the aperture is slitely bigger or smaller
 SHOW_ONE_DRAW = False  # whether to show the user one set of images to verify that the function graph is working
 
 
@@ -99,15 +101,24 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 		ones(x.shape),
 	], axis=0)
 
+	# calculate some of the invariable things regarding the source
+	x, y = guess.domain.get_pixels(sparse=True)
+	r_source_pixels = hypot(x, y)
+
 	# characterize the guess for the prior
 	guess_num_pixels = guess.domain.num_pixels  # the expected number of pixels contributing to the source
 	guess_intensity = np.sum(guess.values)/guess_num_pixels  # the expected ballpark pixel value
 	guess_image_intensity = (np.sum(guess.values)*np.max(psf_efficiency))  # the general intensity of the umbra
 	limit = np.sum(guess.values*1e4)  # the maximum credible value of the source's Fourier transform
 
+	trace_variables = []
 	with Model():
 		# latent variables
-		kernel_radius_factor = TruncatedNormal("kernel_radius_factor", mu=1.00, sigma=0.02, lower=0.90, upper=1.10)
+		if VARIABLE_APERTURE_SIZE:
+			kernel_radius_factor = TruncatedNormal("kernel_radius_factor", mu=1.00, sigma=0.02, lower=0.90, upper=1.10)
+			trace_variables.append("kernel_radius_factor")
+		else:
+			kernel_radius_factor = 1.
 		kernel = piecewise_sigmoid(kernel_radius_factor*psf_nominal_radius, r_nodes, z_nodes)
 		kernel_spectrum = Deterministic(
 			"kernel_spectrum",
@@ -115,7 +126,13 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 				pad_with_zeros(kernel, r_nodes.shape[1:], data.shape)
 			),
 		)
-		smoothing = LogNormal("smoothing", mu=0, sigma=3)
+		if SCALE_INVARIANT:
+			source_radius = LogNormal("source_radius", mu=log(50), sigma=log(5))
+			trace_variables.append("source_radius")
+		else:
+			source_radius = inf
+		smoothing = LogNormal("smoothing", mu=log(1), sigma=log(20))
+		trace_variables.append("smoothing")
 
 		# prior
 		source_shape = DensityDist(  # sample the logarithms of the pixel values so we don't get negative pixels
@@ -126,7 +143,10 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 			# moment=lambda *args, **kwargs: np.log(np.maximum(1e-3, guess.values/guess_intensity)),
 			# initval=np.log(np.maximum(1e-3, guess.values/guess_intensity)),
 			shape=guess.shape)
-		source = Deterministic("source", tensor.exp(source_shape)*guess_intensity)
+		source = Deterministic(
+			"source",
+			tensor.exp(source_shape - (r_source_pixels/source_radius)**2)*guess_intensity,
+		)
 		source_spectrum = Deterministic(  # clip extreme values when you FFT it to suppress numeric instabilities
 			"source_spectrum",
 			tensor.clip(
@@ -153,6 +173,7 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 
 		# some auxiliary variables for the trace plot
 		Deterministic("source_intensity", tensor.sum(source)*guess.domain.pixel_area)
+		trace_variables.append("source_intensity")
 
 		# verify that the function graph is set up correctly
 		if SHOW_ONE_DRAW:
@@ -191,10 +212,10 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 		                   cores=cores_to_use, **kwargs)
 
 	# generate a basic trace plot to catch basic issues
-	arviz.plot_trace(inference, var_names=["smoothing", "kernel_radius_factor", "background"])
+	arviz.plot_trace(inference, var_names=trace_variables)
 	plt.tight_layout()
 
-	# it should be *almost* impossible for the chain to prevent a source that's all zeros, but check anyway
+	# it should be *almost* impossible for the chain to produce a source that's all zeros, but check anyway
 	if np.any(np.all(inference.posterior["source"].to_numpy() == 0, axis=(2, 3))):
 		i, j = np.nonzero(np.all(inference.posterior["source"].to_numpy() == 0, axis=(-3, -2, -1)))
 		print("blank source alert!")
