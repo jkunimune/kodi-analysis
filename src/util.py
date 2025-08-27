@@ -158,8 +158,8 @@ def periodic_mean(values: np.ndarray, minimum: float, maximum: float):
 def center_of_mass(image: Image) -> tuple[float, float]:
 	""" get the center of mass of a 2d function """
 	return (
-		(image.x.get_bins()*image.values.sum(axis=1)).sum()/image.values.sum(),
-		(image.y.get_bins()*image.values.sum(axis=0)).sum()/image.values.sum())
+		(image.x.get_bins()*image.values.sum(axis=-1)).sum(axis=-1)/image.values.sum(axis=(-2, -1)),
+		(image.y.get_bins()*image.values.sum(axis=-2)).sum(axis=-1)/image.values.sum(axis=(-2, -1)))
 
 
 def standard_deviation(image: Image) -> float:
@@ -432,6 +432,8 @@ def compose_2x2_from_intuitive_parameters(scale: float, angle: float, skew: floa
 
 def covariance_from_harmonics(p0, p1, θ1, p2, θ2) -> tuple[NDArray[float], NDArray[float]]:
 	""" convert a circular harmonic representation of a conture to a covariance matrix """
+	if p2 > p0:
+		raise ValueError("this won't work; it won't be a 1:1 transformation; P2 can't exceed P0.")
 	Σ = np.matmul(np.matmul(
 			np.array([[cos(θ2), -sin(θ2)], [sin(θ2), cos(θ2)]]),
 			np.array([[(p0 + p2)**2, 0], [0, (p0 - p2)**2]])),
@@ -510,10 +512,19 @@ def fit_ellipse(image: Image, contour_level: Optional[float] = None) -> tuple[ND
 		p0, p1x, p1y, p2x, p2y = np.linalg.lstsq(
 			transpose([p0_basis, p1x_basis, p1y_basis, p2x_basis, p2y_basis]), r, rcond=None)[0]
 
+
 		p1 = np.hypot(p1x, p1y)
 		θ1 = np.arctan2(p1y, p1x)
 		p2 = np.hypot(p2x, p2y)
 		θ2 = np.arctan2(p2y, p2x)/2
+
+		# rein it in if it tries to construct a nonsensical ellipsoid
+		if p2 > p0:
+			p0 = p2 = (p0 + p2)/2
+		# rein it in if it tries to fit a small segment of the circle
+		if p0 > image.domain.diagonal/2:
+			p0 = image.domain.diagonal/2
+			p2 = min(p0, p2)
 
 		return covariance_from_harmonics(p0, p1, θ1, p2, θ2)
 

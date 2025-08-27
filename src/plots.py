@@ -311,9 +311,7 @@ def plot_source(filename: str, source_chain: Image,
 		where(isfinite(object_sizes), object_sizes, source_chain.domain.x.half_range), .95)
 	object_size = np.min(FRAME_SIZES, where=FRAME_SIZES >= 1.1*object_size, initial=FRAME_SIZES[-1])
 	if np.any(isfinite(r1s) & isfinite(θ1s)):
-		x0s, y0s = r1s*cos(θ1s), r1s*sin(θ1s)
-		x0 = median(x0s[isfinite(x0s)])
-		y0 = median(y0s[isfinite(y0s)])
+		x0, y0 = median(center_of_mass(source_chain), axis=1)
 	else:
 		x0, y0 = 0, 0
 
