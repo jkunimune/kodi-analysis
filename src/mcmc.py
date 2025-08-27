@@ -140,8 +140,7 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 			smoothing/guess.x.bin_width**2*guess.domain.pixel_area,
 			smoothing/guess.y.bin_width**2*guess.domain.pixel_area,
 			logp=spacially_correlated_exp_normal_logp,
-			# moment=lambda *args, **kwargs: np.log(np.maximum(1e-3, guess.values/guess_intensity)),
-			# initval=np.log(np.maximum(1e-3, guess.values/guess_intensity)),
+			initval=np.log(np.maximum(1e-3, guess.values/guess_intensity)),
 			shape=guess.shape)
 		source = Deterministic(
 			"source",
@@ -203,13 +202,13 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 		else:
 			cores_to_use = cores_available
 		chains_to_sample = max(4, cores_to_use)
-		draws_per_chain = int(round(8000/chains_to_sample))
+		draws_per_chain = int(round(5000/chains_to_sample))
 		if use_gpu:
 			kwargs = dict(nuts_sampler="numpyro", nuts_sampler_kwargs=dict(chain_method="vectorized"))
 		else:
 			kwargs = dict()
-		inference = sample(tune=2000, draws=draws_per_chain, chains=chains_to_sample,
-		                   cores=cores_to_use, **kwargs)
+		inference = sample(tune=500, draws=draws_per_chain, chains=chains_to_sample,
+		                   cores=cores_to_use, target_accept=0.9, **kwargs)
 
 	# generate a basic trace plot to catch basic issues
 	arviz.plot_trace(inference, var_names=trace_variables)
