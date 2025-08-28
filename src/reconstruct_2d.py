@@ -522,10 +522,12 @@ def analyze_scan(input_filename: str,
 		dxL, dyL = center_of_mass(source_stack[0])
 		dxH, dyH = center_of_mass(source_stack[-1])
 		dx, dy = dxH - dxL, dyH - dyL
-		logging.info(f"  Δ = {hypot(dx, dy)/1e-4:.1f} μm, θ = {degrees(atan2(dx, dy)):.1f}")
+		Δ = credibility_interval(np.hypot(dx, dy)/1e-4, .9)
+		θ = np.median(np.degrees(np.arctan2(dy, dx)))
+		logging.info(f"  Δ = ({Δ.center:.1f} ± {Δ.width/2:.1f}) μm, θ = {θ:.1f}°")
 		for statblock in statistics:
-			statblock["separation magnitude"] = hypot(dx, dy)/1e-4
-			statblock["separation angle"] = degrees(atan2(dy, dx))
+			statblock["separation magnitude"] = Δ.center
+			statblock["separation angle"] = θ
 
 		plot_overlaid_contores(
 			f"{shot}/{los}-{particle}-{detector_index}", source_stack, contour,

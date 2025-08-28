@@ -162,20 +162,6 @@ def center_of_mass(image: Image) -> tuple[float, float]:
 		(image.y.get_bins()*image.values.sum(axis=-2)).sum(axis=-1)/image.values.sum(axis=(-2, -1)))
 
 
-def standard_deviation(image: Image) -> float:
-	""" get the radius of this distribution """
-	x0, y0 = center_of_mass(image)
-	x_bins, y_bins = image.domain.get_pixels()
-	r2 = (x_bins - x0)**2 + (y_bins - y0)**2
-	mean_r2 = (r2*image.values).sum()/image.values.sum()
-	return sqrt(mean_r2/2)
-
-
-def normalize(x):
-	""" reduce a vector so it sums to 1 """
-	return np.divide(x, np.sum(x))
-
-
 def dilate(array: np.ndarray) -> np.ndarray:
 	""" it's just erosion. """
 	result = np.array(array)
