@@ -4,12 +4,11 @@
 import logging
 import os
 import re
-import sys
 import time
 import warnings
 from argparse import ArgumentParser
 from copy import copy
-from math import log, pi, nan, radians, inf, isfinite, sqrt, hypot, isinf, degrees, atan2
+from math import log, pi, nan, radians, inf, isfinite, sqrt, isinf, degrees
 from typing import Any, Optional, Union
 
 import h5py
@@ -191,7 +190,7 @@ def analyze(shots_to_reconstruct: list[str],
 		matching_scans: list[tuple[str, str, str, int, float, str]] = []
 		for path, directories, filenames in os.walk("input/scans"):
 			for filename in filenames:
-				if re.search(r"_pcis[0-9]?_", filename):  # skip these files because they’re unsplit
+				if re.search(r"_pcis[0-9]?_", filename, re.IGNORECASE):  # skip these files because they’re unsplit
 					continue
 				shot_match = re.search(rf"{shot}", filename, re.IGNORECASE)
 				if los is None:
@@ -247,7 +246,7 @@ def analyze(shots_to_reconstruct: list[str],
 	if len(all_scans_to_analyze) > 0:
 		logging.info(f"Planning to reconstruct {', '.join(repr(scan[-1]) for scan in all_scans_to_analyze)}")
 	else:
-		logging.info(f"No scan files were found for the argument {sys.argv[1]}. make sure they're in the input folder.")
+		logging.info(f"No scan files were found for the argument {','.join(shots_to_reconstruct)}. make sure they're in the input folder.")
 
 	# then iterate thru that list and do the analysis
 	for shot, los, particle, detector_index, etch_time, filename in all_scans_to_analyze:
