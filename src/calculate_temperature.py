@@ -120,20 +120,11 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 		print("(only one channel)")
 		return nan, nan
 
-	# calculate some synthetic lineouts
-	test_temperature = np.geomspace(5e-1, 2e+1)
-	emissions = np.empty((len(filter_stacks), test_temperature.size))
-	inference = np.empty(test_temperature.size)
-	for i in range(test_temperature.size):
-		emissions[:, i] = model_emission(test_temperature[i], *compute_sensitivity(filter_stacks))
-		emissions[:, i] /= emissions[:, i].mean()
-		inference[i] = compute_plasma_conditions(
-			emissions[:, i], *compute_sensitivity(filter_stacks))[0]
-
 	# calculate the spacially integrated temperature
-	temperature_integrated, temperature_error_integrated, _, _ = compute_plasma_conditions_with_errorbars(
+	temperature_integrated, temperature_error_integrated, _, _ = compute_plasma_conditions_with_systematic_error(
 		np.array([image.total for image in images]),
-		filter_stacks, error_bars=True, show_plot=True)
+		np.array([image.total_error for image in images]),
+		filter_stacks, show_plot=True)
 	save_current_figure(f"{shot}/{los}-temperature-fit")
 	print(f"Te = {temperature_integrated:.3f} ± {temperature_error_integrated:.3f} keV")
 
@@ -145,16 +136,20 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 	measurement_errors = 0.05*np.array([image.supremum for image in images])  # this isn’t very quantitative, but it captures the character of errors in the reconstructions
 	basis = Grid.from_size(object_size, object_size/20, True)
 	temperature_map = np.empty(basis.shape)
+	temperature_error_map = np.empty(basis.shape)
 	emission_map = np.empty(basis.shape)
 	for i in range(basis.x.num_bins):
 		for j in range(basis.y.num_bins):
 			data = np.array([image.at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
+			data_error = np.array([image.error_at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
 			reliable_measurements = data >= measurement_errors
 			if np.all(reliable_measurements):
-				Te, _, _ = compute_plasma_conditions(data, *compute_sensitivity(filter_stacks))
+				Te, dTe, _, _ = compute_plasma_conditions(data, data_error, *compute_sensitivity(filter_stacks))
 				temperature_map[i, j] = Te
+				temperature_error_map[i, j] = dTe
 			else:
 				temperature_map[i, j] = nan
+				temperature_error_map[i, j] = inf
 			# emission_map[i, j] = εL
 			emission_map[i, j] = np.mean(data)
 
@@ -169,68 +164,66 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 		stalk_direction = None
 	plot_and_save_electron_temperature(
 		f"{shot}/{los}", show_plots, basis,
-		temperature_map, emission_map, temperature_integrated,
+		temperature_map, temperature_error_map, emission_map,
+		temperature_integrated, temperature_error_integrated,
 		stalk_direction, num_stalks)
 
 	return temperature_integrated, temperature_error_integrated
 
 
-def compute_plasma_conditions_with_errorbars(measured_values: NDArray[float],
-                                             filter_stacks: list[list[Filter]],
-                                             error_bars=False, show_plot=False) -> tuple[float, float, float, float]:
+def compute_plasma_conditions_with_systematic_error(measured_values: NDArray[float],
+                                                    measured_errors: NDArray[float],
+                                                    filter_stacks: list[list[Filter]],
+                                                    show_plot=False) -> tuple[float, float, float, float]:
 	""" take a set of measured x-ray intensity values from a single chord thru the implosion and
 	    use their average and their ratios to infer the emission-averaged electron temperature,
-	    and the total line-integrated photic emission along that chord.  compute the one-sigma error
-	    bars accounting for uncertainty in the filter thicknesses
+	    and the total line-integrated photic emission along that chord.
+	    compute the one-sigma error bars accounting for uncertainty in the filter thicknesses.
 	    :param measured_values: the detected emission (PSL/μm^2/sr)
+	    :param measured_errors: the standard uncertainty on each measured value (PSL/μm^2/sr)
 	    :param filter_stacks: the filtering representing each energy bin
-	    :param error_bars: whether to calculate error bars (it’s kind of time-intensive)
 	    :param show_plot: whether to generate a little plot showing how well the model fits the data
 	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr)
 	"""
 	ref_energies, sensitivities = compute_sensitivity(filter_stacks)
-	if error_bars:
-		varied_sensitivities = np.empty((NUM_SAMPLES, *sensitivities.shape), dtype=float)
-		varied_temperatures = np.empty(NUM_SAMPLES, dtype=float)
-		varied_emissions = np.empty(NUM_SAMPLES, dtype=float)
-		for k in range(NUM_SAMPLES):
-			varied_filter_stacks = []
-			for filter_stack in filter_stacks:
-				varied_filter_stacks.append([])
-				for thickness, material in filter_stack:
-					varied_thickness = thickness*np.random.normal(1, .06)
-					varied_filter_stacks[-1].append((varied_thickness, material))
-			_, varied_sensitivity = compute_sensitivity(varied_filter_stacks)
-			varied_temperature, varied_emission, _ = compute_plasma_conditions(
-				measured_values, ref_energies, varied_sensitivity)
-			varied_sensitivities[k, :, :] = varied_sensitivity
-			varied_temperatures[k] = varied_temperature
-			varied_emissions[k] = varied_emission
+	varied_sensitivities = np.empty((NUM_SAMPLES, *sensitivities.shape), dtype=float)
+	varied_temperatures = np.empty(NUM_SAMPLES, dtype=float)
+	varied_temperature_errors = np.empty(NUM_SAMPLES, dtype=float)
+	varied_emissions = np.empty(NUM_SAMPLES, dtype=float)
+	for k in range(NUM_SAMPLES):
+		varied_filter_stacks = []
+		for filter_stack in filter_stacks:
+			varied_filter_stacks.append([])
+			for thickness, material in filter_stack:
+				varied_thickness = thickness*np.random.normal(1, .06)
+				varied_filter_stacks[-1].append((varied_thickness, material))
+		_, varied_sensitivity = compute_sensitivity(varied_filter_stacks)
+		varied_temperature, varied_temperature_error, varied_emission, _ = compute_plasma_conditions(
+			measured_values, measured_errors, ref_energies, varied_sensitivity)
+		varied_sensitivities[k, :, :] = varied_sensitivity
+		varied_temperatures[k] = varied_temperature
+		varied_temperature_errors[k] = varied_temperature_error
+		varied_emissions[k] = varied_emission
 
-		# compute the error bars as the std (approximately) of these points
-		temperature = median(varied_temperatures)
-		emission = median(varied_emissions)
-		reconstructed_values = emission/temperature*model_emission(
-			temperature, ref_energies, sensitivities)
-		temperature_error = 1/2*(quantile(varied_temperatures, .85) - quantile(varied_temperatures, .15))
-		emission_error = 1/2*(quantile(varied_emissions, .85) - quantile(varied_emissions, .15))
-		varied_reconstructed_values = np.empty((NUM_SAMPLES, reconstructed_values.size))
-		for k in range(NUM_SAMPLES):
-			varied_reconstructed_values[k, :] = emission/temperature*model_emission(
-				temperature, ref_energies, varied_sensitivities[k, :, :])
-		reconstructed_errors = np.sqrt(np.mean((varied_reconstructed_values - reconstructed_values)**2, axis=0))
-
-	else:
-		temperature, emission, _ = compute_plasma_conditions(measured_values, ref_energies, sensitivities)
-		temperature_error, emission_error = 0, 0
-		reconstructed_values = emission/temperature*model_emission(
-			temperature, ref_energies, sensitivities)
-		reconstructed_errors = np.zeros(reconstructed_values.shape)
+	# compute the error bars as the std (approximately) of these points
+	temperature = median(varied_temperatures)
+	emission = median(varied_emissions)
+	reconstructed_values = emission/temperature*model_emission(
+		temperature, ref_energies, sensitivities)
+	temperature_random_error = np.sqrt(np.mean(varied_temperature_errors**2))
+	temperature_systematic_error = 1/2*(quantile(varied_temperatures, .85) - quantile(varied_temperatures, .15))
+	temperature_error = np.sqrt(temperature_random_error**2 + temperature_systematic_error**2)
+	emission_error = 1/2*(quantile(varied_emissions, .85) - quantile(varied_emissions, .15))
+	varied_reconstructed_values = np.empty((NUM_SAMPLES, reconstructed_values.size))
+	for k in range(NUM_SAMPLES):
+		varied_reconstructed_values[k, :] = emission/temperature*model_emission(
+			temperature, ref_energies, varied_sensitivities[k, :, :])
+	reconstructed_errors = np.sqrt(np.mean((varied_reconstructed_values - reconstructed_values)**2, axis=0))
 
 	if show_plot:
 		plt.figure()
 		plt.errorbar(1 + np.arange(measured_values.size),
-		             y=measured_values,
+		             y=measured_values, yerr=measured_errors,
 		             fmt="oC1", zorder=2, markersize=8)
 		plt.errorbar(1 + np.arange(measured_values.size),
 		             y=reconstructed_values, yerr=reconstructed_errors,
@@ -246,18 +239,27 @@ def compute_plasma_conditions_with_errorbars(measured_values: NDArray[float],
 	return temperature, temperature_error, emission, emission_error
 
 
-def compute_plasma_conditions(measured_values: NDArray[float], ref_energies: NDArray[float],
-                              log_sensitivities: NDArray[float]) -> tuple[float, float, float]:
+def compute_plasma_conditions(measured_values: NDArray[float], measured_errors: NDArray[float],
+                              ref_energies: NDArray[float],
+                              log_sensitivities: NDArray[float]) -> tuple[float, float, float, float]:
 	""" take a set of measured x-ray intensity values from a single chord thru the implosion and
 	    use their average and their ratios to infer the emission-averaged electron temperature,
 	    and the total line-integrated photic emission along that chord.
+	    compute the one-sigma error bars based only on the reported measurement uncertainty.
 	    :param measured_values: the detected emission (PSL/μm^2/sr)
+	    :param measured_errors: the standard uncertainty on each measured value (PSL/μm^2/sr)
 	    :param ref_energies: the energies at which the sensitivities are defined
 	    :param log_sensitivities: energy-resolved sensitivity curve of each detector section
 	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr) and the arbitrarily scaled χ^2
 	"""
 	if np.all(measured_values == 0):
-		return nan, 0, 0
+		return nan, inf, 0, 0
+
+	if np.all(measured_errors == 0):
+		fudged_errors = True
+		measured_errors = np.sqrt(measured_values)
+	else:
+		fudged_errors = False
 
 	def compute_model_with_optimal_scaling(βe):
 		unscaled_values = model_emission(1/βe, ref_energies, log_sensitivities)
@@ -268,7 +270,7 @@ def compute_plasma_conditions(measured_values: NDArray[float], ref_energies: NDA
 	def compute_residuals(βe):
 		unscaled_values, numerator, denominator = compute_model_with_optimal_scaling(βe)
 		values = numerator/denominator*unscaled_values
-		return (values - measured_values)/np.sqrt(measured_values)
+		return (values - measured_values)/measured_errors
 
 	def compute_derivatives(βe):
 		unscaled_values, numerator, denominator = compute_model_with_optimal_scaling(βe)
@@ -278,7 +280,7 @@ def compute_plasma_conditions(measured_values: NDArray[float], ref_energies: NDA
 		return (numerator/denominator*unscaled_derivatives +
 		        numerator_derivative/denominator*unscaled_values -
 		        numerator*denominator_derivative/denominator**2*unscaled_values
-		        )/np.sqrt(measured_values)
+		        )/measured_errors
 
 	# start with a scan
 	best_Te, best_χ2 = None, inf
@@ -295,14 +297,20 @@ def compute_plasma_conditions(measured_values: NDArray[float], ref_energies: NDA
 	if result.success:
 		best_βe = result.x[0]
 		best_Te = 1/best_βe
+		if not fudged_errors:
+			covariance = np.linalg.inv(result.jac.T@result.jac)
+			βe_error = np.sqrt(covariance[0, 0])
+			Te_error = βe_error/best_βe**2
+		else:
+			Te_error = 0
 		χ2 = np.sum(compute_residuals(best_βe)**2)
 
 		unscaled_values, numerator, denominator = compute_model_with_optimal_scaling(best_βe)
 		best_εL = numerator/denominator*best_Te
 
-		return best_Te, best_εL, χ2  # type: ignore
+		return best_Te, Te_error, best_εL, χ2  # type: ignore
 	else:
-		return nan, nan, nan
+		return nan, inf, nan, nan
 
 
 def compute_sensitivity(filter_stacks: list[list[Filter]]) -> tuple[NDArray[float], NDArray[float]]:
@@ -328,23 +336,28 @@ def model_emission_derivative(temperature: float, ref_energies: NDArray[float],
 
 
 def plot_and_save_electron_temperature(filename: str, show: bool,
-                                       grid: Grid, temperature: NDArray[float], emission: NDArray[float],
-                                       temperature_integrated: float,
+                                       grid: Grid, temperature: NDArray[float], temperature_error: NDArray[float],
+                                       emission: NDArray[float],
+                                       temperature_integrated: float, temperature_error_integrated: float,
                                        projected_stalk_direction: Optional[tuple[float, float, float]],
                                        num_stalks: Optional[int]) -> None:
 	""" plot the electron temperature as a heatmap, along with some contours to show where the
 	    implosion actually is.
 	"""
 	save_as_hdf5(
-		f'results/data/{filename}.h5', x=grid.x.get_bins(), y=grid.y.get_bins(),
-		temperature_map=temperature, emission_map=emission,
-		average_temperature=temperature_integrated)
+		f'results/data/{filename}-temperature.h5', x=grid.x.get_bins(), y=grid.y.get_bins(),
+		temperature_map=temperature,
+		temperature_error_map=temperature_error,
+		emission_map=emission,
+		average_temperature=temperature_integrated,
+		averate_temperature_error=temperature_error_integrated)
 
 	plt.figure()
 	plt.gca().set_facecolor("k")
+	vmax = np.nanquantile(temperature - temperature_error, .999)*1.1
 	plt.imshow(temperature.T, extent=grid.extent,
-	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=np.nanquantile(temperature, .999))
-	make_colorbar(vmin=0, vmax=np.nanquantile(temperature, .999), label="Te (keV)")
+	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=vmax)
+	make_colorbar(vmin=0, vmax=vmax, label="Te (keV)")
 	plt.contour(grid.x.get_bins(), grid.y.get_bins(), emission.T,
 	            colors="#000", linewidths=1,
 	            levels=np.linspace(0, emission[grid.x.num_bins//2, grid.y.num_bins//2]*2, 10))
@@ -356,7 +369,7 @@ def plot_and_save_electron_temperature(filename: str, show: bool,
 				plt.plot([0, x_stalk*L], [0, y_stalk*L], color="#000", linewidth=2)
 			elif num_stalks == 2:
 				plt.plot([-x_stalk*L, x_stalk*L], [-y_stalk*L, y_stalk*L], color="#000", linewidth=2)
-	plt.text(.02, .98, f"{temperature_integrated:.2f} keV",
+	plt.text(.02, .98, f"({temperature_integrated:.2f} ± {temperature_error_integrated:.2f}) keV",
 	         color="w", ha='left', va='top', transform=plt.gca().transAxes)
 	plt.xlabel("x (μm)")
 	plt.ylabel("y (μm)")
@@ -375,8 +388,26 @@ def plot_and_save_electron_temperature(filename: str, show: bool,
 	l = np.linspace(-grid.x.half_range, grid.x.half_range, 101)
 	temperature_interpolator = interpolate.RegularGridInterpolator(
 		(grid.x.get_bins(), grid.y.get_bins()), temperature, bounds_error=False)
-	plt.plot(l, temperature_interpolator((l*x_lineout, l*y_lineout)), "C0-", label=x_direction)
-	plt.plot(l, temperature_interpolator((l*y_lineout, -l*x_lineout)), "C1-.", label=y_direction)
+	temperature_error_interpolator = interpolate.RegularGridInterpolator(
+		(grid.x.get_bins(), grid.y.get_bins()), temperature_error, bounds_error=False)
+
+	lineout_values = temperature_interpolator((l*x_lineout, l*y_lineout))
+	lineout_errors = temperature_error_interpolator((l*x_lineout, l*y_lineout))
+	plt.fill_between(
+		l, lineout_values - lineout_errors, lineout_values + lineout_errors,
+		color="C0", alpha=.3, edgecolor="none")
+	plt.plot(
+		l, lineout_values,
+		"C0-", label=x_direction)
+	lineout_values = temperature_interpolator((l*y_lineout, -l*x_lineout))
+	lineout_errors = temperature_error_interpolator((l*y_lineout, -l*x_lineout))
+	plt.fill_between(
+		l, lineout_values - lineout_errors, lineout_values + lineout_errors,
+		color="C1", alpha=.3, edgecolor="none")
+	plt.plot(
+		l, lineout_values,
+		"C1-.", label=y_direction)
+
 	plt.xlim(l[0], l[-1])
 	plt.xlabel("Position (μm)")
 	plt.ylabel("Temperature (keV)")
@@ -403,16 +434,13 @@ def load_all_xray_images_for(shot: str, tim: str) \
 					filepath, keys=["x", "y", "images", "filtering"])
 				source_stack = source_stack.transpose((0, 1, 3, 2))  # don’t forget to convert from (y,x) to (i,j) indexing
 
-				# average over the MCMC chain
-				source_stack = np.mean(source_stack, axis=1)
-
 				# try to aline it to the previus stack
-				next_centroid = (np.average(x, weights=source_stack[0].sum(axis=1)),
-				                 np.average(y, weights=source_stack[0].sum(axis=0)))
+				next_centroid = (np.average(x, weights=source_stack[0].sum(axis=(0, 2))),
+				                 np.average(y, weights=source_stack[0].sum(axis=(0, 1))))
 				x += last_centroid[0] - next_centroid[0]
 				y += last_centroid[1] - next_centroid[1]
-				last_centroid = (np.average(x, weights=source_stack[-1].sum(axis=1)),
-				                 np.average(y, weights=source_stack[-1].sum(axis=0)))
+				last_centroid = (np.average(x, weights=source_stack[-1].sum(axis=(0, 2))),
+				                 np.average(y, weights=source_stack[-1].sum(axis=(0, 1))))
 
 				# convert the arrays to interpolators
 				for source, filter_str in zip(source_stack, filtering):
@@ -422,33 +450,46 @@ def load_all_xray_images_for(shot: str, tim: str) \
 						filter_str = filter_str.decode("ascii")
 
 					object_radius, _, _ = shape_parameters(
-						coordinate.Image(Grid.from_bin_array(x, y), source), contour_level=.25)
+						coordinate.Image(Grid.from_bin_array(x, y), np.mean(source, axis=0)), contour_level=.25)
+
+					totals = np.sum(source, axis=(1, 2))*(x[1] - x[0])*(y[1] - y[0])
 
 					filter_stacks.append(parse_filtering(filter_str)[0])
 					images.append(Distribution(
-						np.sum(source)*(x[1] - x[0])*(y[1] - y[0]),
+						np.mean(totals),
+						np.std(totals),
 						np.max(source),
 						object_radius,
 						interpolate.RegularGridInterpolator(
-							(x, y), source,
-							bounds_error=False, fill_value=0),
-						))
+							(x, y), np.mean(source, axis=0),
+							bounds_error=False, fill_value=0,
+						),
+						interpolate.RegularGridInterpolator(
+							(x, y), np.std(source, axis=0),
+							bounds_error=False, fill_value=0,
+						),
+					))
 	return images, filter_stacks
 
 
 class Distribution:
-	def __init__(self, total: float, supremum: float, radius: float,
-	             interpolator: Callable[[tuple[float, float]], float]):
+	def __init__(self, total: float, total_error: float, supremum: float, radius: float,
+	             interpolator: Callable[[tuple[float, float]], float],
+	             error_interpolator: Callable[[tuple[float, float]], float]):
 		""" a number bundled with an interpolator
-		    :param total: can be either the arithmetic or quadratic total
+		    :param total: the arithmetic total
+		    :param total_error: the standard uncertainty on total
 		    :param supremum: the max value of the distribution
 		    :param radius: the approximate radius of the 25% contore
-		    :param interpolator: takes a tuple of floats and returns a float scalar
+		    :param interpolator: takes a tuple of floats and returns the value at that point
+		    :param error_interpolator: takes a tuple of floats and returns the standard uncertainty at that point
 		"""
 		self.total = total
+		self.total_error = total_error
 		self.supremum = supremum
 		self.radius = radius
 		self.at = interpolator
+		self.error_at = error_interpolator
 
 
 if __name__ == "__main__":
@@ -459,8 +500,8 @@ if __name__ == "__main__":
 	                    help="Comma-separated list of shot numbers")
 	parser.add_argument("lines_of_sight", type=str,
 	                    help="Comma-separated list of lines of sight")
-	parser.add_argument("--show_plots", action="store_true",
+	parser.add_argument("--show", action="store_true",
 	                    help="Whether to display plots as they are generated")
 	args = parser.parse_args()
 
-	calculate_temperature(args.shots.split(","), args.lines_of_sight.split(","), args.show_plots)
+	calculate_temperature(args.shots.split(","), args.lines_of_sight.split(","), args.show)
