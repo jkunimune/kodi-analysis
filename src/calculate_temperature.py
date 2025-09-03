@@ -9,7 +9,7 @@ from typing import Callable, Optional
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-from numpy import quantile
+from numpy import quantile, newaxis
 from numpy.typing import NDArray
 from scipy import interpolate, integrate, optimize
 
@@ -22,7 +22,8 @@ from plots import make_colorbar, save_current_figure
 from util import parse_filtering, Filter, median, shape_parameters, nearest_value
 
 NUM_SAMPLES = 1000
-PLOT_STALK = False
+PLOT_STALK = True
+TRUST_MEASURED_ALIGNMENT = True
 
 
 def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plots: bool):
@@ -354,7 +355,7 @@ def plot_and_save_electron_temperature(filename: str, show: bool,
 
 	plt.figure()
 	plt.gca().set_facecolor("k")
-	vmax = np.nanquantile(temperature - temperature_error, .999)*1.1
+	vmax = np.nanquantile(temperature - temperature_error, .9)*1.15
 	plt.imshow(temperature.T, extent=grid.extent,
 	           cmap=CMAP["heat"], origin="lower", vmin=0, vmax=vmax)
 	make_colorbar(vmin=0, vmax=vmax, label="Te (keV)")
@@ -430,20 +431,30 @@ def load_all_xray_images_for(shot: str, tim: str) \
 		for filename in filenames:
 			filepath = os.path.join(directory, filename)
 			if shot in filepath and tim.lower() in filepath and "xray" in filepath and "source" in filepath:
-				x, y, source_stack, filtering = load_hdf5(
+				x, y, source_stack, filterings = load_hdf5(
 					filepath, keys=["x", "y", "images", "filtering"])
 				source_stack = source_stack.transpose((0, 1, 3, 2))  # don’t forget to convert from (y,x) to (i,j) indexing
 
-				# try to aline it to the previus stack
-				next_centroid = (np.average(x, weights=source_stack[0].sum(axis=(0, 2))),
-				                 np.average(y, weights=source_stack[0].sum(axis=(0, 1))))
-				x += last_centroid[0] - next_centroid[0]
-				y += last_centroid[1] - next_centroid[1]
-				last_centroid = (np.average(x, weights=source_stack[-1].sum(axis=(0, 2))),
-				                 np.average(y, weights=source_stack[-1].sum(axis=(0, 1))))
+				# adjust the spacial information to deal with alignment between images
+				xs = np.tile(x, (source_stack.shape[0], 1))
+				ys = np.tile(y, (source_stack.shape[0], 1))
+				if TRUST_MEASURED_ALIGNMENT:
+					# shift the whole stack together to try to aline it to the previus stack
+					next_centroid = (np.average(xs[0], weights=source_stack[0].sum(axis=(0, 2))),
+					                 np.average(ys[0], weights=source_stack[0].sum(axis=(0, 1))))
+					xs += last_centroid[0] - next_centroid[0]
+					ys += last_centroid[1] - next_centroid[1]
+					last_centroid = (np.average(xs[-1], weights=source_stack[-1].sum(axis=(0, 2))),
+					                 np.average(ys[-1], weights=source_stack[-1].sum(axis=(0, 1))))
+				else:
+					# shift each source individually to put its centroid at the origin
+					centroids = (np.average(xs, weights=source_stack.sum(axis=(1, 3)), axis=1),
+					             np.average(ys, weights=source_stack.sum(axis=(1, 2)), axis=1))
+					xs -= centroids[0][:, newaxis]
+					ys -= centroids[1][:, newaxis]
 
 				# convert the arrays to interpolators
-				for source, filter_str in zip(source_stack, filtering):
+				for x, y, source, filter_str in zip(xs, ys, source_stack, filterings):
 					if np.any(np.isnan(source)):
 						continue
 					if type(filter_str) is bytes:
