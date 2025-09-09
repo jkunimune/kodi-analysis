@@ -66,11 +66,11 @@ BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the
 UPSAMPLE_SOURCES = False  # whether to save the sources at a potentially higher resolution than they were reconstructed at
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
 FINE_RESOLUTION = 2e-4  # source resolution to use when finding a single solution
-FAST_RESOLUTION = 5e-4  # source resolution to use when sampling many solutions
+FAST_RESOLUTION = 3e-4  # source resolution to use when sampling many solutions
 CHARGED_PARTICLE_CONTOUR_LEVEL = .17  # contour to use when characterizing KoDI sources
 XRAY_CONTOUR_LEVEL = .17  # contour to use when characterizing x-ray sources
-MIN_OBJECT_SIZE = 250e-4  # minimum amount of space to allocate in the source plane
-MAX_OBJECT_PIXELS = 100  # maximum size of the source array to use in reconstructions
+MIN_OBJECT_SIZE = 200e-4  # minimum amount of space to allocate in the source plane
+MAX_OBJECT_SIZE = 500e-5  # maximum amount of space to allocate in the source plane
 MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
 MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
@@ -842,15 +842,15 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 			diameters, actual_energies, max_contrast, M*rA, M*sA if grid_shape != "single" else inf,
 			centers, data_polygon, use_charging_model) # TODO: infer rA, as well?
 
-		if r_max > M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution:
-			logging.warning(f"    the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
-			                f"but I'm cropping it at {MAX_OBJECT_PIXELS*resolution/1e-4:.0f}μm to save time")
-			r_max = M*rA + (M - 1)*MAX_OBJECT_PIXELS*resolution
-
 		r_psf = min(electric_field.get_expanded_radius(Q, M*rA, actual_energies), 2.05*M*rA)
 
-		if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE:
-			r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE
+		if r_max > r_psf + (M - 1)*MAX_OBJECT_SIZE/2:
+			logging.warning(f"    the image appears to have a corona that extends to r={(r_max - M*rA)/(M - 1)/1e-4:.0f}μm, "
+			                f"but I'm cropping it at {MAX_OBJECT_SIZE/2/1e-4:.0f}μm to save time")
+			r_max = r_psf + (M - 1)*MAX_OBJECT_SIZE/2
+
+		if r_max < r_psf + (M - 1)*MIN_OBJECT_SIZE/2:
+			r_max = r_psf + (M - 1)*MIN_OBJECT_SIZE/2
 		account_for_overlap = isinf(r_max)
 
 		# rebin and stack the images

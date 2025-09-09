@@ -9,4 +9,4 @@ arviz
 jax
 numpyro
 pymc==5.*
-pytensor
+pytensor==2.18.*

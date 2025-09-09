@@ -1,3 +1,4 @@
+import logging
 from multiprocessing import cpu_count
 
 import arviz
@@ -9,11 +10,11 @@ from matplotlib import pyplot as plt
 from numpy import reshape, sqrt, shape, expand_dims, prod, hypot, linspace, meshgrid, stack, zeros, \
 	ones, log, inf
 from numpy.typing import NDArray
-from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, DensityDist, LogNormal, TruncatedNormal, draw
+from pymc import Model, Gamma, sample, Poisson, Normal, Deterministic, DensityDist, LogNormal, TruncatedNormal
 from pytensor import tensor
 from pytensor.link.jax.dispatch import jax_funcify
 from pytensor.tensor.fft import RFFTOp, IRFFTOp
-from scipy import signal
+from scipy import ndimage
 
 from coordinate import Image
 
@@ -22,7 +23,6 @@ pytensor.config.floatX = "float64"
 
 SCALE_INVARIANT = False  # whether to weit small sources in the prior so that they are just as likely as big sources
 VARIABLE_APERTURE_SIZE = True  # whether to consider the possibility that the aperture is slitely bigger or smaller
-SHOW_ONE_DRAW = False  # whether to show the user one set of images to verify that the function graph is working
 
 
 def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, guess: Image,
@@ -111,6 +111,42 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 	guess_image_intensity = (np.sum(guess.values)*np.max(psf_efficiency))  # the general intensity of the umbra
 	limit = np.sum(guess.values*1e4)  # the maximum credible value of the source's Fourier transform
 
+	# identify which of the guess pixels should be free
+	free = ndimage.binary_dilation(
+		guess.values[0, :, :] > 1e-3*np.quantile(guess.values, .99), iterations=1)
+	free_i, free_j = np.nonzero(free)
+	num_free = np.count_nonzero(free)
+	freedom_map = np.full(guess.shape[1:], -1)
+	freedom_map[free_i, free_j] = range(num_free)
+	if num_free < .1*guess.num_pixels:
+		logging.warning(
+			f"Only {num_free} of the pixels in this {guess.x.num_bins}×{guess.y.num_bins} source seem to be significant."
+			f"You could save a lot of time by improving the bounds selection algorithm.")
+	# and convert that into lists of pairs of indices to be used to evaluate the gradients
+	left_indexes, right_indexes = [], []
+	for i in range(freedom_map.shape[0] - 1):
+		for j in range(freedom_map.shape[1]):
+			if freedom_map[i, j] >= 0 and freedom_map[i + 1, j] >= 0:
+				left_indexes.append(freedom_map[i, j])
+				right_indexes.append(freedom_map[i + 1, j])
+	bottom_indexes, top_indexes = [], []
+	for i in range(freedom_map.shape[0]):
+		for j in range(freedom_map.shape[1] - 1):
+			if freedom_map[i, j] >= 0 and freedom_map[i, j + 1] >= 0:
+				bottom_indexes.append(freedom_map[i, j])
+				top_indexes.append(freedom_map[i, j + 1])
+
+	# define the source log prior probability density function
+	def spacially_correlated_exp_normal_logp(
+			log_values: tensor.TensorLike, x_factor: tensor.TensorLike, y_factor: tensor.TensorLike
+	) -> tensor.TensorLike:
+		assert x_factor == y_factor
+		values = tensor.exp(log_values)
+		log_prefactor = tensor.sum(log_values) + values.size/2*tensor.log(x_factor)
+		x_penalty = x_factor*(2*tensor.sum(values**2) - 2*tensor.sum(values[left_indexes]*values[right_indexes]))
+		y_penalty = y_factor*(2*tensor.sum(values**2) - 2*tensor.sum(values[bottom_indexes]*values[top_indexes]))
+		return log_prefactor - (x_penalty + y_penalty)
+
 	trace_variables = []
 	with Model():
 		# latent variables
@@ -135,16 +171,20 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 		trace_variables.append("smoothing")
 
 		# prior
-		source_shape = DensityDist(  # sample the logarithms of the pixel values so we don't get negative pixels
-			"source_shape",
-			smoothing/guess.x.bin_width**2*guess.domain.pixel_area,
-			smoothing/guess.y.bin_width**2*guess.domain.pixel_area,
+		log_source_values = DensityDist(  # sample the logarithms of the pixel values so we don't get negative pixels
+			"log_source_values",
+			smoothing/guess.x.bin_width**2*guess.domain.pixel_area,  # prefactor on x differences
+			smoothing/guess.y.bin_width**2*guess.domain.pixel_area,  # prefactor on y differences
 			logp=spacially_correlated_exp_normal_logp,
-			initval=np.log(np.maximum(1e-3, guess.values/guess_intensity)),
-			shape=guess.shape)
+			initval=np.log(np.maximum(1e-3, guess.values[0, free_i, free_j]/guess_intensity)),
+			shape=num_free)
+		source_values = Deterministic(
+			"source_values",
+			tensor.exp(log_source_values - (r_source_pixels[free_i, free_j]/source_radius)**2)*guess_intensity,
+		)
 		source = Deterministic(
 			"source",
-			tensor.exp(source_shape - (r_source_pixels/source_radius)**2)*guess_intensity,
+			tensor.zeros(guess.shape).set((0, free_i, free_j), source_values),
 		)
 		source_spectrum = Deterministic(  # clip extreme values when you FFT it to suppress numeric instabilities
 			"source_spectrum",
@@ -174,23 +214,6 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 		Deterministic("source_intensity", tensor.sum(source)*guess.domain.pixel_area)
 		trace_variables.append("source_intensity")
 
-		# verify that the function graph is set up correctly
-		if SHOW_ONE_DRAW:
-			test_source, test_source_spectrum, test_image, test_image_spectrum = \
-				draw([source, source_spectrum, true_image, true_image_spectrum])
-			fig, axs = plt.subplots(2, 3)
-			im = axs[0, 0].imshow(test_source[0, :, :])
-			plt.colorbar(im, ax=axs[0, 0])
-			im = axs[1, 0].imshow(np.hstack([test_source_spectrum[0, :, :, 0], test_source_spectrum[0, ::-1, ::-1, 1]]))
-			plt.colorbar(im, ax=axs[1, 0])
-			im = axs[0, 1].imshow(test_image[0, :, :])
-			plt.colorbar(im, ax=axs[0, 1])
-			im = axs[1, 1].imshow(np.hstack([test_image_spectrum[0, :, :, 0], test_image_spectrum[0, ::-1, ::-1, 1]]))
-			plt.colorbar(im, ax=axs[1, 1])
-			im = axs[0, 2].imshow(pixel_area.values*signal.convolve2d(test_source[0, :, :], kernel[0, :, :], mode="full"))
-			plt.colorbar(im, ax=axs[0, 2])
-			plt.show()
-
 		# run the MCMC chains
 		cores_available = cpu_count()
 		if cores_available >= 20:
@@ -215,8 +238,8 @@ def deconvolve(data: Image, psf_efficiency: float, psf_nominal_radius: float, gu
 	plt.tight_layout()
 
 	# it should be *almost* impossible for the chain to produce a source that's all zeros, but check anyway
-	if np.any(np.all(inference.posterior["source"].to_numpy() == 0, axis=(2, 3))):
-		i, j = np.nonzero(np.all(inference.posterior["source"].to_numpy() == 0, axis=(-3, -2, -1)))
+	if np.any(np.all(inference.posterior["source"].to_numpy() == 0, axis=(2, 3, 4))):
+		i, j = np.nonzero(np.all(inference.posterior["source"].to_numpy() == 0, axis=(2, 3, 4)))
 		print("blank source alert!")
 		print(inference.posterior["smoothing"].to_numpy()[i, j])
 		plt.figure()
@@ -248,32 +271,6 @@ def piecewise_sigmoid(x: tensor.TensorLike, x_ref: NDArray[float], y_ref: NDArra
 			)
 		)
 	)
-
-
-def spacially_correlated_exp_normal_logp(
-		log_values: tensor.TensorLike, x_factor: tensor.TensorLike, y_factor: tensor.TensorLike
-) -> tensor.TensorLike:
-	""" the log-probability for a set of points whose exponentials are drawn from a multivariate
-	    normal distribution but individual pixels are correlated with their neibors.
-	    :param log_values: the 1×m×n array of pixel value logarithms at which to evaluate the probability
-	    :param x_factor: the coefficient by which to correlate horizontally adjacent pixels
-	    :param y_factor: the coefficient by which to correlate verticly adjacent pixels
-	    :return: the log of the probability value, not absolutely normalized but normalized enuff
-	             that relative values are correct for variations in all hyperparameters
-	"""
-	if x_factor != y_factor:
-		raise NotImplementedError(
-			"I would love to support rectangular pixels but it makes the math harder to a surprising degree. tho "
-			"really, as long as the x and y factors remain proportional to each other, it shouldn't be a problem.")
-	values = tensor.exp(log_values)
-	log_prefactor = tensor.sum(log_values) + values.size/2*tensor.log(x_factor)
-	x_penalty = x_factor*(tensor.sum(values[:, 0, :]**2) +
-	                      tensor.sum((values[:, 0:-1, :] - values[:, 1:, :])**2) +
-	                      tensor.sum(values[:, -1, :]**2))
-	y_penalty = y_factor*(tensor.sum(values[:, :, 0]**2) +
-	                      tensor.sum((values[:, :, 0:-1] - values[:, :, 1:])**2) +
-	                      tensor.sum(values[:, :, -1]**2))
-	return log_prefactor - (x_penalty + y_penalty)
 
 
 def complex_multiply(a: tensor.TensorLike, b: tensor.TensorLike):
