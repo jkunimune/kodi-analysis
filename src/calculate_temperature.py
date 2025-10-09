@@ -19,6 +19,7 @@ from coordinate import Grid
 from hdf5_util import load_hdf5, save_as_hdf5
 from image_plate import log_xray_sensitivity
 from plots import make_colorbar, save_current_figure
+from reconstruct_2d import DataError
 from util import parse_filtering, Filter, median, shape_parameters, nearest_value
 
 NUM_SAMPLES = 1000
@@ -77,22 +78,23 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 
 	# if any lines of sight were missing channels, pad them with nan to make everything rectangular
 	for i in range(len(emissions)):
-		while len(emissions[i]) < num_channels:
-			emissions[i].append(nan)
+		if num_channels is not None:
+			while len(emissions[i]) < num_channels:
+				emissions[i].append(nan)
 
 	emissions = np.array(emissions)
-	temperatures = np.array(temperatures)
 
 	# plot the trends in all of the data hitherto plotted
 	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(5 + .15*len(temperatures), 5))
 	x = np.ravel(
 		np.arange(1/2, len(shots))[:, np.newaxis] + np.linspace(-1/12, 1/12, len(lines_of_sight))[np.newaxis, :])
 	top_ax.grid(axis="y", which="both")
-	for k, (marker, label) in enumerate(zip("*ovd", labels)):
-		top_ax.scatter(
-			x, emissions[:, k], marker=marker,
-			color=CMAP["cool"](1 - k/max(1, len(labels) - 1)),
-			label=label, zorder=10)
+	if labels is not None:
+		for k, (marker, label) in enumerate(zip("*ovd", labels)):
+			top_ax.scatter(
+				x, emissions[:, k], marker=marker,
+				color=CMAP["cool"](1 - k/max(1, len(labels) - 1)),
+				label=label, zorder=10)
 	# top_ax.legend()
 	top_ax.set_yscale("log")
 	top_ax.set_ylabel("X-ray intensity")
@@ -225,16 +227,19 @@ def compute_plasma_conditions_with_systematic_error(measured_values: NDArray[flo
 		plt.figure()
 		plt.errorbar(1 + np.arange(measured_values.size),
 		             y=measured_values, yerr=measured_errors,
-		             fmt="oC1", zorder=2, markersize=8)
+		             fmt="oC1", zorder=2, markersize=8,
+		             label="Measured")
 		plt.errorbar(1 + np.arange(measured_values.size),
 		             y=reconstructed_values, yerr=reconstructed_errors,
-		             fmt="xC0", zorder=3, markersize=8, markeredgewidth=2)
+		             fmt="xC0", zorder=3, markersize=8, markeredgewidth=2,
+		             label="Reconstructed")
 		plt.grid(axis="y")
 		plt.xlabel("Detector #")
 		plt.ylabel("Measured yield (units)")
 		# plt.ylim(0, None)
 		plt.yscale("log")
 		plt.title(f"Best fit (Te = {temperature:.3f} ± {temperature_error:.3f})")
+		plt.legend()
 		plt.tight_layout()
 
 	return temperature, temperature_error, emission, emission_error
@@ -259,6 +264,8 @@ def compute_plasma_conditions(measured_values: NDArray[float], measured_errors: 
 	if np.all(measured_errors == 0):
 		fudged_errors = True
 		measured_errors = np.sqrt(measured_values)
+	elif np.any(measured_errors == 0):
+		raise DataError("it looks like some of these sources were inferred with uncertainty quantification and some weren't.  that's not allowed; stop that.")
 	else:
 		fudged_errors = False
 
@@ -294,7 +301,7 @@ def compute_plasma_conditions(measured_values: NDArray[float], measured_errors: 
 	result = optimize.least_squares(fun=lambda x: compute_residuals(x[0]),
 	                                jac=lambda x: np.expand_dims(compute_derivatives(x[0]), 1),
 	                                x0=[1/best_Te],
-	                                bounds=(0, inf))  # TODO: optimize the filter thicknesses as well as temperature to maximize the Bayesian posterior, then have Bayesian error bars
+	                                bounds=(1e-3, 1e+3))  # TODO: optimize the filter thicknesses as well as temperature to maximize the Bayesian posterior, then have Bayesian error bars
 	if result.success:
 		best_βe = result.x[0]
 		best_Te = 1/best_βe
