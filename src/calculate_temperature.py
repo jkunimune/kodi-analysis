@@ -83,6 +83,7 @@ def calculate_temperature(shots: list[str], lines_of_sight: list[str], show_plot
 				emissions[i].append(nan)
 
 	emissions = np.array(emissions)
+	temperatures = np.array(temperatures)
 
 	# plot the trends in all of the data hitherto plotted
 	fig, (top_ax, bottom_ax) = plt.subplots(2, 1, sharex="all", figsize=(5 + .15*len(temperatures), 5))
