@@ -137,7 +137,7 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 	                            np.array([50, 100, 250, 750, 2000]))
 
 	# calculate the spacially resolved temperature
-	# measurement_errors = 0.05*np.array([image.supremum for image in images])  # this isn’t very quantitative, but it captures the character of errors in the reconstructions
+	systematic_error = 0.02*np.array([image.supremum for image in images])  # this isn't very quantitative, but it captures the character of errors in the non-MCMC reconstructions
 	basis = Grid.from_size(object_size, object_size/20, True)
 	temperature_map = np.empty(basis.shape)
 	temperature_error_map = np.empty(basis.shape)
@@ -146,7 +146,7 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 		for j in range(basis.y.num_bins):
 			data = np.array([image.at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
 			data_error = np.array([image.error_at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
-			reliable_measurements = data > data_error
+			reliable_measurements = (data > data_error) & (data > systematic_error)
 			if np.all(reliable_measurements):
 				Te, dTe, _, _ = compute_plasma_conditions(data, data_error, *compute_sensitivity(filter_stacks))
 				temperature_map[i, j] = Te
