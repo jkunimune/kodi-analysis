@@ -8,7 +8,7 @@ import time
 import warnings
 from argparse import ArgumentParser
 from copy import copy
-from math import log, pi, nan, radians, inf, isfinite, sqrt, isinf, degrees
+from math import log, pi, nan, radians, inf, isfinite, sqrt, isinf, degrees, floor
 from typing import Any, Optional, Union
 
 import h5py
@@ -61,16 +61,17 @@ FINE_DEUTERON_ENERGY_CUTS = [
 	Interval(6.5, 8), Interval(8, 9.5), Interval(9.5, 11)
 ] # (MeV) (emitted, not detected)
 
-FORCE_LARGE_SOURCE_DOMAIN = False  # whether to enable a source domain larger than the aperture (experimental)
 BELIEVE_IN_APERTURE_TILTING = True  # whether to abandon the assumption that the arrays are equilateral
 UPSAMPLE_SOURCES = False  # whether to save the sources at a potentially higher resolution than they were reconstructed at
 MAX_NUM_PIXELS = 1000  # maximum number of pixels when histogramming CR-39 data to find centers
-FINE_RESOLUTION = 2e-4  # source resolution to use when finding a single solution
-FAST_RESOLUTION = 3e-4  # source resolution to use when sampling many solutions
+FINEST_RESOLUTION = 1e-4  # source resolution to use when the image is pretty small
+TYPICAL_NUM_PIXELS = 200  # number of source pixels to use
+FAST_NUM_PIXELS = 80  # number of source pixels to use when doing MCMC
 CHARGED_PARTICLE_CONTOUR_LEVEL = .17  # contour to use when characterizing KoDI sources
 XRAY_CONTOUR_LEVEL = .17  # contour to use when characterizing x-ray sources
-MIN_OBJECT_SIZE = 200e-4  # minimum amount of space to allocate in the source plane
-MAX_OBJECT_SIZE = 500e-5  # maximum amount of space to allocate in the source plane
+MAX_SCAN_SIZE = 10  # maximum plausible diameter of the penumbral image (cm)
+MIN_OBJECT_SIZE = 200e-4  # minimum amount of space to allocate in the source plane (cm)
+MAX_OBJECT_SIZE = 1000e-4  # maximum amount of space to allocate in the source plane (cm)
 MAX_CONVOLUTION = 1e+12  # don’t perform convolutions with more than this many operations involved
 MAX_ECCENTRICITY = 15.  # eccentricity cut to apply in CR-39 data
 MAX_DETECTABLE_ENERGY = 11.  # highest energy deuteron we think we can see on CR-39
@@ -820,8 +821,6 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 	else:
 		raise ValueError(f"there are no {particle}s within the walls.")
 
-	resolution = FAST_RESOLUTION if do_mcmc else FINE_RESOLUTION
-
 	filter_str = print_filtering(filter_stack)
 
 	# start by loading the input file and stacking the images
@@ -856,8 +855,12 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		# rebin and stack the images
 		_, angle, _, _ = decompose_2x2_into_intuitive_parameters(grid_transform)
 
-		local_image_domain = Grid.from_size(
-			radius=r_max, max_bin_width=(M - 1)*resolution, odd=True)
+		num_pixels = min(  # choose a resolution
+			FAST_NUM_PIXELS if do_mcmc else TYPICAL_NUM_PIXELS,  # so that the problem is tractable
+			floor((r_max - r_psf)/(M - 1)/FINEST_RESOLUTION),  # and so that the pixels aren't unreasonably small
+		)
+		local_image_domain = Grid.from_num_bins(
+			radius=r_max, num_bins=num_pixels)
 		local_images = Image(
 			local_image_domain, np.empty((len(centers),) + local_image_domain.shape))
 
@@ -876,7 +879,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 		elif type(scan) is Image: # if it's a HDF5 file
 			if scan.domain.pixel_width > local_images.domain.pixel_width:
 				logging.warning(f"    The scan resolution of this image plate scan ({scan.domain.pixel_width/1e-4:.0f}/{M - 1:.1f} μm) is "
-				                f"insufficient to support the requested reconstruction resolution ({resolution/1e-4:.0f}μm); it will "
+				                f"insufficient to support the requested reconstruction resolution ({local_images.domain.pixel_width/1e-4:.0f}μm); it will "
 				                f"be zoomed and enhanced.")
 			for k, (x_center, y_center) in enumerate(centers):
 				# center them on the penumbra and rotate them if the aperture grid appears rotated
@@ -1113,7 +1116,7 @@ def analyze_scan_section_cut(scan: Union[Scan, Image],
 def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
                          diameters: Interval, energies: Interval, max_contrast: float,
                          r0: float, s0: float, centers: list[Point], region: list[Point],
-                         use_charging_model: bool) -> Point:
+                         use_charging_model: bool) -> tuple[float, float]:
 	""" perform an inverse Abel transformation while fitting for charging
 	    :param scan: the scan result object containing the data to be analyzed
 	    :param plot_filename: the filename to pass to the plotting function for the resulting figure
@@ -1127,7 +1130,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 	    :param use_charging_model: whether to use the aperture charging model to adjust the point-spread function in your search for a best fit
 	    :return the charging parameter (cm*MeV), the total radius of the image (cm)
 	"""
-	r_max = min(2*r0, s0/sqrt(3), max(s0 - 1.8*r0, 0.55*s0))
+	r_max = min(s0/sqrt(3), MAX_SCAN_SIZE/2)  # pick a maximum r that isolates a single image
 	θ = np.linspace(0, 2*pi, 1000, endpoint=False)[:, np.newaxis]
 
 	# either bin the tracks in radius
@@ -1231,10 +1234,7 @@ def do_1d_reconstruction(scan: Union[Scan, Image], plot_filename: str,
 			plot_filename, r_sphere, ρ_sphere,
 			r, ρ, dρ, ρ_recon, r_PSF, f_PSF, r0, r_cutoff, ρ_outside, ρ_cutoff, ρ_inside)
 
-	if FORCE_LARGE_SOURCE_DOMAIN:
-		return Q, 3*r0
-	else:
-		return Q, r_cutoff
+	return Q, r_cutoff
 
 
 def where_is_the_ocean(image: Image, title, timeout=None) -> Point:
