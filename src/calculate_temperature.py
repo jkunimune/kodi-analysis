@@ -137,7 +137,7 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 	                            np.array([50, 100, 250, 750, 2000]))
 
 	# calculate the spacially resolved temperature
-	measurement_errors = 0.05*np.array([image.supremum for image in images])  # this isn’t very quantitative, but it captures the character of errors in the reconstructions
+	# measurement_errors = 0.05*np.array([image.supremum for image in images])  # this isn’t very quantitative, but it captures the character of errors in the reconstructions
 	basis = Grid.from_size(object_size, object_size/20, True)
 	temperature_map = np.empty(basis.shape)
 	temperature_error_map = np.empty(basis.shape)
@@ -146,7 +146,7 @@ def analyze(shot: str, los: str, stalk_position: str, num_stalks: int, show_plot
 		for j in range(basis.y.num_bins):
 			data = np.array([image.at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
 			data_error = np.array([image.error_at((basis.x.get_bins()[i], basis.y.get_bins()[j])) for image in images])
-			reliable_measurements = data >= measurement_errors
+			reliable_measurements = data > data_error
 			if np.all(reliable_measurements):
 				Te, dTe, _, _ = compute_plasma_conditions(data, data_error, *compute_sensitivity(filter_stacks))
 				temperature_map[i, j] = Te
@@ -259,7 +259,7 @@ def compute_plasma_conditions(measured_values: NDArray[float], measured_errors: 
 	    :param log_sensitivities: energy-resolved sensitivity curve of each detector section
 	    :return: the electron temperature (keV) and the total emission (PSL/μm^2/sr) and the arbitrarily scaled χ^2
 	"""
-	if np.all(measured_values == 0):
+	if np.any(measured_values == 0):
 		return nan, inf, 0, 0
 
 	if np.all(measured_errors == 0):
@@ -298,6 +298,8 @@ def compute_plasma_conditions(measured_values: NDArray[float], measured_errors: 
 		if χ2 < best_χ2:
 			best_Te = Te
 			best_χ2 = χ2
+	if best_Te is None:
+		raise ValueError("how?")
 	# then do a newton’s method
 	result = optimize.least_squares(fun=lambda x: compute_residuals(x[0]),
 	                                jac=lambda x: np.expand_dims(compute_derivatives(x[0]), 1),
